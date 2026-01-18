@@ -1,0 +1,13 @@
+# Carpetas de datos
+
+entrada/
+procesados/
+salida/
+entrada/**
+procesados/**
+salida/**
+
+# Variables de entorno / claves
+
+.env
+.env.*
