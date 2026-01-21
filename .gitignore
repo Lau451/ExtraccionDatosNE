@@ -1,11 +1,15 @@
 # Carpetas de datos
 
 entrada/
+Entrada_Comparativas/
 procesados/
 salida/
+Salida_Comparativas/
 entrada/**
+Entrada_Comparativas/**
 procesados/**
 salida/**
+Salida_Comparativas/**
 
 # Variables de entorno / claves
 
