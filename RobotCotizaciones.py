@@ -1,86 +1,113 @@
 import os
-from dotenv import load_dotenv
-
-import os
 import time
-import google.generativeai as genai
+import random
+import re
 from pathlib import Path
+from dotenv import load_dotenv
+import google.generativeai as genai
 
+# ======================
+# CONFIGURACIÓN
+# ======================
 
 load_dotenv()
 
-# --- CONFIGURACIÓN ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-2.5-flash")
 
-# Configurar la conexión con Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-# Usamos gemini-1.5-flash que es excelente para documentos y OCR
-model = genai.GenerativeModel('gemini-2.5-flash') 
-
-# Directorios
 base_dir = Path(__file__).parent
 input_folder = base_dir / "Entrada"
 output_folder = base_dir / "Salida"
 processed_folder = base_dir / "Procesados"
 
-# Crear carpetas si no existen
-input_folder.mkdir(exist_ok=True)
-output_folder.mkdir(exist_ok=True)
-processed_folder.mkdir(exist_ok=True)
+for carpeta in (input_folder, output_folder, processed_folder):
+    carpeta.mkdir(exist_ok=True)
 
-print("🤖 Robot de Extracción iniciado. Esperando archivos en 'Entrada'...")
+print("🤖 Robot de Extracción iniciado")
+
+# ======================
+# FUNCIONES
+# ======================
+
+def obtener_cliente(nombre_archivo: str) -> str:
+    # Todo lo que esté antes del primer "_"
+    return nombre_archivo.split("_", 1)[0].strip()
+
+def nombre_unico(base: str, carpeta: Path, extension: str) -> str:
+    """
+    Si existe base.ext, genera base_2.ext, base_3.ext, etc.
+    """
+    destino = carpeta / f"{base}{extension}"
+    if not destino.exists():
+        return destino.name
+
+    i = 2
+    while True:
+        candidato = carpeta / f"{base}_{i}{extension}"
+        if not candidato.exists():
+            return candidato.name
+        i += 1
+
+# ======================
+# LOOP PRINCIPAL
+# ======================
 
 while True:
-    # Buscar archivos (PDF, JPG, PNG)
-    archivos = [f for f in input_folder.iterdir() if f.is_file() and f.suffix.lower() in ['.pdf', '.jpg', '.jpeg', '.png']]
+    archivos = [
+        f for f in input_folder.iterdir()
+        if f.is_file() and f.suffix.lower() in [".pdf", ".jpg", ".jpeg", ".png"]
+    ]
 
     for archivo in archivos:
-        print(f"📄 Analizando: {archivo.name}...")
-        nombre_sin_extension = archivo.stem
-        
+        print(f"📄 Procesando: {archivo.name}")
+        nombre_base = archivo.stem
+        cliente = obtener_cliente(nombre_base)
+
         try:
-            # 1. Subir el archivo a la API
             archivo_subido = genai.upload_file(str(archivo))
-            
-            # 2. Preparar el Prompt Dinámico con el nombre del archivo
-            prompt_final = f"""
-            Analiza este documento y extrae la información solicitada en formato CSV.
-            
-            CAMPOS A EXTRAER:
-            1. item: El número de renglón o índice.
-            2. cantidad: La cantidad del producto solicitado.
-            3. descripcion: El nombre o detalle del producto.
-            4. origen: Debe ser exactamente este valor: {nombre_sin_extension}
 
-            REGLAS OBLIGATORIAS:
-            - Devuelve ÚNICAMENTE un CSV válido.
-            - Usa punto y coma (;) como separador para evitar errores con las comas en las descripciones.
-            - Incluye encabezado: item;cantidad;descripcion;origen
-            - Sin texto adicional, sin saludos, sin bloques de código (```).
-            - Una fila por cada producto encontrado.
-            - Si no encuentras un dato, deja el espacio vacío.
-            """
+            prompt = f"""
+Analiza este documento y extrae la información solicitada en formato CSV.
 
-            # 3. Generar la respuesta
-            respuesta = model.generate_content([prompt_final, archivo_subido])
-            
-            # Limpieza básica por si la IA incluye delimitadores de código
-            contenido_csv = respuesta.text.replace("```csv", "").replace("```", "").strip()
+CAMPOS:
+item;cantidad;descripcion;origen
 
-            # 4. Guardar el resultado en la carpeta Salida
-            nombre_salida = f"{nombre_sin_extension}.csv"
-            ruta_salida = output_folder / nombre_salida
-            
-            with open(ruta_salida, "w", encoding="utf-8") as f:
-                f.write(contenido_csv)
-                
-            print(f"✅ CSV generado con éxito: {nombre_salida}")
+REGLAS:
+- Devuelve SOLO CSV
+- Usa punto y coma (;)
+- Incluye encabezado
+- Una fila por producto
+- Sin texto adicional
+- No uses comillas
+- El campo origen debe ser exactamente: {cliente}
+"""
 
-            # 5. Mover el archivo original a "Procesados"
-            archivo.rename(processed_folder / archivo.name)
+            respuesta = model.generate_content([prompt, archivo_subido])
+            contenido = respuesta.text.strip()
+
+            if not contenido.lower().startswith("item;"):
+                raise ValueError("Respuesta inválida (no es CSV)")
+
+            # ======================
+            # GUARDAR CSV
+            # ======================
+            nombre_csv = nombre_unico(cliente, output_folder, ".csv")
+            with open(output_folder / nombre_csv, "w", encoding="utf-8") as f:
+                f.write(contenido)
+
+            print(f"✅ CSV generado: {nombre_csv}")
+
+            # ======================
+            # MOVER A PROCESADOS
+            # ======================
+            nombre_proc = nombre_unico(nombre_base, processed_folder, archivo.suffix)
+            archivo.rename(processed_folder / nombre_proc)
+
+            print(f"📦 Movido a Procesados: {nombre_proc}")
+
+            time.sleep(3 + random.uniform(1, 2))
 
         except Exception as e:
             print(f"❌ Error procesando {archivo.name}: {e}")
 
-    # Esperar 5 segundos antes de la siguiente revisión
     time.sleep(5)
