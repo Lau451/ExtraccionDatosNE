@@ -14,7 +14,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Configurar la conexión con Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-# Usamos gemini-1.5-flash que es excelente para documentos y OCR
+# Usamos gemini-2.5-flash que es excelente para documentos y OCR
 model = genai.GenerativeModel('gemini-2.5-flash') 
 
 # Directorios

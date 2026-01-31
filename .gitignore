@@ -1,17 +1,21 @@
-# Carpetas de datos
+# Entorno virtual
+venv/
+pyvenv.cfg
 
-entrada/
-Entrada_Comparativas/
-procesados/
-salida/
-Salida_Comparativas/
-entrada/**
-Entrada_Comparativas/**
-procesados/**
-salida/**
-Salida_Comparativas/**
-
-# Variables de entorno / claves
-
+# Variables de entorno
 .env
 .env.*
+
+# Datos generados
+Data/**
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db

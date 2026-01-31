@@ -16,9 +16,9 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 base_dir = Path(__file__).parent
-input_folder = base_dir / "Entrada"
-output_folder = base_dir / "Salida"
-processed_folder = base_dir / "Procesados"
+input_folder = base_dir / "Data" / "Entrada"
+output_folder = base_dir / "Data" / "Salida"
+processed_folder = base_dir / "Data" / "Procesados"
 
 for carpeta in (input_folder, output_folder, processed_folder):
     carpeta.mkdir(exist_ok=True)
