@@ -2,26 +2,50 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Extractor de Documentos</title>
+    <title>Extracción de datos</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 
-<div class="container">
-    <h1>📄 Extracción de documentos</h1>
+    <div class="card">
+        <h1>📄 Extracción de datos</h1>
+        <p class="subtitle">
+            Subí una cotización (PDF o imagen)
+        </p>
 
-    <form action="/procesar" method="post" enctype="multipart/form-data">
-        <input type="file" name="archivo" required>
-        <button type="submit">Procesar</button>
-    </form>
+        <form id="upload-form">
 
-    {% if resultado %}
-        <div class="resultado">
-            <p>✅ Archivo generado:</p>
-            <a href="{{ resultado }}" download>Descargar CSV</a>
-        </div>
-    {% endif %}
-</div>
+            <input
+                type="file"
+                id="archivo"
+                name="archivo"
+                accept=".pdf,.jpg,.jpeg,.png"
+                hidden
+            >
 
+            <label for="archivo" class="file-label" id="file-label">
+                Seleccionar archivo
+            </label>
+
+            <div class="file-preview hidden" id="file-preview">
+                <div class="file-icon" id="file-icon"></div>
+                <p class="filename" id="nombre-archivo"></p>
+            </div>
+
+            <button type="submit" class="btn" id="procesar-btn" disabled>
+                Procesar archivo
+            </button>
+        </form>
+        <div class="progress hidden" id="progress-container">
+    <div class="progress-bar" id="progress-bar"></div>
+   </div>
+
+        <p class="status" id="estado"></p>
+    </div>
+
+    <script src="/static/main.js"></script>
 </body>
 </html>

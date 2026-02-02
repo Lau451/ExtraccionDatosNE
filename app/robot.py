@@ -1,6 +1,6 @@
 from pathlib import Path
 import google.generativeai as genai
-from app.config import MODEL, INPUT_DIR, OUTPUT_DIR, PROCESSED_DIR
+from app.config import MODEL,OUTPUT_DIR, PROCESSED_DIR
 
 # ======================
 # FUNCIONES

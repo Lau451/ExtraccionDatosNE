@@ -24,7 +24,7 @@ templates = Jinja2Templates(directory="app/templates")
 # ======================
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+async def home(request: Request):
     return templates.TemplateResponse(
         "index.html",
         {"request": request}
@@ -32,7 +32,7 @@ def home(request: Request):
 
 
 @app.post("/procesar", response_class=HTMLResponse)
-def procesar(
+async def procesar(
     request: Request,
     archivo: UploadFile = File(...)
 ):
