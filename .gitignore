@@ -7,7 +7,11 @@ pyvenv.cfg
 .env.*
 
 # Datos generados
-!data/.gitkeep
+data/Entrada/.gitkeep
+data/Entrada_Comparativas/.gitkeep
+data/Procesados/.gitkeep
+data/Salida.gitkeep
+data/Salida_Comparativas/.gitkeep
 
 # Python
 __pycache__/
