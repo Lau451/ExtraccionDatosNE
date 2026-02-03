@@ -1,6 +1,6 @@
 * {
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
 body {
@@ -10,35 +10,42 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 24px;
 }
 
 .card {
     background: white;
-    padding: 40px;
-    border-radius: 14px;
-    width: 380px;
+    padding: 32px 32px 28px;
+    border-radius: 16px;
+    width: 420px;
     text-align: center;
-    box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    border: 1px solid rgba(30, 60, 114, 0.08);
 }
 
 h1 {
-    margin-top: 0;
+    margin: 18px 0 8px;
     color: #1e3c72;
+    font-size: 22px;
+    letter-spacing: 0.2px;
 }
 
 .subtitle {
     color: #666;
-    margin-bottom: 25px;
+    margin: 0 0 22px;
+    font-size: 14px;
+    line-height: 1.4;
 }
 
 .file-label {
     display: block;
     background: #f1f3f5;
     border: 2px dashed #ccc;
-    padding: 15px;
-    border-radius: 10px;
+    padding: 16px;
+    border-radius: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
+    font-size: 14px;
 }
 
 .file-label:hover {
@@ -55,14 +62,15 @@ h1 {
 
 button {
     width: 100%;
-    padding: 12px;
+    padding: 12px 14px;
     background: #2a5298;
     border: none;
     color: white;
     font-size: 16px;
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
     transition: background 0.2s;
+    font-weight: 600;
 }
 
 button:hover:not(:disabled) {
@@ -75,9 +83,10 @@ button:disabled {
 }
 
 .status {
-    margin-top: 15px;
+    margin-top: 12px;
     font-size: 14px;
     color: #444;
+    min-height: 18px;
 }
 
 .progress {
@@ -86,7 +95,7 @@ button:disabled {
     background: #e9ecef;
     border-radius: 999px;
     overflow: hidden;
-    margin-top: 15px;
+    margin-top: 12px;
 }
 
 .progress-bar {
@@ -96,6 +105,45 @@ button:disabled {
     transition: width 0.2s ease;
 }
 
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 6px;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-img {
+    width: 140px;
+    height: auto;
+    object-fit: contain;
+    display: block;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    line-height: 1.2;
+    margin-left: 4px;
+}
+
+.logo-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e3c72;
+}
+
+.logo-subtitle {
+    font-size: 12px;
+    color: #5f6b7a;
+}
 
 .hidden {
     display: none !important;
@@ -123,3 +171,18 @@ button:disabled {
 .file-icon.pdf { background: #e74c3c; }
 .file-icon.image { background: #3498db; }
 .file-icon.other { background: #7f8c8d; }
+
+@media (max-width: 520px) {
+    .card {
+        width: 100%;
+        padding: 28px 22px 24px;
+    }
+
+    .logo {
+        gap: 10px;
+    }
+
+    .logo-img {
+        width: 110px;
+    }
+}
