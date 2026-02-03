@@ -6,9 +6,10 @@ from fastapi.responses import FileResponse
 
 from pathlib import Path
 import shutil
+from uuid import uuid4
 
 from app.robot import procesar_archivo
-from app.config import INPUT_DIR, OUTPUT_DIR
+from app.config import OUTPUT_DIR, TMP_DIR
 
 app = FastAPI(title="Extractor de Documentos")
 
@@ -39,7 +40,20 @@ async def procesar(
     # ======================
     # GUARDAR ARCHIVO
     # ======================
-    destino = INPUT_DIR / archivo.filename
+    nombre_original = Path(archivo.filename).name
+    extension = Path(nombre_original).suffix.lower()
+    permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
+
+    if extension not in permitidos:
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": "Tipo de archivo no permitido"
+            }
+        )
+
+    destino = TMP_DIR / f"{uuid4()}_{nombre_original}"
 
     with open(destino, "wb") as buffer:
         shutil.copyfileobj(archivo.file, buffer)
@@ -48,7 +62,7 @@ async def procesar(
     # PROCESAR CON ROBOT
     # ======================
     try:
-        csv_generado = procesar_archivo(destino)
+        csv_generado = procesar_archivo(destino, nombre_original)
 
         return templates.TemplateResponse(
             "index.html",

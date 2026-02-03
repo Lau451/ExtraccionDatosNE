@@ -26,9 +26,9 @@ BASE_DIR = Path(__file__).parent.parent
 
 DATA_DIR = BASE_DIR / "data"
 
-INPUT_DIR = DATA_DIR / "Entrada"
 OUTPUT_DIR = DATA_DIR / "Salida"
 PROCESSED_DIR = DATA_DIR / "Procesados"
+TMP_DIR = DATA_DIR / "tmp"
 
-for d in (INPUT_DIR, OUTPUT_DIR, PROCESSED_DIR):
+for d in (OUTPUT_DIR, PROCESSED_DIR, TMP_DIR):
     d.mkdir(parents=True, exist_ok=True)

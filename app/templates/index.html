@@ -13,7 +13,7 @@
     <div class="card">
         <h1>📄 Extracción de datos</h1>
         <p class="subtitle">
-            Subí una cotización (PDF o imagen)
+            Subí una cotización
         </p>
 
         <form id="upload-form">
@@ -22,7 +22,7 @@
                 type="file"
                 id="archivo"
                 name="archivo"
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
                 hidden
             >
 
@@ -37,6 +37,10 @@
 
             <button type="submit" class="btn" id="procesar-btn" disabled>
                 Procesar archivo
+            </button>
+
+            <button type="button" class="btn hidden" id="nuevo-btn">
+                Subir otro archivo
             </button>
         </form>
         <div class="progress hidden" id="progress-container">
