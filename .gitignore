@@ -7,7 +7,7 @@ pyvenv.cfg
 .env.*
 
 # Datos generados
-Data/**
+!data/.gitkeep
 
 # Python
 __pycache__/
