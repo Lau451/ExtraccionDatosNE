@@ -2,6 +2,7 @@ from pathlib import Path
 import shutil
 from typing import Optional
 import google.generativeai as genai
+import pandas as pd
 from app.config import MODEL, OUTPUT_DIR, PROCESSED_DIR
 
 # ======================
@@ -41,7 +42,16 @@ def procesar_archivo(ruta_archivo: Path, nombre_original: Optional[str] = None) 
     cliente = obtener_cliente(nombre_base)
 
     es_excel = extension_original.lower() in {".xls", ".xlsx"}
-    archivo_subido = genai.upload_file(str(ruta_archivo))
+    archivo_subido = None
+    texto_excel = None
+
+    if es_excel:
+        # Leer Excel localmente y convertir a CSV texto
+        engine = "xlrd" if extension_original.lower() == ".xls" else "openpyxl"
+        df = pd.read_excel(ruta_archivo, engine=engine)
+        texto_excel = df.to_csv(sep=";", index=False)
+    else:
+        archivo_subido = genai.upload_file(str(ruta_archivo))
 
     tipo_doc = "EXCEL" if es_excel else "DOCUMENTO"
     prompt = f"""
@@ -60,10 +70,15 @@ REGLAS:
 - El campo origen debe ser exactamente: {cliente}
 """
 
-    respuesta = MODEL.generate_content([prompt, archivo_subido])
+    if es_excel:
+        prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
+        respuesta = MODEL.generate_content(prompt)
+    else:
+        respuesta = MODEL.generate_content([prompt, archivo_subido])
     contenido = respuesta.text.strip()
 
-    if not contenido.lower().startswith("item;"):
+    contenido = contenido.replace("```csv", "").replace("```", "").strip()
+    if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
 
     nombre_csv = nombre_unico(nombre_base, OUTPUT_DIR, ".csv")
