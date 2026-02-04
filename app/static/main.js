@@ -8,17 +8,35 @@ const fileLabel = document.getElementById("file-label");
 const filePreview = document.getElementById("file-preview");
 const fileIcon = document.getElementById("file-icon");
 const nombreArchivo = document.getElementById("nombre-archivo");
+const botonCancelar = document.getElementById("cancelar-btn");
 
 const progressContainer = document.getElementById("progress-container");
 const progressBar = document.getElementById("progress-bar");
 
-// --------------------
-// SELECCION DE ARCHIVO
-// --------------------
-inputArchivo.addEventListener("change", () => {
-    if (!inputArchivo.files.length) return;
+const resetUI = () => {
+    inputArchivo.value = "";
+    estado.textContent = "";
+    botonProcesar.disabled = true;
 
-    const file = inputArchivo.files[0];
+    fileLabel.classList.remove("hidden");
+    filePreview.classList.add("hidden");
+    nombreArchivo.textContent = "";
+    fileIcon.className = "file-icon";
+
+    progressContainer.classList.add("hidden");
+    progressBar.style.width = "0%";
+    progressBar.setAttribute("aria-valuenow", "0");
+
+    botonNuevo.classList.add("hidden");
+};
+
+const setFile = (file) => {
+    if (!file) return;
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    inputArchivo.files = dataTransfer.files;
+
     const ext = file.name.split(".").pop().toLowerCase();
 
     fileIcon.className = "file-icon";
@@ -43,6 +61,39 @@ inputArchivo.addEventListener("change", () => {
     filePreview.classList.remove("hidden");
     botonProcesar.disabled = false;
     botonNuevo.classList.add("hidden");
+};
+
+// --------------------
+// SELECCION DE ARCHIVO
+// --------------------
+inputArchivo.addEventListener("change", () => {
+    if (!inputArchivo.files.length) return;
+    setFile(inputArchivo.files[0]);
+});
+
+// --------------------
+// DRAG & DROP
+// --------------------
+["dragenter", "dragover"].forEach((evento) => {
+    fileLabel.addEventListener(evento, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        fileLabel.classList.add("is-dragover");
+    });
+});
+
+["dragleave", "drop"].forEach((evento) => {
+    fileLabel.addEventListener(evento, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        fileLabel.classList.remove("is-dragover");
+    });
+});
+
+fileLabel.addEventListener("drop", (event) => {
+    const droppedFile = event.dataTransfer.files[0];
+    if (!droppedFile) return;
+    setFile(droppedFile);
 });
 
 // --------------------
@@ -100,19 +151,9 @@ form.addEventListener("submit", async (event) => {
 // --------------------
 // NUEVO ARCHIVO
 // --------------------
-botonNuevo.addEventListener("click", () => {
-    inputArchivo.value = "";
-    estado.textContent = "";
-    botonProcesar.disabled = true;
+botonNuevo.addEventListener("click", resetUI);
 
-    fileLabel.classList.remove("hidden");
-    filePreview.classList.add("hidden");
-    nombreArchivo.textContent = "";
-    fileIcon.className = "file-icon";
-
-    progressContainer.classList.add("hidden");
-    progressBar.style.width = "0%";
-    progressBar.setAttribute("aria-valuenow", "0");
-
-    botonNuevo.classList.add("hidden");
-});
+// --------------------
+// CANCELAR ARCHIVO
+// --------------------
+botonCancelar.addEventListener("click", resetUI);

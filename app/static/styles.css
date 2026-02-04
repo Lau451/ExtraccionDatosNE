@@ -53,6 +53,31 @@ h1 {
     border-color: #2a5298;
 }
 
+.drop-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.drop-title {
+    font-weight: 600;
+    color: #2a2f36;
+}
+
+.drop-hint {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.drop-zone.is-dragover {
+    background: #e6eefb;
+    border-color: #1e3c72;
+    box-shadow: 0 0 0 3px rgba(30, 60, 114, 0.15);
+}
+
 .filename {
     margin: 0;
     font-size: 14px;
@@ -80,6 +105,20 @@ button:hover:not(:disabled) {
 button:disabled {
     background: #999;
     cursor: not-allowed;
+}
+
+.btn-ghost {
+    width: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+    background: #f3f4f6;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: #e5e7eb;
 }
 
 .status {
@@ -154,6 +193,7 @@ button:disabled {
     align-items: center;
     gap: 12px;
     margin: 15px 0 20px;
+    flex-wrap: wrap;
 }
 
 .file-icon {

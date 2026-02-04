@@ -33,13 +33,17 @@
                 hidden
             >
 
-            <label for="archivo" class="file-label" id="file-label">
-                Seleccionar archivo
+            <label for="archivo" class="file-label drop-zone" id="file-label">
+                <span class="drop-title">Seleccionar archivo</span>
+                <span class="drop-hint">o arrastra y solta aqui</span>
             </label>
 
             <div class="file-preview hidden" id="file-preview">
                 <div class="file-icon" id="file-icon"></div>
                 <p class="filename" id="nombre-archivo"></p>
+                <button type="button" class="btn btn-ghost" id="cancelar-btn">
+                    Quitar archivo
+                </button>
             </div>
 
             <button type="submit" class="btn" id="procesar-btn" disabled>
