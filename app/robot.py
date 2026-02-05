@@ -1,5 +1,8 @@
 from pathlib import Path
+import re
 import shutil
+import unicodedata
+from difflib import SequenceMatcher
 from typing import Optional
 import google.generativeai as genai
 import pandas as pd
@@ -26,6 +29,147 @@ def nombre_unico(base: str, carpeta: Path, extension: str) -> str:
         i += 1
 
 
+def _normalizar_texto(texto: str) -> str:
+    texto = str(texto).strip().lower()
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    return texto
+
+
+def _mejor_match_columna(columnas: list[str], sinonimos: set[str], umbral: float = 0.72) -> Optional[str]:
+    mejor_col = None
+    mejor_score = 0.0
+
+    for col in columnas:
+        col_norm = _normalizar_texto(col)
+        score = 0.0
+
+        if col_norm in sinonimos:
+            score = 1.0
+        else:
+            for s in sinonimos:
+                if s in col_norm or col_norm in s:
+                    score = max(score, 0.85)
+                else:
+                    ratio = SequenceMatcher(None, col_norm, s).ratio()
+                    score = max(score, ratio)
+
+        if score > mejor_score:
+            mejor_score = score
+            mejor_col = col
+
+    if mejor_score >= umbral:
+        return mejor_col
+    return None
+
+
+def _score_cantidad(serie: pd.Series) -> float:
+    if serie.empty:
+        return 0.0
+    no_vacios = serie.dropna()
+    if no_vacios.empty:
+        return 0.0
+    numeric = pd.to_numeric(no_vacios, errors="coerce")
+    ratio_numeric = numeric.notna().mean()
+    return float(ratio_numeric)
+
+
+def _score_descripcion(serie: pd.Series) -> float:
+    if serie.empty:
+        return 0.0
+    no_vacios = serie.dropna()
+    if no_vacios.empty:
+        return 0.0
+    texto = no_vacios.astype(str).str.strip()
+    texto = texto[texto != ""]
+    if texto.empty:
+        return 0.0
+    largos = texto.str.len()
+    ratio_texto = (largos >= 3).mean()
+    return float(ratio_texto)
+
+
+def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
+    serie = df[col]
+    if isinstance(serie, pd.DataFrame):
+        return serie.iloc[:, 0]
+    return serie
+
+
+def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
+    columnas = list(df.columns)
+
+    col_item = None
+    for c in columnas:
+        if _normalizar_texto(c) == "item":
+            col_item = c
+            break
+
+    item_generado = col_item is None  # Indica si se genera item incremental
+    sinonimos_cantidad = {
+        "cantidad", "cant", "cant.", "qty", "unidades", "unidad", "uds", "ud", "pcs",
+        "cantidad solicitada", "cantidad pedida", "cantidades",
+    }
+    sinonimos_descripcion = {
+        "descripcion", "descripcion producto", "producto", "articulo",
+        "articulo producto", "detalle", "concepto", "nombre", "nombre producto",
+    }
+
+    col_cantidad = _mejor_match_columna(columnas, sinonimos_cantidad)
+    col_descripcion = _mejor_match_columna(columnas, sinonimos_descripcion)
+
+    usados = {c for c in [col_item, col_cantidad, col_descripcion] if c}
+
+    if col_cantidad is None:
+        candidatos = [c for c in columnas if c not in usados]
+        mejor = None
+        mejor_score = 0.0
+        for c in candidatos:
+            score = _score_cantidad(_col_to_series(df, c))
+            if score > mejor_score:
+                mejor_score = score
+                mejor = c
+        if mejor_score >= 0.6:
+            col_cantidad = mejor
+            usados.add(mejor)
+
+    if col_descripcion is None:
+        candidatos = [c for c in columnas if c not in usados]
+        mejor = None
+        mejor_score = 0.0
+        for c in candidatos:
+            score = _score_descripcion(_col_to_series(df, c))
+            if score > mejor_score:
+                mejor_score = score
+                mejor = c
+        if mejor_score >= 0.6:
+            col_descripcion = mejor
+            usados.add(mejor)
+
+    salida = pd.DataFrame()
+
+    if col_item:
+        salida["item"] = _col_to_series(df, col_item)
+    else:
+        # Generar item incremental cuando no existe columna "item"
+        salida["item"] = range(1, len(df) + 1)
+
+    if col_cantidad:
+        salida["cantidad"] = _col_to_series(df, col_cantidad)
+    else:
+        salida["cantidad"] = ""
+
+    if col_descripcion:
+        salida["descripcion"] = _col_to_series(df, col_descripcion)
+    else:
+        salida["descripcion"] = ""
+
+    salida["origen"] = cliente
+    return salida
+
+
 # ======================
 # FUNCION PRINCIPAL
 # ======================
@@ -46,10 +190,11 @@ def procesar_archivo(ruta_archivo: Path, nombre_original: Optional[str] = None) 
     texto_excel = None
 
     if es_excel:
-        # Leer Excel localmente y convertir a CSV texto
+        # Leer Excel localmente y convertir a CSV texto (normalizado)
         engine = "xlrd" if extension_original.lower() == ".xls" else "openpyxl"
-        df = pd.read_excel(ruta_archivo, engine=engine)
-        texto_excel = df.to_csv(sep=";", index=False)
+        df = pd.read_excel(ruta_archivo, engine=engine, index_col=None)
+        df_normalizado = _normalizar_excel(df, cliente)
+        texto_excel = df_normalizado.to_csv(sep=";", index=False)
     else:
         archivo_subido = genai.upload_file(str(ruta_archivo))
 
