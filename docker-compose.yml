@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  extractor-ne:
+    build: .
+    image: extractor-ne:win
+    container_name: extractor-ne
+    ports:
+      - "8000:8000"
+    environment:
+      OUTPUT_BASE: "C:\\data\\outputs"
+    volumes:
+      - "C:\\SACPro\\documentos_ia:C:\\data\\outputs"
+    restart: unless-stopped

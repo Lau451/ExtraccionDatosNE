@@ -1,11 +1,4 @@
-FROM mcr.microsoft.com/windows/servercore:ltsc2019
-
-SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
-
-# Instalar Python
-RUN Invoke-WebRequest -Uri https://www.python.org/ftp/python/3.11.6/python-3.11.6-amd64.exe -OutFile python.exe ; \
-    Start-Process python.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait ; \
-    Remove-Item python.exe
+FROM mcr.microsoft.com/windows/python:3.11-windowsservercore-ltsc2019
 
 WORKDIR C:\app
 
