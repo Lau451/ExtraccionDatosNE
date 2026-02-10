@@ -27,7 +27,7 @@ MODEL = genai.GenerativeModel("gemini-2.5-flash")
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 
-OUTPUT_BASE = Path(r"C:\Users\LAUREANO\OneDrive\Escritorio\ExtraccionDatosNE\data\Salida")
+OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE", "/data/outputs"))
 
 
 def _safe_hostname() -> str:
