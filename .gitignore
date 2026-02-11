@@ -6,8 +6,12 @@ pyvenv.cfg
 .env
 .env.*
 
+# Configuracion local de rutas
+config_local.py
+
 # Datos generados
 Data/**
+data/**
 
 # Python
 __pycache__/

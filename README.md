@@ -13,10 +13,10 @@ El objetivo es automatizar la lectura de documentos y generar informacion estruc
 
 El sistema crea las carpetas necesarias dentro de `data/` si no existen:
 
-- **data/Procesados**  
+- **data/Procesados**
   Archivos ya procesados (movidos despues de la extraccion)
 
-- **data/Salida**  
+- **data/Salida**
   Resultados finales (CSV)
 
 > Estas carpetas estan ignoradas por Git y no se suben al repositorio.
@@ -30,7 +30,7 @@ Asegurate de tener **Python 3.9 o superior** instalado.
 Instala las dependencias principales con el siguiente comando:
 
 ```bash
-pip install google-generativeai pandas
+pip install google-generativeai pandas python-dotenv
 ```
 
 ---
@@ -39,21 +39,9 @@ pip install google-generativeai pandas
 
 Para proteger la **API Key de Gemini**, el proyecto utiliza variables de entorno.
 
----
+Crear un archivo `.env` en la raiz del proyecto con:
 
-### 1) Instalar dependencia para manejar `.env`
-
-```bash
-pip install python-dotenv
-```
-
----
-
-### 2) Crear archivo `.env`
-
-En la raiz del proyecto, crear un archivo llamado `.env` con el siguiente contenido:
-
-```
+```env
 GEMINI_API_KEY=tu_api_key_aqui
 ```
 
@@ -61,12 +49,37 @@ GEMINI_API_KEY=tu_api_key_aqui
 
 ---
 
+## Configuracion Local de Rutas
+
+Las rutas locales ya no estan hardcodeadas en el codigo.
+
+Opciones soportadas (prioridad):
+
+1. Variable de entorno `OUTPUT_BASE_DIR`
+2. Archivo local `config_local.py` (ignorado por Git)
+
+### Paso recomendado
+
+1. Copiar `config_local.example.py` a `config_local.py`
+2. Completar `OUTPUT_BASE_DIR` con la ruta local de tu equipo
+
+Ejemplo:
+
+```python
+from pathlib import Path
+OUTPUT_BASE_DIR = Path(r"C:\Users\TU_USUARIO\ruta\a\ExtraccionDatosNE\data\Salida")
+```
+
+Si falta `config_local.py` y no existe `OUTPUT_BASE_DIR`, el sistema mostrara un error claro al iniciar.
+
+---
+
 ## Flujo de Uso
 
-1. Seleccionar el documento directamente desde la interfaz (no existe la carpeta **Entrada**)
+1. Seleccionar el documento directamente desde la interfaz (no existe carpeta **Entrada**)
 2. Ejecutar el proceso
-3. Los archivos procesados se moveran a **data/Procesados**
-4. Los resultados se guardaran en **data/Salida**
+3. Los archivos procesados se moveran a la ruta configurada en **Procesados**
+4. Los resultados se guardaran en la ruta configurada de **Salida**
 
 **Nombres de salida:**
 - El CSV generado conserva el nombre completo del archivo original (incluyendo la parte posterior al primer "_")
@@ -76,9 +89,9 @@ GEMINI_API_KEY=tu_api_key_aqui
 
 ## Tecnologias Utilizadas
 
-- Python  
-- Google Generative AI (Gemini)  
-- Pandas  
-- python-dotenv  
+- Python
+- Google Generative AI (Gemini)
+- Pandas
+- python-dotenv
 
 ---

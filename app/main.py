@@ -9,7 +9,7 @@ import shutil
 from uuid import uuid4
 
 from app.robot import procesar_archivo
-from app.config import OUTPUT_DIR, TMP_DIR
+from app.config import get_output_dir, get_tmp_dir
 
 app = FastAPI(title="Extractor de Documentos")
 
@@ -53,7 +53,9 @@ async def procesar(
             }
         )
 
-    destino = TMP_DIR / f"{uuid4()}_{nombre_original}"
+    tmp_dir = get_tmp_dir()
+    destino = tmp_dir / f"{uuid4()}_{nombre_original}"
+    destino.parent.mkdir(parents=True, exist_ok=True)
 
     with open(destino, "wb") as buffer:
         shutil.copyfileobj(archivo.file, buffer)
@@ -84,7 +86,7 @@ async def procesar(
 
 @app.get("/descargar/{nombre_archivo}")
 def descargar(nombre_archivo: str):
-    archivo = OUTPUT_DIR / nombre_archivo
+    archivo = get_output_dir() / nombre_archivo
 
     return FileResponse(
         path=archivo,

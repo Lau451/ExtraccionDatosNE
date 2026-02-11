@@ -1,14 +1,19 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  extractor-ne:
-    build: .
-    image: extractor-ne:win
-    container_name: extractor-ne
+  extractor-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: extractor-ne:latest
+    container_name: extractor-instancia
+    # Forzamos el aislamiento de Hyper-V para evitar el error 0xc0370106
+    isolation: hyperv
     ports:
       - "8000:8000"
     environment:
-      OUTPUT_BASE: "C:\\data\\outputs"
-    volumes:
-      - "C:\\SACPro\\documentos_ia:C:\\data\\outputs"
-    restart: unless-stopped
+      # AQUÍ DEBES PEGAR TU API KEY REAL
+      - GEMINI_API_KEY=AIzaSyCDkfvB_Wr6Bz-l5XMXL_8YIxhjpM4SSpU
+      # Opcional: Configuración para que Python no guarde archivos .pyc
+      - PYTHONDONTWRITEBYTECODE=1
+    restart: always

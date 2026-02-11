@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 import google.generativeai as genai
 import pandas as pd
-from app.config import MODEL, OUTPUT_DIR, PROCESSED_DIR
+from app.config import MODEL, get_output_dir, get_processed_dir
 
 # ======================
 # FUNCIONES
@@ -226,13 +226,16 @@ REGLAS:
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
 
-    nombre_csv = nombre_unico(nombre_base, OUTPUT_DIR, ".csv")
-    ruta_salida = OUTPUT_DIR / nombre_csv
+    output_dir = get_output_dir()
+    processed_dir = get_processed_dir()
+
+    nombre_csv = nombre_unico(nombre_base, output_dir, ".csv")
+    ruta_salida = output_dir / nombre_csv
 
     with open(ruta_salida, "w", encoding="utf-8") as f:
         f.write(contenido)
 
-    nombre_proc = nombre_unico(nombre_base, PROCESSED_DIR, extension_original)
-    shutil.move(str(ruta_archivo), str(PROCESSED_DIR / nombre_proc))
+    nombre_proc = nombre_unico(nombre_base, processed_dir, extension_original)
+    shutil.move(str(ruta_archivo), str(processed_dir / nombre_proc))
 
     return ruta_salida
