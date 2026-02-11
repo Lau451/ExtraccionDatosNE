@@ -1,7 +1,5 @@
 import importlib.util
 import os
-import socket
-from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -75,10 +73,23 @@ DATA_DIR = BASE_DIR / "data"
 OUTPUT_BASE = _resolve_output_base_dir()
 
 
-def _safe_hostname() -> str:
-    host = socket.gethostname().strip()
-    limpio = "".join(c for c in host if c.isalnum() or c in ("-", "_"))
-    return limpio or "UNKNOWN_HOST"
+def _safe_folder_value(raw_value: str, default_value: str) -> str:
+    raw = str(raw_value).strip()
+    if not raw:
+        return ""
+
+    limpio_chars = []
+    prev_sep = False
+    for ch in raw:
+        if ch.isalnum() or ch in ("-", "_"):
+            limpio_chars.append(ch)
+            prev_sep = False
+        elif not prev_sep:
+            limpio_chars.append("_")
+            prev_sep = True
+
+    limpio = "".join(limpio_chars).strip("_")
+    return limpio or default_value
 
 
 def _ensure_dir(dir_path: Path, label: str) -> Path:
@@ -89,24 +100,36 @@ def _ensure_dir(dir_path: Path, label: str) -> Path:
     return dir_path
 
 
-def get_output_dir(base_dir: Path = OUTPUT_BASE) -> Path:
-    host_dir = _ensure_dir(base_dir / _safe_hostname(), "del host")
-    fecha_dir = host_dir / date.today().isoformat()
-    return _ensure_dir(fecha_dir, "de salida")
+def _base_work_dir(
+    base_dir: Path,
+    origen_id: str = "",
+) -> Path:
+    current_dir = _ensure_dir(base_dir, "de salida")
+    if origen_id.strip():
+        origen_name = _safe_folder_value(origen_id, "ORIGEN")
+        current_dir = _ensure_dir(current_dir / origen_name, "del origen")
+
+    return current_dir
 
 
-def get_processed_dir(base_dir: Path = OUTPUT_BASE) -> Path:
-    host_dir = _ensure_dir(base_dir / _safe_hostname(), "del host")
-    fecha_dir = host_dir / date.today().isoformat()
-    return _ensure_dir(fecha_dir / "Procesados", "de procesados")
+def get_output_dir(
+    base_dir: Path = OUTPUT_BASE,
+    origen_id: str = "",
+) -> Path:
+    return _base_work_dir(base_dir, origen_id=origen_id)
 
 
-def get_tmp_dir(base_dir: Path = OUTPUT_BASE) -> Path:
-    host_dir = _ensure_dir(base_dir / _safe_hostname(), "del host")
-    fecha_dir = host_dir / date.today().isoformat()
-    return _ensure_dir(fecha_dir / "tmp", "temporal")
+def get_processed_dir(
+    base_dir: Path = OUTPUT_BASE,
+    origen_id: str = "",
+) -> Path:
+    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id)
+    return _ensure_dir(base_work_dir / "Procesados", "de procesados")
 
 
-OUTPUT_DIR = get_output_dir()
-PROCESSED_DIR = get_processed_dir()
-TMP_DIR = get_tmp_dir()
+def get_tmp_dir(
+    base_dir: Path = OUTPUT_BASE,
+    origen_id: str = "",
+) -> Path:
+    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id)
+    return _ensure_dir(base_work_dir / "tmp", "temporal")

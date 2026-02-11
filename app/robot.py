@@ -174,7 +174,10 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 # FUNCION PRINCIPAL
 # ======================
 
-def procesar_archivo(ruta_archivo: Path, nombre_original: Optional[str] = None) -> Path:
+def procesar_archivo(
+    ruta_archivo: Path,
+    nombre_original: Optional[str] = None,
+) -> Path:
     if nombre_original:
         original_name = Path(nombre_original).name
         nombre_base = Path(original_name).stem
@@ -226,8 +229,8 @@ REGLAS:
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
 
-    output_dir = get_output_dir()
-    processed_dir = get_processed_dir()
+    output_dir = get_output_dir(origen_id=cliente)
+    processed_dir = get_processed_dir(origen_id=cliente)
 
     nombre_csv = nombre_unico(nombre_base, output_dir, ".csv")
     ruta_salida = output_dir / nombre_csv

@@ -7,8 +7,9 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 import shutil
 from uuid import uuid4
+from urllib.parse import urlencode
 
-from app.robot import procesar_archivo
+from app.robot import obtener_cliente, procesar_archivo
 from app.config import get_output_dir, get_tmp_dir
 
 app = FastAPI(title="Extractor de Documentos")
@@ -35,12 +36,13 @@ async def home(request: Request):
 @app.post("/procesar", response_class=HTMLResponse)
 async def procesar(
     request: Request,
-    archivo: UploadFile = File(...)
+    archivo: UploadFile = File(...),
 ):
     # ======================
     # GUARDAR ARCHIVO
     # ======================
     nombre_original = Path(archivo.filename).name
+    origen_id = obtener_cliente(Path(nombre_original).stem)
     extension = Path(nombre_original).suffix.lower()
     permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
 
@@ -53,7 +55,7 @@ async def procesar(
             }
         )
 
-    tmp_dir = get_tmp_dir()
+    tmp_dir = get_tmp_dir(origen_id=origen_id)
     destino = tmp_dir / f"{uuid4()}_{nombre_original}"
     destino.parent.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +72,7 @@ async def procesar(
             "index.html",
             {
                 "request": request,
-                "resultado": f"/descargar/{csv_generado.name}"
+                "resultado": f"/descargar/{csv_generado.name}?{urlencode({'origen': origen_id})}",
             }
         )
 
@@ -85,8 +87,10 @@ async def procesar(
 
 
 @app.get("/descargar/{nombre_archivo}")
-def descargar(nombre_archivo: str):
-    archivo = get_output_dir() / nombre_archivo
+def descargar(nombre_archivo: str, origen: str = ""):
+    archivo = get_output_dir(
+        origen_id=origen,
+    ) / nombre_archivo
 
     return FileResponse(
         path=archivo,
