@@ -226,6 +226,8 @@ REGLAS:
     contenido = respuesta.text.strip()
 
     contenido = contenido.replace("```csv", "").replace("```", "").strip()
+    if not contenido.endswith("\n"):
+        contenido += "\n"
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
 
