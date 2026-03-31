@@ -101,11 +101,11 @@ def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
 def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
     columnas = list(df.columns)
 
-    col_item = None
-    for c in columnas:
-        if _normalizar_texto(c) == "item":
-            col_item = c
-            break
+    sinonimos_item = {
+        "item", "renglon", "nro", "nro.", "n", "n.", "numero", "num", "num.",
+        "numero de item", "numero de renglon", "cod", "codigo", "code", "sku",
+    }
+    col_item = _mejor_match_columna(columnas, sinonimos_item)
 
     item_generado = col_item is None  # Indica si se genera item incremental
     sinonimos_cantidad = {
@@ -202,9 +202,19 @@ def procesar_archivo(
         archivo_subido = genai.upload_file(str(ruta_archivo))
 
     tipo_doc = "EXCEL" if es_excel else "DOCUMENTO"
+
+    if es_excel:
+        estructura = """
+El archivo tiene dos secciones:
+1. Una cabecera con datos generales (fecha, proveedor, cliente, etc.) — IGNORAR
+2. Una tabla con los productos del pedido — EXTRAER SOLO ESTA
+"""
+    else:
+        estructura = ""
+
     prompt = f"""
 Analiza este {tipo_doc} y extrae la informacion solicitada en formato CSV.
-
+{estructura}
 CAMPOS:
 item;cantidad;descripcion;origen
 

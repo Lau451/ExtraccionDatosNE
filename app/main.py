@@ -27,10 +27,12 @@ templates = Jinja2Templates(directory="app/templates")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request}
-    )
+    return templates.TemplateResponse("home.html", {"request": request})
+
+
+@app.get("/upload", response_class=HTMLResponse)
+async def upload_page(request: Request, tipo: str = ""):
+    return templates.TemplateResponse("index.html", {"request": request, "tipo": tipo})
 
 
 @app.post("/procesar", response_class=HTMLResponse)

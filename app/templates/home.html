@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Drogueria Nueva Era — Extracción de Documentos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="home-wrapper">
+
+        <header class="home-header">
+            <div class="home-logo-wrap">
+                <div class="home-logo-glow" aria-hidden="true"></div>
+                <div class="logo-mark">
+                    <svg class="logo-hex-svg" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <polygon points="30,3 55,16.5 55,43.5 30,57 5,43.5 5,16.5"
+                                 fill="rgba(255,255,255,0.12)"
+                                 stroke="rgba(255,255,255,0.75)"
+                                 stroke-width="2"
+                                 stroke-linejoin="round"/>
+                        <polygon points="30,10 48,20.5 48,39.5 30,50 12,39.5 12,20.5"
+                                 fill="rgba(255,255,255,0.08)"
+                                 stroke="rgba(255,255,255,0.3)"
+                                 stroke-width="1"/>
+                        <text x="30" y="36" text-anchor="middle" font-size="17" font-weight="800"
+                              fill="white" font-family="Manrope,sans-serif" letter-spacing="1">NE</text>
+                    </svg>
+                    <div class="logo-text-group">
+                        <span class="logo-eyebrow">Droguería</span>
+                        <span class="logo-brand-name">Nueva Era</span>
+                    </div>
+                </div>
+            </div>
+            <h1 class="home-title">Extracción de Documentos</h1>
+            <p class="home-subtitle">Seleccioná el tipo de documento que querés procesar</p>
+        </header>
+
+        <div class="doc-types-grid">
+
+            <a href="/upload?tipo=licitaciones" class="doc-type-card">
+                <div class="doc-type-icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+                    </svg>
+                </div>
+                <div class="doc-type-body">
+                    <span class="doc-type-label">Licitaciones</span>
+                    <span class="doc-type-sublabel">/ Cotizaciones</span>
+                    <p class="doc-type-desc">Procesá documentos de licitaciones y cotizaciones de clientes</p>
+                </div>
+                <span class="doc-type-cta">
+                    Empezar
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </span>
+            </a>
+
+            <a href="/upload?tipo=comparativas" class="doc-type-card">
+                <div class="doc-type-icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/>
+                    </svg>
+                </div>
+                <div class="doc-type-body">
+                    <span class="doc-type-label">Comparativas</span>
+                    <p class="doc-type-desc">Subí y analizá precios entre distintos proveedores</p>
+                </div>
+                <span class="doc-type-cta">
+                    Empezar
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </span>
+            </a>
+
+            <a href="/upload?tipo=ordenes" class="doc-type-card">
+                <div class="doc-type-icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9 2 2 4-4"/>
+                    </svg>
+                </div>
+                <div class="doc-type-body">
+                    <span class="doc-type-label">Órdenes de Compra</span>
+                    <p class="doc-type-desc">Procesá órdenes de compra de clientes</p>
+                </div>
+                <span class="doc-type-cta">
+                    Empezar
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </span>
+            </a>
+
+        </div>
+    </div>
+</body>
+</html>

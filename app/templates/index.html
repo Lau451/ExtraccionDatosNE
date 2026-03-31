@@ -3,31 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <title>Extracción de datos</title>
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 
     <div class="card">
+
+        <a href="/" class="back-link" aria-label="Volver al inicio">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Volver
+        </a>
+
         <div class="header">
-            <div class="logo" aria-label="Drogueria Nueva Era">
-                <img src="/static/IMG/LOGO_NE.jpg" alt="Drogueria Nueva Era" class="logo-img">
-                
+            <div class="logo" aria-label="Droguería Nueva Era">
+                <div class="logo-mark logo-mark--sm">
+                    <svg class="logo-hex-svg logo-hex-svg--sm" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <polygon points="30,3 55,16.5 55,43.5 30,57 5,43.5 5,16.5"
+                                 fill="rgba(255,255,255,0.12)"
+                                 stroke="rgba(255,255,255,0.75)"
+                                 stroke-width="2"
+                                 stroke-linejoin="round"/>
+                        <polygon points="30,10 48,20.5 48,39.5 30,50 12,39.5 12,20.5"
+                                 fill="rgba(255,255,255,0.08)"
+                                 stroke="rgba(255,255,255,0.3)"
+                                 stroke-width="1"/>
+                        <text x="30" y="36" text-anchor="middle" font-size="17" font-weight="800"
+                              fill="white" font-family="Manrope,sans-serif" letter-spacing="1">NE</text>
+                    </svg>
+                    <div class="logo-text-group">
+                        <span class="logo-eyebrow">Droguería</span>
+                        <span class="logo-brand-name logo-brand-name--sm">Nueva Era</span>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <h1>📄 Extracción de datos</h1>
-        <p class="subtitle">
-            Subí una cotización
-        </p>
+        <div class="tipo-badge" id="tipo-badge"></div>
+
+        <h1>Extracción de datos</h1>
+        <p class="subtitle" id="subtitulo">Subí el documento a procesar</p>
 
         <form id="upload-form">
+            <input type="hidden" id="tipo-input" name="tipo" value="">
+
             <input
                 type="file"
                 id="archivo"
@@ -38,7 +62,7 @@
 
             <label for="archivo" class="file-label drop-zone" id="file-label">
                 <span class="drop-title">Seleccionar archivo</span>
-                <span class="drop-hint">o arrastra y solta aqui</span>
+                <span class="drop-hint">o arrastrá y soltá acá</span>
             </label>
 
             <div class="file-preview hidden" id="file-preview">
@@ -57,6 +81,7 @@
                 Subir otro archivo
             </button>
         </form>
+
         <div class="progress hidden" id="progress-container">
             <div class="progress-bar" id="progress-bar"></div>
         </div>
@@ -65,5 +90,23 @@
     </div>
 
     <script src="/static/main.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const tipo = params.get("tipo") || "";
+
+        const labels = {
+            licitaciones: { badge: "Licitaciones / Cotizaciones", sub: "Subí una licitación o cotización" },
+            comparativas: { badge: "Comparativas", sub: "Subí un documento comparativo" },
+            ordenes:      { badge: "Órdenes de Compra", sub: "Subí una orden de compra" },
+        };
+
+        if (tipo && labels[tipo]) {
+            document.getElementById("tipo-badge").textContent = labels[tipo].badge;
+            document.getElementById("tipo-badge").style.display = "inline-flex";
+            document.getElementById("subtitulo").textContent = labels[tipo].sub;
+        }
+
+        document.getElementById("tipo-input").value = tipo;
+    </script>
 </body>
 </html>

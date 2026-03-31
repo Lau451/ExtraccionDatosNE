@@ -23,6 +23,8 @@
 body {
     background: linear-gradient(140deg, #1e3c72 0%, #2a5298 60%, #1e3c72 100%);
     min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     margin: 0;
     display: flex;
     align-items: center;
@@ -32,16 +34,21 @@ body {
 }
 
 .card {
-    background: var(--surface);
-    padding: 34px 34px 30px;
-    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    padding: 28px 34px 30px;
+    border-radius: 20px;
     width: min(460px, 100%);
     text-align: center;
-    box-shadow: var(--shadow-strong), var(--shadow-soft);
-    border: 1px solid rgba(30, 60, 114, 0.08);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     position: relative;
     overflow: hidden;
     animation: cardIn 0.6s ease both;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .card::before {
@@ -57,6 +64,12 @@ body {
 
 .card > * {
     animation: fadeUp 0.6s ease both;
+    width: 100%;
+}
+
+.card > .back-link,
+.card > .tipo-badge {
+    width: auto;
 }
 
 .card > *:nth-child(2) { animation-delay: 0.04s; }
@@ -66,14 +79,15 @@ body {
 
 h1 {
     margin: 18px 0 8px;
-    color: var(--brand-900);
+    color: #ffffff;
     font-size: 24px;
     letter-spacing: 0.2px;
     font-weight: 700;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
 .subtitle {
-    color: var(--ink-600);
+    color: rgba(255, 255, 255, 0.65);
     margin: 0 0 24px;
     font-size: 14px;
     line-height: 1.5;
@@ -81,8 +95,8 @@ h1 {
 
 .file-label {
     display: block;
-    background: var(--surface-soft);
-    border: 2px dashed rgba(30, 60, 114, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px dashed rgba(255, 255, 255, 0.25);
     padding: 18px;
     border-radius: 14px;
     cursor: pointer;
@@ -92,8 +106,8 @@ h1 {
 }
 
 .file-label:hover {
-    background: #eef2f7;
-    border-color: #2a5298;
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.55);
     transform: translateY(-1px);
 }
 
@@ -108,25 +122,25 @@ h1 {
 
 .drop-title {
     font-weight: 600;
-    color: var(--ink-900);
+    color: #ffffff;
     font-size: 15px;
 }
 
 .drop-hint {
     font-size: 12px;
-    color: var(--ink-500);
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .drop-zone.is-dragover {
-    background: var(--brand-100);
-    border-color: var(--brand-900);
-    box-shadow: 0 0 0 3px rgba(30, 60, 114, 0.15);
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
 }
 
 .filename {
     margin: 0;
     font-size: 14px;
-    color: var(--ink-700);
+    color: rgba(255, 255, 255, 0.9);
     word-break: break-all;
 }
 
@@ -161,43 +175,46 @@ button:focus-visible {
 }
 
 button:disabled {
-    background: #8a95a3;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.4);
     cursor: not-allowed;
     box-shadow: none;
-    opacity: 0.75;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    opacity: 1;
 }
 
 .btn-ghost {
     width: auto;
     padding: 8px 12px;
     font-size: 12px;
-    background: var(--surface-muted);
-    color: var(--ink-700);
-    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 10px;
     box-shadow: none;
 }
 
 .btn-ghost:hover:not(:disabled) {
-    background: #e7eaee;
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
     transform: translateY(-1px);
 }
 
 .status {
     margin-top: 14px;
     font-size: 14px;
-    color: var(--ink-700);
+    color: rgba(255, 255, 255, 0.75);
     min-height: 18px;
 }
 
 .progress {
     width: 100%;
     height: 10px;
-    background: #e9ecef;
+    background: rgba(255, 255, 255, 0.15);
     border-radius: 999px;
     overflow: hidden;
     margin-top: 14px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .progress-bar {
@@ -260,8 +277,8 @@ button:disabled {
     flex-wrap: wrap;
     padding: 12px 14px;
     border-radius: 12px;
-    background: #f2f5f9;
-    border: 1px solid #e3e7ed;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .file-icon {
@@ -317,5 +334,395 @@ button:disabled {
 
     .logo-img {
         width: 120px;
+    }
+}
+
+/* ============================================
+   BACKGROUND TEXTURE
+   ============================================ */
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+    background-size: 26px 26px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+body > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* ============================================
+   HOME PAGE
+   ============================================ */
+
+.home-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100dvh;
+    overflow: hidden;
+    padding: 28px 24px;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+}
+
+.home-header {
+    text-align: center;
+    margin-bottom: 32px;
+    animation: cardIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.home-logo-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
+}
+
+.home-logo-glow {
+    position: absolute;
+    inset: -28px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, transparent 70%);
+    border-radius: 50%;
+    filter: blur(16px);
+    pointer-events: none;
+}
+
+.logo-mark {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.logo-hex-svg {
+    width: 58px;
+    height: 58px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35));
+}
+
+.logo-text-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.logo-eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    line-height: 1;
+}
+
+.logo-brand-name {
+    font-size: 26px;
+    font-weight: 800;
+    color: white;
+    letter-spacing: -0.4px;
+    line-height: 1;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.logo-mark--sm {
+    gap: 10px;
+}
+
+.logo-hex-svg--sm {
+    width: 40px;
+    height: 40px;
+}
+
+.logo-brand-name--sm {
+    font-size: 18px;
+}
+
+.home-title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0 0 10px;
+    letter-spacing: -0.3px;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.2);
+}
+
+.home-subtitle {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.72);
+    margin: 0;
+    font-weight: 400;
+}
+
+/* ============================================
+   DOCUMENT TYPE CARDS GRID
+   ============================================ */
+
+.doc-types-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    width: min(920px, 100%);
+}
+
+.doc-type-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 20px;
+    padding: 26px 22px 22px;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                background 0.25s ease,
+                border-color 0.25s ease;
+    position: relative;
+    overflow: hidden;
+    animation: cardIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.doc-type-card:nth-child(2) { animation-delay: 0.07s; }
+.doc-type-card:nth-child(3) { animation-delay: 0.14s; }
+
+/* Top accent bar — unique per card */
+.doc-type-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+}
+
+.doc-type-card:nth-child(1)::before {
+    background: linear-gradient(90deg, #1e3c72, #2a5298);
+}
+
+.doc-type-card:nth-child(2)::before {
+    background: linear-gradient(90deg, #0369a1, #0ea5e9);
+}
+
+.doc-type-card:nth-child(3)::before {
+    background: linear-gradient(90deg, #3730a3, #6366f1);
+}
+
+.doc-type-card:hover {
+    transform: translateY(-7px);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.doc-type-card:active {
+    transform: scale(0.98) translateY(-2px);
+    box-shadow: 0 10px 28px rgba(10, 30, 70, 0.2);
+    transition-duration: 0.1s;
+}
+
+/* Focus state — visible ring against the gradient background */
+.doc-type-card:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.75);
+    outline-offset: 4px;
+}
+
+/* Icon wraps — gradient per card, white icon */
+.doc-type-icon-wrap {
+    width: 70px;
+    height: 70px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.doc-type-card:nth-child(1) .doc-type-icon-wrap {
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+}
+
+.doc-type-card:nth-child(2) .doc-type-icon-wrap {
+    background: linear-gradient(135deg, #0369a1, #0ea5e9);
+}
+
+.doc-type-card:nth-child(3) .doc-type-icon-wrap {
+    background: linear-gradient(135deg, #3730a3, #6366f1);
+}
+
+.doc-type-card:hover .doc-type-icon-wrap {
+    transform: scale(1.06);
+}
+
+.doc-type-icon-wrap svg {
+    width: 30px;
+    height: 30px;
+}
+
+.doc-type-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.doc-type-label {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+    letter-spacing: -0.1px;
+}
+
+.doc-type-sublabel {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    display: block;
+}
+
+.doc-type-desc {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.58);
+    line-height: 1.6;
+    margin: 6px 0 0;
+}
+
+.doc-type-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    margin-top: 4px;
+    transition: gap 0.2s ease;
+}
+
+.doc-type-card:hover .doc-type-cta {
+    gap: 10px;
+}
+
+/* ============================================
+   UPLOAD PAGE — BACK LINK & TYPE BADGE
+   ============================================ */
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: none;
+    margin-bottom: 6px;
+    transition: color 0.15s ease;
+    align-self: flex-start;
+    cursor: pointer;
+    touch-action: manipulation;
+    min-height: 44px;
+    padding: 4px 0;
+}
+
+.back-link:hover {
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.back-link:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+.tipo-badge {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    margin: 0 auto 2px;
+    text-transform: uppercase;
+    width: auto !important;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 720px) {
+    .doc-types-grid {
+        grid-template-columns: 1fr;
+        max-width: 420px;
+    }
+
+    .doc-type-card {
+        flex-direction: row;
+        text-align: left;
+        padding: 20px;
+        gap: 16px;
+    }
+
+    .doc-type-body {
+        align-items: flex-start;
+    }
+
+    .doc-type-cta {
+        align-self: flex-end;
+        margin-top: 0;
+        white-space: nowrap;
+    }
+
+    .home-title {
+        font-size: 24px;
+    }
+
+    .home-logo {
+        width: 150px;
+    }
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT
+   (ui-ux-pro-max: reduced-motion rule)
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    .card,
+    .card > *,
+    .doc-type-card,
+    .home-header,
+    .home-logo,
+    .doc-type-icon-wrap {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .doc-type-card:hover {
+        transform: none;
     }
 }
