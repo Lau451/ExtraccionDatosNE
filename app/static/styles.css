@@ -21,7 +21,7 @@
 }
 
 body {
-    background: linear-gradient(140deg, #1e3c72 0%, #2a5298 60%, #1e3c72 100%);
+    background: linear-gradient(140deg, #12151c 0%, #1c2130 55%, #12151c 100%);
     min-height: 100vh;
     height: 100vh;
     overflow: hidden;
@@ -284,18 +284,23 @@ button:disabled {
 .file-icon {
     width: 48px;
     height: 48px;
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
+    flex-shrink: 0;
     color: white;
 }
 
-.file-icon.pdf { background: #e74c3c; }
-.file-icon.image { background: #3498db; }
-.file-icon.other { background: #7f8c8d; }
+.file-icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.file-icon.pdf   { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+.file-icon.image { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.file-icon.excel { background: linear-gradient(135deg, #22c55e, #15803d); }
+.file-icon.other { background: linear-gradient(135deg, #6b7280, #4b5563); }
 
 @keyframes cardIn {
     from {
