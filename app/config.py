@@ -71,6 +71,7 @@ MODEL = genai.GenerativeModel("gemini-2.5-flash")
 # ======================
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_BASE = _resolve_output_base_dir()
+COMPARATIVAS_OUTPUT_BASE = OUTPUT_BASE / "comparativas"
 
 
 def _safe_folder_value(raw_value: str, default_value: str) -> str:

@@ -59,6 +59,17 @@
                 accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
                 hidden
             >
+            <script>
+                (function () {
+                    const p = new URLSearchParams(window.location.search);
+                    if (p.get("tipo") === "comparativas") {
+                        document.getElementById("archivo").setAttribute(
+                            "accept",
+                            ".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm"
+                        );
+                    }
+                })();
+            </script>
 
             <label for="archivo" class="file-label drop-zone" id="file-label">
                 <span class="drop-title">Seleccionar archivo</span>

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -10,7 +10,8 @@ from uuid import uuid4
 from urllib.parse import urlencode
 
 from app.robot import obtener_cliente, procesar_archivo
-from app.config import get_output_dir, get_tmp_dir
+from app.robot_comparativas import procesar_comparativa
+from app.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 
 app = FastAPI(title="Extractor de Documentos")
 
@@ -39,6 +40,7 @@ async def upload_page(request: Request, tipo: str = ""):
 async def procesar(
     request: Request,
     archivo: UploadFile = File(...),
+    tipo: str = Form(""),
 ):
     # ======================
     # GUARDAR ARCHIVO
@@ -46,14 +48,19 @@ async def procesar(
     nombre_original = Path(archivo.filename).name
     origen_id = obtener_cliente(Path(nombre_original).stem)
     extension = Path(nombre_original).suffix.lower()
-    permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
+
+    if tipo == "comparativas":
+        permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".ods", ".html", ".htm"}
+    else:
+        permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
 
     if extension not in permitidos:
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
-                "error": "Tipo de archivo no permitido"
+                "error": "Tipo de archivo no permitido",
+                "tipo": tipo,
             }
         )
 
@@ -68,13 +75,19 @@ async def procesar(
     # PROCESAR CON ROBOT
     # ======================
     try:
-        csv_generado = procesar_archivo(destino, nombre_original)
+        if tipo == "comparativas":
+            csv_generado = procesar_comparativa(destino, nombre_original)
+            params = urlencode({"origen": origen_id, "modulo": "comparativas"})
+        else:
+            csv_generado = procesar_archivo(destino, nombre_original)
+            params = urlencode({"origen": origen_id})
 
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
-                "resultado": f"/descargar/{csv_generado.name}?{urlencode({'origen': origen_id})}",
+                "resultado": f"/descargar/{csv_generado.name}?{params}",
+                "tipo": tipo,
             }
         )
 
@@ -83,16 +96,16 @@ async def procesar(
             "index.html",
             {
                 "request": request,
-                "error": str(e)
+                "error": str(e),
+                "tipo": tipo,
             }
         )
 
 
 @app.get("/descargar/{nombre_archivo}")
-def descargar(nombre_archivo: str, origen: str = ""):
-    archivo = get_output_dir(
-        origen_id=origen,
-    ) / nombre_archivo
+def descargar(nombre_archivo: str, origen: str = "", modulo: str = ""):
+    base = COMPARATIVAS_OUTPUT_BASE if modulo == "comparativas" else OUTPUT_BASE
+    archivo = get_output_dir(base_dir=base, origen_id=origen) / nombre_archivo
 
     return FileResponse(
         path=archivo,

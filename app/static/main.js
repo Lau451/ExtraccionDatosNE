@@ -147,6 +147,7 @@ form.addEventListener("submit", async (event) => {
 
     const formData = new FormData();
     formData.append("archivo", inputArchivo.files[0]);
+    formData.append("tipo", document.getElementById("tipo-input").value);
 
     try {
         const response = await fetch("/procesar", {
