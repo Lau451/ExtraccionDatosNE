@@ -1,0 +1,78 @@
+# SDD Configuration for ExtraccionDatosNE
+# Generated: 2026-04-02
+# Mode: hybrid (files + engram)
+
+schema: spec-driven
+
+context: |
+  Tech stack: Python 3.9+, FastAPI, Pandas, Google Generative AI (Gemini)
+  Architecture: FastAPI web API + document processing pipeline (robot.py, robot_comparativas.py)
+  Testing: pytest + pytest-cov (just installed)
+  Style: PEP 8 conventions
+
+strict_tdd: true
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages (main.py, robot.py, config.py, etc.)
+    - Consider Gemini API implications
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Document data pipeline impact (extraction → processing → output)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Consider performance (Gemini API latency)
+  tasks:
+    - Group tasks by phase (setup, implementation, testing, validation)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+    - Always include test task for each feature
+  apply:
+    - Follow PEP 8 conventions
+    - Mock Gemini API calls in tests (use fixtures from tests/fixtures/)
+    - Update requirements.txt if adding dependencies
+  verify:
+    - Run full test suite: pytest --cov=app
+    - Coverage target: 70%+ for robot.py and robot_comparativas.py, 100% for config.py
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)
+    - Ensure all tests pass before closing change
+
+testing:
+  framework: pytest
+  command: pytest --cov=app --cov-report=html
+  coverage_tool: pytest-cov
+  test_directory: tests/
+
+  layers:
+    unit:
+      available: true
+      tool: pytest
+      notes: "Test individual functions and classes"
+    integration:
+      available: true
+      tool: pytest + unittest.mock
+      notes: "Mock Gemini API and file I/O"
+    e2e:
+      available: false
+      notes: "Can add playwright later if needed"
+
+  quality_tools:
+    linter:
+      available: false
+      recommended: pylint or ruff
+    type_checker:
+      available: false
+      recommended: mypy or pyright
+    formatter:
+      available: false
+      recommended: black
+
+git:
+  sync_pattern: "openspec/**"
+  commit_message: "feat(sdd): [change-name] - [phase]"
+  merge_strategy: "squash for archive phase"
