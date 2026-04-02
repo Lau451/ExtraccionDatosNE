@@ -1,3 +1,5 @@
+import logging
+import os
 from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,8 +12,23 @@ from uuid import uuid4
 from urllib.parse import urlencode
 
 from app.robot import obtener_cliente, procesar_archivo
-from app.robot_comparativas import procesar_comparativa
+from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
+from app.parsers import parse_document, ParserError, UnsupportedFormatError
 from app.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
+
+# ======================
+# LOGGING
+# ======================
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ======================
+# APP
+# ======================
 
 app = FastAPI(title="Extractor de Documentos")
 
@@ -91,15 +108,61 @@ async def procesar(
             }
         )
 
-    except Exception as e:
+    except UnsupportedFormatError as e:
+        logger.warning("Unsupported format: %s", e.extension)
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
-                "error": str(e),
+                "error": f"Formato no soportado: {e.extension}",
                 "tipo": tipo,
-            }
+            },
+            status_code=415,
         )
+
+    except ParserError as e:
+        logger.error("Parser error: %s - %s", e.filepath, e.cause)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}",
+                "tipo": tipo,
+            },
+            status_code=422,
+        )
+
+    except NoProvidersDetectedError as e:
+        logger.warning("No providers detected: %s", e.message)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": "No se detectaron proveedores en el documento",
+                "tipo": tipo,
+            },
+            status_code=422,
+        )
+
+    except Exception as e:
+        logger.exception("Unexpected error processing %s: %s", tipo, e)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": "Error interno del servidor",
+                "tipo": tipo,
+            },
+            status_code=500,
+        )
+
+    finally:
+        if destino.exists():
+            try:
+                destino.unlink()
+                logger.debug("Deleted temp file: %s", destino)
+            except Exception as cleanup_error:
+                logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
 
 
 @app.get("/descargar/{nombre_archivo}")
