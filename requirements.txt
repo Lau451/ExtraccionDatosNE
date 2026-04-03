@@ -48,3 +48,8 @@ uritemplate==4.2.0
 urllib3==2.6.3
 uvicorn==0.40.0
 xlrd==2.0.1
+odfpy==1.4.1
+tabulate>=0.9
+docling>=1.0
+beautifulsoup4>=4.12
+pytest-mock>=3.12
