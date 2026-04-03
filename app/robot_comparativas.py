@@ -23,6 +23,7 @@ from typing import Optional
 
 from app.config import MODEL, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE
 from app.robot import obtener_cliente, nombre_unico
+from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class NoProvidersDetectedError(ValueError):
 # ======================
 
 
+@handle_gemini_errors
 def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dict:
     """Call Gemini expecting a JSON response, with retry on parse failure.
 
@@ -97,6 +99,8 @@ def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dic
 
     Raises:
         json.JSONDecodeError: If JSON parsing fails after all retries.
+        GeminiQuotaExceededError: If Gemini API quota is exceeded.
+        GeminiRateLimitError: If Gemini API rate limit is exceeded.
     """
     last_error: Optional[json.JSONDecodeError] = None
     text: str = ""

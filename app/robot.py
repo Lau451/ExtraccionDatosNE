@@ -7,6 +7,7 @@ from typing import Optional
 import google.generativeai as genai
 import pandas as pd
 from app.config import MODEL, get_output_dir, get_processed_dir
+from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 # ======================
 # FUNCIONES
@@ -174,6 +175,7 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 # FUNCION PRINCIPAL
 # ======================
 
+@handle_gemini_errors
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,

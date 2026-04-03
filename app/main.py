@@ -15,6 +15,7 @@ from app.robot import obtener_cliente, procesar_archivo
 from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
 from app.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
+from app.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
 
 # ======================
 # LOGGING
@@ -142,6 +143,42 @@ async def procesar(
                 "tipo": tipo,
             },
             status_code=422,
+        )
+
+    except GeminiQuotaExceededError as e:
+        logger.error("Gemini API quota exceeded: %s", e.message)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.",
+                "tipo": tipo,
+            },
+            status_code=503,
+        )
+
+    except GeminiRateLimitError as e:
+        logger.error("Gemini API rate limit exceeded: %s", e.message)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.",
+                "tipo": tipo,
+            },
+            status_code=429,
+        )
+
+    except GeminiAPIError as e:
+        logger.error("Gemini API error: %s", e.message)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": f"Error en el servicio de IA: {e.message[:80]}",
+                "tipo": tipo,
+            },
+            status_code=500,
         )
 
     except Exception as e:
