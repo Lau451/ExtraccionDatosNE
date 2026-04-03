@@ -13,7 +13,7 @@ services:
       - "8000:8000"
     environment:
       # AQUÍ DEBES PEGAR TU API KEY REAL
-      - GEMINI_API_KEY=AIzaSyCDkfvB_Wr6Bz-l5XMXL_8YIxhjpM4SSpU
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Opcional: Configuración para que Python no guarde archivos .pyc
       - PYTHONDONTWRITEBYTECODE=1
     restart: always
