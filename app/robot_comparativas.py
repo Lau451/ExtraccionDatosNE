@@ -1,9 +1,10 @@
 """
 Comparativas extraction pipeline: app/robot_comparativas.py
 
-Two-step Gemini extraction for price comparison documents:
+Optimized two-step Gemini extraction for price comparison documents:
   Step 1: Detect all providers/suppliers in the document.
-  Step 2: Extract structured data per provider.
+  Step 2: Extract ALL items with ALL provider prices in a single call.
+  Filter: Keep only top 3 providers per renglon (Python, no API call).
 
 Public API (signature unchanged from prior version):
   procesar_comparativa(ruta_archivo, nombre_original) -> Path
@@ -36,20 +37,24 @@ If no providers are found, return {"proveedores": []}.
 
 {"proveedores": ["Provider Name 1", "Provider Name 2", ...]}"""
 
-_PROMPT_EXTRACT_PROVIDER = """Extract ONLY the data for provider: {proveedor}
+_PROMPT_EXTRACT_ALL = """Extract ALL items/renglones and their prices from ALL providers.
+For each item, list the prices from each provider (use empty string if price not found).
 
-Return ONLY a valid JSON object with no additional text.
-{{
-  "proveedor": "{proveedor}",
+Return ONLY valid JSON:
+{
   "renglones": [
-    {{
-      "renglon": <number or order>,
-      "descripcion": "<item description>",
-      "marca": "<brand name or empty string>",
-      "precio": "<numeric price as string or empty string>"
-    }}
+    {
+      "renglon": 1,
+      "descripcion": "Item description",
+      "marca": "Brand or empty string",
+      "proveedores_precios": {
+        "Proveedor A": "12.50",
+        "Proveedor B": "14.99",
+        "Proveedor C": "11.80"
+      }
+    }
   ]
-}}"""
+}"""
 
 # ======================
 # CUSTOM EXCEPTIONS
@@ -217,92 +222,104 @@ def _detectar_proveedores(markdown: str, filepath: Path) -> list[str]:
     return providers
 
 
-def _extraer_datos_proveedor(markdown: str, proveedor: str) -> dict:
-    """Step 2: Extract structured data for a single provider.
+def _extraer_todos_con_precios(markdown: str) -> dict:
+    """Step 2: Extract ALL items with prices from ALL providers in one Gemini call.
 
-    Sends the full Markdown plus the provider name to Gemini with a
-    structured JSON prompt requesting all line items for that provider.
+    Sends the full Markdown to Gemini requesting a cross-provider matrix
+    where each renglon contains a mapping of provider -> price.
 
     Args:
         markdown: Full document content as a Markdown string.
-        proveedor: Provider name to extract data for.
 
     Returns:
-        Dict with keys "proveedor" (str) and "renglones" (list[dict]).
-        Each renglon dict has: "renglon", "descripcion", "marca", "precio".
-        Returns {"proveedor": proveedor, "renglones": []} if no rows found.
+        Dict with key "renglones" containing a list of dicts, each with:
+          - "renglon": int — item number
+          - "descripcion": str — item description
+          - "marca": str — brand or empty string
+          - "proveedores_precios": dict[str, str] — provider name -> raw price string
+
+    Raises:
+        json.JSONDecodeError: If Gemini returns unparseable JSON after all retries.
     """
-    prompt = _PROMPT_EXTRACT_PROVIDER.format(proveedor=proveedor)
-    result = _llamar_gemini_json(prompt, markdown)
-
-    renglones = result.get("renglones", [])
+    result = _llamar_gemini_json(_PROMPT_EXTRACT_ALL, markdown)
     logger.info(
-        "Step 2: Extracted %d renglones for provider '%s'",
-        len(renglones),
-        proveedor,
+        "Step 2: Extracted %d items with all provider prices",
+        len(result.get("renglones", [])),
     )
-
     return result
 
 
-def _ensamblar_csv(providers_data: list[dict], cliente: str) -> list[dict]:
-    """Merge per-provider extracted data into final CSV rows.
+def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
+    """Filter extracted data to keep only top 3 providers per renglon by price.
 
-    Applies _limpiar_precio() to every precio value. Strips semicolons from
-    all text fields (delimiter collision prevention). Handles missing "marca"
-    field (defaults to empty string). Filters fully empty rows (no
-    descripcion, no marca, no precio).
+    Parses and normalizes all prices using _limpiar_precio(), sorts by
+    numeric value (lowest first), and keeps at most 3 providers per item.
+    Items with no valid prices are logged and skipped.
 
     Args:
-        providers_data: List of dicts returned by _extraer_datos_proveedor().
-        cliente: Client/origin name extracted from the filename.
+        all_data: Dict returned by _extraer_todos_con_precios().
+        cliente: Client name derived from the filename.
 
     Returns:
-        List of dicts with keys: renglon, descripcion, proveedor, marca,
-        precio, cliente — ready for csv.DictWriter.
+        List of row dicts with keys: renglon, descripcion, proveedor, marca,
+        precio, cliente — ready for csv.DictWriter. Contains at most 3 rows
+        per renglon, ordered by ascending price.
     """
     rows: list[dict] = []
-    auto_renglon = 1
+    cliente_clean = str(cliente).replace(";", "")
 
-    for provider_result in providers_data:
-        proveedor = str(provider_result.get("proveedor", "")).replace(";", "")
-        renglones = provider_result.get("renglones", [])
+    for renglon_data in all_data.get("renglones", []):
+        renglon = renglon_data.get("renglon", "")
+        descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
+        marca = str(renglon_data.get("marca", "")).replace(";", "")
+        proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
-        for renglon_data in renglones:
-            # Renglon numbering: use value from Gemini if it's a positive int,
-            # otherwise fall back to sequential auto-numbering.
-            raw_renglon = renglon_data.get("renglon", "")
+        if not proveedores_precios:
+            logger.warning("Renglon %s has no provider prices, skipping", renglon)
+            continue
+
+        # Parse and validate each provider's price
+        provider_price_list: list[tuple[str, str, float]] = []
+        for proveedor, precio_raw in proveedores_precios.items():
+            precio_limpio = _limpiar_precio(str(precio_raw))
+            if not precio_limpio:
+                continue
             try:
-                renglon_val = int(raw_renglon)
-                if renglon_val <= 0:
-                    raise ValueError
-            except (ValueError, TypeError):
-                renglon_val = auto_renglon
-
-            auto_renglon += 1
-
-            descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
-            marca = str(renglon_data.get("marca", "")).replace(";", "")
-            precio = _limpiar_precio(str(renglon_data.get("precio", "")))
-            cliente_clean = str(cliente).replace(";", "")
-
-            # Skip fully empty rows (spec: no descripcion + no marca + no precio)
-            if not descripcion and not marca and not precio:
+                precio_num = float(precio_limpio)
+                provider_price_list.append((proveedor, precio_limpio, precio_num))
+            except ValueError:
                 continue
 
-            row = {
-                "renglon": renglon_val,
+        if not provider_price_list:
+            logger.warning(
+                "Renglon %s (%s) has no valid prices from any provider, skipping",
+                renglon,
+                descripcion,
+            )
+            continue
+
+        # Sort by numeric price ascending, keep top 3
+        provider_price_list.sort(key=lambda x: x[2])
+        top_3 = provider_price_list[:3]
+
+        logger.debug(
+            "Renglon %s: top 3 providers %s",
+            renglon,
+            [p[0] for p in top_3],
+        )
+
+        for proveedor, precio, _ in top_3:
+            rows.append({
+                "renglon": renglon,
                 "descripcion": descripcion,
-                "proveedor": proveedor,
+                "proveedor": str(proveedor).replace(";", ""),
                 "marca": marca,
                 "precio": precio,
                 "cliente": cliente_clean,
-            }
-            rows.append(row)
+            })
 
     logger.info(
-        "Assembly: merged %d providers into %d CSV rows for cliente '%s'",
-        len(providers_data),
+        "Filter: %d rows after top-3-per-renglon filter for cliente '%s'",
         len(rows),
         cliente,
     )
@@ -321,7 +338,7 @@ def _escribir_csv(rows: list[dict], nombre_base: str, cliente: str) -> Path:
     Applies nombre_unico() to avoid filename collisions.
 
     Args:
-        rows: List of row dicts from _ensamblar_csv().
+        rows: List of row dicts from _filtrar_top_3_por_renglon().
         nombre_base: Stem of the original filename (no extension).
         cliente: Client identifier used to select the output subdirectory.
 
@@ -380,17 +397,19 @@ def procesar_comparativa(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
 ) -> Path:
-    """Process a price comparison document using two-step Gemini extraction.
+    """Process a price comparison document using optimized single-extraction flow.
 
     Pipeline:
       1. Parse document to Markdown via parse_document() (parser router).
       2. Extract cliente from filename via obtener_cliente().
       3. Step 1 — Detect providers: _detectar_proveedores(markdown, filepath).
-      4. Step 2 — Extract per provider: _extraer_datos_proveedor() for each.
-         Failed providers are logged and skipped (partial failure is allowed).
-      5. Assembly: _ensamblar_csv() merges all results and adds cliente field.
+      4. Step 2 — Extract ALL items with ALL provider prices: single Gemini call.
+      5. Filter: _filtrar_top_3_por_renglon() keeps top 3 per item (Python, no API).
       6. Write CSV to output directory.
       7. Move original file to Procesados/ directory.
+
+    API calls: 2 total (detect providers + extract all prices), regardless of
+    how many providers are in the document.
 
     Args:
         ruta_archivo: Path to the (temp) uploaded file on disk.
@@ -432,31 +451,27 @@ def procesar_comparativa(
 
     # 2. Step 1: Detect providers
     providers = _detectar_proveedores(markdown, ruta_archivo)
+    logger.info("Step 1: Detected providers: %s", providers)
 
-    # 3. Step 2: Extract per provider (sequential, partial failure allowed)
-    providers_data: list[dict] = []
-    for proveedor in providers:
-        try:
-            data = _extraer_datos_proveedor(markdown, proveedor)
-            providers_data.append(data)
-        except Exception as e:
-            logger.error(
-                "Failed to extract data for provider '%s', skipping: %s",
-                proveedor,
-                e,
-            )
-            # Partial failure: continue with remaining providers
+    # 3. Step 2: Extract ALL items with ALL provider prices (single call)
+    all_data = _extraer_todos_con_precios(markdown)
 
-    if not providers_data:
-        # All providers failed extraction — nothing to write
+    if not all_data.get("renglones"):
         raise json.JSONDecodeError(
-            "No provider data could be extracted for any provider",
+            "No items could be extracted from document",
             "",
             0,
         )
 
-    # 4. Assembly
-    rows = _ensamblar_csv(providers_data, cliente)
+    # 4. Filter: keep only top 3 per renglon (Python, no API call)
+    rows = _filtrar_top_3_por_renglon(all_data, cliente)
+
+    if not rows:
+        raise json.JSONDecodeError(
+            "No valid data after filtering top 3 per item",
+            "",
+            0,
+        )
 
     # 5. Write CSV
     csv_path = _escribir_csv(rows, nombre_base, cliente)
