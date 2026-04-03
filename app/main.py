@@ -1,7 +1,7 @@
 import logging
 import os
 from fastapi import FastAPI, Form, UploadFile, File, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse
@@ -41,6 +41,33 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 # ======================
+# HELPERS
+# ======================
+
+def wants_json(request: Request) -> bool:
+    accept = request.headers.get("accept", "").lower()
+    requested_with = request.headers.get("x-requested-with", "").lower()
+    return "application/json" in accept or requested_with in {"fetch", "xmlhttprequest"}
+
+
+def render_upload_response(
+    request: Request,
+    context: dict,
+    status_code: int = 200,
+):
+    if wants_json(request):
+        payload = {"ok": status_code < 400}
+        if "resultado" in context:
+            payload["resultado"] = context["resultado"]
+        if "error" in context:
+            payload["error"] = context["error"]
+        if "tipo" in context:
+            payload["tipo"] = context["tipo"]
+        return JSONResponse(payload, status_code=status_code)
+
+    return templates.TemplateResponse("index.html", context, status_code=status_code)
+
+# ======================
 # RUTAS
 # ======================
 
@@ -73,13 +100,14 @@ async def procesar(
         permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
 
     if extension not in permitidos:
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": "Tipo de archivo no permitido",
                 "tipo": tipo,
-            }
+            },
+            status_code=415,
         )
 
     tmp_dir = get_tmp_dir(origen_id=origen_id)
@@ -100,19 +128,19 @@ async def procesar(
             csv_generado = procesar_archivo(destino, nombre_original)
             params = urlencode({"origen": origen_id})
 
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "resultado": f"/descargar/{csv_generado.name}?{params}",
                 "tipo": tipo,
-            }
+            },
         )
 
     except UnsupportedFormatError as e:
         logger.warning("Unsupported format: %s", e.extension)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": f"Formato no soportado: {e.extension}",
@@ -123,8 +151,8 @@ async def procesar(
 
     except ParserError as e:
         logger.error("Parser error: %s - %s", e.filepath, e.cause)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}",
@@ -135,8 +163,8 @@ async def procesar(
 
     except NoProvidersDetectedError as e:
         logger.warning("No providers detected: %s", e.message)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": "No se detectaron proveedores en el documento",
@@ -147,8 +175,8 @@ async def procesar(
 
     except GeminiQuotaExceededError as e:
         logger.error("Gemini API quota exceeded: %s", e.message)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.",
@@ -159,8 +187,8 @@ async def procesar(
 
     except GeminiRateLimitError as e:
         logger.error("Gemini API rate limit exceeded: %s", e.message)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.",
@@ -171,8 +199,8 @@ async def procesar(
 
     except GeminiAPIError as e:
         logger.error("Gemini API error: %s", e.message)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": f"Error en el servicio de IA: {e.message[:80]}",
@@ -183,8 +211,8 @@ async def procesar(
 
     except Exception as e:
         logger.exception("Unexpected error processing %s: %s", tipo, e)
-        return templates.TemplateResponse(
-            "index.html",
+        return render_upload_response(
+            request,
             {
                 "request": request,
                 "error": "Error interno del servidor",
