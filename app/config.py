@@ -104,11 +104,14 @@ def _ensure_dir(dir_path: Path, label: str) -> Path:
 def _base_work_dir(
     base_dir: Path,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    current_dir = _ensure_dir(base_dir, "de salida")
+    current_dir = _ensure_dir(base_dir, "de salida") if ensure_exists else base_dir
     if origen_id.strip():
         origen_name = _safe_folder_value(origen_id, "ORIGEN")
-        current_dir = _ensure_dir(current_dir / origen_name, "del origen")
+        current_dir = current_dir / origen_name
+        if ensure_exists:
+            current_dir = _ensure_dir(current_dir, "del origen")
 
     return current_dir
 
@@ -116,16 +119,21 @@ def _base_work_dir(
 def get_output_dir(
     base_dir: Path = OUTPUT_BASE,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    return _base_work_dir(base_dir, origen_id=origen_id)
+    return _base_work_dir(base_dir, origen_id=origen_id, ensure_exists=ensure_exists)
 
 
 def get_processed_dir(
     base_dir: Path = OUTPUT_BASE,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id)
-    return _ensure_dir(base_work_dir / "Procesados", "de procesados")
+    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id, ensure_exists=ensure_exists)
+    processed_dir = base_work_dir / "Procesados"
+    if ensure_exists:
+        return _ensure_dir(processed_dir, "de procesados")
+    return processed_dir
 
 
 def get_tmp_dir(

@@ -110,7 +110,8 @@ async def procesar(
             status_code=415,
         )
 
-    tmp_dir = get_tmp_dir(origen_id=origen_id)
+    base_dir = COMPARATIVAS_OUTPUT_BASE if tipo == "comparativas" else OUTPUT_BASE
+    tmp_dir = get_tmp_dir(base_dir=base_dir, origen_id=origen_id)
     destino = tmp_dir / f"{uuid4()}_{nombre_original}"
     destino.parent.mkdir(parents=True, exist_ok=True)
 
@@ -132,7 +133,6 @@ async def procesar(
             request,
             {
                 "request": request,
-                "resultado": f"/descargar/{csv_generado.name}?{params}",
                 "tipo": tipo,
             },
         )
@@ -229,11 +229,19 @@ async def procesar(
             except Exception as cleanup_error:
                 logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
 
+        # Clean up empty tmp directory
+        try:
+            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
+                tmp_dir.rmdir()
+                logger.debug("Deleted empty tmp directory: %s", tmp_dir)
+        except Exception as cleanup_error:
+            logger.debug("Could not remove tmp directory: %s", cleanup_error)
+
 
 @app.get("/descargar/{nombre_archivo}")
 def descargar(nombre_archivo: str, origen: str = "", modulo: str = ""):
     base = COMPARATIVAS_OUTPUT_BASE if modulo == "comparativas" else OUTPUT_BASE
-    archivo = get_output_dir(base_dir=base, origen_id=origen) / nombre_archivo
+    archivo = get_output_dir(base_dir=base, origen_id=origen, ensure_exists=False) / nombre_archivo
 
     return FileResponse(
         path=archivo,

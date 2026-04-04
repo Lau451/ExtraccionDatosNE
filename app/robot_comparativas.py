@@ -21,7 +21,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from app.config import MODEL, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE
+from app.config import MODEL, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR
 from app.robot import obtener_cliente, nombre_unico
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
@@ -190,6 +190,35 @@ def _limpiar_precio(raw: str) -> str:
         return ""
 
 
+def _guardar_docling_output(
+    contenido_extraido: str,
+    nombre_base: str,
+    cliente: str,
+) -> Path:
+    """Guarda la salida del parser (docling) en data/Salida/docling_output/
+
+    Args:
+        contenido_extraido: El contenido extraído por el parser
+        nombre_base: Nombre base del archivo original (sin extensión)
+        cliente: ID del cliente/origen
+
+    Returns:
+        Path al archivo guardado
+    """
+    docling_dir = DATA_DIR / "Salida" / "docling_output" / cliente
+    docling_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generar nombre único si el archivo ya existe
+    nombre_salida = nombre_unico(nombre_base, docling_dir, ".md")
+    ruta_salida = docling_dir / nombre_salida
+
+    with open(ruta_salida, "w", encoding="utf-8") as f:
+        f.write(contenido_extraido)
+
+    logger.info("Saved docling output: %s (%d chars)", ruta_salida, len(contenido_extraido))
+    return ruta_salida
+
+
 def _comprimir_markdown(markdown: str) -> str:
     """Compress Markdown to reduce tokens before sending to Gemini.
 
@@ -291,8 +320,11 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
     rows: list[dict] = []
     cliente_clean = str(cliente).replace(";", "")
 
-    for renglon_data in all_data.get("renglones", []):
+    for idx, renglon_data in enumerate(all_data.get("renglones", []), start=1):
         renglon = renglon_data.get("renglon", "")
+        # Si no viene el renglon, generar número incremental
+        if not renglon or str(renglon).strip() == "":
+            renglon = idx
         descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
         proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
@@ -479,6 +511,9 @@ def procesar_comparativa(
     # 1. Parse document to Markdown
     markdown = parse_document(ruta_archivo)
     logger.info("Document parsed to Markdown (%d chars)", len(markdown))
+
+    # 1.5 Save docling output before compression
+    _guardar_docling_output(markdown, nombre_base, cliente)
 
     # 2. Compress Markdown (Fase 2: reduce tokens)
     markdown = _comprimir_markdown(markdown)

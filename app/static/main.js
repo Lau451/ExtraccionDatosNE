@@ -246,25 +246,11 @@ function setupUploadForm() {
             if (!response.ok) {
                 throw new Error(payload?.error || "Error al procesar el archivo");
             }
-            if (!payload?.resultado) {
-                throw new Error("La respuesta no incluyó link de descarga");
-            }
 
             clearInterval(timer);
             progressBar.style.width = "100%";
 
-            estado.innerHTML = "";
-            const msg = document.createElement("span");
-            msg.textContent = "✅ Archivo procesado correctamente. ";
-
-            const link = document.createElement("a");
-            link.href = payload.resultado;
-            link.textContent = "Descargar CSV";
-            link.rel = "noopener noreferrer";
-
-            estado.appendChild(msg);
-            estado.appendChild(link);
-
+            estado.textContent = "✅ Archivo procesado correctamente.";
             botonNuevo.classList.remove("hidden");
         } catch (err) {
             console.error("Processing error:", err);

@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import re
 import shutil
 import unicodedata
@@ -6,8 +7,11 @@ from difflib import SequenceMatcher
 from typing import Optional
 import google.generativeai as genai
 import pandas as pd
-from app.config import MODEL, get_output_dir, get_processed_dir
+from app.config import MODEL, get_output_dir, get_processed_dir, DATA_DIR
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
+from app.parsers import parse_document
+
+logger = logging.getLogger(__name__)
 
 # ======================
 # FUNCIONES
@@ -97,6 +101,82 @@ def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
     if isinstance(serie, pd.DataFrame):
         return serie.iloc[:, 0]
     return serie
+
+
+def _rellenar_items_incrementales(contenido_csv: str) -> str:
+    """Rellena la columna 'item' de forma incremental si contiene valores vacíos.
+
+    Procesa un CSV con formato "item;cantidad;descripcion;origen" y:
+    - Si la columna item está vacía o ausente en algunas filas, las rellena con números incrementales
+    - Mantiene los números que ya existan
+    - Asegura continuidad incremental
+
+    Args:
+        contenido_csv: Contenido CSV con delimitador ';'
+
+    Returns:
+        CSV procesado con items rellenos
+    """
+    lineas = contenido_csv.strip().split("\n")
+    if not lineas:
+        return contenido_csv
+
+    # Procesar encabezado
+    encabezado = lineas[0].split(";")
+    try:
+        idx_item = encabezado.index("item")
+    except ValueError:
+        # Si no existe columna item, retornar sin cambios
+        return contenido_csv
+
+    # Procesar filas de datos
+    filas_procesadas = [";".join(encabezado)]
+    contador = 1
+
+    for linea in lineas[1:]:
+        campos = linea.split(";")
+
+        # Asegurar que tenemos suficientes campos
+        while len(campos) <= idx_item:
+            campos.append("")
+
+        # Si el item está vacío, asignar incrementalmente
+        if not campos[idx_item] or campos[idx_item].strip() == "":
+            campos[idx_item] = str(contador)
+
+        contador += 1
+        filas_procesadas.append(";".join(campos))
+
+    return "\n".join(filas_procesadas)
+
+
+def _guardar_docling_output(
+    contenido_extraido: str,
+    nombre_base: str,
+    cliente: str,
+) -> Path:
+    """Guarda la salida del parser (docling) en data/Salida/docling_output/
+
+    Args:
+        contenido_extraido: El contenido extraído por el parser
+        nombre_base: Nombre base del archivo original (sin extensión)
+        cliente: ID del cliente/origen
+
+    Returns:
+        Path al archivo guardado
+    """
+    docling_dir = DATA_DIR / "Salida" / "docling_output" / cliente
+    docling_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generar nombre único si el archivo ya existe
+    nombre_salida = nombre_unico(nombre_base, docling_dir, ".md")
+    ruta_salida = docling_dir / nombre_salida
+
+    with open(ruta_salida, "w", encoding="utf-8") as f:
+        f.write(contenido_extraido)
+
+    logger.info("Saved docling output: %s (%d chars)", ruta_salida, len(contenido_extraido))
+    return ruta_salida
 
 
 def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
@@ -193,6 +273,7 @@ def procesar_archivo(
     es_excel = extension_original.lower() in {".xls", ".xlsx"}
     archivo_subido = None
     texto_excel = None
+    contenido_extraido = None
 
     if es_excel:
         # Leer Excel localmente y convertir a CSV texto (normalizado)
@@ -201,7 +282,18 @@ def procesar_archivo(
         df_normalizado = _normalizar_excel(df, cliente)
         texto_excel = df_normalizado.to_csv(sep=";", index=False)
     else:
-        archivo_subido = genai.upload_file(str(ruta_archivo))
+        # Usar el parser para extraer contenido
+        try:
+            contenido_extraido = parse_document(ruta_archivo)
+            # Guardar la salida del parser (docling)
+            _guardar_docling_output(contenido_extraido, nombre_base, cliente)
+        except Exception as e:
+            logger.warning(
+                "Parser failed for %s, uploading file to Gemini directly: %s",
+                ruta_archivo.name,
+                e,
+            )
+            archivo_subido = genai.upload_file(str(ruta_archivo))
 
     tipo_doc = "EXCEL" if es_excel else "DOCUMENTO"
 
@@ -233,7 +325,12 @@ REGLAS:
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
         respuesta = MODEL.generate_content(prompt)
+    elif contenido_extraido:
+        # Usar el contenido extraído por el parser
+        prompt = prompt + "\n\nCONTENIDO EXTRAÍDO DEL DOCUMENTO:\n" + contenido_extraido
+        respuesta = MODEL.generate_content(prompt)
     else:
+        # Fallback: usar el archivo subido a Gemini
         respuesta = MODEL.generate_content([prompt, archivo_subido])
     contenido = respuesta.text.strip()
 
@@ -242,6 +339,9 @@ REGLAS:
         contenido += "\n"
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
+
+    # Rellenar items incrementales si faltan
+    contenido = _rellenar_items_incrementales(contenido)
 
     output_dir = get_output_dir(origen_id=cliente)
     processed_dir = get_processed_dir(origen_id=cliente)
