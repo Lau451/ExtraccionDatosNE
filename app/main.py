@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from fastapi import FastAPI, Form, UploadFile, File, Request
@@ -122,11 +123,13 @@ async def procesar(
     # PROCESAR CON ROBOT
     # ======================
     try:
+        loop = asyncio.get_event_loop()
+
         if tipo == "comparativas":
-            csv_generado = procesar_comparativa(destino, nombre_original)
+            csv_generado = await loop.run_in_executor(None, procesar_comparativa, destino, nombre_original)
             params = urlencode({"origen": origen_id, "modulo": "comparativas"})
         else:
-            csv_generado = procesar_archivo(destino, nombre_original)
+            csv_generado = await loop.run_in_executor(None, procesar_archivo, destino, nombre_original)
             params = urlencode({"origen": origen_id})
 
         return render_upload_response(
