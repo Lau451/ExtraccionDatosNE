@@ -56,15 +56,34 @@ def _resolve_output_base_dir() -> Path:
     )
 
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("Falta GEMINI_API_KEY")
+GEMINI_API_KEYS = os.getenv("GEMINI_API_KEYS")
+if not GEMINI_API_KEYS:
+    # Compatibilidad hacia atrás: intentar con GEMINI_API_KEY (singular)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
+        raise RuntimeError("Falta GEMINI_API_KEYS o GEMINI_API_KEY")
+    GEMINI_API_KEYS = GEMINI_API_KEY
+
+api_keys = [key.strip() for key in GEMINI_API_KEYS.split(",") if key.strip()]
+if not api_keys:
+    raise RuntimeError("GEMINI_API_KEYS está vacío")
 
 # ======================
 # MODELO IA
 # ======================
-CLIENT = genai.Client(api_key=GEMINI_API_KEY)
+CLIENTS = [genai.Client(api_key=key) for key in api_keys]
+CLIENT = CLIENTS[0]  # default para compatibilidad hacia atrás
 MODEL_NAME = "gemini-2.5-flash"
+
+# Round-robin counter para distribuir load entre clientes
+_client_index = 0
+
+def get_next_client():
+    """Get next client in round-robin fashion."""
+    global _client_index
+    client = CLIENTS[_client_index]
+    _client_index = (_client_index + 1) % len(CLIENTS)
+    return client
 
 # ======================
 # PATHS

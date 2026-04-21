@@ -21,7 +21,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR
+from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR, get_next_client
 from app.robot import obtener_cliente, nombre_unico
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
@@ -84,7 +84,7 @@ class NoProvidersDetectedError(ValueError):
 # ======================
 
 
-@handle_gemini_errors
+@handle_gemini_errors(max_retries=4, backoff_factor=3.0)
 def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dict:
     """Call Gemini expecting a JSON response, with retry on parse failure.
 
@@ -111,7 +111,8 @@ def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dic
     text: str = ""
 
     for attempt in range(max_retries + 1):
-        response = CLIENT.models.generate_content(model=MODEL_NAME, contents=f"{prompt}\n\n{markdown}")
+        client = get_next_client()
+        response = client.models.generate_content(model=MODEL_NAME, contents=f"{prompt}\n\n{markdown}")
         text = response.text.strip()
 
         # Strip Markdown code fences if present

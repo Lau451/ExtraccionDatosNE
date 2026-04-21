@@ -7,7 +7,7 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import Optional
 import pandas as pd
-from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir
+from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, get_next_client
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 logger = logging.getLogger(__name__)
@@ -227,7 +227,7 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 # FUNCION PRINCIPAL
 # ======================
 
-@handle_gemini_errors
+@handle_gemini_errors(max_retries=4, backoff_factor=3.0)
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
@@ -253,7 +253,8 @@ def procesar_archivo(
         texto_excel = df_normalizado.to_csv(sep=";", index=False)
     else:
         logger.info("Uploading file to Gemini: %s", ruta_archivo.name)
-        archivo_subido = CLIENT.files.upload(file=str(ruta_archivo))
+        client = get_next_client()
+        archivo_subido = client.files.upload(file=str(ruta_archivo))
         logger.info("Upload OK — file state: %s", archivo_subido.state)
 
     tipo_doc = "EXCEL" if es_excel else "DOCUMENTO"
@@ -283,11 +284,12 @@ REGLAS:
 - El campo origen debe ser exactamente: {cliente}
 """
 
+    client = get_next_client()
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
-        respuesta = CLIENT.models.generate_content(model=MODEL_NAME, contents=prompt)
+        respuesta = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     else:
-        respuesta = CLIENT.models.generate_content(model=MODEL_NAME, contents=[prompt, archivo_subido])
+        respuesta = client.models.generate_content(model=MODEL_NAME, contents=[prompt, archivo_subido])
     contenido = respuesta.text.strip()
 
     contenido = contenido.replace("```csv", "").replace("```", "").strip()
