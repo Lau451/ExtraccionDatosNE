@@ -39,22 +39,7 @@ class GeminiAPIError(Exception):
 
 
 def handle_gemini_errors(func: F) -> F:
-    """Decorator to catch and handle Gemini API errors.
-
-    Catches common Google API exceptions and translates them to more specific
-    errors (quota exceeded, rate limit, etc.).
-
-    Args:
-        func: Function to wrap.
-
-    Returns:
-        Wrapped function that handles Gemini errors.
-
-    Raises:
-        GeminiQuotaExceededError: If quota is exceeded.
-        GeminiRateLimitError: If rate limit is hit.
-        GeminiAPIError: For other API errors.
-    """
+    """Decorator to catch and handle Gemini API errors."""
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
@@ -65,35 +50,20 @@ def handle_gemini_errors(func: F) -> F:
             logger.error(
                 "Gemini API error in %s: %s (%s)",
                 func.__name__,
-                str(e)[:200],
+                str(e),
                 error_type,
             )
 
-            # Check for quota exhaustion
-            if any(keyword in error_str for keyword in [
-                'quota',
-                'exhausted',
-                'resource_exhausted',
-                'out of quota'
-            ]):
+            if any(kw in error_str for kw in ('quota', 'exhausted', 'resource_exhausted', 'out of quota')):
                 raise GeminiQuotaExceededError(
                     "Gemini API quota exceeded. Please check your API key or contact support."
                 ) from e
 
-            # Check for rate limiting
-            if any(keyword in error_str for keyword in [
-                'rate limit',
-                'too many requests',
-                '429',
-                'deadline exceeded'
-            ]):
+            if any(kw in error_str for kw in ('rate limit', 'too many requests', '429', 'deadline exceeded')):
                 raise GeminiRateLimitError(
                     "Gemini API rate limit exceeded. Please try again later."
                 ) from e
 
-            # Generic API error
-            raise GeminiAPIError(
-                f"Gemini API error: {str(e)[:100]}"
-            ) from e
+            raise GeminiAPIError(f"Gemini API error: {str(e)[:100]}") from e
 
     return wrapper  # type: ignore

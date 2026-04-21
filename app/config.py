@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 # ======================
 # ENV
@@ -63,8 +63,8 @@ if not GEMINI_API_KEY:
 # ======================
 # MODELO IA
 # ======================
-genai.configure(api_key=GEMINI_API_KEY)
-MODEL = genai.GenerativeModel("gemini-2.5-flash")
+CLIENT = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_NAME = "gemini-2.5-flash"
 
 # ======================
 # PATHS

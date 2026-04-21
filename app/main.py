@@ -8,7 +8,6 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse
 
 from pathlib import Path
-import shutil
 from uuid import uuid4
 from urllib.parse import urlencode
 
@@ -33,6 +32,8 @@ logger = logging.getLogger(__name__)
 # ======================
 
 app = FastAPI(title="Extractor de Documentos")
+
+_GEMINI_SEMAPHORE = asyncio.Semaphore(5)
 
 # ======================
 # FRONTEND
@@ -66,7 +67,7 @@ def render_upload_response(
             payload["tipo"] = context["tipo"]
         return JSONResponse(payload, status_code=status_code)
 
-    return templates.TemplateResponse("index.html", context, status_code=status_code)
+    return templates.TemplateResponse(request, "index.html", context, status_code=status_code)
 
 # ======================
 # RUTAS
@@ -74,12 +75,12 @@ def render_upload_response(
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse(request, "home.html")
 
 
 @app.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request, tipo: str = ""):
-    return templates.TemplateResponse("index.html", {"request": request, "tipo": tipo})
+    return templates.TemplateResponse(request, "index.html", {"tipo": tipo})
 
 
 @app.post("/procesar", response_class=HTMLResponse)
@@ -103,11 +104,7 @@ async def procesar(
     if extension not in permitidos:
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": "Tipo de archivo no permitido",
-                "tipo": tipo,
-            },
+            {"error": "Tipo de archivo no permitido", "tipo": tipo},
             status_code=415,
         )
 
@@ -116,39 +113,28 @@ async def procesar(
     destino = tmp_dir / f"{uuid4()}_{nombre_original}"
     destino.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(destino, "wb") as buffer:
-        shutil.copyfileobj(archivo.file, buffer)
+    contenido_bytes = await archivo.read()
+    await asyncio.to_thread(destino.write_bytes, contenido_bytes)
 
     # ======================
     # PROCESAR CON ROBOT
     # ======================
     try:
-        loop = asyncio.get_event_loop()
+        async with _GEMINI_SEMAPHORE:
+            if tipo == "comparativas":
+                csv_generado = await asyncio.to_thread(procesar_comparativa, destino, nombre_original)
+                params = urlencode({"origen": origen_id, "modulo": "comparativas"})
+            else:
+                csv_generado = await asyncio.to_thread(procesar_archivo, destino, nombre_original)
+                params = urlencode({"origen": origen_id})
 
-        if tipo == "comparativas":
-            csv_generado = await loop.run_in_executor(None, procesar_comparativa, destino, nombre_original)
-            params = urlencode({"origen": origen_id, "modulo": "comparativas"})
-        else:
-            csv_generado = await loop.run_in_executor(None, procesar_archivo, destino, nombre_original)
-            params = urlencode({"origen": origen_id})
-
-        return render_upload_response(
-            request,
-            {
-                "request": request,
-                "tipo": tipo,
-            },
-        )
+        return render_upload_response(request, {"tipo": tipo})
 
     except UnsupportedFormatError as e:
         logger.warning("Unsupported format: %s", e.extension)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": f"Formato no soportado: {e.extension}",
-                "tipo": tipo,
-            },
+            {"error": f"Formato no soportado: {e.extension}", "tipo": tipo},
             status_code=415,
         )
 
@@ -156,11 +142,7 @@ async def procesar(
         logger.error("Parser error: %s - %s", e.filepath, e.cause)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}",
-                "tipo": tipo,
-            },
+            {"error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}", "tipo": tipo},
             status_code=422,
         )
 
@@ -168,11 +150,7 @@ async def procesar(
         logger.warning("No providers detected: %s", e.message)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": "No se detectaron proveedores en el documento",
-                "tipo": tipo,
-            },
+            {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
             status_code=422,
         )
 
@@ -180,11 +158,7 @@ async def procesar(
         logger.error("Gemini API quota exceeded: %s", e.message)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.",
-                "tipo": tipo,
-            },
+            {"error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.", "tipo": tipo},
             status_code=503,
         )
 
@@ -192,11 +166,7 @@ async def procesar(
         logger.error("Gemini API rate limit exceeded: %s", e.message)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.",
-                "tipo": tipo,
-            },
+            {"error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.", "tipo": tipo},
             status_code=429,
         )
 
@@ -204,11 +174,7 @@ async def procesar(
         logger.error("Gemini API error: %s", e.message)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": f"Error en el servicio de IA: {e.message[:80]}",
-                "tipo": tipo,
-            },
+            {"error": f"Error en el servicio de IA: {e.message[:80]}", "tipo": tipo},
             status_code=500,
         )
 
@@ -216,11 +182,7 @@ async def procesar(
         logger.exception("Unexpected error processing %s: %s", tipo, e)
         return render_upload_response(
             request,
-            {
-                "request": request,
-                "error": "Error interno del servidor",
-                "tipo": tipo,
-            },
+            {"error": "Error interno del servidor", "tipo": tipo},
             status_code=500,
         )
 
