@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -77,12 +78,13 @@ MODEL_NAME = "gemini-2.5-flash"
 
 # Round-robin counter para distribuir load entre clientes
 _client_index = 0
+_client_lock = threading.Lock()
 
 def get_next_client():
-    """Get next client in round-robin fashion."""
     global _client_index
-    client = CLIENTS[_client_index]
-    _client_index = (_client_index + 1) % len(CLIENTS)
+    with _client_lock:
+        client = CLIENTS[_client_index]
+        _client_index = (_client_index + 1) % len(CLIENTS)
     return client
 
 # ======================

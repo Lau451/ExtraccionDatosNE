@@ -246,6 +246,8 @@ def procesar_archivo(
     archivo_subido = None
     texto_excel = None
 
+    client = get_next_client()
+
     if es_excel:
         engine = "xlrd" if extension_original.lower() == ".xls" else "openpyxl"
         df = pd.read_excel(ruta_archivo, engine=engine, index_col=None)
@@ -253,7 +255,6 @@ def procesar_archivo(
         texto_excel = df_normalizado.to_csv(sep=";", index=False)
     else:
         logger.info("Uploading file to Gemini: %s", ruta_archivo.name)
-        client = get_next_client()
         archivo_subido = client.files.upload(file=str(ruta_archivo))
         logger.info("Upload OK — file state: %s", archivo_subido.state)
 
@@ -284,7 +285,6 @@ REGLAS:
 - El campo origen debe ser exactamente: {cliente}
 """
 
-    client = get_next_client()
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
         respuesta = client.models.generate_content(model=MODEL_NAME, contents=prompt)
