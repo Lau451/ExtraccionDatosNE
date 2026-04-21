@@ -103,6 +103,32 @@ def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
     return serie
 
 
+def _limpiar_cantidad(contenido_csv: str) -> str:
+    """Trunca la columna 'cantidad' al entero ignorando lo que va después de la coma."""
+    lineas = contenido_csv.strip().split("\n")
+    if not lineas:
+        return contenido_csv
+
+    encabezado = lineas[0].split(";")
+    try:
+        idx_cantidad = encabezado.index("cantidad")
+    except ValueError:
+        return contenido_csv
+
+    filas_procesadas = [";".join(encabezado)]
+    for linea in lineas[1:]:
+        campos = linea.split(";")
+        if len(campos) > idx_cantidad:
+            val = campos[idx_cantidad].strip()
+            val = val.replace(".", "")
+            if "," in val:
+                val = val.split(",")[0].strip()
+            campos[idx_cantidad] = val
+        filas_procesadas.append(";".join(campos))
+
+    return "\n".join(filas_procesadas)
+
+
 def _rellenar_items_incrementales(contenido_csv: str) -> str:
     """Rellena la columna 'item' de forma incremental si contiene valores vacíos.
 
@@ -298,7 +324,7 @@ REGLAS:
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
 
-    # Rellenar items incrementales si faltan
+    contenido = _limpiar_cantidad(contenido)
     contenido = _rellenar_items_incrementales(contenido)
 
     output_dir = get_output_dir(origen_id=cliente)
