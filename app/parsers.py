@@ -24,8 +24,7 @@ from typing import Callable
 import pandas as pd
 from bs4 import BeautifulSoup
 
-import google.generativeai as genai
-from app.config import MODEL
+from app.config import CLIENT, MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -334,8 +333,8 @@ def _parse_image(filepath: Path) -> str:
                 attempt + 1,
                 filepath.name,
             )
-            uploaded_file = genai.upload_file(str(filepath))
-            response = MODEL.generate_content([_VISION_PROMPT, uploaded_file])
+            uploaded_file = CLIENT.files.upload(file=str(filepath))
+            response = CLIENT.models.generate_content(model=MODEL_NAME, contents=[_VISION_PROMPT, uploaded_file])
             text = response.text.strip()
             logger.info(
                 "Extracted text from %s via Gemini Vision (%d chars)",
@@ -354,7 +353,7 @@ def _parse_image(filepath: Path) -> str:
         finally:
             if uploaded_file is not None:
                 try:
-                    genai.delete_file(uploaded_file.name)
+                    CLIENT.files.delete(name=uploaded_file.name)
                     logger.debug(
                         "Deleted Gemini file: %s", uploaded_file.name
                     )

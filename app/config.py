@@ -1,9 +1,10 @@
 import importlib.util
 import os
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 # ======================
 # ENV
@@ -56,15 +57,35 @@ def _resolve_output_base_dir() -> Path:
     )
 
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("Falta GEMINI_API_KEY")
+GEMINI_API_KEYS = os.getenv("GEMINI_API_KEYS")
+if not GEMINI_API_KEYS:
+    # Compatibilidad hacia atrás: intentar con GEMINI_API_KEY (singular)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
+        raise RuntimeError("Falta GEMINI_API_KEYS o GEMINI_API_KEY")
+    GEMINI_API_KEYS = GEMINI_API_KEY
+
+api_keys = [key.strip() for key in GEMINI_API_KEYS.split(",") if key.strip()]
+if not api_keys:
+    raise RuntimeError("GEMINI_API_KEYS está vacío")
 
 # ======================
 # MODELO IA
 # ======================
-genai.configure(api_key=GEMINI_API_KEY)
-MODEL = genai.GenerativeModel("gemini-2.5-flash")
+CLIENTS = [genai.Client(api_key=key) for key in api_keys]
+CLIENT = CLIENTS[0]  # default para compatibilidad hacia atrás
+MODEL_NAME = "gemini-2.5-flash"
+
+# Round-robin counter para distribuir load entre clientes
+_client_index = 0
+_client_lock = threading.Lock()
+
+def get_next_client():
+    global _client_index
+    with _client_lock:
+        client = CLIENTS[_client_index]
+        _client_index = (_client_index + 1) % len(CLIENTS)
+    return client
 
 # ======================
 # PATHS
@@ -104,11 +125,14 @@ def _ensure_dir(dir_path: Path, label: str) -> Path:
 def _base_work_dir(
     base_dir: Path,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    current_dir = _ensure_dir(base_dir, "de salida")
+    current_dir = _ensure_dir(base_dir, "de salida") if ensure_exists else base_dir
     if origen_id.strip():
         origen_name = _safe_folder_value(origen_id, "ORIGEN")
-        current_dir = _ensure_dir(current_dir / origen_name, "del origen")
+        current_dir = current_dir / origen_name
+        if ensure_exists:
+            current_dir = _ensure_dir(current_dir, "del origen")
 
     return current_dir
 
@@ -116,16 +140,21 @@ def _base_work_dir(
 def get_output_dir(
     base_dir: Path = OUTPUT_BASE,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    return _base_work_dir(base_dir, origen_id=origen_id)
+    return _base_work_dir(base_dir, origen_id=origen_id, ensure_exists=ensure_exists)
 
 
 def get_processed_dir(
     base_dir: Path = OUTPUT_BASE,
     origen_id: str = "",
+    ensure_exists: bool = True,
 ) -> Path:
-    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id)
-    return _ensure_dir(base_work_dir / "Procesados", "de procesados")
+    base_work_dir = _base_work_dir(base_dir, origen_id=origen_id, ensure_exists=ensure_exists)
+    processed_dir = base_work_dir / "Procesados"
+    if ensure_exists:
+        return _ensure_dir(processed_dir, "de procesados")
+    return processed_dir
 
 
 def get_tmp_dir(

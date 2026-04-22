@@ -45,7 +45,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.14);
     position: relative;
     overflow: hidden;
-    animation: cardIn 0.6s ease both;
+    animation: cardIn 0.3s ease both;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -63,7 +63,7 @@ body {
 }
 
 .card > * {
-    animation: fadeUp 0.6s ease both;
+    animation: fadeUp 0.3s ease both;
     width: 100%;
 }
 
@@ -72,10 +72,10 @@ body {
     width: auto;
 }
 
-.card > *:nth-child(2) { animation-delay: 0.04s; }
-.card > *:nth-child(3) { animation-delay: 0.08s; }
-.card > *:nth-child(4) { animation-delay: 0.12s; }
-.card > *:nth-child(5) { animation-delay: 0.16s; }
+.card > *:nth-child(2) { animation-delay: 0.02s; }
+.card > *:nth-child(3) { animation-delay: 0.04s; }
+.card > *:nth-child(4) { animation-delay: 0.06s; }
+.card > *:nth-child(5) { animation-delay: 0.08s; }
 
 h1 {
     margin: 18px 0 8px;
@@ -324,6 +324,17 @@ button:disabled {
     }
 }
 
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
 @media (max-width: 520px) {
     body {
         padding: 18px;
@@ -381,7 +392,7 @@ body > * {
 .home-header {
     text-align: center;
     margin-bottom: 32px;
-    animation: cardIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: cardIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .home-logo-wrap {
@@ -501,11 +512,11 @@ body > * {
                 border-color 0.25s ease;
     position: relative;
     overflow: hidden;
-    animation: cardIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: cardIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.doc-type-card:nth-child(2) { animation-delay: 0.07s; }
-.doc-type-card:nth-child(3) { animation-delay: 0.14s; }
+.doc-type-card:nth-child(2) { animation-delay: 0.04s; }
+.doc-type-card:nth-child(3) { animation-delay: 0.08s; }
 
 /* Top accent bar — unique per card */
 .doc-type-card::before {
@@ -640,22 +651,49 @@ body > * {
     color: rgba(255, 255, 255, 0.6);
     text-decoration: none;
     margin-bottom: 6px;
-    transition: color 0.15s ease;
+    transition: color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
     align-self: flex-start;
     cursor: pointer;
     touch-action: manipulation;
     min-height: 44px;
     padding: 4px 0;
+    position: relative;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+.back-link svg {
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .back-link:hover {
     color: rgba(255, 255, 255, 0.95);
 }
 
+.back-link:hover svg {
+    transform: translateX(-2px);
+}
+
+.back-link:hover:not(:disabled) {
+    background: transparent;
+    transform: none;
+    box-shadow: none;
+}
+
+.back-link:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.back-link {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.back-link:focus,
 .back-link:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.6);
-    outline-offset: 3px;
-    border-radius: 4px;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .tipo-badge {
@@ -730,4 +768,106 @@ body > * {
     .doc-type-card:hover {
         transform: none;
     }
+}
+
+/* ============================================
+   NAVIGACIÓN FLUIDA — OVERLAYS & TRANSICIONES
+   ============================================ */
+
+.nav-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 98;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+    transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+                backdrop-filter 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.nav-container {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 99;
+    padding: 24px;
+    opacity: 0;
+    transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-container.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Card dentro del nav-container (expandido) */
+.nav-container .card {
+    animation: cardExpand 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+@keyframes cardExpand {
+    from {
+        opacity: 0;
+        transform: scale(0.85);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Home header sale con fade-out cuando navega */
+.home-wrapper.navigating {
+    animation: fadeOutUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes fadeOutUp {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+
+/* Tarjeta clickeada obtiene feedback visual */
+.doc-type-card.active {
+    pointer-events: none;
+}
+
+.doc-type-card.clicking {
+    animation: cardClick 0.2s ease both;
+}
+
+@keyframes cardClick {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(0.98);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Back button — active state */
+.back-link:active {
+    transform: scale(0.95);
 }

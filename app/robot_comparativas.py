@@ -1,16 +1,16 @@
 """
 Comparativas extraction pipeline: app/robot_comparativas.py
 
-Optimized two-step Gemini extraction for price comparison documents:
-  Step 1: Detect all providers/suppliers in the document.
-  Step 2: Extract ALL items with ALL provider prices in a single call.
-  Filter: Keep only top 3 providers per renglon (Python, no API call).
+Optimized single-call Gemini extraction for price comparison documents:
+  1. Parse document to Markdown, compress to reduce tokens (Fase 2).
+  2. Unified Gemini call: Detect providers + extract all items/prices (Fase 1).
+  3. Filter: Keep only top 3 providers per renglon (Python, no API call).
 
 Public API (signature unchanged from prior version):
   procesar_comparativa(ruta_archivo, nombre_original) -> Path
 
 Custom Exceptions:
-  NoProvidersDetectedError  -- Step 1 returned an empty provider list.
+  NoProvidersDetectedError  -- No providers detected in the document.
 """
 
 import csv
@@ -21,7 +21,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from app.config import MODEL, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE
+from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR, get_next_client
 from app.robot import obtener_cliente, nombre_unico
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
@@ -31,31 +31,36 @@ logger = logging.getLogger(__name__)
 # PROMPTS
 # ======================
 
-_PROMPT_DETECT_PROVIDERS = """Analyze this price comparison document and identify ALL providers/suppliers.
+_PROMPT_UNIFIED = """Extract data from this price comparison document (comparativa de precios).
 
-Return ONLY a valid JSON object with no additional text.
-If no providers are found, return {"proveedores": []}.
-
-{"proveedores": ["Provider Name 1", "Provider Name 2", ...]}"""
-
-_PROMPT_EXTRACT_ALL = """Extract ALL items/renglones and their prices from ALL providers.
-For each item, list the prices from each provider (use empty string if price not found).
+These documents list items/products and compare prices from multiple providers/suppliers.
+Structure varies across documents but always contains:
+- Items with a number (renglon/item), description, and quantity
+- For each item: providers with their quoted unit price and brand (marca)
+- Providers that did not quote show "NO COTIZA", "No cotiza", empty cells, or similar
+- Each provider offers their OWN brand — different providers supply different brands for the same item
 
 Return ONLY valid JSON:
 {
+  "proveedores": ["Provider A", "Provider B"],
   "renglones": [
     {
       "renglon": 1,
-      "descripcion": "Item description",
-      "marca": "Brand or empty string",
+      "descripcion": "Full product/medication description — NOT the brand name",
       "proveedores_precios": {
-        "Proveedor A": "12.50",
-        "Proveedor B": "14.99",
-        "Proveedor C": "11.80"
+        "Provider A": {"precio": "12.50", "marca": "BRAND_A"},
+        "Provider B": {"precio": "", "marca": ""}
       }
     }
   ]
-}"""
+}
+
+RULES:
+- "descripcion": product name and dosage only (e.g. "AMOXICILINA 500 MG / 5 ML SUSP X 90 ML"), never include the brand here
+- "marca": per-provider brand — extract the brand each provider offers for that item, use empty string if none
+- "precio": unit price as a number string, empty string if provider does not quote
+- Include ALL providers for every renglon, even those that don't quote
+- Return ALL items found"""
 
 # ======================
 # CUSTOM EXCEPTIONS
@@ -79,7 +84,7 @@ class NoProvidersDetectedError(ValueError):
 # ======================
 
 
-@handle_gemini_errors
+@handle_gemini_errors(max_retries=4, backoff_factor=3.0)
 def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dict:
     """Call Gemini expecting a JSON response, with retry on parse failure.
 
@@ -106,7 +111,8 @@ def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dic
     text: str = ""
 
     for attempt in range(max_retries + 1):
-        response = MODEL.generate_content(f"{prompt}\n\n{markdown}")
+        client = get_next_client()
+        response = client.models.generate_content(model=MODEL_NAME, contents=f"{prompt}\n\n{markdown}")
         text = response.text.strip()
 
         # Strip Markdown code fences if present
@@ -185,30 +191,100 @@ def _limpiar_precio(raw: str) -> str:
         return ""
 
 
+def _guardar_docling_output(
+    contenido_extraido: str,
+    nombre_base: str,
+    cliente: str,
+) -> Path:
+    """Guarda la salida del parser (docling) en data/Salida/docling_output/
+
+    Args:
+        contenido_extraido: El contenido extraído por el parser
+        nombre_base: Nombre base del archivo original (sin extensión)
+        cliente: ID del cliente/origen
+
+    Returns:
+        Path al archivo guardado
+    """
+    docling_dir = DATA_DIR / "Salida" / "docling_output" / cliente
+    docling_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generar nombre único si el archivo ya existe
+    nombre_salida = nombre_unico(nombre_base, docling_dir, ".md")
+    ruta_salida = docling_dir / nombre_salida
+
+    with open(ruta_salida, "w", encoding="utf-8") as f:
+        f.write(contenido_extraido)
+
+    logger.info("Saved docling output: %s (%d chars)", ruta_salida, len(contenido_extraido))
+    return ruta_salida
+
+
+def _comprimir_markdown(markdown: str) -> str:
+    """Compress Markdown to reduce tokens before sending to Gemini.
+
+    Removes unnecessary whitespace and formatting:
+      - Collapses 3+ consecutive blank lines into 1
+      - Strips trailing whitespace from each line
+      - Removes lines that are only whitespace
+
+    Args:
+        markdown: Document content as a Markdown string.
+
+    Returns:
+        Compressed Markdown string.
+    """
+    # Collapse 3+ consecutive newlines into 2 (one blank line)
+    text = re.sub(r'\n{3,}', '\n\n', markdown)
+
+    # Strip trailing whitespace per line and remove empty-only lines
+    lines = [line.rstrip() for line in text.split('\n')]
+    lines = [line for line in lines if line.strip()]
+
+    result = '\n'.join(lines)
+
+    reduction_pct = ((len(markdown) - len(result)) / len(markdown) * 100) if markdown else 0
+    logger.info(
+        "Markdown compressed: %d → %d chars (%.1f%% reduction)",
+        len(markdown),
+        len(result),
+        reduction_pct,
+    )
+
+    return result
+
+
 # ======================
 # PIPELINE STEPS
 # ======================
 
 
-def _detectar_proveedores(markdown: str, filepath: Path) -> list[str]:
-    """Step 1: Detect all providers/suppliers in the document.
+def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
+    """Extract providers and all items with prices in a single Gemini call.
 
-    Sends the full Markdown to Gemini with a structured JSON prompt.
-    Parses the response and returns the list of provider name strings.
+    Unified extraction (Fase 1 optimization): combines provider detection and
+    price extraction into one API call.
 
     Args:
-        markdown: Full document content as a Markdown string.
+        markdown: Compressed document content as a Markdown string.
         filepath: Original file path — used only in the error message.
 
     Returns:
-        List of provider name strings (non-empty).
+        Dict with keys "proveedores" (list of provider names) and "renglones"
+        (list of items with prices).
 
     Raises:
         NoProvidersDetectedError: If the parsed JSON has an empty providers list.
         json.JSONDecodeError: If Gemini returns unparseable JSON after all retries.
     """
-    result = _llamar_gemini_json(_PROMPT_DETECT_PROVIDERS, markdown)
+    result = _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+
     providers: list[str] = result.get("proveedores", [])
+    if not providers:
+        raise NoProvidersDetectedError(
+            f"No providers detected in document '{filepath.name}'. "
+            "The document may not be a valid price comparison, or the format is unrecognized."
+        )
 
     logger.info(
         "Step 1: Detected %d providers in '%s': %s",
@@ -217,40 +293,13 @@ def _detectar_proveedores(markdown: str, filepath: Path) -> list[str]:
         providers,
     )
 
-    if not providers:
-        raise NoProvidersDetectedError(
-            f"No providers detected in document '{filepath.name}'. "
-            "The document may not be a valid price comparison, or the format is unrecognized."
-        )
-
-    return providers
-
-
-def _extraer_todos_con_precios(markdown: str) -> dict:
-    """Step 2: Extract ALL items with prices from ALL providers in one Gemini call.
-
-    Sends the full Markdown to Gemini requesting a cross-provider matrix
-    where each renglon contains a mapping of provider -> price.
-
-    Args:
-        markdown: Full document content as a Markdown string.
-
-    Returns:
-        Dict with key "renglones" containing a list of dicts, each with:
-          - "renglon": int — item number
-          - "descripcion": str — item description
-          - "marca": str — brand or empty string
-          - "proveedores_precios": dict[str, str] — provider name -> raw price string
-
-    Raises:
-        json.JSONDecodeError: If Gemini returns unparseable JSON after all retries.
-    """
-    result = _llamar_gemini_json(_PROMPT_EXTRACT_ALL, markdown)
     logger.info(
         "Step 2: Extracted %d items with all provider prices",
         len(result.get("renglones", [])),
     )
+
     return result
+
 
 
 def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
@@ -272,25 +321,36 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
     rows: list[dict] = []
     cliente_clean = str(cliente).replace(";", "")
 
-    for renglon_data in all_data.get("renglones", []):
+    for idx, renglon_data in enumerate(all_data.get("renglones", []), start=1):
         renglon = renglon_data.get("renglon", "")
+        # Si no viene el renglon, generar número incremental
+        if not renglon or str(renglon).strip() == "":
+            renglon = idx
         descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
-        marca = str(renglon_data.get("marca", "")).replace(";", "")
         proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
         if not proveedores_precios:
             logger.warning("Renglon %s has no provider prices, skipping", renglon)
             continue
 
-        # Parse and validate each provider's price
-        provider_price_list: list[tuple[str, str, float]] = []
-        for proveedor, precio_raw in proveedores_precios.items():
+        # Parse and validate each provider's price.
+        # Supports both new format {"precio": "12.50", "marca": "BRAND"} and
+        # legacy format where the value is a plain price string "12.50".
+        provider_price_list: list[tuple[str, str, str, float]] = []
+        for proveedor, datos in proveedores_precios.items():
+            if isinstance(datos, dict):
+                precio_raw = datos.get("precio", "")
+                marca_proveedor = str(datos.get("marca", "")).replace(";", "")
+            else:
+                precio_raw = datos
+                marca_proveedor = ""
+
             precio_limpio = _limpiar_precio(str(precio_raw))
             if not precio_limpio:
                 continue
             try:
                 precio_num = float(precio_limpio)
-                provider_price_list.append((proveedor, precio_limpio, precio_num))
+                provider_price_list.append((proveedor, precio_limpio, marca_proveedor, precio_num))
             except ValueError:
                 continue
 
@@ -303,7 +363,7 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
             continue
 
         # Sort by numeric price ascending, keep top 3
-        provider_price_list.sort(key=lambda x: x[2])
+        provider_price_list.sort(key=lambda x: x[3])
         top_3 = provider_price_list[:3]
 
         logger.debug(
@@ -312,12 +372,12 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
             [p[0] for p in top_3],
         )
 
-        for proveedor, precio, _ in top_3:
+        for proveedor, precio, marca_proveedor, _ in top_3:
             rows.append({
                 "renglon": renglon,
                 "descripcion": descripcion,
                 "proveedor": str(proveedor).replace(";", ""),
-                "marca": marca,
+                "marca": marca_proveedor,
                 "precio": precio,
                 "cliente": cliente_clean,
             })
@@ -405,15 +465,15 @@ def procesar_comparativa(
 
     Pipeline:
       1. Parse document to Markdown via parse_document() (parser router).
-      2. Extract cliente from filename via obtener_cliente().
-      3. Step 1 — Detect providers: _detectar_proveedores(markdown, filepath).
-      4. Step 2 — Extract ALL items with ALL provider prices: single Gemini call.
+      2. Compress Markdown to reduce tokens.
+      3. Extract cliente from filename via obtener_cliente().
+      4. Unified extraction: _extraer_comparativa() in 1 Gemini call.
       5. Filter: _filtrar_top_3_por_renglon() keeps top 3 per item (Python, no API).
       6. Write CSV to output directory.
       7. Move original file to Procesados/ directory.
 
-    API calls: 2 total (detect providers + extract all prices), regardless of
-    how many providers are in the document.
+    API calls: 1 total (unified extraction), regardless of how many providers
+    are in the document.
 
     Args:
         ruta_archivo: Path to the (temp) uploaded file on disk.
@@ -425,7 +485,7 @@ def procesar_comparativa(
         Path to the generated CSV file.
 
     Raises:
-        NoProvidersDetectedError: If no providers are detected in Step 1.
+        NoProvidersDetectedError: If no providers are detected.
         json.JSONDecodeError: If Gemini returns unparseable JSON after retries.
         UnsupportedFormatError: If the file extension is not supported by
             the parser router.
@@ -453,12 +513,14 @@ def procesar_comparativa(
     markdown = parse_document(ruta_archivo)
     logger.info("Document parsed to Markdown (%d chars)", len(markdown))
 
-    # 2. Step 1: Detect providers
-    providers = _detectar_proveedores(markdown, ruta_archivo)
-    logger.info("Step 1: Detected providers: %s", providers)
+    # 1.5 Save docling output before compression
+    _guardar_docling_output(markdown, nombre_base, cliente)
 
-    # 3. Step 2: Extract ALL items with ALL provider prices (single call)
-    all_data = _extraer_todos_con_precios(markdown)
+    # 2. Compress Markdown (Fase 2: reduce tokens)
+    markdown = _comprimir_markdown(markdown)
+
+    # 3. Unified extraction: detect providers + extract all prices (1 call)
+    all_data = _extraer_comparativa(markdown, ruta_archivo)
 
     if not all_data.get("renglones"):
         raise json.JSONDecodeError(

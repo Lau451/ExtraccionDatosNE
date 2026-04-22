@@ -89,9 +89,88 @@ Si falta `config_local.py` y no existe `OUTPUT_BASE_DIR`, el sistema mostrara un
 
 ## Tecnologias Utilizadas
 
-- Python
-- Google Generative AI (Gemini)
-- Pandas
-- python-dotenv
+- **Python 3.9+**
+- **FastAPI** — API web de alta performance
+- **Uvicorn** — ASGI server
+- **Google Generative AI (Gemini)** — Extracción inteligente de datos
+- **Pandas** — Procesamiento de datos
+- **python-dotenv** — Manejo de variables de entorno
+
+---
+
+## Ejecución de la Aplicación
+
+### Opción 1: Script (Windows)
+
+```bash
+.\scripts\run.bat
+```
+
+### Opción 2: Comando directo
+
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+La aplicación estará disponible en: **http://localhost:8000**
+
+---
+
+## Testing — Validación de Concurrencia
+
+El proyecto incluye una **suite de load testing** para validar que la aplicación soporta múltiples usuarios simultáneos sin congelación.
+
+### Ejecutar los tests
+
+**Terminal 1: Inicia la app**
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+**Terminal 2: Corre los tests**
+```bash
+cd test
+python test_concurrency.py
+```
+
+### Qué valida
+
+- ✅ 3 usuarios simultáneos (baseline)
+- ✅ 7 usuarios simultáneos (objetivo del fix de concurrencia)
+- ✅ 10 usuarios simultáneos (stress test)
+
+### Resultados esperados
+
+Todos los tests deberían pasar con eficiencia de paralelismo **> 300%**:
+
+| Users | Time | Efficiency | Status |
+|-------|------|-----------|--------|
+| 3 | ~45s | 295% | ✓ PASS |
+| 7 | ~28s | 501% | ✓ PASS |
+| 10 | ~30s | 759% | ✓ PASS |
+
+**Nota:** Eficiencia > 300% indica paralelismo real (no serialización).
+
+Ver más detalles en `test/README.md`
+
+---
+
+## Arquitectura de Concurrencia
+
+### El Problema
+
+Las llamadas a Gemini API son **bloqueantes**. Sin optimización, cada usuario bloquea el event loop de FastAPI, causando que otros usuarios esperen.
+
+### La Solución
+
+Implementamos `asyncio.run_in_executor()` para mover operaciones bloqueantes a un thread pool, liberando el event loop.
+
+**Beneficio:** La aplicación ahora soporta **7+ usuarios simultáneos sin congelación** (validado en commit e0d6dbc).
+
+```python
+# app/main.py (líneas 126-133)
+loop = asyncio.get_event_loop()
+csv_generado = await loop.run_in_executor(None, procesar_archivo, destino, nombre_original)
+```
 
 ---

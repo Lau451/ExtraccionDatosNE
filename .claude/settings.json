@@ -1,5 +1,19 @@
 {
   "enabledPlugins": {
     "codex@openai-codex": true
+  },
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "There was a bash command error. Use /codex:rescue to investigate and provide a fix. Include the error details and suggest what went wrong.",
+            "statusMessage": "Running Codex rescue..."
+          }
+        ]
+      }
+    ]
   }
 }

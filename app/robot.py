@@ -1,13 +1,16 @@
 from pathlib import Path
+import logging
+import os
 import re
 import shutil
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Optional
-import google.generativeai as genai
 import pandas as pd
-from app.config import MODEL, get_output_dir, get_processed_dir
+from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, get_next_client
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
+
+logger = logging.getLogger(__name__)
 
 # ======================
 # FUNCIONES
@@ -18,16 +21,17 @@ def obtener_cliente(nombre_archivo: str) -> str:
 
 
 def nombre_unico(base: str, carpeta: Path, extension: str) -> str:
-    destino = carpeta / f"{base}{extension}"
-    if not destino.exists():
-        return destino.name
-
+    nombre = f"{base}{extension}"
     i = 2
     while True:
-        candidato = carpeta / f"{base}_{i}{extension}"
-        if not candidato.exists():
-            return candidato.name
-        i += 1
+        ruta = carpeta / nombre
+        try:
+            fd = os.open(str(ruta), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return ruta.name
+        except FileExistsError:
+            nombre = f"{base}_{i}{extension}"
+            i += 1
 
 
 def _normalizar_texto(texto: str) -> str:
@@ -97,6 +101,80 @@ def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
     if isinstance(serie, pd.DataFrame):
         return serie.iloc[:, 0]
     return serie
+
+
+def _limpiar_cantidad(contenido_csv: str) -> str:
+    """Trunca la columna 'cantidad' al entero ignorando lo que va después de la coma."""
+    lineas = contenido_csv.strip().split("\n")
+    if not lineas:
+        return contenido_csv
+
+    encabezado = lineas[0].split(";")
+    try:
+        idx_cantidad = encabezado.index("cantidad")
+    except ValueError:
+        return contenido_csv
+
+    filas_procesadas = [";".join(encabezado)]
+    for linea in lineas[1:]:
+        campos = linea.split(";")
+        if len(campos) > idx_cantidad:
+            val = campos[idx_cantidad].strip()
+            val = val.replace(".", "")
+            if "," in val:
+                val = val.split(",")[0].strip()
+            campos[idx_cantidad] = val
+        filas_procesadas.append(";".join(campos))
+
+    return "\n".join(filas_procesadas)
+
+
+def _rellenar_items_incrementales(contenido_csv: str) -> str:
+    """Rellena la columna 'item' de forma incremental si contiene valores vacíos.
+
+    Procesa un CSV con formato "item;cantidad;descripcion;origen" y:
+    - Si la columna item está vacía o ausente en algunas filas, las rellena con números incrementales
+    - Mantiene los números que ya existan
+    - Asegura continuidad incremental
+
+    Args:
+        contenido_csv: Contenido CSV con delimitador ';'
+
+    Returns:
+        CSV procesado con items rellenos
+    """
+    lineas = contenido_csv.strip().split("\n")
+    if not lineas:
+        return contenido_csv
+
+    # Procesar encabezado
+    encabezado = lineas[0].split(";")
+    try:
+        idx_item = encabezado.index("item")
+    except ValueError:
+        # Si no existe columna item, retornar sin cambios
+        return contenido_csv
+
+    # Procesar filas de datos
+    filas_procesadas = [";".join(encabezado)]
+    contador = 1
+
+    for linea in lineas[1:]:
+        campos = linea.split(";")
+
+        # Asegurar que tenemos suficientes campos
+        while len(campos) <= idx_item:
+            campos.append("")
+
+        # Si el item está vacío, asignar incrementalmente
+        if not campos[idx_item] or campos[idx_item].strip() == "":
+            campos[idx_item] = str(contador)
+
+        contador += 1
+        filas_procesadas.append(";".join(campos))
+
+    return "\n".join(filas_procesadas)
+
 
 
 def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
@@ -175,7 +253,7 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 # FUNCION PRINCIPAL
 # ======================
 
-@handle_gemini_errors
+@handle_gemini_errors(max_retries=4, backoff_factor=3.0)
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
@@ -194,14 +272,17 @@ def procesar_archivo(
     archivo_subido = None
     texto_excel = None
 
+    client = get_next_client()
+
     if es_excel:
-        # Leer Excel localmente y convertir a CSV texto (normalizado)
         engine = "xlrd" if extension_original.lower() == ".xls" else "openpyxl"
         df = pd.read_excel(ruta_archivo, engine=engine, index_col=None)
         df_normalizado = _normalizar_excel(df, cliente)
         texto_excel = df_normalizado.to_csv(sep=";", index=False)
     else:
-        archivo_subido = genai.upload_file(str(ruta_archivo))
+        logger.info("Uploading file to Gemini: %s", ruta_archivo.name)
+        archivo_subido = client.files.upload(file=str(ruta_archivo))
+        logger.info("Upload OK — file state: %s", archivo_subido.state)
 
     tipo_doc = "EXCEL" if es_excel else "DOCUMENTO"
 
@@ -232,9 +313,9 @@ REGLAS:
 
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
-        respuesta = MODEL.generate_content(prompt)
+        respuesta = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     else:
-        respuesta = MODEL.generate_content([prompt, archivo_subido])
+        respuesta = client.models.generate_content(model=MODEL_NAME, contents=[prompt, archivo_subido])
     contenido = respuesta.text.strip()
 
     contenido = contenido.replace("```csv", "").replace("```", "").strip()
@@ -242,6 +323,9 @@ REGLAS:
         contenido += "\n"
     if "item;" not in contenido.lower():
         raise ValueError("Respuesta invalida (no es CSV)")
+
+    contenido = _limpiar_cantidad(contenido)
+    contenido = _rellenar_items_incrementales(contenido)
 
     output_dir = get_output_dir(origen_id=cliente)
     processed_dir = get_processed_dir(origen_id=cliente)

@@ -11,14 +11,14 @@
 </head>
 <body>
 
-    <div class="card">
+    <div class="card" id="upload-card">
 
-        <a href="/" class="back-link" aria-label="Volver al inicio">
+        <button class="back-link" id="back-btn" aria-label="Volver al inicio">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M19 12H5M12 19l-7-7 7-7"/>
             </svg>
             Volver
-        </a>
+        </button>
 
         <div class="header">
             <div class="logo" aria-label="Droguería Nueva Era">
@@ -100,7 +100,7 @@
         <p class="status" id="estado"></p>
     </div>
 
-    <script src="/static/main.js"></script>
+    <script src="/static/main.js?v=2026-04-03-nodownload"></script>
     <script>
         const params = new URLSearchParams(window.location.search);
         const tipo = params.get("tipo") || "";
