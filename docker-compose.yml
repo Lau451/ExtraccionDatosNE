@@ -12,8 +12,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # AQUÍ DEBES PEGAR TU API KEY REAL
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Claves de Gemini separadas por coma: KEY1,KEY2
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+      - OUTPUT_BASE_DIR=C:/app/output
       # Opcional: Configuración para que Python no guarde archivos .pyc
       - PYTHONDONTWRITEBYTECODE=1
     restart: always

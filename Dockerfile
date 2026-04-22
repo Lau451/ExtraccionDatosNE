@@ -12,8 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. Copiamos el resto del código
 COPY app ./app
 
-# 5. Exponemos el puerto
+# 5. Directorio de salida de archivos
+ENV OUTPUT_BASE_DIR=C:/app/output
+
+# 6. Exponemos el puerto
 EXPOSE 8000
 
-# 6. Comando de ejecución
+# 7. Comando de ejecución
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
