@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Extractor de Documentos")
 
-_GEMINI_SEMAPHORE = asyncio.Semaphore(5)
+_GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
 # ======================
 # FRONTEND
