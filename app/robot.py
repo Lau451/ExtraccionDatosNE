@@ -120,9 +120,9 @@ def _limpiar_cantidad(contenido_csv: str) -> str:
         campos = linea.split(";")
         if len(campos) > idx_cantidad:
             val = campos[idx_cantidad].strip()
-            val = val.replace(".", "")
             if "," in val:
                 val = val.split(",")[0].strip()
+            val = val.replace(".", "")
             campos[idx_cantidad] = val
         filas_procesadas.append(";".join(campos))
 
