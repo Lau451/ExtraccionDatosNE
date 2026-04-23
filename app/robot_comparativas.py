@@ -84,7 +84,7 @@ class NoProvidersDetectedError(ValueError):
 # ======================
 
 
-@handle_gemini_errors(max_retries=5, backoff_factor=3.0)
+@handle_gemini_errors(max_retries=6, backoff_factor=4.0)
 def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dict:
     """Call Gemini expecting a JSON response, with retry on parse failure.
 
