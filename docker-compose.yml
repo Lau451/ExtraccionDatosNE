@@ -5,16 +5,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+
     image: extractor-ne:latest
     container_name: extractor-instancia
-    # Forzamos el aislamiento de Hyper-V para evitar el error 0xc0370106
+
+    # Forzamos aislamiento Hyper-V
     isolation: hyperv
+
     ports:
       - "8000:8000"
+
     environment:
-      # Claves de Gemini separadas por coma: KEY1,KEY2
+      # Claves de Gemini separadas por coma
       - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+
+      # Directorio de salida
       - OUTPUT_BASE_DIR=C:/app/output
-      # Opcional: Configuración para que Python no guarde archivos .pyc
+
+      # Opcional
       - PYTHONDONTWRITEBYTECODE=1
+
     restart: always
