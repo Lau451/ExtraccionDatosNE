@@ -253,7 +253,7 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 # FUNCION PRINCIPAL
 # ======================
 
-@handle_gemini_errors(max_retries=6, backoff_factor=4.0)
+@handle_gemini_errors(max_retries=4, backoff_factor=40.0)
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
