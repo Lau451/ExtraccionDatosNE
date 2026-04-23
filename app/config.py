@@ -74,7 +74,7 @@ if not api_keys:
 # ======================
 CLIENTS = [genai.Client(api_key=key) for key in api_keys]
 CLIENT = CLIENTS[0]  # default para compatibilidad hacia atrás
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-1.5-flash"
 
 # Round-robin counter para distribuir load entre clientes
 _client_index = 0
