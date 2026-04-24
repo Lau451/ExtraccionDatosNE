@@ -24,7 +24,7 @@ from typing import Callable
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from app.config import CLIENT, MODEL_NAME
+from app.config import CLIENT, generate_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +334,7 @@ def _parse_image(filepath: Path) -> str:
                 filepath.name,
             )
             uploaded_file = CLIENT.files.upload(file=str(filepath))
-            response = CLIENT.models.generate_content(model=MODEL_NAME, contents=[_VISION_PROMPT, uploaded_file])
+            response = generate_with_fallback(CLIENT, [_VISION_PROMPT, uploaded_file])
             text = response.text.strip()
             logger.info(
                 "Extracted text from %s via Gemini Vision (%d chars)",

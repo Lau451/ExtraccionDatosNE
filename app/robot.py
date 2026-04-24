@@ -7,7 +7,7 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import Optional
 import pandas as pd
-from app.config import CLIENT, MODEL_NAME, get_output_dir, get_processed_dir, get_next_client
+from app.config import CLIENT, get_output_dir, get_processed_dir, get_next_client, generate_with_fallback
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 logger = logging.getLogger(__name__)
@@ -313,9 +313,9 @@ REGLAS:
 
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel
-        respuesta = client.models.generate_content(model=MODEL_NAME, contents=prompt)
+        respuesta = generate_with_fallback(client, prompt)
     else:
-        respuesta = client.models.generate_content(model=MODEL_NAME, contents=[prompt, archivo_subido])
+        respuesta = generate_with_fallback(client, [prompt, archivo_subido])
     contenido = respuesta.text.strip()
 
     contenido = contenido.replace("```csv", "").replace("```", "").strip()
