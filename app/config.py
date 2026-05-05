@@ -93,12 +93,16 @@ def get_next_client():
         _client_index = (_client_index + 1) % len(CLIENTS)
     return client
 
-def generate_with_fallback(client, contents):
+def generate_with_fallback(client, contents, config=None):
+    kwargs = {"model": PRIMARY_MODEL, "contents": contents}
+    if config is not None:
+        kwargs["config"] = config
     try:
-        return client.models.generate_content(model=PRIMARY_MODEL, contents=contents)
+        return client.models.generate_content(**kwargs)
     except Exception as exc:
         _logger.warning("Modelo primario %s falló (%s) — reintentando con %s", PRIMARY_MODEL, exc, FALLBACK_MODEL)
-        return client.models.generate_content(model=FALLBACK_MODEL, contents=contents)
+        kwargs["model"] = FALLBACK_MODEL
+        return client.models.generate_content(**kwargs)
 
 # ======================
 # PATHS

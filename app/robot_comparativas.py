@@ -1,9 +1,11 @@
 """
 Comparativas extraction pipeline: app/robot_comparativas.py
 
-Optimized single-call Gemini extraction for price comparison documents:
-  1. Parse document to Markdown, compress to reduce tokens (Fase 2).
-  2. Unified Gemini call: Detect providers + extract all items/prices (Fase 1).
+Extracts price comparison documents using Gemini with automatic chunking for
+large files (> _CHUNK_THRESHOLD chars):
+  1. Parse document to Markdown, compress to reduce tokens.
+  2. If small: single Gemini call. If large: split into chunks of _CHUNK_SIZE
+     renglones each, call Gemini per chunk, merge results.
   3. Filter: Keep only top 3 providers per renglon (Python, no API call).
 
 Public API (signature unchanged from prior version):
@@ -21,11 +23,18 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from google.genai import types
+
 from app.config import CLIENT, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR, get_next_client, generate_with_fallback
 from app.robot import obtener_cliente, nombre_unico
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 logger = logging.getLogger(__name__)
+
+_JSON_CONFIG = types.GenerateContentConfig(response_mime_type="application/json")
+
+_CHUNK_THRESHOLD = 60_000  # chars; above this, use chunked Gemini calls
+_CHUNK_SIZE = 30            # max renglones per Gemini call
 
 # ======================
 # PROMPTS
@@ -85,58 +94,26 @@ class NoProvidersDetectedError(ValueError):
 
 
 @handle_gemini_errors(max_retries=4, backoff_factor=40.0)
-def _llamar_gemini_json(prompt: str, markdown: str, max_retries: int = 2) -> dict:
-    """Call Gemini expecting a JSON response, with retry on parse failure.
+def _llamar_gemini_json(prompt: str, markdown: str) -> dict:
+    """Call Gemini with response_mime_type='application/json' for guaranteed valid JSON.
 
-    Strips Markdown code fences (```json ... ```) before parsing.
-    Retries up to max_retries times on JSONDecodeError, logging a WARNING
-    each time. On final failure, logs an ERROR and re-raises the
-    JSONDecodeError.
+    Uses structured output to eliminate JSONDecodeError and code fence issues.
+    API-level retries are handled by the @handle_gemini_errors decorator.
 
     Args:
         prompt: The prompt text to send to Gemini.
         markdown: The document content (Markdown) appended after the prompt.
-        max_retries: Number of additional attempts after the first (default 2,
-            meaning up to 3 total attempts).
 
     Returns:
         Parsed JSON response as a dict.
 
     Raises:
-        json.JSONDecodeError: If JSON parsing fails after all retries.
         GeminiQuotaExceededError: If Gemini API quota is exceeded.
         GeminiRateLimitError: If Gemini API rate limit is exceeded.
     """
-    last_error: Optional[json.JSONDecodeError] = None
-    text: str = ""
-
-    for attempt in range(max_retries + 1):
-        client = get_next_client()
-        response = generate_with_fallback(client, f"{prompt}\n\n{markdown}")
-        text = response.text.strip()
-
-        # Strip Markdown code fences if present
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            last_error = e
-            if attempt < max_retries:
-                logger.warning(
-                    "JSON parse failed (attempt %d/%d), retrying... Error: %s",
-                    attempt + 1,
-                    max_retries + 1,
-                    str(e)[:100],
-                )
-
-    logger.error(
-        "Failed to parse JSON after %d attempts. Last response: %s",
-        max_retries + 1,
-        text[:200],
-    )
-    raise last_error  # type: ignore[misc]
+    client = get_next_client()
+    response = generate_with_fallback(client, f"{prompt}\n\n{markdown}", config=_JSON_CONFIG)
+    return json.loads(response.text)
 
 
 def _limpiar_precio(raw: str) -> str:
@@ -259,46 +236,116 @@ def _comprimir_markdown(markdown: str) -> str:
 # ======================
 
 
-def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
-    """Extract providers and all items with prices in a single Gemini call.
+def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list[str]:
+    """Split a markdown table into chunks, repeating header context in each.
 
-    Unified extraction (Fase 1 optimization): combines provider detection and
-    price extraction into one API call.
+    Detects where actual renglones start (first row whose leftmost cell is a
+    positive number) and treats everything before that as context. Each chunk
+    contains: the two-line markdown header + context rows + up to chunk_size
+    renglon rows. Small documents return a single-element list.
+
+    Args:
+        markdown: Full markdown table from df.to_markdown(index=False).
+        chunk_size: Maximum renglon rows per chunk.
+
+    Returns:
+        List of markdown strings ready to be sent to Gemini individually.
+    """
+    lines = markdown.split("\n")
+    if len(lines) < 3:
+        return [markdown]
+
+    md_header = lines[:2]   # column names + separator
+    data_lines = lines[2:]
+
+    # Find the first row that is an actual renglon (positive number in col 0)
+    renglon_start = len(data_lines)
+    for i, line in enumerate(data_lines):
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if cells:
+            try:
+                if float(cells[0]) > 0:
+                    renglon_start = i
+                    break
+            except ValueError:
+                pass
+
+    context = data_lines[:renglon_start]
+    body = data_lines[renglon_start:]
+
+    if not body:
+        return [markdown]
+
+    chunks = []
+    for i in range(0, len(body), chunk_size):
+        chunk = "\n".join(md_header + context + body[i : i + chunk_size])
+        chunks.append(chunk)
+
+    return chunks
+
+
+def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
+    """Extract providers and all items with prices from a comparativa document.
+
+    Uses a single Gemini call for small documents. For large documents
+    (> _CHUNK_THRESHOLD chars) automatically splits into chunks of _CHUNK_SIZE
+    renglones each, calls Gemini per chunk, and merges the results. Each chunk
+    includes the full Excel header context so provider detection is consistent.
 
     Args:
         markdown: Compressed document content as a Markdown string.
-        filepath: Original file path — used only in the error message.
+        filepath: Original file path — used only in error messages.
 
     Returns:
-        Dict with keys "proveedores" (list of provider names) and "renglones"
-        (list of items with prices).
+        Dict with keys "proveedores" (list[str]) and "renglones" (list[dict]).
 
     Raises:
-        NoProvidersDetectedError: If the parsed JSON has an empty providers list.
-        json.JSONDecodeError: If Gemini returns unparseable JSON after all retries.
+        NoProvidersDetectedError: If no providers are detected in the first chunk.
     """
-    result = _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+    chunks = _split_markdown_chunks(markdown) if len(markdown) > _CHUNK_THRESHOLD else [markdown]
 
-    providers: list[str] = result.get("proveedores", [])
-    if not providers:
-        raise NoProvidersDetectedError(
-            f"No providers detected in document '{filepath.name}'. "
-            "The document may not be a valid price comparison, or the format is unrecognized."
+    if len(chunks) > 1:
+        logger.info(
+            "Large document (%d chars): splitting into %d chunks of ~%d renglones each",
+            len(markdown),
+            len(chunks),
+            _CHUNK_SIZE,
         )
 
-    logger.info(
-        "Step 1: Detected %d providers in '%s': %s",
-        len(providers),
-        filepath.name,
-        providers,
-    )
+    all_renglones: list[dict] = []
+    providers: list[str] = []
 
-    logger.info(
-        "Step 2: Extracted %d items with all provider prices",
-        len(result.get("renglones", [])),
-    )
+    for idx, chunk in enumerate(chunks):
+        result = _llamar_gemini_json(_PROMPT_UNIFIED, chunk)
+        chunk_providers: list[str] = result.get("proveedores", [])
 
-    return result
+        if idx == 0:
+            if not chunk_providers:
+                raise NoProvidersDetectedError(
+                    f"No providers detected in document '{filepath.name}'. "
+                    "The document may not be a valid price comparison, or the format is unrecognized."
+                )
+            providers = chunk_providers
+            logger.info(
+                "Detected %d providers in '%s': %s",
+                len(providers),
+                filepath.name,
+                providers,
+            )
+
+        chunk_renglones = result.get("renglones", [])
+        all_renglones.extend(chunk_renglones)
+
+        if len(chunks) > 1:
+            logger.info(
+                "Chunk %d/%d: extracted %d renglones",
+                idx + 1,
+                len(chunks),
+                len(chunk_renglones),
+            )
+
+    logger.info("Total renglones extracted: %d", len(all_renglones))
+    return {"proveedores": providers, "renglones": all_renglones}
 
 
 
