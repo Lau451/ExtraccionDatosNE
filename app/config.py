@@ -1,4 +1,5 @@
 import importlib.util
+import logging
 import os
 import threading
 from pathlib import Path
@@ -72,9 +73,14 @@ if not api_keys:
 # ======================
 # MODELO IA
 # ======================
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-3-flash-preview"
+MODEL_NAME = PRIMARY_MODEL  # compatibilidad hacia atrás
+
 CLIENTS = [genai.Client(api_key=key) for key in api_keys]
 CLIENT = CLIENTS[0]  # default para compatibilidad hacia atrás
-MODEL_NAME = "gemini-2.5-pro"
+
+_logger = logging.getLogger(__name__)
 
 # Round-robin counter para distribuir load entre clientes
 _client_index = 0
@@ -86,6 +92,17 @@ def get_next_client():
         client = CLIENTS[_client_index]
         _client_index = (_client_index + 1) % len(CLIENTS)
     return client
+
+def generate_with_fallback(client, contents, config=None):
+    kwargs = {"model": PRIMARY_MODEL, "contents": contents}
+    if config is not None:
+        kwargs["config"] = config
+    try:
+        return client.models.generate_content(**kwargs)
+    except Exception as exc:
+        _logger.warning("Modelo primario %s falló (%s) — reintentando con %s", PRIMARY_MODEL, exc, FALLBACK_MODEL)
+        kwargs["model"] = FALLBACK_MODEL
+        return client.models.generate_content(**kwargs)
 
 # ======================
 # PATHS
