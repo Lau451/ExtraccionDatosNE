@@ -1,7 +1,8 @@
 import asyncio
+import csv
 import logging
 import os
-from fastapi import FastAPI, Form, UploadFile, File, Request
+from fastapi import BackgroundTasks, FastAPI, Form, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -16,6 +17,9 @@ from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedErro
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
 from app.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from app.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
+from app.persistent_output import calcular_sha256, buscar_duplicado_con_lock
+from app.persistent_chunking import crear_sesion
+from app.background_tasks import schedule_persist_output
 
 # ======================
 # LOGGING
@@ -86,6 +90,7 @@ async def upload_page(request: Request, tipo: str = ""):
 @app.post("/procesar", response_class=HTMLResponse)
 async def procesar(
     request: Request,
+    bg_tasks: BackgroundTasks,
     archivo: UploadFile = File(...),
     tipo: str = Form(""),
 ):
@@ -117,16 +122,70 @@ async def procesar(
     await asyncio.to_thread(destino.write_bytes, contenido_bytes)
 
     # ======================
+    # SHA256 + DEDUPLICACIÓN
+    # ======================
+    sha256_doc = await asyncio.to_thread(calcular_sha256, destino)
+
+    existing_extraction = await buscar_duplicado_con_lock(source_sha256=sha256_doc)
+    if existing_extraction:
+        logger.warning("Documento duplicado detectado: %s - extraction_id: %s", nombre_original, existing_extraction)
+        return render_upload_response(
+            request,
+            {"error": "Este documento ya fue procesado", "extraction_id": str(existing_extraction), "tipo": tipo},
+            status_code=409,
+        )
+
+    # ======================
+    # CREAR SESIÓN EN SUPABASE
+    # ======================
+    doc_type = "comparativa" if tipo == "comparativas" else "licitacion"
+    session_id = await crear_sesion(
+        doc_name=nombre_original,
+        client_id=origen_id,
+        total_chunks=0,  # placeholder; se actualiza al procesar chunks
+        doc_type=doc_type,
+    )
+
+    # ======================
     # PROCESAR CON ROBOT
     # ======================
     try:
         async with _GEMINI_SEMAPHORE:
             if tipo == "comparativas":
-                csv_generado = await asyncio.to_thread(procesar_comparativa, destino, nombre_original)
+                csv_generado = await asyncio.to_thread(
+                    procesar_comparativa, destino, nombre_original,
+                    session_id=session_id,
+                )
                 params = urlencode({"origen": origen_id, "modulo": "comparativas"})
             else:
-                csv_generado = await asyncio.to_thread(procesar_archivo, destino, nombre_original)
+                csv_generado = await asyncio.to_thread(
+                    procesar_archivo, destino, nombre_original,
+                    session_id=session_id,
+                )
                 params = urlencode({"origen": origen_id})
+
+        # ======================
+        # LEER CSV + SCHEDULING DE PERSISTENCIA
+        # ======================
+        csv_path = Path(csv_generado)
+        rows = []
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f, delimiter=";")
+                rows = list(reader)
+        except Exception as e:
+            logger.error("Error al leer CSV generado %s: %s", csv_path, e)
+
+        await schedule_persist_output(
+            bg_tasks,
+            session_id=session_id,
+            doc_type=doc_type,
+            rows=rows,
+            csv_path=csv_path,
+            client_id=origen_id,
+            source_filename=nombre_original,
+            source_sha256=sha256_doc,
+        )
 
         return render_upload_response(request, {"tipo": tipo})
 

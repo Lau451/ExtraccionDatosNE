@@ -6,6 +6,7 @@ import shutil
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Optional
+from uuid import UUID
 import pandas as pd
 from app.config import CLIENT, get_output_dir, get_processed_dir, get_next_client, generate_with_fallback
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
@@ -257,6 +258,8 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
+    *,
+    session_id: Optional[UUID] = None,  # reservado para uso futuro (licitaciones)
 ) -> Path:
     if nombre_original:
         original_name = Path(nombre_original).name

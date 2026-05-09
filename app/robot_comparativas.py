@@ -22,12 +22,14 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional
+from uuid import UUID
 
 from google.genai import types
 
 from app.config import CLIENT, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR, get_next_client, generate_with_fallback
 from app.robot import obtener_cliente, nombre_unico
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
+from app.persistent_chunking import guardar_chunk
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +286,7 @@ def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list
     return chunks
 
 
-def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
+def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[UUID] = None) -> dict:
     """Extract providers and all items with prices from a comparativa document.
 
     Uses a single Gemini call for small documents. For large documents
@@ -317,6 +319,18 @@ def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
 
     for idx, chunk in enumerate(chunks):
         result = _llamar_gemini_json(_PROMPT_UNIFIED, chunk)
+
+        # Guardar chunk en Supabase si hay session_id activo
+        if session_id:
+            try:
+                guardar_chunk(
+                    session_id=session_id,
+                    chunk_num=idx,
+                    resultado_json=result,
+                )
+            except Exception as e:
+                logger.warning("Error al guardar chunk %d en Supabase: %s", idx, e)
+
         chunk_providers: list[str] = result.get("proveedores", [])
 
         if idx == 0:
@@ -507,6 +521,8 @@ def _mover_a_procesados(ruta_archivo: Path, nombre_base: str, extension: str, cl
 def procesar_comparativa(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
+    *,
+    session_id: Optional[UUID] = None,
 ) -> Path:
     """Process a price comparison document using optimized single-extraction flow.
 
@@ -566,8 +582,8 @@ def procesar_comparativa(
     # 2. Compress Markdown (Fase 2: reduce tokens)
     markdown = _comprimir_markdown(markdown)
 
-    # 3. Unified extraction: detect providers + extract all prices (1 call)
-    all_data = _extraer_comparativa(markdown, ruta_archivo)
+    # 3. Extraccion unificada: detecta proveedores + extrae precios (con chunking si aplica)
+    all_data = _extraer_comparativa(markdown, ruta_archivo, session_id=session_id)
 
     if not all_data.get("renglones"):
         raise json.JSONDecodeError(
