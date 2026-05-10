@@ -24,6 +24,14 @@
       "sessions": 0,
       "memories": 1,
       "prompts": 0
+    },
+    {
+      "id": "8a0fbeb1",
+      "created_by": "lauma",
+      "created_at": "2026-05-10T22:24:25Z",
+      "sessions": 1,
+      "memories": 13,
+      "prompts": 0
     }
   ]
 }
