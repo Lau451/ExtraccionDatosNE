@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 
 _JSON_CONFIG = types.GenerateContentConfig(response_mime_type="application/json")
 
-_CHUNK_THRESHOLD = 60_000  # chars; above this, use chunked Gemini calls
-_CHUNK_SIZE = 30            # max renglones per Gemini call
+_CHUNK_THRESHOLD = 40_000  # chars; above this, use chunked Gemini calls (lowered for robustness)
+_CHUNK_SIZE = 20            # max items per Gemini call (conservative to avoid truncation)
 
 # ======================
 # PROMPTS
@@ -115,6 +115,11 @@ def _llamar_gemini_json(prompt: str, markdown: str) -> dict:
     """
     client = get_next_client()
     response = generate_with_fallback(client, f"{prompt}\n\n{markdown}", config=_JSON_CONFIG)
+
+    # DEBUG: Log raw response to diagnose JSON issues
+    logger.info("Gemini raw response (first 500 chars): %s", response.text[:500])
+    logger.info("Gemini response length: %d chars", len(response.text))
+
     return json.loads(response.text)
 
 
@@ -239,16 +244,16 @@ def _comprimir_markdown(markdown: str) -> str:
 
 
 def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list[str]:
-    """Split a markdown table into chunks, repeating header context in each.
+    """Split a markdown table into chunks, keeping Items complete.
 
-    Detects where actual renglones start (first row whose leftmost cell is a
-    positive number) and treats everything before that as context. Each chunk
-    contains: the two-line markdown header + context rows + up to chunk_size
-    renglon rows. Small documents return a single-element list.
+    Groups rows by Item (identified by a number in the first column that looks
+    like an item number). Each Item includes its header row + all provider rows
+    that follow it. Chunks contain complete Items only — never splits an Item
+    across chunks. This preserves the logical structure of the document.
 
     Args:
         markdown: Full markdown table from df.to_markdown(index=False).
-        chunk_size: Maximum renglon rows per chunk.
+        chunk_size: Maximum number of Items per chunk.
 
     Returns:
         List of markdown strings ready to be sent to Gemini individually.
@@ -260,27 +265,72 @@ def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list
     md_header = lines[:2]   # column names + separator
     data_lines = lines[2:]
 
-    # Find the first row that is an actual renglon (positive number in col 0)
-    renglon_start = len(data_lines)
+    # Detect table header repetitions (|---|---|---|...)
+    # and extract document context (everything before first actual item)
+    context_end = 0
     for i, line in enumerate(data_lines):
         cells = [c.strip() for c in line.split("|") if c.strip()]
-        if cells:
-            try:
-                if float(cells[0]) > 0:
-                    renglon_start = i
-                    break
-            except ValueError:
-                pass
+        if not cells:
+            continue
+        try:
+            # Check if this is an item header (number in first column, not separator)
+            if cells[0] != "---" and float(cells[0]) > 0:
+                context_end = i
+                break
+        except ValueError:
+            pass
 
-    context = data_lines[:renglon_start]
-    body = data_lines[renglon_start:]
+    context = data_lines[:context_end]
+    body = data_lines[context_end:]
 
     if not body:
         return [markdown]
 
+    # Group body lines into Items. An Item starts with a row where the first
+    # cell is a number >= 1. All following rows (providers) belong to that Item
+    # until the next Item header.
+    items = []
+    current_item = []
+
+    for line in body:
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+
+        # Skip empty lines and table header separators
+        if not cells or cells[0] == "---":
+            if current_item:
+                current_item.append(line)
+            continue
+
+        # Check if this is an Item header (number in first column)
+        is_item_header = False
+        try:
+            num = float(cells[0])
+            if num > 0:
+                is_item_header = True
+        except ValueError:
+            pass
+
+        if is_item_header and current_item:
+            # Start of new Item — save the previous one
+            items.append(current_item)
+            current_item = [line]
+        else:
+            # Provider row or continuation — add to current item
+            current_item.append(line)
+
+    # Don't forget the last item
+    if current_item:
+        items.append(current_item)
+
+    if not items:
+        return [markdown]
+
+    # Build chunks: each chunk contains up to chunk_size complete Items
     chunks = []
-    for i in range(0, len(body), chunk_size):
-        chunk = "\n".join(md_header + context + body[i : i + chunk_size])
+    for i in range(0, len(items), chunk_size):
+        chunk_items = items[i : i + chunk_size]
+        chunk_lines = md_header + context + [line for item in chunk_items for line in item]
+        chunk = "\n".join(chunk_lines)
         chunks.append(chunk)
 
     return chunks
