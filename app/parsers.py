@@ -79,6 +79,75 @@ class ParserError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
+def _split_pdf_by_pages(filepath: Path, pages_per_chunk: int = 50) -> list[Path]:
+    """Split a PDF into smaller chunks by page count.
+
+    Creates temporary PDF files, each containing at most pages_per_chunk pages.
+    Temporary chunks are stored in the system temp directory and cleaned up
+    after processing (via caller responsibility or context manager).
+
+    Args:
+        filepath: Path to the input PDF file.
+        pages_per_chunk: Maximum pages per chunk (default 50).
+
+    Returns:
+        List of Path objects pointing to temporary chunk PDF files.
+        Empty list if the PDF has <= pages_per_chunk pages (no split needed).
+
+    Raises:
+        ImportError: If PyPDF is not installed.
+        Exception: If PDF reading/writing fails.
+    """
+    try:
+        from PyPDF import PdfReader, PdfWriter  # noqa: PLC0415
+    except ImportError:
+        logger.error("PyPDF not installed. Cannot split large PDFs.")
+        raise ImportError("PyPDF is required for PDF chunking. Install via: pip install PyPDF>=4.0.0")
+
+    reader = PdfReader(str(filepath))
+    total_pages = len(reader.pages)
+
+    if total_pages <= pages_per_chunk:
+        logger.debug("PDF has %d pages, no split needed", total_pages)
+        return []
+
+    chunks = []
+    import tempfile
+    temp_dir = Path(tempfile.gettempdir())
+
+    for i in range(0, total_pages, pages_per_chunk):
+        chunk_start = i
+        chunk_end = min(i + pages_per_chunk, total_pages)
+        chunk_num = i // pages_per_chunk
+
+        writer = PdfWriter()
+        for page_num in range(chunk_start, chunk_end):
+            writer.add_page(reader.pages[page_num])
+
+        chunk_filename = f"docling_chunk_{filepath.stem}_{chunk_num}.pdf"
+        chunk_path = temp_dir / chunk_filename
+
+        with open(chunk_path, "wb") as f:
+            writer.write(f)
+
+        chunks.append(chunk_path)
+        logger.info(
+            "PDF chunk %d: pages %d-%d → %s",
+            chunk_num,
+            chunk_start + 1,
+            chunk_end,
+            chunk_path.name,
+        )
+
+    logger.info(
+        "PDF split: %d pages → %d chunks of ~%d pages",
+        total_pages,
+        len(chunks),
+        pages_per_chunk,
+    )
+    return chunks
+
+
 def _docling_convert(filepath: Path):
     """Encapsulate docling API call.
 
@@ -189,6 +258,10 @@ def _parse_ods(filepath: Path) -> str:
 def _parse_pdf(filepath: Path) -> str:
     """Parse a PDF file to Markdown.
 
+    For large PDFs (>50 pages), automatically splits into chunks to avoid
+    memory exhaustion in docling. Each chunk is processed separately and
+    results are merged. For smaller PDFs, processes directly.
+
     Attempts native text extraction via docling first. If the extracted text
     density is below the scanned threshold (< 50 chars/page average), or if
     docling raises any exception, falls back to Gemini Vision via _parse_image().
@@ -205,6 +278,7 @@ def _parse_pdf(filepath: Path) -> str:
     Side effects:
         - If docling path: reads file (read-only).
         - If Vision fallback: uploads to Gemini, deletes after.
+        - If chunking: creates temporary PDF chunks, cleans them up after.
     """
     if not DOCLING_AVAILABLE:
         logger.warning(
@@ -212,10 +286,74 @@ def _parse_pdf(filepath: Path) -> str:
         )
         return _parse_image(filepath)
 
+    file_size_mb = filepath.stat().st_size / (1024 * 1024)
+    if file_size_mb > 5:
+        logger.info(
+            "Large PDF (%.1f MB), skipping docling, using Vision directly: %s",
+            file_size_mb,
+            filepath.name,
+        )
+        return _parse_image(filepath)
+
+    import tempfile
+    temp_files = []
+
     try:
-        result = _docling_convert(filepath)
-        text = result.document.export_to_markdown()
-        page_count = result.document.num_pages()
+        # Check if PDF needs chunking (estimated by file size as proxy for page count)
+        # Note: file_size_mb already computed above for Vision fallback check
+        needs_chunking = file_size_mb > 3  # Aggressive: ~3MB per 15 pages
+
+        if needs_chunking:
+            logger.info(
+                "Large PDF detected (%.1f MB), attempting chunked processing: %s",
+                file_size_mb,
+                filepath.name,
+            )
+            chunks = _split_pdf_by_pages(filepath, pages_per_chunk=15)
+            if chunks:
+                temp_files = chunks
+                all_markdown = []
+
+                for idx, chunk_path in enumerate(chunks, start=1):
+                    try:
+                        result = _docling_convert(chunk_path)
+                        chunk_text = result.document.export_to_markdown()
+                        all_markdown.append(chunk_text)
+                        logger.info(
+                            "Parsed PDF chunk %d/%d (%d chars)",
+                            idx,
+                            len(chunks),
+                            len(chunk_text),
+                        )
+                    except Exception as chunk_exc:
+                        logger.warning(
+                            "Chunk %d processing failed, falling back to Vision: %s",
+                            idx,
+                            chunk_exc,
+                        )
+                        return _parse_image(filepath)
+
+                # Merge all chunks with separator
+                text = "\n\n".join(all_markdown)
+                page_count = sum(
+                    _docling_convert(chunk).document.num_pages() for chunk in chunks
+                )
+                logger.info(
+                    "Merged %d chunks: %d pages, %d chars total",
+                    len(chunks),
+                    page_count,
+                    len(text),
+                )
+            else:
+                # File size suggested chunking but PDF has <= 50 pages
+                result = _docling_convert(filepath)
+                text = result.document.export_to_markdown()
+                page_count = result.document.num_pages()
+        else:
+            # Small PDF, process normally
+            result = _docling_convert(filepath)
+            text = result.document.export_to_markdown()
+            page_count = result.document.num_pages()
 
         if _is_scanned_pdf(text, page_count):
             logger.info(
@@ -240,6 +378,19 @@ def _parse_pdf(filepath: Path) -> str:
             exc,
         )
         return _parse_image(filepath)
+
+    finally:
+        # Clean up temporary chunk files
+        for temp_file in temp_files:
+            try:
+                temp_file.unlink()
+                logger.debug("Cleaned up temporary chunk: %s", temp_file.name)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to clean up temporary chunk %s: %s",
+                    temp_file.name,
+                    cleanup_exc,
+                )
 
 
 def _parse_html(filepath: Path) -> str:
