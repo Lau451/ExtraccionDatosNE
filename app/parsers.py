@@ -287,21 +287,13 @@ def _parse_pdf(filepath: Path) -> str:
         return _parse_image(filepath)
 
     file_size_mb = filepath.stat().st_size / (1024 * 1024)
-    if file_size_mb > 5:
-        logger.info(
-            "Large PDF (%.1f MB), skipping docling, using Vision directly: %s",
-            file_size_mb,
-            filepath.name,
-        )
-        return _parse_image(filepath)
 
     import tempfile
     temp_files = []
 
     try:
         # Check if PDF needs chunking (estimated by file size as proxy for page count)
-        # Note: file_size_mb already computed above for Vision fallback check
-        needs_chunking = file_size_mb > 3  # Aggressive: ~3MB per 15 pages
+        needs_chunking = file_size_mb > 5  # Chunk large PDFs: ~5MB per 10 pages
 
         if needs_chunking:
             logger.info(
@@ -309,7 +301,7 @@ def _parse_pdf(filepath: Path) -> str:
                 file_size_mb,
                 filepath.name,
             )
-            chunks = _split_pdf_by_pages(filepath, pages_per_chunk=15)
+            chunks = _split_pdf_by_pages(filepath, pages_per_chunk=10)
             if chunks:
                 temp_files = chunks
                 all_markdown = []
@@ -320,18 +312,25 @@ def _parse_pdf(filepath: Path) -> str:
                         chunk_text = result.document.export_to_markdown()
                         all_markdown.append(chunk_text)
                         logger.info(
-                            "Parsed PDF chunk %d/%d (%d chars)",
+                            "Parsed PDF chunk %d/%d via docling (%d chars)",
                             idx,
                             len(chunks),
                             len(chunk_text),
                         )
                     except Exception as chunk_exc:
                         logger.warning(
-                            "Chunk %d processing failed, falling back to Vision: %s",
+                            "Chunk %d docling failed, falling back to Vision: %s",
                             idx,
                             chunk_exc,
                         )
-                        return _parse_image(filepath)
+                        chunk_text = _parse_image(chunk_path)
+                        all_markdown.append(chunk_text)
+                        logger.info(
+                            "Parsed PDF chunk %d/%d via Vision (%d chars)",
+                            idx,
+                            len(chunks),
+                            len(chunk_text),
+                        )
 
                 # Merge all chunks with separator
                 text = "\n\n".join(all_markdown)
