@@ -99,10 +99,10 @@ def _split_pdf_by_pages(filepath: Path, pages_per_chunk: int = 50) -> list[Path]
         Exception: If PDF reading/writing fails.
     """
     try:
-        from PyPDF import PdfReader, PdfWriter  # noqa: PLC0415
+        from pypdf import PdfReader, PdfWriter  # noqa: PLC0415
     except ImportError:
-        logger.error("PyPDF not installed. Cannot split large PDFs.")
-        raise ImportError("PyPDF is required for PDF chunking. Install via: pip install PyPDF>=4.0.0")
+        logger.error("pypdf not installed. Cannot split large PDFs.")
+        raise ImportError("pypdf is required for PDF chunking. Install via: pip install pypdf>=4.0.0")
 
     reader = PdfReader(str(filepath))
     total_pages = len(reader.pages)
