@@ -9,13 +9,14 @@ All handlers return a UTF-8 string with Unix line endings.
 Supported formats:
   .xlsx / .xls  -> _parse_excel()  (pandas + openpyxl/xlrd)
   .ods          -> _parse_ods()    (pandas + odf engine)
-  .pdf          -> _parse_pdf()    (docling, fallback to Gemini Vision)
-  .html / .htm  -> _parse_html()   (docling or BeautifulSoup4)
+  .pdf          -> _parse_pdf()    (pdfplumber native → Docling lightweight → Vision)
+  .html / .htm  -> _parse_html()   (BeautifulSoup4)
   .jpg / .jpeg / .png / .tiff / .tif -> _parse_image() (Gemini Vision)
 
 Anything else raises UnsupportedFormatError.
 """
 
+import gc
 import logging
 import re
 from pathlib import Path
@@ -39,6 +40,20 @@ except ImportError:
     logger.warning(
         "docling not installed. PDFs will be processed via Gemini Vision fallback."
     )
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    logger.warning("PyMuPDF not installed. Scanned PDF detection disabled (assumes native).")
+
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+    logger.warning("pdfplumber not installed. Native PDF extraction will fall back to Docling.")
 
 # ---------------------------------------------------------------------------
 # Vision prompt (exact text per spec)
@@ -148,7 +163,7 @@ def _split_pdf_by_pages(filepath: Path, pages_per_chunk: int = 50) -> list[Path]
     return chunks
 
 
-def _docling_convert(filepath: Path):
+def _docling_convert(filepath: Path, lightweight: bool = False):
     """Encapsulate docling API call.
 
     Returns a conversion result object with a .document attribute.
@@ -156,29 +171,267 @@ def _docling_convert(filepath: Path):
 
     Args:
         filepath: Path to the file to convert.
+        lightweight: If True, disables page image generation to reduce RAM usage.
 
     Returns:
         A docling conversion result with .document attribute.
     """
     from docling.document_converter import DocumentConverter  # noqa: PLC0415
-    converter = DocumentConverter()
+    if lightweight:
+        try:
+            from docling.datamodel.base_models import InputFormat  # noqa: PLC0415
+            from docling.datamodel.pipeline_options import PdfPipelineOptions  # noqa: PLC0415
+            from docling.document_converter import PdfFormatOption  # noqa: PLC0415
+            pipeline_options = PdfPipelineOptions(generate_page_images=False)
+            converter = DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+            )
+        except Exception:
+            converter = DocumentConverter()
+    else:
+        converter = DocumentConverter()
     return converter.convert(str(filepath))
 
 
-def _is_scanned_pdf(text: str, page_count: int, threshold: int = 50) -> bool:
-    """Heuristic to classify a PDF as scanned based on text density.
+def is_scanned_pdf(path: Path, sample_pages: int = 3) -> bool:
+    """Detect scanned PDFs by checking text density BEFORE any heavy processing.
 
-    Args:
-        text: Extracted text from docling.
-        page_count: Number of pages in the PDF.
-        threshold: Minimum average characters per page to be considered native.
-            Default is 50 (per spec).
+    Uses PyMuPDF to read the native text layer directly — fast and low-memory.
+    Returns True if fewer than 50% of sampled pages contain more than 50 chars,
+    which indicates the PDF has no embedded text (i.e., it's image-only/scanned).
 
-    Returns:
-        True if the PDF is likely scanned (below threshold), False otherwise.
+    Falls back to False (assume native) if PyMuPDF is not installed.
     """
-    avg_chars = len(text) / max(1, page_count)
-    return avg_chars < threshold
+    if not PYMUPDF_AVAILABLE:
+        return False
+    doc = fitz.open(str(path))
+    try:
+        pages_to_check = min(sample_pages, len(doc))
+        if pages_to_check == 0:
+            return False
+        text_pages = sum(
+            1 for i in range(pages_to_check)
+            if len(doc[i].get_text()) > 50
+        )
+        return (text_pages / pages_to_check) < 0.5
+    finally:
+        doc.close()
+
+
+def _merge_fragmented_rows(rows: list[list]) -> list[list]:
+    """Merge continuation rows into the preceding row.
+
+    A continuation row has content only in the first cell — all other cells
+    are None or empty. This happens when a provider name wraps to the next
+    visual line in the source document but belongs to the same table row.
+    """
+    merged: list[list] = []
+    for row in rows:
+        first_has_content = row[0] is not None and str(row[0]).strip()
+        rest_all_empty = all(c is None or str(c).strip() == "" for c in row[1:])
+        if merged and first_has_content and rest_all_empty:
+            prev_text = str(merged[-1][0] or '').strip()
+            merged[-1][0] = (prev_text + " " + str(row[0]).strip()).strip()
+        else:
+            merged.append(list(row))
+    return merged
+
+
+def _clean_brand(raw: str) -> str:
+    """Strip PM/C. catalog codes and trailing notes from a brand entry.
+
+    Examples:
+      "ELEA PM59408"                   -> "ELEA"
+      "ELEA PHOENIX PM59408"           -> "ELEA PHOENIX"
+      "LEPETIT/LAFEDAR PM48886/44893"  -> "LEPETIT/LAFEDAR"
+      "RICHET CAJA X 200"              -> "RICHET"
+      "LAFEDAR VTO 07/26"              -> "LAFEDAR"
+      "BETA PM48647 x8"                -> "BETA"
+    """
+    brand = raw.strip()
+    brand = re.sub(r"\s+(?:PM|C\.)\s*\d[\d/]*.*$", "", brand, flags=re.IGNORECASE)
+    brand = re.sub(
+        r"\s+(?:CAJA|VTO\.?|x\s*\d|\(|BLISTER|SEGUN|INGRESA|ALT\.?|NO\s+SE|CAJA\s+CERRADA).*$",
+        "",
+        brand,
+        flags=re.IGNORECASE,
+    ).strip()
+    return brand
+
+
+def _distribute_brands(rows: list[list]) -> list[list]:
+    """Redistribute brand lists from merged cells to individual provider rows.
+
+    In comparativas PDFs, pdfplumber extracts the brand info for ALL providers
+    as a single multiline cell (\\n-separated) in ONE provider's Description
+    column. Two patterns occur:
+      A) Brand-list row has no price (standalone brand cell)
+      B) Brand-list row also has a price (pdfplumber merged it with the first
+         provider's row)
+
+    This function:
+      1. Finds rows where Description has \\n (with or without price)
+      2. Splits brands by \\n, cleans catalog codes via _clean_brand()
+      3. Distributes the N-th brand to the N-th price row in that item block
+      4. Clears the multiline list from the source row
+
+    Column layout assumed: 0=Proveedor, 1=Item, 3=Descripción, 5=PU
+    """
+    ITEM_COL = 1
+    DESC_COL = 3
+    PRICE_COL = 5
+
+    if not rows or not any(len(r) > PRICE_COL for r in rows):
+        return rows
+
+    result = [list(r) for r in rows]
+
+    # Group rows into item blocks: new block starts when ITEM_COL has a digit
+    groups: list[list[int]] = []
+    current: list[int] = []
+    for i, row in enumerate(result):
+        item_val = row[ITEM_COL] if len(row) > ITEM_COL else None
+        if item_val is not None and str(item_val).strip().isdigit():
+            if current:
+                groups.append(current)
+            current = [i]
+        else:
+            current.append(i)
+    if current:
+        groups.append(current)
+
+    for group in groups:
+        # Find first brand-list row: Description has \n (with or without price).
+        # pdfplumber sometimes merges the brand list into the first provider row,
+        # which means that row can have both \n-separated brands AND a price.
+        bl_idx: int | None = None
+        bl_desc = ""
+        for i in group:
+            row = result[i]
+            desc = str(row[DESC_COL]) if len(row) > DESC_COL and row[DESC_COL] is not None else ""
+            if "\n" in desc:
+                bl_idx = i
+                bl_desc = desc
+                break
+
+        if bl_idx is None:
+            continue
+
+        # Build ordered list of valid (non-No-cotiza) brands
+        valid_brands: list[str] = []
+        for line in bl_desc.split("\n"):
+            b = _clean_brand(line)
+            if b and b.lower() not in ("no cotiza", "nc", "no cotiza."):
+                valid_brands.append(b)
+
+        # Clear the multiline Description regardless of whether brands found
+        result[bl_idx][DESC_COL] = ""
+
+        if not valid_brands:
+            continue
+
+        # Collect ALL price rows in order (including bl_idx if it has price).
+        # When bl_idx has price, brand[0] goes to it; remaining brands go to
+        # subsequent price rows in document order.
+        price_rows = [
+            i for i in group
+            if len(result[i]) > PRICE_COL
+            and result[i][PRICE_COL] is not None
+            and str(result[i][PRICE_COL]).strip()
+        ]
+
+        # N-th brand -> N-th price row
+        for n, row_i in enumerate(price_rows):
+            if n < len(valid_brands):
+                result[row_i][DESC_COL] = valid_brands[n]
+
+    return result
+
+
+def _rows_to_markdown(rows: list[list]) -> str:
+    """Convert a pdfplumber table (list of rows) to a Markdown pipe table."""
+    if not rows:
+        return ""
+    str_rows = [[str(c).replace('\n', ' ').strip() if c is not None else "" for c in row] for row in rows]
+    str_rows = [row for row in str_rows if any(cell for cell in row)]
+    if not str_rows:
+        return ""
+    ncols = max(len(row) for row in str_rows)
+    str_rows = [row + [""] * (ncols - len(row)) for row in str_rows]
+    lines = [
+        "| " + " | ".join(str_rows[0]) + " |",
+        "| " + " | ".join(["---"] * ncols) + " |",
+    ]
+    for row in str_rows[1:]:
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
+
+
+def _extract_native_pdf(filepath: Path) -> str:
+    """Extract text from a native PDF using pdfplumber.
+
+    Accumulates all table rows across pages into a single Markdown table,
+    deduplicating repeated page headers. If a page header differs from the
+    canonical one, logs a WARNING and includes it as a new section (never
+    discards silently). Text-only pages are appended after the table.
+
+    Raises RuntimeError if pdfplumber is not installed.
+    """
+    if not PDFPLUMBER_AVAILABLE:
+        raise RuntimeError("pdfplumber is not installed")
+
+    table_rows: list[list] = []
+    canonical_header = None           # tuple[str, ...] established from first table
+    header_variants: set = set()
+    text_parts: list[str] = []
+
+    with pdfplumber.open(str(filepath)) as pdf:
+        page_count = len(pdf.pages)
+        for page_num, page in enumerate(pdf.pages, start=1):
+            tables = page.extract_tables()
+            if tables:
+                for table in tables:
+                    merged = _merge_fragmented_rows(table)
+                    if not merged:
+                        continue
+                    this_header = tuple(
+                        str(c).replace('\n', ' ').strip() if c is not None else ""
+                        for c in merged[0]
+                    )
+                    if canonical_header is None:
+                        canonical_header = this_header
+                        header_variants.add(this_header)
+                        table_rows.extend(merged)
+                    elif this_header == canonical_header:
+                        table_rows.extend(merged[1:])   # skip duplicate header
+                    else:
+                        if this_header not in header_variants:
+                            logger.warning(
+                                "Header variante en pág %d: %s (esperado: %s)",
+                                page_num, this_header, canonical_header,
+                            )
+                            header_variants.add(this_header)
+                        table_rows.extend(merged)       # include variant header
+            else:
+                text = page.extract_text()
+                if text and text.strip():
+                    text_parts.append(text.strip())
+
+    parts: list[str] = []
+    if table_rows:
+        table_rows = _distribute_brands(table_rows)
+        md = _rows_to_markdown(table_rows)
+        if md:
+            parts.append(md)
+    parts.extend(text_parts)
+
+    result = "\n\n".join(parts)
+    variant_info = f", {len(header_variants)} variantes de header" if len(header_variants) > 1 else ""
+    logger.info(
+        "pipeline=native_pdf file=%s pages=%d chars=%d%s",
+        filepath.name, page_count, len(result), variant_info,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -256,193 +509,118 @@ def _parse_ods(filepath: Path) -> str:
 
 
 def _parse_pdf(filepath: Path) -> str:
-    """Parse a PDF file to Markdown.
+    """Parse a PDF file to Markdown using a hybrid pipeline.
 
-    For large PDFs (>50 pages), automatically splits into chunks to avoid
-    memory exhaustion in docling. Each chunk is processed separately and
-    results are merged. For smaller PDFs, processes directly.
+    Pipeline decision (in order):
+    1. docling unavailable      → Vision (Gemini file upload)
+    2. is_scanned_pdf() = False → pdfplumber native extraction
+       └ empty / error          → Docling lightweight (15-page chunks)
+    3. is_scanned_pdf() = True  → Docling lightweight (15-page chunks)
+    4. Docling chunk fails      → Vision per chunk (last resort)
 
-    Attempts native text extraction via docling first. If the extracted text
-    density is below the scanned threshold (< 50 chars/page average), or if
-    docling raises any exception, falls back to Gemini Vision via _parse_image().
-
-    If docling is not installed (ImportError at module load), ALL PDFs route
-    directly to _parse_image().
-
-    Args:
-        filepath: Path to the PDF file.
-
-    Returns:
-        Markdown string from either docling or Gemini Vision.
-
-    Side effects:
-        - If docling path: reads file (read-only).
-        - If Vision fallback: uploads to Gemini, deletes after.
-        - If chunking: creates temporary PDF chunks, cleans them up after.
+    Docling lightweight mode disables page image generation to reduce RAM.
+    gc.collect() runs after each Docling chunk.
     """
     if not DOCLING_AVAILABLE:
-        logger.warning(
-            "docling not available, routing PDF to Gemini Vision: %s", filepath.name
-        )
+        logger.warning("docling not available, routing PDF to Gemini Vision: %s", filepath.name)
         return _parse_image(filepath)
 
-    file_size_mb = filepath.stat().st_size / (1024 * 1024)
+    scanned = is_scanned_pdf(filepath)
 
-    import tempfile
-    temp_files = []
+    if not scanned:
+        if PDFPLUMBER_AVAILABLE:
+            try:
+                result = _extract_native_pdf(filepath)
+                if result.strip():
+                    return result
+                logger.warning(
+                    "pdfplumber returned empty result for %s, falling back to Docling",
+                    filepath.name,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "pdfplumber failed for %s (%s), falling back to Docling",
+                    filepath.name,
+                    exc,
+                )
+        pipeline_label = "docling_native_fallback"
+    else:
+        pipeline_label = "docling_scanned"
 
+    temp_files: list[Path] = []
     try:
-        # Check if PDF needs chunking (estimated by file size as proxy for page count)
-        needs_chunking = file_size_mb > 5  # Chunk large PDFs: ~5MB per 10 pages
+        chunks = _split_pdf_by_pages(filepath, pages_per_chunk=15)
+        files_to_process = chunks if chunks else [filepath]
+        temp_files = chunks
 
-        if needs_chunking:
-            logger.info(
-                "Large PDF detected (%.1f MB), attempting chunked processing: %s",
-                file_size_mb,
-                filepath.name,
-            )
-            chunks = _split_pdf_by_pages(filepath, pages_per_chunk=10)
-            if chunks:
-                temp_files = chunks
-                all_markdown = []
-
-                for idx, chunk_path in enumerate(chunks, start=1):
-                    try:
-                        result = _docling_convert(chunk_path)
-                        chunk_text = result.document.export_to_markdown()
-                        all_markdown.append(chunk_text)
-                        logger.info(
-                            "Parsed PDF chunk %d/%d via docling (%d chars)",
-                            idx,
-                            len(chunks),
-                            len(chunk_text),
-                        )
-                    except Exception as chunk_exc:
-                        logger.warning(
-                            "Chunk %d docling failed, falling back to Vision: %s",
-                            idx,
-                            chunk_exc,
-                        )
-                        chunk_text = _parse_image(chunk_path)
-                        all_markdown.append(chunk_text)
-                        logger.info(
-                            "Parsed PDF chunk %d/%d via Vision (%d chars)",
-                            idx,
-                            len(chunks),
-                            len(chunk_text),
-                        )
-
-                # Merge all chunks with separator
-                text = "\n\n".join(all_markdown)
-                page_count = sum(
-                    _docling_convert(chunk).document.num_pages() for chunk in chunks
-                )
+        all_markdown: list[str] = []
+        for idx, chunk_path in enumerate(files_to_process, start=1):
+            try:
+                chunk_result = _docling_convert(chunk_path, lightweight=True)
+                chunk_text = chunk_result.document.export_to_markdown()
+                all_markdown.append(chunk_text)
                 logger.info(
-                    "Merged %d chunks: %d pages, %d chars total",
-                    len(chunks),
-                    page_count,
-                    len(text),
+                    "Parsed PDF chunk %d/%d via docling (%d chars)",
+                    idx,
+                    len(files_to_process),
+                    len(chunk_text),
                 )
-            else:
-                # File size suggested chunking but PDF has <= 50 pages
-                result = _docling_convert(filepath)
-                text = result.document.export_to_markdown()
-                page_count = result.document.num_pages()
-        else:
-            # Small PDF, process normally
-            result = _docling_convert(filepath)
-            text = result.document.export_to_markdown()
-            page_count = result.document.num_pages()
+            except Exception as chunk_exc:
+                logger.warning("Docling chunk %d failed, using Vision: %s", idx, chunk_exc)
+                chunk_text = _parse_image(chunk_path)
+                all_markdown.append(chunk_text)
+            gc.collect()
 
-        if _is_scanned_pdf(text, page_count):
-            logger.info(
-                "PDF classified as scanned (low text density), "
-                "falling back to Vision: %s",
-                filepath.name,
-            )
-            return _parse_image(filepath)
-
+        text = "\n\n".join(all_markdown)
         logger.info(
-            "Parsed native PDF: %s (%d pages, %d chars)",
+            "pipeline=%s file=%s chunks=%d chars=%d",
+            pipeline_label,
             filepath.name,
-            page_count,
+            len(files_to_process),
             len(text),
         )
         return text
 
     except Exception as exc:
-        logger.warning(
-            "docling failed for %s, falling back to Vision: %s",
-            filepath.name,
-            exc,
-        )
+        logger.warning("Docling failed for %s, falling back to Vision: %s", filepath.name, exc)
+        logger.info("pipeline=vision_fallback file=%s", filepath.name)
         return _parse_image(filepath)
 
     finally:
-        # Clean up temporary chunk files
+        gc.collect()
         for temp_file in temp_files:
             try:
                 temp_file.unlink()
                 logger.debug("Cleaned up temporary chunk: %s", temp_file.name)
             except Exception as cleanup_exc:
-                logger.warning(
-                    "Failed to clean up temporary chunk %s: %s",
-                    temp_file.name,
-                    cleanup_exc,
-                )
+                logger.warning("Failed to clean up chunk %s: %s", temp_file.name, cleanup_exc)
 
 
 def _parse_html(filepath: Path) -> str:
-    """Parse an HTML file to clean text or Markdown.
+    """Parse an HTML file to clean text using BeautifulSoup4.
 
-    Attempts docling HTML-to-Markdown conversion first. If docling is not
-    installed or raises, falls back to BeautifulSoup4: extracts text, strips
-    whitespace per line, collapses consecutive blank lines to one.
+    Skips Docling entirely — HTML price lists in this project are well-structured
+    enough for BS4, which avoids the memory overhead of the Docling pipeline.
 
     Args:
         filepath: Path to the .html or .htm file.
 
     Returns:
         Clean text string (no HTML tags).
-
-    Side effects:
-        Reads file from disk. Encoding errors handled with 'replace' mode.
     """
-    if DOCLING_AVAILABLE:
-        try:
-            result = _docling_convert(filepath)
-            text = result.document.export_to_markdown()
-            logger.info(
-                "Parsed HTML via docling: %s (%d chars)", filepath.name, len(text)
-            )
-            return text
-        except Exception as exc:
-            logger.warning(
-                "docling HTML conversion failed for %s, using BS4: %s",
-                filepath.name,
-                exc,
-            )
-
-    # BeautifulSoup4 fallback
     with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         raw_html = f.read()
 
     soup = BeautifulSoup(raw_html, "html.parser")
 
-    # Remove script and style tags
     for tag in soup(["script", "style"]):
         tag.decompose()
 
     text = soup.get_text(separator="\n")
-
-    # Strip per line, collapse consecutive blank lines to one
     lines = [line.strip() for line in text.splitlines()]
-    result = re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
-    clean_text = result.strip()
+    clean_text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
-    logger.info(
-        "Parsed HTML via BeautifulSoup4: %s (%d chars)", filepath.name, len(clean_text)
-    )
+    logger.info("pipeline=bs4_html file=%s chars=%d", filepath.name, len(clean_text))
     return clean_text
 
 
