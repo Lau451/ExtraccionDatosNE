@@ -27,6 +27,7 @@ from uuid import UUID
 
 from fastapi import BackgroundTasks
 
+from app.persistent_chunking import cerrar_sesion
 from app.persistent_output import persistir_output_final
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,8 @@ async def _retry_persist(
                 extraction_id,
                 session_id,
             )
+            if session_id is not None:
+                await cerrar_sesion(session_id=session_id, status="completed")
             return
 
         # persistir_output_final retorno None sin exception (error interno logueado ahi)
@@ -109,6 +112,12 @@ async def _retry_persist(
                 source_filename,
                 exc,
             )
+            if session_id is not None:
+                await cerrar_sesion(
+                    session_id=session_id,
+                    status="failed",
+                    error_msg=str(exc),
+                )
             return  # NUNCA propagar
 
         # Calcular espera con backoff exponencial: 2^(attempt+1)
