@@ -20,21 +20,28 @@ import json
 import logging
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
+from uuid import UUID
 
 from google.genai import types
 
 from app.config import CLIENT, get_output_dir, get_processed_dir, COMPARATIVAS_OUTPUT_BASE, DATA_DIR, get_next_client, generate_with_fallback
 from app.robot import obtener_cliente, nombre_unico
-from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
+from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError, GeminiTruncationError
+from app.persistent_chunking import guardar_chunk
 
 logger = logging.getLogger(__name__)
 
-_JSON_CONFIG = types.GenerateContentConfig(response_mime_type="application/json")
+_JSON_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    max_output_tokens=65_536,   # gemini-2.5-flash max; prevents mid-JSON truncation
+)
 
-_CHUNK_THRESHOLD = 60_000  # chars; above this, use chunked Gemini calls
-_CHUNK_SIZE = 30            # max renglones per Gemini call
+_CHUNK_THRESHOLD = 40_000   # chars; above this, use chunked Gemini calls
+_CHUNK_SIZE = 15            # items per chunk (reduce to 10 if truncation persists in Phase 3)
+_MAX_PARALLEL_CHUNKS = 3    # concurrent Gemini calls; lower to 2 on free-tier API keys
 
 # ======================
 # PROMPTS
@@ -49,25 +56,30 @@ Structure varies across documents but always contains:
 - Providers that did not quote show "NO COTIZA", "No cotiza", empty cells, or similar
 - Each provider offers their OWN brand — different providers supply different brands for the same item
 
+TABLE STRUCTURE NOTE — brands in Description column:
+Each provider row may have its brand in the Descripción/Description column of that same row.
+The brand is the commercial name of the product (e.g. "ELEA", "KLONAL", "LAFEDAR").
+Catalog codes like "PM59408" or "C.48432" are internal identifiers — do NOT include them in marca.
+If a row has no brand in its Description column, use "sin marca".
+
 Return ONLY valid JSON:
 {
   "proveedores": ["Provider A", "Provider B"],
   "renglones": [
     {
       "renglon": 1,
-      "descripcion": "Full product/medication description — NOT the brand name",
       "proveedores_precios": {
-        "Provider A": {"precio": "12.50", "marca": "BRAND_A"},
-        "Provider B": {"precio": "", "marca": ""}
+        "Provider A": {"precio": "12.50", "marca": "ELEA"},
+        "Provider B": {"precio": "13.00", "marca": "sin marca"}
       }
     }
   ]
 }
 
 RULES:
-- "descripcion": product name and dosage only (e.g. "AMOXICILINA 500 MG / 5 ML SUSP X 90 ML"), never include the brand here
-- "marca": per-provider brand — extract the brand each provider offers for that item, use empty string if none
+- "marca": brand name only, no catalog codes (PM/C. numbers). Use "sin marca" if no brand is found
 - "precio": unit price as a number string, empty string if provider does not quote
+- "proveedor": full provider name. Use "sin proveedor" if name cannot be determined
 - Include ALL providers for every renglon, even those that don't quote
 - Return ALL items found"""
 
@@ -97,23 +109,50 @@ class NoProvidersDetectedError(ValueError):
 def _llamar_gemini_json(prompt: str, markdown: str) -> dict:
     """Call Gemini with response_mime_type='application/json' for guaranteed valid JSON.
 
-    Uses structured output to eliminate JSONDecodeError and code fence issues.
-    API-level retries are handled by the @handle_gemini_errors decorator.
-
-    Args:
-        prompt: The prompt text to send to Gemini.
-        markdown: The document content (Markdown) appended after the prompt.
-
-    Returns:
-        Parsed JSON response as a dict.
+    Checks finish_reason BEFORE parsing to detect truncation early. Raises
+    GeminiTruncationError (not retried) instead of letting JSONDecodeError
+    trigger pointless retries on a deterministically-too-large chunk.
 
     Raises:
-        GeminiQuotaExceededError: If Gemini API quota is exceeded.
-        GeminiRateLimitError: If Gemini API rate limit is exceeded.
+        GeminiTruncationError: Response truncated (MAX_TOKENS) or invalid JSON.
+        GeminiQuotaExceededError: API quota exceeded.
+        GeminiRateLimitError: API rate limit / 429 / 503 — retried with backoff.
     """
     client = get_next_client()
     response = generate_with_fallback(client, f"{prompt}\n\n{markdown}", config=_JSON_CONFIG)
-    return json.loads(response.text)
+
+    finish_reason = None
+    if response.candidates:
+        finish_reason = str(response.candidates[0].finish_reason)
+
+    logger.info(
+        "Gemini response: %d chars, finish_reason=%s",
+        len(response.text), finish_reason,
+    )
+
+    if finish_reason and "MAX_TOKENS" in finish_reason:
+        raise GeminiTruncationError(
+            f"Respuesta truncada en {len(response.text)} chars (finish_reason={finish_reason})"
+        )
+
+    try:
+        result = json.loads(response.text)
+    except json.JSONDecodeError as exc:
+        raise GeminiTruncationError(
+            f"JSON inválido tras {len(response.text)} chars "
+            f"(finish_reason={finish_reason}): {exc}"
+        ) from exc
+
+    if isinstance(result, list):
+        logger.warning(
+            "Respuesta como lista en lugar de dict (%d items) — inferiendo estructura",
+            len(result),
+        )
+        if result and isinstance(result[0], dict) and "renglon" in result[0]:
+            return {"proveedores": [], "renglones": result}
+        return {"proveedores": [], "renglones": []}
+
+    return result
 
 
 def _limpiar_precio(raw: str) -> str:
@@ -237,16 +276,16 @@ def _comprimir_markdown(markdown: str) -> str:
 
 
 def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list[str]:
-    """Split a markdown table into chunks, repeating header context in each.
+    """Split a markdown table into chunks, keeping Items complete.
 
-    Detects where actual renglones start (first row whose leftmost cell is a
-    positive number) and treats everything before that as context. Each chunk
-    contains: the two-line markdown header + context rows + up to chunk_size
-    renglon rows. Small documents return a single-element list.
+    Groups rows by Item (identified by a number in the first column that looks
+    like an item number). Each Item includes its header row + all provider rows
+    that follow it. Chunks contain complete Items only — never splits an Item
+    across chunks. This preserves the logical structure of the document.
 
     Args:
         markdown: Full markdown table from df.to_markdown(index=False).
-        chunk_size: Maximum renglon rows per chunk.
+        chunk_size: Maximum number of Items per chunk.
 
     Returns:
         List of markdown strings ready to be sent to Gemini individually.
@@ -258,39 +297,185 @@ def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list
     md_header = lines[:2]   # column names + separator
     data_lines = lines[2:]
 
-    # Find the first row that is an actual renglon (positive number in col 0)
-    renglon_start = len(data_lines)
+    # Detect table header repetitions (|---|---|---|...)
+    # and extract document context (everything before first actual item)
+    context_end = 0
     for i, line in enumerate(data_lines):
         cells = [c.strip() for c in line.split("|") if c.strip()]
-        if cells:
-            try:
-                if float(cells[0]) > 0:
-                    renglon_start = i
-                    break
-            except ValueError:
-                pass
+        if not cells:
+            continue
+        try:
+            # Check if this is an item header (number in first column, not separator)
+            if cells[0] != "---" and float(cells[0]) > 0:
+                context_end = i
+                break
+        except ValueError:
+            pass
 
-    context = data_lines[:renglon_start]
-    body = data_lines[renglon_start:]
+    context = data_lines[:context_end]
+    body = data_lines[context_end:]
 
     if not body:
         return [markdown]
 
+    # Group body lines into Items. An Item starts with a row where the first
+    # cell is a number >= 1. All following rows (providers) belong to that Item
+    # until the next Item header.
+    items = []
+    current_item = []
+
+    for line in body:
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+
+        # Skip empty lines and table header separators
+        if not cells or cells[0] == "---":
+            if current_item:
+                current_item.append(line)
+            continue
+
+        # Check if this is an Item header (number in first column)
+        is_item_header = False
+        try:
+            num = float(cells[0])
+            if num > 0:
+                is_item_header = True
+        except ValueError:
+            pass
+
+        if is_item_header and current_item:
+            # Start of new Item — save the previous one
+            items.append(current_item)
+            current_item = [line]
+        else:
+            # Provider row or continuation — add to current item
+            current_item.append(line)
+
+    # Don't forget the last item
+    if current_item:
+        items.append(current_item)
+
+    if not items:
+        return [markdown]
+
+    # In flat-text format (no | delimiters), the splitter mistakes quantities for
+    # item headers, producing "orphan" items that are just a single number line
+    # (the real renglon number) followed by a separate item starting with the
+    # quantity. Merge each single-line numeric orphan with the next item so chunk
+    # boundaries never fall between a renglon number and its data.
+    merged: list[list[str]] = []
+    i = 0
+    while i < len(items):
+        item = items[i]
+        non_empty = [ln for ln in item if ln.strip()]
+        if len(non_empty) == 1 and i + 1 < len(items):
+            try:
+                float(non_empty[0].strip())
+                merged.append(item + items[i + 1])
+                i += 2
+                continue
+            except ValueError:
+                pass
+        merged.append(item)
+        i += 1
+    items = merged
+
+    # Build chunks: each chunk contains up to chunk_size complete Items
     chunks = []
-    for i in range(0, len(body), chunk_size):
-        chunk = "\n".join(md_header + context + body[i : i + chunk_size])
+    for i in range(0, len(items), chunk_size):
+        chunk_items = items[i : i + chunk_size]
+        chunk_lines = md_header + context + [line for item in chunk_items for line in item]
+        chunk = "\n".join(chunk_lines)
         chunks.append(chunk)
 
     return chunks
 
 
-def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
+def _split_chunk_in_half(chunk: str) -> list[str]:
+    """Split a markdown chunk into two halves by item count.
+
+    Used as fallback when a chunk is too large for Gemini's output limit.
+    Returns [chunk] unchanged if the chunk can't be split (≤1 item).
+    """
+    lines = chunk.split("\n")
+    if len(lines) < 4:
+        return [chunk]
+
+    md_header = lines[:2]
+    data_lines = lines[2:]
+    items: list[list[str]] = []
+    current_item: list[str] = []
+
+    for line in data_lines:
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if not cells or cells[0] == "---":
+            if current_item:
+                current_item.append(line)
+            continue
+        is_item_header = False
+        try:
+            if float(cells[0]) > 0:
+                is_item_header = True
+        except ValueError:
+            pass
+        if is_item_header and current_item:
+            items.append(current_item)
+            current_item = [line]
+        else:
+            current_item.append(line)
+    if current_item:
+        items.append(current_item)
+
+    if len(items) <= 1:
+        return [chunk]
+
+    mid = max(1, len(items) // 2)
+
+    def _build(item_list: list[list[str]]) -> str:
+        return "\n".join(md_header + [ln for item in item_list for ln in item])
+
+    return [_build(items[:mid]), _build(items[mid:])]
+
+
+def _process_chunk(prompt: str, chunk: str, chunk_idx: int, total: int) -> dict:
+    """Process a single chunk; split in half automatically on truncation.
+
+    On GeminiTruncationError: logs the event, splits the chunk in half,
+    processes each half independently, and merges the results.
+    """
+    try:
+        return _llamar_gemini_json(prompt, chunk)
+    except GeminiTruncationError:
+        logger.info(
+            "Chunk %d/%d truncado — dividiendo en 2 subchunks",
+            chunk_idx, total,
+        )
+        sub_chunks = _split_chunk_in_half(chunk)
+        if len(sub_chunks) < 2:
+            logger.warning("Chunk %d no se pudo dividir — renglones vacíos", chunk_idx)
+            return {"proveedores": [], "renglones": []}
+        r1 = _llamar_gemini_json(prompt, sub_chunks[0])
+        r2 = _llamar_gemini_json(prompt, sub_chunks[1])
+        merged_providers = list(dict.fromkeys(
+            r1.get("proveedores", []) + r2.get("proveedores", [])
+        ))
+        logger.info(
+            "Subchunks de chunk %d resueltos: %d + %d renglones",
+            chunk_idx,
+            len(r1.get("renglones", [])),
+            len(r2.get("renglones", [])),
+        )
+        return {
+            "proveedores": merged_providers,
+            "renglones": r1.get("renglones", []) + r2.get("renglones", []),
+        }
+
+
+def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[UUID] = None) -> dict:
     """Extract providers and all items with prices from a comparativa document.
 
-    Uses a single Gemini call for small documents. For large documents
-    (> _CHUNK_THRESHOLD chars) automatically splits into chunks of _CHUNK_SIZE
-    renglones each, calls Gemini per chunk, and merges the results. Each chunk
-    includes the full Excel header context so provider detection is consistent.
+    Processes chunks in parallel (up to _MAX_PARALLEL_CHUNKS concurrent Gemini
+    calls). Each chunk is handled by _process_chunk which auto-splits on
+    GeminiTruncationError. Results are merged in original order.
 
     Args:
         markdown: Compressed document content as a Markdown string.
@@ -300,51 +485,65 @@ def _extraer_comparativa(markdown: str, filepath: Path) -> dict:
         Dict with keys "proveedores" (list[str]) and "renglones" (list[dict]).
 
     Raises:
-        NoProvidersDetectedError: If no providers are detected in the first chunk.
+        NoProvidersDetectedError: If no providers detected across all chunks.
     """
     chunks = _split_markdown_chunks(markdown) if len(markdown) > _CHUNK_THRESHOLD else [markdown]
+    total = len(chunks)
 
-    if len(chunks) > 1:
+    if total > 1:
         logger.info(
-            "Large document (%d chars): splitting into %d chunks of ~%d renglones each",
-            len(markdown),
-            len(chunks),
-            _CHUNK_SIZE,
+            "Large document (%d chars): %d chunks of ~%d renglones, %d workers",
+            len(markdown), total, _CHUNK_SIZE, min(_MAX_PARALLEL_CHUNKS, total),
         )
+
+    results: list[Optional[dict]] = [None] * total
+    workers = min(_MAX_PARALLEL_CHUNKS, total)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_idx = {
+            executor.submit(_process_chunk, _PROMPT_UNIFIED, chunk, i + 1, total): i
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+                logger.info(
+                    "Chunk %d/%d completado: %d renglones",
+                    idx + 1, total,
+                    len((results[idx] or {}).get("renglones", [])),
+                )
+            except Exception as exc:
+                logger.error("Chunk %d/%d falló definitivamente: %s", idx + 1, total, exc)
+                results[idx] = {"proveedores": [], "renglones": []}
 
     all_renglones: list[dict] = []
     providers: list[str] = []
 
-    for idx, chunk in enumerate(chunks):
-        result = _llamar_gemini_json(_PROMPT_UNIFIED, chunk)
-        chunk_providers: list[str] = result.get("proveedores", [])
+    for idx, result in enumerate(results):
+        if not result:
+            continue
+        for p in result.get("proveedores", []):
+            if p not in providers:
+                providers.append(p)
+        all_renglones.extend(result.get("renglones", []))
 
-        if idx == 0:
-            if not chunk_providers:
-                raise NoProvidersDetectedError(
-                    f"No providers detected in document '{filepath.name}'. "
-                    "The document may not be a valid price comparison, or the format is unrecognized."
-                )
-            providers = chunk_providers
-            logger.info(
-                "Detected %d providers in '%s': %s",
-                len(providers),
-                filepath.name,
-                providers,
-            )
+        if session_id:
+            try:
+                guardar_chunk(session_id=session_id, chunk_num=idx, resultado_json=result)
+            except Exception as exc:
+                logger.warning("Error guardando chunk %d en Supabase: %s", idx, exc)
 
-        chunk_renglones = result.get("renglones", [])
-        all_renglones.extend(chunk_renglones)
+    if not providers:
+        raise NoProvidersDetectedError(
+            f"No providers detected in document '{filepath.name}'. "
+            "The document may not be a valid price comparison, or the format is unrecognized."
+        )
 
-        if len(chunks) > 1:
-            logger.info(
-                "Chunk %d/%d: extracted %d renglones",
-                idx + 1,
-                len(chunks),
-                len(chunk_renglones),
-            )
-
-    logger.info("Total renglones extracted: %d", len(all_renglones))
+    logger.info(
+        "Detected %d providers in '%s': %s", len(providers), filepath.name, providers,
+    )
+    logger.info("Total renglones extracted: %d from %d chunks", len(all_renglones), total)
     return {"proveedores": providers, "renglones": all_renglones}
 
 
@@ -361,7 +560,7 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
         cliente: Client name derived from the filename.
 
     Returns:
-        List of row dicts with keys: renglon, descripcion, proveedor, marca,
+        List of row dicts with keys: renglon, proveedor, marca,
         precio, cliente — ready for csv.DictWriter. Contains at most 3 rows
         per renglon, ordered by ascending price.
     """
@@ -373,7 +572,6 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
         # Si no viene el renglon, generar número incremental
         if not renglon or str(renglon).strip() == "":
             renglon = idx
-        descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
         proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
         if not proveedores_precios:
@@ -402,11 +600,7 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
                 continue
 
         if not provider_price_list:
-            logger.warning(
-                "Renglon %s (%s) has no valid prices from any provider, skipping",
-                renglon,
-                descripcion,
-            )
+            logger.warning("Renglon %s has no valid prices from any provider, skipping", renglon)
             continue
 
         # Sort by numeric price ascending, keep top 3
@@ -420,11 +614,12 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
         )
 
         for proveedor, precio, marca_proveedor, _ in top_3:
+            proveedor_clean = str(proveedor).replace(";", "").strip() or "sin proveedor"
+            marca_clean = str(marca_proveedor).replace(";", "").strip() or "sin marca"
             rows.append({
                 "renglon": renglon,
-                "descripcion": descripcion,
-                "proveedor": str(proveedor).replace(";", ""),
-                "marca": marca_proveedor,
+                "proveedor": proveedor_clean,
+                "marca": marca_clean,
                 "precio": precio,
                 "cliente": cliente_clean,
             })
@@ -461,7 +656,7 @@ def _escribir_csv(rows: list[dict], nombre_base: str, cliente: str) -> Path:
     csv_filename = nombre_unico(nombre_base, output_dir, ".csv")
     csv_path = output_dir / csv_filename
 
-    fieldnames = ["renglon", "descripcion", "proveedor", "marca", "precio", "cliente"]
+    fieldnames = ["renglon", "proveedor", "marca", "precio", "cliente"]
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -507,6 +702,8 @@ def _mover_a_procesados(ruta_archivo: Path, nombre_base: str, extension: str, cl
 def procesar_comparativa(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
+    *,
+    session_id: Optional[UUID] = None,
 ) -> Path:
     """Process a price comparison document using optimized single-extraction flow.
 
@@ -566,8 +763,8 @@ def procesar_comparativa(
     # 2. Compress Markdown (Fase 2: reduce tokens)
     markdown = _comprimir_markdown(markdown)
 
-    # 3. Unified extraction: detect providers + extract all prices (1 call)
-    all_data = _extraer_comparativa(markdown, ruta_archivo)
+    # 3. Extraccion unificada: detecta proveedores + extrae precios (con chunking si aplica)
+    all_data = _extraer_comparativa(markdown, ruta_archivo, session_id=session_id)
 
     if not all_data.get("renglones"):
         raise json.JSONDecodeError(

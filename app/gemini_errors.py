@@ -31,6 +31,19 @@ class GeminiRateLimitError(Exception):
         super().__init__(message)
 
 
+class GeminiTruncationError(Exception):
+    """Raised when Gemini truncates its response mid-JSON due to max_output_tokens.
+
+    This error is DETERMINISTIC — retrying the exact same input will produce
+    the same truncation. The caller must reduce the input size before retrying.
+    Never retry this with the same chunk.
+    """
+
+    def __init__(self, message: str = "Gemini truncated response (MAX_TOKENS)"):
+        self.message = message
+        super().__init__(message)
+
+
 class GeminiAPIError(Exception):
     """Generic Gemini API error."""
 
@@ -68,6 +81,8 @@ def handle_gemini_errors(max_retries: int = 3, backoff_factor: float = 2.0) -> C
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
+                except GeminiTruncationError:
+                    raise  # deterministic — retrying same input is pointless
                 except Exception as e:
                     last_exception = e
                     error_class, error_msg = _classify_gemini_error(e)

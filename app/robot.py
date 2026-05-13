@@ -6,6 +6,7 @@ import shutil
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Optional
+from uuid import UUID
 import pandas as pd
 from app.config import CLIENT, get_output_dir, get_processed_dir, get_next_client, generate_with_fallback
 from app.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
@@ -104,7 +105,7 @@ def _col_to_series(df: pd.DataFrame, col: str) -> pd.Series:
 
 
 def _limpiar_cantidad(contenido_csv: str) -> str:
-    """Trunca la columna 'cantidad' al entero ignorando lo que va después de la coma."""
+    """Trunca la columna 'cantidad' al entero ignorando decimales."""
     lineas = contenido_csv.strip().split("\n")
     if not lineas:
         return contenido_csv
@@ -120,8 +121,18 @@ def _limpiar_cantidad(contenido_csv: str) -> str:
         campos = linea.split(";")
         if len(campos) > idx_cantidad:
             val = campos[idx_cantidad].strip()
+            # Coma como separador decimal (formato argentino: 4.750,00 → 4.750)
             if "," in val:
                 val = val.split(",")[0].strip()
+            # Punto como separador decimal cuando la parte entera tiene 4+ dígitos
+            # (Gemini usa formato inglés: 4750.000 → 4750)
+            # Con 1-3 dígitos antes del punto es separador de miles argentino
+            # (4.750 → se elimina en el paso siguiente → 4750)
+            if val.count(".") == 1:
+                integer_part, _ = val.split(".")
+                if len(integer_part) >= 4:
+                    val = integer_part
+            # Eliminar puntos separadores de miles (4.750 → 4750)
             val = val.replace(".", "")
             campos[idx_cantidad] = val
         filas_procesadas.append(";".join(campos))
@@ -257,6 +268,8 @@ def _normalizar_excel(df: pd.DataFrame, cliente: str) -> pd.DataFrame:
 def procesar_archivo(
     ruta_archivo: Path,
     nombre_original: Optional[str] = None,
+    *,
+    session_id: Optional[UUID] = None,  # reservado para uso futuro (licitaciones)
 ) -> Path:
     if nombre_original:
         original_name = Path(nombre_original).name
