@@ -357,6 +357,28 @@ def _split_markdown_chunks(markdown: str, chunk_size: int = _CHUNK_SIZE) -> list
     if not items:
         return [markdown]
 
+    # In flat-text format (no | delimiters), the splitter mistakes quantities for
+    # item headers, producing "orphan" items that are just a single number line
+    # (the real renglon number) followed by a separate item starting with the
+    # quantity. Merge each single-line numeric orphan with the next item so chunk
+    # boundaries never fall between a renglon number and its data.
+    merged: list[list[str]] = []
+    i = 0
+    while i < len(items):
+        item = items[i]
+        non_empty = [ln for ln in item if ln.strip()]
+        if len(non_empty) == 1 and i + 1 < len(items):
+            try:
+                float(non_empty[0].strip())
+                merged.append(item + items[i + 1])
+                i += 2
+                continue
+            except ValueError:
+                pass
+        merged.append(item)
+        i += 1
+    items = merged
+
     # Build chunks: each chunk contains up to chunk_size complete Items
     chunks = []
     for i in range(0, len(items), chunk_size):
