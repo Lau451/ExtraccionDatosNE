@@ -132,11 +132,10 @@ def _renglones(*items: dict) -> dict:
     return {"proveedores": ["A", "B", "C", "D"], "renglones": list(items)}
 
 
-def _item(renglon, descripcion, **precios) -> dict:
+def _item(renglon, **precios) -> dict:
     """Helper: construye un renglón con precios en formato dict {proveedor: precio_str}."""
     return {
         "renglon": renglon,
-        "descripcion": descripcion,
         "proveedores_precios": {
             prov: {"precio": precio, "marca": ""}
             for prov, precio in precios.items()
@@ -145,13 +144,13 @@ def _item(renglon, descripcion, **precios) -> dict:
 
 
 def test_filtrar_devuelve_maximo_3_por_renglon():
-    data = _renglones(_item(1, "Prod", A="10.00", B="20.00", C="30.00", D="40.00"))
+    data = _renglones(_item(1, A="10.00", B="20.00", C="30.00", D="40.00"))
     rows = _filtrar_top_3_por_renglon(data, "CLI")
     assert len([r for r in rows if r["renglon"] == 1]) == 3
 
 
 def test_filtrar_ordena_por_precio_ascendente():
-    data = _renglones(_item(1, "Prod", Caro="100.00", Barato="10.00", Medio="50.00"))
+    data = _renglones(_item(1, Caro="100.00", Barato="10.00", Medio="50.00"))
     rows = _filtrar_top_3_por_renglon(data, "CLI")
     precios = [float(r["precio"]) for r in rows]
     assert precios == sorted(precios)
@@ -231,14 +230,14 @@ def test_filtrar_sanitiza_punto_y_coma_en_todos_los_campos():
         },
     })
     rows = _filtrar_top_3_por_renglon(data, "CLI;A")
-    for campo in ("descripcion", "proveedor", "marca", "cliente"):
+    for campo in ("proveedor", "marca", "cliente"):
         assert ";" not in rows[0][campo]
 
 
 def test_filtrar_multiples_renglones_independientes():
     data = _renglones(
-        _item(1, "Producto 1", A="10.00", B="20.00"),
-        _item(2, "Producto 2", A="30.00"),
+        _item(1, A="10.00", B="20.00"),
+        _item(2, A="30.00"),
     )
     rows = _filtrar_top_3_por_renglon(data, "CLI")
     assert len([r for r in rows if r["renglon"] == 1]) == 2

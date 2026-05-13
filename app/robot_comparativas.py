@@ -68,7 +68,6 @@ Return ONLY valid JSON:
   "renglones": [
     {
       "renglon": 1,
-      "descripcion": "Full product/medication description — NOT the brand name",
       "proveedores_precios": {
         "Provider A": {"precio": "12.50", "marca": "ELEA"},
         "Provider B": {"precio": "13.00", "marca": "sin marca"}
@@ -78,7 +77,6 @@ Return ONLY valid JSON:
 }
 
 RULES:
-- "descripcion": product name and dosage only (e.g. "AMOXICILINA 500 MG / 5 ML SUSP X 90 ML"), never include the brand here
 - "marca": brand name only, no catalog codes (PM/C. numbers). Use "sin marca" if no brand is found
 - "precio": unit price as a number string, empty string if provider does not quote
 - "proveedor": full provider name. Use "sin proveedor" if name cannot be determined
@@ -540,7 +538,7 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
         cliente: Client name derived from the filename.
 
     Returns:
-        List of row dicts with keys: renglon, descripcion, proveedor, marca,
+        List of row dicts with keys: renglon, proveedor, marca,
         precio, cliente — ready for csv.DictWriter. Contains at most 3 rows
         per renglon, ordered by ascending price.
     """
@@ -552,7 +550,6 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
         # Si no viene el renglon, generar número incremental
         if not renglon or str(renglon).strip() == "":
             renglon = idx
-        descripcion = str(renglon_data.get("descripcion", "")).replace(";", "")
         proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
         if not proveedores_precios:
@@ -581,11 +578,7 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
                 continue
 
         if not provider_price_list:
-            logger.warning(
-                "Renglon %s (%s) has no valid prices from any provider, skipping",
-                renglon,
-                descripcion,
-            )
+            logger.warning("Renglon %s has no valid prices from any provider, skipping", renglon)
             continue
 
         # Sort by numeric price ascending, keep top 3
@@ -603,7 +596,6 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
             marca_clean = str(marca_proveedor).replace(";", "").strip() or "sin marca"
             rows.append({
                 "renglon": renglon,
-                "descripcion": descripcion,
                 "proveedor": proveedor_clean,
                 "marca": marca_clean,
                 "precio": precio,
@@ -642,7 +634,7 @@ def _escribir_csv(rows: list[dict], nombre_base: str, cliente: str) -> Path:
     csv_filename = nombre_unico(nombre_base, output_dir, ".csv")
     csv_path = output_dir / csv_filename
 
-    fieldnames = ["renglon", "descripcion", "proveedor", "marca", "precio", "cliente"]
+    fieldnames = ["renglon", "proveedor", "marca", "precio", "cliente"]
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(

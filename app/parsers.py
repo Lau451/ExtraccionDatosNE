@@ -608,10 +608,7 @@ def _parse_html(filepath: Path) -> str:
     Returns:
         Clean text string (no HTML tags).
     """
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-        raw_html = f.read()
-
-    soup = BeautifulSoup(raw_html, "html.parser")
+    soup = BeautifulSoup(filepath.read_bytes(), "html.parser")
 
     for tag in soup(["script", "style"]):
         tag.decompose()
