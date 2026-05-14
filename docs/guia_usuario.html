@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Guía de Usuario — Extractor de Documentos · Droguería Nueva Era</title>
+<style>
+  /* ─── RESET & BASE ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.65;
+    color: #1a1a2e;
+    background: #fff;
+  }
+
+  /* ─── PRINT SETUP ───────────────────────────────────────────── */
+  @page {
+    size: A4;
+    margin: 22mm 20mm 20mm 20mm;
+    @bottom-center {
+      content: "Droguería Nueva Era — Extractor de Documentos   |   Página " counter(page) " de " counter(pages);
+      font-size: 8pt;
+      color: #888;
+    }
+  }
+
+  @media print {
+    .no-print { display: none !important; }
+    .page-break { page-break-before: always; }
+    .avoid-break { page-break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+
+  /* ─── PRINT BUTTON (solo en pantalla) ──────────────────────── */
+  .print-btn {
+    position: fixed;
+    top: 18px; right: 18px;
+    background: #16213e;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 999;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  }
+  .print-btn:hover { background: #0f3460; }
+
+  /* ─── COVER PAGE ────────────────────────────────────────────── */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(145deg, #16213e 0%, #0f3460 60%, #533483 100%);
+    color: #fff;
+    padding: 40px;
+    page-break-after: always;
+  }
+
+  .cover-logo {
+    width: 80px; height: 80px;
+    background: rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.6);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 800;
+    margin-bottom: 28px;
+    letter-spacing: 1px;
+  }
+
+  .cover-eyebrow {
+    font-size: 11pt;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 14px;
+  }
+
+  .cover-title {
+    font-size: 32pt;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+
+  .cover-subtitle {
+    font-size: 14pt;
+    opacity: 0.75;
+    margin-bottom: 48px;
+  }
+
+  .cover-meta {
+    font-size: 9pt;
+    opacity: 0.5;
+    margin-top: 60px;
+  }
+
+  .cover-divider {
+    width: 60px; height: 3px;
+    background: rgba(255,255,255,0.4);
+    border-radius: 2px;
+    margin: 28px auto;
+  }
+
+  /* ─── LAYOUT ────────────────────────────────────────────────── */
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 0;
+  }
+
+  /* ─── SECTION HEADERS ───────────────────────────────────────── */
+  .section-chapter {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #0f3460;
+    margin-bottom: 6px;
+  }
+
+  h2 {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #16213e;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2.5px solid #e8eaf0;
+  }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #0f3460;
+    margin-top: 28px;
+    margin-bottom: 10px;
+  }
+
+  h4 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #333;
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+
+  p { margin-bottom: 12px; }
+
+  /* ─── CALLOUT BOXES ─────────────────────────────────────────── */
+  .callout {
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    border-left: 4px solid;
+  }
+
+  .callout-info {
+    background: #eef4ff;
+    border-color: #3b82f6;
+    color: #1e3a5f;
+  }
+
+  .callout-warning {
+    background: #fffbeb;
+    border-color: #f59e0b;
+    color: #78350f;
+  }
+
+  .callout-success {
+    background: #f0fdf4;
+    border-color: #22c55e;
+    color: #14532d;
+  }
+
+  .callout-error {
+    background: #fef2f2;
+    border-color: #ef4444;
+    color: #7f1d1d;
+  }
+
+  .callout strong { display: block; margin-bottom: 4px; font-size: 10pt; }
+
+  /* ─── STEPS ─────────────────────────────────────────────────── */
+  .steps { list-style: none; counter-reset: step-counter; margin: 16px 0 20px; }
+
+  .steps li {
+    counter-increment: step-counter;
+    display: flex;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+
+  .steps li::before {
+    content: counter(step-counter);
+    min-width: 30px;
+    height: 30px;
+    background: #0f3460;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 10pt;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .steps li .step-body { flex: 1; }
+  .steps li .step-title { font-weight: 700; color: #16213e; }
+  .steps li .step-desc { color: #555; font-size: 10pt; margin-top: 3px; }
+
+  /* ─── TABLE ─────────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 10pt;
+  }
+
+  thead tr {
+    background: #16213e;
+    color: #fff;
+  }
+
+  thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  tbody tr:nth-child(even) { background: #f7f8fc; }
+  tbody tr:hover { background: #eef2ff; }
+
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #e8eaf0;
+    vertical-align: top;
+  }
+
+  /* ─── CODE / MONO ───────────────────────────────────────────── */
+  code {
+    background: #f1f3f8;
+    border: 1px solid #dde1ec;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 9.5pt;
+    color: #c0392b;
+  }
+
+  .code-block {
+    background: #1a1a2e;
+    color: #a8d8a8;
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 9pt;
+    line-height: 1.7;
+    margin: 14px 0;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* ─── BADGE ─────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #eef4ff;
+    color: #0f3460;
+    border: 1px solid #c7d7f4;
+    border-radius: 20px;
+    padding: 3px 11px;
+    font-size: 9pt;
+    font-weight: 600;
+    margin: 2px 3px;
+  }
+
+  .badge-green { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+  .badge-yellow { background: #fefce8; color: #a16207; border-color: #fde68a; }
+  .badge-red { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+  /* ─── CSV PREVIEW ───────────────────────────────────────────── */
+  .csv-preview {
+    background: #f7f8fc;
+    border: 1.5px solid #dde1ec;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 14px 0;
+    font-size: 9pt;
+  }
+
+  .csv-preview table { margin: 0; }
+  .csv-preview thead tr { background: #e8eaf0; color: #16213e; }
+  .csv-preview thead th { font-size: 9pt; padding: 8px 12px; }
+  .csv-preview td { padding: 7px 12px; font-family: 'Consolas', monospace; }
+
+  /* ─── SCREEN MOCKUP ─────────────────────────────────────────── */
+  .screen-mock {
+    border: 2px solid #dde1ec;
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 18px 0;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
+  }
+
+  .screen-bar {
+    background: #f1f3f8;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1px solid #dde1ec;
+  }
+
+  .screen-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  .screen-body {
+    background: #fff;
+    padding: 20px 24px;
+    font-size: 10pt;
+  }
+
+  .screen-url {
+    flex: 1;
+    background: #e8eaf0;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 9pt;
+    color: #555;
+    font-family: monospace;
+    margin-left: 8px;
+  }
+
+  /* ─── CARD GRID ─────────────────────────────────────────────── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 16px 0;
+  }
+
+  .mini-card {
+    border: 1.5px solid #dde1ec;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .mini-card .card-icon {
+    font-size: 22pt;
+    margin-bottom: 8px;
+  }
+
+  .mini-card .card-title {
+    font-weight: 700;
+    font-size: 10pt;
+    color: #16213e;
+    margin-bottom: 4px;
+  }
+
+  .mini-card .card-desc {
+    font-size: 8.5pt;
+    color: #666;
+  }
+
+  /* ─── TOC ───────────────────────────────────────────────────── */
+  .toc { margin: 10px 0 30px; }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px dotted #ccc;
+    font-size: 10.5pt;
+  }
+  .toc-item.toc-h3 { padding-left: 20px; font-size: 9.5pt; color: #555; }
+  .toc-num { color: #0f3460; font-weight: 700; margin-right: 8px; }
+  .toc-page { color: #999; font-size: 9pt; }
+
+  /* ─── ERROR TABLE ───────────────────────────────────────────── */
+  .error-code {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 10pt;
+  }
+
+  /* ─── DIVIDER ───────────────────────────────────────────────── */
+  .divider { border: none; border-top: 2px solid #e8eaf0; margin: 32px 0; }
+
+  /* ─── FOOTER SECTION ────────────────────────────────────────── */
+  .footer-section {
+    margin-top: 50px;
+    padding: 24px;
+    background: #f7f8fc;
+    border-radius: 10px;
+    border: 1.5px solid #dde1ec;
+    text-align: center;
+    font-size: 9.5pt;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<!-- Botón de impresión (solo en pantalla) -->
+<button class="print-btn no-print" onclick="window.print()">🖨️ Guardar como PDF</button>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  PORTADA                                               -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-logo">NE</div>
+  <div class="cover-eyebrow">Droguería Nueva Era</div>
+  <div class="cover-title">Guía de Usuario</div>
+  <div class="cover-subtitle">Extractor Inteligente de Documentos</div>
+  <div class="cover-divider"></div>
+  <p style="opacity:.65; font-size:11pt;">
+    Procesá licitaciones, cotizaciones y comparativas de precios<br>
+    de forma automática con inteligencia artificial.
+  </p>
+  <div class="cover-meta">Versión 2.0 · Mayo 2026 · Uso interno</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  ÍNDICE                                                -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="section-chapter">Contenido</div>
+  <h2>Índice</h2>
+
+  <div class="toc">
+    <div class="toc-item"><span><span class="toc-num">1.</span> ¿Qué es el Extractor?</span></div>
+    <div class="toc-item"><span><span class="toc-num">2.</span> Acceso al sistema</span></div>
+    <div class="toc-item"><span><span class="toc-num">3.</span> Pantalla principal</span></div>
+    <div class="toc-item"><span><span class="toc-num">4.</span> Módulo Licitaciones / Cotizaciones</span></div>
+    <div class="toc-item toc-h3"><span>4.1 · Formatos aceptados</span></div>
+    <div class="toc-item toc-h3"><span>4.2 · Convención de nombre de archivo</span></div>
+    <div class="toc-item toc-h3"><span>4.3 · Paso a paso</span></div>
+    <div class="toc-item toc-h3"><span>4.4 · El CSV de salida</span></div>
+    <div class="toc-item"><span><span class="toc-num">5.</span> Módulo Comparativas</span></div>
+    <div class="toc-item toc-h3"><span>5.1 · Formatos aceptados</span></div>
+    <div class="toc-item toc-h3"><span>5.2 · Paso a paso</span></div>
+    <div class="toc-item toc-h3"><span>5.3 · El CSV de salida</span></div>
+    <div class="toc-item"><span><span class="toc-num">6.</span> Dónde se guardan los archivos</span></div>
+    <div class="toc-item"><span><span class="toc-num">7.</span> Deduplicación automática</span></div>
+    <div class="toc-item"><span><span class="toc-num">8.</span> Mensajes de error y qué hacer</span></div>
+    <div class="toc-item"><span><span class="toc-num">9.</span> Preguntas frecuentes</span></div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 1 — QUÉ ES                       -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 1</div>
+  <h2>¿Qué es el Extractor?</h2>
+
+  <p>
+    El <strong>Extractor de Documentos</strong> es una herramienta web interna de Droguería Nueva Era que
+    permite convertir documentos de licitaciones, cotizaciones y comparativas de precios en
+    archivos CSV estructurados, listos para importar en cualquier planilla de cálculo o sistema de gestión.
+  </p>
+
+  <p>
+    El sistema utiliza <strong>Gemini AI (Google)</strong> para leer e interpretar el contenido de los
+    documentos de forma inteligente, sin importar el formato o la estructura visual del archivo original.
+  </p>
+
+  <div class="card-grid">
+    <div class="mini-card avoid-break">
+      <div class="card-icon">📄</div>
+      <div class="card-title">Licitaciones</div>
+      <div class="card-desc">Pliegos y cotizaciones de clientes con ítems y cantidades</div>
+    </div>
+    <div class="mini-card avoid-break">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Comparativas</div>
+      <div class="card-desc">Tablas de precios entre múltiples proveedores por renglón</div>
+    </div>
+    <div class="mini-card avoid-break">
+      <div class="card-icon">🗂️</div>
+      <div class="card-title">CSV de salida</div>
+      <div class="card-desc">Resultado estructurado listo para Excel o sistemas de gestión</div>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>¿Qué hace exactamente?</strong>
+    Subís un PDF o Excel → el sistema lo lee con IA → te devuelve un archivo CSV con los datos organizados
+    en columnas claras (ítem, cantidad, descripción, origen). No hace falta configurar nada ni conocer
+    el formato interno del documento.
+  </div>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 2 — ACCESO                        -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 2</div>
+  <h2>Acceso al sistema</h2>
+
+  <p>
+    La aplicación corre localmente en el servidor de la empresa. Para acceder, abrí cualquier
+    navegador web (Chrome recomendado) e ingresá la siguiente dirección:
+  </p>
+
+  <div class="code-block">http://localhost:8000</div>
+
+  <div class="callout callout-warning">
+    <strong>Requisito previo</strong>
+    El servidor debe estar corriendo antes de acceder. Si la página no carga, avisá al área de sistemas
+    para que inicien la aplicación con el script <code>scripts\run.bat</code>.
+  </div>
+
+  <h3>¿Qué navegador usar?</h3>
+  <p>
+    <span class="badge badge-green">✓ Google Chrome</span>
+    <span class="badge badge-green">✓ Microsoft Edge</span>
+    <span class="badge badge-green">✓ Firefox</span>
+    <span class="badge badge-yellow">⚠ Internet Explorer — NO compatible</span>
+  </p>
+
+  <hr class="divider">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 3 — PANTALLA PRINCIPAL            -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 3</div>
+  <h2>Pantalla principal</h2>
+
+  <p>
+    Al ingresar al sistema, vas a ver la pantalla de inicio con tres módulos disponibles.
+    Hacé clic en el que necesitás usar:
+  </p>
+
+  <div class="screen-mock avoid-break">
+    <div class="screen-bar">
+      <div class="screen-dot" style="background:#ff5f57;"></div>
+      <div class="screen-dot" style="background:#febc2e;"></div>
+      <div class="screen-dot" style="background:#28c840;"></div>
+      <div class="screen-url">http://localhost:8000</div>
+    </div>
+    <div class="screen-body">
+      <p style="text-align:center; font-weight:700; font-size:13pt; color:#16213e; margin-bottom:6px;">Droguería Nueva Era</p>
+      <p style="text-align:center; color:#666; margin-bottom:18px; font-size:10pt;">Seleccioná el tipo de documento que querés procesar</p>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+        <div style="border:2px solid #0f3460; border-radius:10px; padding:14px; text-align:center;">
+          <div style="font-size:18pt; margin-bottom:6px;">📄</div>
+          <div style="font-weight:700; font-size:10pt; color:#16213e;">Licitaciones</div>
+          <div style="font-size:8pt; color:#666; margin-top:4px;">/ Cotizaciones</div>
+          <div style="margin-top:10px; background:#0f3460; color:#fff; border-radius:6px; padding:5px 10px; font-size:9pt;">Empezar →</div>
+        </div>
+        <div style="border:2px solid #dde1ec; border-radius:10px; padding:14px; text-align:center;">
+          <div style="font-size:18pt; margin-bottom:6px;">📊</div>
+          <div style="font-weight:700; font-size:10pt; color:#16213e;">Comparativas</div>
+          <div style="font-size:8pt; color:#666; margin-top:4px;">&nbsp;</div>
+          <div style="margin-top:10px; background:#e8eaf0; color:#555; border-radius:6px; padding:5px 10px; font-size:9pt;">Empezar →</div>
+        </div>
+        <div style="border:2px solid #dde1ec; border-radius:10px; padding:14px; text-align:center;">
+          <div style="font-size:18pt; margin-bottom:6px;">📋</div>
+          <div style="font-weight:700; font-size:10pt; color:#16213e;">Órdenes de Compra</div>
+          <div style="font-size:8pt; color:#666; margin-top:4px;">&nbsp;</div>
+          <div style="margin-top:10px; background:#e8eaf0; color:#555; border-radius:6px; padding:5px 10px; font-size:9pt;">Empezar →</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table class="avoid-break">
+    <thead>
+      <tr><th>Módulo</th><th>Para qué sirve</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Licitaciones / Cotizaciones</strong></td>
+        <td>Procesar pliegos de licitación pública o cotizaciones de clientes. Extrae ítem, cantidad y descripción de cada producto.</td>
+      </tr>
+      <tr>
+        <td><strong>Comparativas</strong></td>
+        <td>Procesar tablas de precios donde hay múltiples proveedores cotizando los mismos renglones. Extrae proveedor, precio unitario y datos por renglón.</td>
+      </tr>
+      <tr>
+        <td><strong>Órdenes de Compra</strong></td>
+        <td>Módulo en desarrollo. Próximamente disponible.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 4 — LICITACIONES                  -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 4</div>
+  <h2>Módulo Licitaciones / Cotizaciones</h2>
+
+  <p>
+    Este módulo está diseñado para procesar documentos donde un cliente publica o envía
+    una lista de productos con sus cantidades requeridas. El sistema extrae automáticamente
+    cada ítem, la cantidad solicitada y la descripción del producto.
+  </p>
+
+  <!-- 4.1 -->
+  <h3>4.1 · Formatos de archivo aceptados</h3>
+
+  <table class="avoid-break">
+    <thead>
+      <tr><th>Formato</th><th>Extensión</th><th>Observaciones</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>PDF nativo</td><td><code>.pdf</code></td><td>Con texto embebido (el más recomendado)</td></tr>
+      <tr><td>PDF escaneado</td><td><code>.pdf</code></td><td>Se procesa por visión IA — puede tardar más</td></tr>
+      <tr><td>Excel moderno</td><td><code>.xlsx</code></td><td>Formato Excel 2007 en adelante</td></tr>
+      <tr><td>Excel antiguo</td><td><code>.xls</code></td><td>Compatible con versiones anteriores</td></tr>
+      <tr><td>Imagen JPG</td><td><code>.jpg / .jpeg</code></td><td>Foto o escáner del documento</td></tr>
+      <tr><td>Imagen PNG</td><td><code>.png</code></td><td>Captura de pantalla o escáner</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-info">
+    <strong>Tip de rendimiento</strong>
+    Los PDFs con texto embebido (no escaneados) se procesan mucho más rápido que las imágenes
+    o PDFs escaneados. Si tenés opción, siempre preferí el PDF descargado directamente del sistema,
+    no fotografías del documento.
+  </div>
+
+  <!-- 4.2 -->
+  <h3>4.2 · Convención de nombre de archivo</h3>
+
+  <p>
+    El nombre del archivo es importante: el sistema extrae el <strong>código de cliente</strong>
+    a partir de la parte anterior al primer guión bajo (<code>_</code>).
+  </p>
+
+  <div class="code-block">Formato:   CLIENTE_descripcion.extension
+
+Ejemplos:
+  c1002_compraagil.pdf       → cliente: c1002
+  c1327_LICPUB0426.pdf       → cliente: c1327
+  munic_licitacion_mayo.pdf  → cliente: munic</div>
+
+  <div class="callout callout-warning">
+    <strong>Importante</strong>
+    Si el nombre del archivo no contiene guión bajo, el sistema usará el nombre completo como código
+    de cliente. Asegurate de que el nombre empiece con el código correcto antes de subir el archivo.
+  </div>
+
+  <p>El código de cliente determina:</p>
+  <ul style="margin-left:20px; margin-bottom:12px; line-height:2;">
+    <li>La carpeta donde se guarda el CSV de salida: <code>data/Salida/CLIENTE/</code></li>
+    <li>El valor del campo <code>origen</code> en cada fila del CSV</li>
+  </ul>
+
+  <!-- 4.3 -->
+  <h3>4.3 · Paso a paso</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-body">
+        <div class="step-title">Ir al módulo Licitaciones</div>
+        <div class="step-desc">En la pantalla principal, hacé clic en la tarjeta <strong>Licitaciones / Cotizaciones</strong> y después en <strong>Empezar</strong>.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Seleccionar el archivo</div>
+        <div class="step-desc">Hacé clic en el área de carga o arrastrá el archivo directamente. El sistema mostrará el nombre del archivo seleccionado.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Hacer clic en "Procesar archivo"</div>
+        <div class="step-desc">El botón se activa automáticamente cuando hay un archivo seleccionado. La barra de progreso indica que el sistema está trabajando.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Esperar el procesamiento</div>
+        <div class="step-desc">
+          El tiempo depende del tamaño y tipo del documento:<br>
+          <span class="badge badge-green">PDF nativo · 15–60 segundos</span>
+          <span class="badge badge-yellow">PDF escaneado · 1–5 minutos</span>
+          <span class="badge badge-yellow">Imagen · 30–90 segundos</span>
+        </div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Descargar el CSV</div>
+        <div class="step-desc">Cuando el proceso termina, el archivo CSV se descarga automáticamente. También podés encontrarlo en <code>data/Salida/CLIENTE/</code> en el servidor.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Subir otro archivo (opcional)</div>
+        <div class="step-desc">Hacé clic en <strong>Subir otro archivo</strong> para procesar un nuevo documento sin volver a la pantalla principal.</div>
+      </div>
+    </li>
+  </ol>
+
+  <!-- 4.4 -->
+  <h3>4.4 · El CSV de salida</h3>
+
+  <p>
+    El archivo CSV usa <strong>punto y coma (<code>;</code>) como separador</strong>.
+    Al abrirlo en Excel, seleccioná ese separador en el asistente de importación.
+    Contiene 4 columnas:
+  </p>
+
+  <table class="avoid-break">
+    <thead>
+      <tr><th>Columna</th><th>Contenido</th><th>Ejemplo</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>item</code></td>
+        <td>Número de renglón o ítem del documento</td>
+        <td>1, 2, 3…</td>
+      </tr>
+      <tr>
+        <td><code>cantidad</code></td>
+        <td>Cantidad solicitada (número entero, sin decimales)</td>
+        <td>650, 9050, 115900</td>
+      </tr>
+      <tr>
+        <td><code>descripcion</code></td>
+        <td>Descripción completa del producto o medicamento</td>
+        <td>AMOXICILINA 500 MG COMP</td>
+      </tr>
+      <tr>
+        <td><code>origen</code></td>
+        <td>Código del cliente (extraído del nombre del archivo)</td>
+        <td>c1002, c1327</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Ejemplo de CSV de salida:</strong></p>
+
+  <div class="csv-preview avoid-break">
+    <table>
+      <thead>
+        <tr><th>item</th><th>cantidad</th><th>descripcion</th><th>origen</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>650</td><td>ACICLOVIR 500 MG INY</td><td>c1002</td></tr>
+        <tr><td>2</td><td>70</td><td>ACICLOVIR 80 MG/ML SUSP</td><td>c1002</td></tr>
+        <tr><td>3</td><td>9050</td><td>ACICLOVIR 800 MG COMP</td><td>c1002</td></tr>
+        <tr><td>4</td><td>100</td><td>AMIKACINA 100 MG INY</td><td>c1002</td></tr>
+        <tr><td>5</td><td>400</td><td>AMIKACINA 500 MG INY</td><td>c1002</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>¿Cómo abrir el CSV en Excel?</strong>
+    Abrí Excel → Datos → Desde texto/CSV → seleccioná el archivo → elegí <strong>punto y coma</strong>
+    como delimitador → Cargar. Alternativamente, podés renombrar el archivo a <code>.txt</code>
+    y Excel lo abrirá con el asistente automáticamente.
+  </div>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 5 — COMPARATIVAS                  -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 5</div>
+  <h2>Módulo Comparativas</h2>
+
+  <p>
+    El módulo de comparativas está diseñado para procesar documentos donde se comparan precios
+    de múltiples proveedores para los mismos productos. El sistema identifica automáticamente
+    cada renglón y los precios ofrecidos por cada proveedor.
+  </p>
+
+  <!-- 5.1 -->
+  <h3>5.1 · Formatos de archivo aceptados</h3>
+
+  <table class="avoid-break">
+    <thead>
+      <tr><th>Formato</th><th>Extensión</th><th>Observaciones</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>PDF nativo</td><td><code>.pdf</code></td><td>Formato más común para comparativas</td></tr>
+      <tr><td>PDF escaneado</td><td><code>.pdf</code></td><td>Procesamiento más lento</td></tr>
+      <tr><td>Excel moderno</td><td><code>.xlsx</code></td><td>Exportaciones de sistemas de compras</td></tr>
+      <tr><td>Excel antiguo</td><td><code>.xls</code></td><td>Compatibilidad con versiones antiguas</td></tr>
+      <tr><td>OpenDocument</td><td><code>.ods</code></td><td>Formato LibreOffice Calc</td></tr>
+      <tr><td>HTML</td><td><code>.html / .htm</code></td><td>Páginas web de sistemas de compras</td></tr>
+      <tr><td>Imagen JPG</td><td><code>.jpg / .jpeg</code></td><td>Foto o escáner del documento</td></tr>
+      <tr><td>Imagen PNG</td><td><code>.png</code></td><td>Captura de pantalla</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 5.2 -->
+  <h3>5.2 · Paso a paso</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-body">
+        <div class="step-title">Ir al módulo Comparativas</div>
+        <div class="step-desc">En la pantalla principal, hacé clic en <strong>Comparativas → Empezar</strong>.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Seleccionar el archivo</div>
+        <div class="step-desc">Hacé clic en el área o arrastrá el archivo. Los formatos válidos se listan en la sección 5.1.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Procesar y esperar</div>
+        <div class="step-desc">
+          Las comparativas suelen ser documentos más extensos. El tiempo estimado varía según el tamaño:<br>
+          <span class="badge badge-green">Documento corto (hasta 50 renglones) · 30–90 seg</span><br>
+          <span class="badge badge-yellow">Documento largo (100+ renglones) · 2–8 minutos</span>
+        </div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Descargar el CSV</div>
+        <div class="step-desc">El archivo se descarga automáticamente al finalizar.</div>
+      </div>
+    </li>
+  </ol>
+
+  <!-- 5.3 -->
+  <h3>5.3 · El CSV de salida</h3>
+
+  <p>
+    El CSV de comparativas usa también punto y coma como separador. Las columnas varían según
+    el documento pero siempre incluyen la información de renglón, proveedor y precio:
+  </p>
+
+  <table class="avoid-break">
+    <thead>
+      <tr><th>Columna</th><th>Contenido</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>renglon</code></td><td>Número de renglón del documento</td></tr>
+      <tr><td><code>proveedor</code></td><td>Nombre del proveedor que cotizó</td></tr>
+      <tr><td><code>marca</code></td><td>Marca del producto ofertado</td></tr>
+      <tr><td><code>precio</code></td><td>Precio unitario ofertado</td></tr>
+      <tr><td><code>cliente</code></td><td>Código de cliente (del nombre del archivo)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-info">
+    <strong>Documentos muy largos</strong>
+    Para comparativas con más de 100 renglones, el sistema divide el documento en partes y
+    las procesa secuencialmente. El CSV final contiene todos los renglones unificados.
+    Este proceso puede tomar varios minutos — no cerrés la ventana del navegador mientras espera.
+  </div>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 6 — ARCHIVOS                      -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 6</div>
+  <h2>Dónde se guardan los archivos</h2>
+
+  <p>
+    El sistema organiza todos los archivos dentro de la carpeta <code>data/</code> del servidor.
+    Estas carpetas <strong>no se suben al repositorio</strong> y solo existen en el servidor local.
+  </p>
+
+  <div class="code-block">data/
+├── Salida/
+│   ├── c1002/
+│   │   └── c1002_compraagil.csv        ← CSV de licitación
+│   └── c1327/
+│       └── c1327_LICPUB0426.csv        ← CSV de licitación
+│
+├── SalidaComparativas/
+│   └── c1130/
+│       └── c1130_compa.csv             ← CSV de comparativa
+│
+└── Procesados/
+    └── c1002/
+        └── c1002_compraagil.pdf        ← archivo original (movido)</div>
+
+  <div class="callout callout-info">
+    <strong>¿Qué pasa con el archivo original?</strong>
+    Una vez procesado, el archivo original se mueve a la carpeta <code>Procesados/CLIENTE/</code>
+    automáticamente. Si necesitás reprocesarlo, tenés que buscarlo ahí y subirlo nuevamente.
+  </div>
+
+  <h3>Nombre del CSV de salida</h3>
+  <p>
+    El CSV conserva el mismo nombre que el archivo original, con extensión <code>.csv</code>.
+    Si ya existe un archivo con ese nombre, el sistema agrega un número al final:
+  </p>
+
+  <div class="code-block">c1002_compraagil.csv          ← primer procesamiento
+c1002_compraagil_2.csv        ← si ya existía el primero
+c1002_compraagil_3.csv        ← y así sucesivamente</div>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 7 — DEDUP                         -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 7</div>
+  <h2>Deduplicación automática</h2>
+
+  <p>
+    El sistema detecta automáticamente si un documento ya fue procesado anteriormente
+    y evita el reprocesamiento innecesario.
+  </p>
+
+  <h3>¿Cómo funciona?</h3>
+  <p>
+    Antes de procesar, el sistema calcula una <strong>huella digital única</strong> del archivo
+    (llamada SHA-256). Si ya existe un resultado con esa misma huella, el sistema devuelve
+    un error 409 y no vuelve a procesar el documento.
+  </p>
+
+  <div class="callout callout-warning">
+    <strong>Recibiste el error "Este documento ya fue procesado"</strong>
+    Esto significa que subiste exactamente el mismo archivo que ya procesaste antes.
+    El CSV de ese procesamiento anterior ya está disponible en <code>data/Salida/</code>.
+    Si el documento cambió y necesitás reprocesarlo, contactá al área de sistemas.
+  </div>
+
+  <h3>¿La detección es por nombre o por contenido?</h3>
+  <p>
+    Por <strong>contenido</strong>. Si cambiás el nombre del archivo pero el contenido es idéntico,
+    el sistema igualmente lo detecta como duplicado. Por el contrario, si el contenido del documento
+    cambió aunque el nombre sea el mismo, se procesa normalmente.
+  </p>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 8 — ERRORES                       -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 8</div>
+  <h2>Mensajes de error y qué hacer</h2>
+
+  <p>
+    Si algo sale mal durante el procesamiento, el sistema muestra un mensaje en pantalla.
+    A continuación se describen todos los errores posibles y cómo resolverlos.
+  </p>
+
+  <div class="avoid-break">
+    <h3>Error 409 — Documento ya procesado</h3>
+    <div class="callout callout-warning">
+      <strong>Mensaje:</strong> "Este documento ya fue procesado"<br><br>
+      <strong>Causa:</strong> El archivo subido es idéntico a uno procesado anteriormente.<br>
+      <strong>Solución:</strong> Buscá el CSV en <code>data/Salida/CLIENTE/</code>. Si necesitás reprocesar,
+      contactá a sistemas para borrar el registro anterior.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 415 — Formato no soportado</h3>
+    <div class="callout callout-error">
+      <strong>Mensaje:</strong> "Tipo de archivo no permitido" o "Formato no soportado: .xxx"<br><br>
+      <strong>Causa:</strong> El archivo tiene una extensión que el sistema no acepta para ese módulo.<br>
+      <strong>Solución:</strong> Convertí el archivo al formato correcto (PDF, Excel, etc.) o usá el
+      módulo adecuado. Revisá los formatos aceptados en los capítulos 4.1 y 5.1.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 422 — No se detectaron proveedores</h3>
+    <div class="callout callout-error">
+      <strong>Mensaje:</strong> "No se detectaron proveedores en el documento"<br><br>
+      <strong>Causa:</strong> Solo aplica al módulo Comparativas. El sistema no pudo identificar
+      la estructura de proveedores en el documento.<br>
+      <strong>Solución:</strong> Verificá que el documento efectivamente sea una comparativa de precios
+      con múltiples proveedores. Si el formato es poco usual, contactá a sistemas.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 422 — No se pudo procesar el archivo</h3>
+    <div class="callout callout-error">
+      <strong>Mensaje:</strong> "No se pudo procesar el archivo: [detalle]"<br><br>
+      <strong>Causa:</strong> El archivo está corrupto, protegido con contraseña, o tiene un formato
+      interno inválido aunque la extensión sea correcta.<br>
+      <strong>Solución:</strong> Intentá abrir el archivo localmente para verificar que no está dañado.
+      Si está protegido con contraseña, quitala antes de subir.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 429 — Servicio saturado</h3>
+    <div class="callout callout-warning">
+      <strong>Mensaje:</strong> "El servicio está temporalmente saturado. Intente nuevamente en unos momentos."<br><br>
+      <strong>Causa:</strong> Se superó el límite de requests simultáneos a la API de Gemini.<br>
+      <strong>Solución:</strong> Esperá 30 segundos y volvé a intentarlo.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 503 — Límite de quota alcanzado</h3>
+    <div class="callout callout-error">
+      <strong>Mensaje:</strong> "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador…"<br><br>
+      <strong>Causa:</strong> Se agotó el crédito de la API key de Gemini para el período actual.<br>
+      <strong>Solución:</strong> Contactar al área de sistemas para renovar o ampliar la API key.
+      Este error no se resuelve esperando — requiere intervención manual.
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>Error 500 — Error interno del servidor</h3>
+    <div class="callout callout-error">
+      <strong>Mensaje:</strong> "Error interno del servidor"<br><br>
+      <strong>Causa:</strong> Error inesperado en el sistema.<br>
+      <strong>Solución:</strong> Intentá nuevamente con el mismo archivo. Si el error persiste,
+      contactá a sistemas indicando el nombre del archivo y el módulo usado.
+    </div>
+  </div>
+
+  <hr class="divider page-break">
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  CAP 9 — FAQ                           -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section-chapter">Capítulo 9</div>
+  <h2>Preguntas frecuentes</h2>
+
+  <h4>¿Puedo subir varios archivos a la vez?</h4>
+  <p>
+    No, el sistema procesa un archivo por vez. Podés abrir varias pestañas del navegador para
+    procesar múltiples documentos en paralelo.
+  </p>
+
+  <h4>¿El CSV tiene el formato correcto para importar en mi sistema?</h4>
+  <p>
+    El CSV usa punto y coma como separador y codificación UTF-8. Es compatible con Excel,
+    LibreOffice y la mayoría de los sistemas de gestión. Si tu sistema requiere otro separador
+    o codificación, consultá con sistemas.
+  </p>
+
+  <h4>¿Qué pasa si el procesamiento tarda mucho?</h4>
+  <p>
+    Para documentos muy grandes (PDFs de más de 100 páginas), el procesamiento puede tardar
+    varios minutos. <strong>No cerrés la ventana del navegador</strong> mientras el progreso
+    esté activo. Si pasaron más de 15 minutos sin respuesta, actualizá la página y volvé a intentarlo.
+  </p>
+
+  <h4>¿Por qué algunas cantidades pueden aparecer con decimales?</h4>
+  <p>
+    El sistema procesa la columna de cantidades eliminando los decimales automáticamente —
+    siempre obtenés números enteros. Si un documento tiene <code>475,00</code> o <code>475.000</code>,
+    el resultado será <code>475</code>.
+  </p>
+
+  <h4>¿Puedo reprocesar un archivo si el resultado fue incorrecto?</h4>
+  <p>
+    Sí, pero primero hay que eliminar el registro anterior de la base de datos (de lo contrario,
+    el sistema lo detecta como duplicado). Contactá a sistemas con el nombre del archivo y
+    te lo resolvemos en el momento.
+  </p>
+
+  <h4>¿Dónde veo los resultados anteriores?</h4>
+  <p>
+    Los CSVs se guardan en la carpeta <code>data/Salida/CLIENTE/</code> en el servidor.
+    Todos los procesamiento también quedan registrados en la base de datos Supabase,
+    accesible para el área de sistemas.
+  </p>
+
+  <h4>¿El sistema funciona con documentos en otro idioma?</h4>
+  <p>
+    Sí. Gemini puede procesar documentos en inglés, español, portugués y la mayoría de los idiomas
+    occidentales. Los documentos en español son los que funcionan mejor dado que es el idioma
+    principal del sistema.
+  </p>
+
+  <h4>¿Qué pasa si subo un archivo con el nombre equivocado?</h4>
+  <p>
+    El CSV se guardará con el cliente incorrecto en el campo <code>origen</code>.
+    En ese caso, borrá el CSV generado, contactá a sistemas para limpiar el registro,
+    y volvé a subir el archivo con el nombre correcto.
+  </p>
+
+  <!-- ══════════════════════════════════════ -->
+  <!--  FOOTER                                -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="footer-section avoid-break">
+    <strong style="color:#16213e; font-size:11pt;">Droguería Nueva Era — Extractor de Documentos</strong><br>
+    Guía de Usuario v2.0 · Mayo 2026 · Uso interno<br><br>
+    Para soporte técnico o reportar problemas, contactar al área de sistemas.
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>

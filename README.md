@@ -1,176 +1,162 @@
-# Proyecto de Extraccion de Datos
-### Drogueria Nueva Era
+# Extractor de Datos — Droguería Nueva Era
+
+Sistema web para extracción automática de datos estructurados a partir de documentos (PDF, Excel, imágenes) usando Gemini AI, con persistencia en Supabase.
 
 ---
 
-Este repositorio contiene un proyecto de **extraccion y procesamiento de datos** a partir de documentos como **PDF, JPG y otros formatos**, utilizando **Python** y **Gemini (Google Generative AI)**.
+## Tipos de documento soportados
 
-El objetivo es automatizar la lectura de documentos y generar informacion estructurada para su posterior analisis y comparacion.
+| Tipo | Descripción | Formatos |
+|------|-------------|---------|
+| **Licitaciones** | Extrae ítems, cantidades y descripciones de pliegos | PDF, JPG, PNG, XLS, XLSX |
+| **Comparativas** | Extrae tabla de precios por proveedor y renglón | PDF, JPG, PNG, XLS, XLSX, ODS, HTML |
 
----
-
-## Estructura de Carpetas
-
-El sistema crea las carpetas necesarias dentro de `data/` si no existen:
-
-- **data/Procesados**
-  Archivos ya procesados (movidos despues de la extraccion)
-
-- **data/Salida**
-  Resultados finales (CSV)
-
-> Estas carpetas estan ignoradas por Git y no se suben al repositorio.
+El output en ambos casos es un CSV con delimitador `;`, guardado en `data/Salida/<cliente>/`.
 
 ---
 
-## Instalacion de Dependencias
+## Stack tecnológico
 
-Asegurate de tener **Python 3.9 o superior** instalado.
+- **FastAPI + Uvicorn** — API web async
+- **Gemini 2.5 Flash** — extracción inteligente de datos
+- **Supabase (PostgreSQL)** — persistencia de sesiones y resultados
+- **pdfplumber** — extracción nativa de PDFs con texto embebido
+- **Docling** — fallback para PDFs nativos complejos
+- **Gemini Vision** — fallback para PDFs escaneados e imágenes
+- **Pandas** — normalización de Excel
+- **Python 3.11+**
 
-Instala las dependencias principales con el siguiente comando:
+---
 
-```bash
-pip install google-generativeai pandas python-dotenv
+## Arquitectura
+
+```
+Upload → SHA256 dedup → Crear sesión → Gemini → CSV → Background task → Supabase
+                ↓
+        (duplicado detectado → 409)
 ```
 
+### Pipeline de PDFs
+
+```
+PDF nativo → pdfplumber (rápido, bajo RAM)
+               ↓ vacío o error
+           Docling lightweight (chunks de 15 páginas)
+               ↓ fallo por chunk
+           Gemini Vision (último recurso, por chunk)
+
+PDF escaneado → Docling lightweight → Vision fallback
+```
+
+### Persistencia en Supabase
+
+| Tabla | Contenido |
+|-------|-----------|
+| `processing_sessions` | Sesión por documento (status: running/completed/failed) |
+| `extraction_results` | Resultado general (SHA256, row_count, csv_path) |
+| `licitaciones_results` | Filas extraídas en JSONB para licitaciones |
+| `comparativas_results` | Filas extraídas en JSONB para comparativas |
+
+El background task tiene **3 intentos con backoff exponencial** (2s, 4s, 8s). Si falla, el CSV en disco sigue disponible.
+
 ---
 
-## Configuracion de Variables de Entorno (.env)
+## Instalación
 
-Para proteger la **API Key de Gemini**, el proyecto utiliza variables de entorno.
+```bash
+pip install -r requirements.txt
+```
 
-Crear un archivo `.env` en la raiz del proyecto con:
+Requiere Python 3.11+.
+
+---
+
+## Variables de entorno
+
+Crear un archivo `.env` en la raíz:
 
 ```env
 GEMINI_API_KEY=tu_api_key_aqui
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_KEY=tu_service_role_key
 ```
 
-> El archivo `.env` contiene informacion sensible y **no debe subirse al repositorio**.
+> `.env` nunca debe subirse al repositorio.
 
 ---
 
-## Configuracion Local de Rutas
-
-Las rutas locales ya no estan hardcodeadas en el codigo.
-
-Opciones soportadas (prioridad):
-
-1. Variable de entorno `OUTPUT_BASE_DIR`
-2. Archivo local `config_local.py` (ignorado por Git)
-
-### Paso recomendado
-
-1. Copiar `config_local.example.py` a `config_local.py`
-2. Completar `OUTPUT_BASE_DIR` con la ruta local de tu equipo
-
-Ejemplo:
-
-```python
-from pathlib import Path
-OUTPUT_BASE_DIR = Path(r"C:\Users\TU_USUARIO\ruta\a\ExtraccionDatosNE\data\Salida")
-```
-
-Si falta `config_local.py` y no existe `OUTPUT_BASE_DIR`, el sistema mostrara un error claro al iniciar.
-
----
-
-## Flujo de Uso
-
-1. Seleccionar el documento directamente desde la interfaz (no existe carpeta **Entrada**)
-2. Ejecutar el proceso
-3. Los archivos procesados se moveran a la ruta configurada en **Procesados**
-4. Los resultados se guardaran en la ruta configurada de **Salida**
-
-**Nombres de salida:**
-- El CSV generado conserva el nombre completo del archivo original (incluyendo la parte posterior al primer "_")
-- Dentro del CSV, el campo `origen` solo incluye el texto anterior al primer "_"
-
----
-
-## Tecnologias Utilizadas
-
-- **Python 3.9+**
-- **FastAPI** — API web de alta performance
-- **Uvicorn** — ASGI server
-- **Google Generative AI (Gemini)** — Extracción inteligente de datos
-- **Pandas** — Procesamiento de datos
-- **python-dotenv** — Manejo de variables de entorno
-
----
-
-## Ejecución de la Aplicación
-
-### Opción 1: Script (Windows)
+## Ejecución
 
 ```bash
 .\scripts\run.bat
 ```
 
-### Opción 2: Comando directo
+O directamente:
 
 ```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-La aplicación estará disponible en: **http://localhost:8000**
+La app queda disponible en **http://localhost:8000**
 
 ---
 
-## Testing — Validación de Concurrencia
+## Estructura del proyecto
 
-El proyecto incluye una **suite de load testing** para validar que la aplicación soporta múltiples usuarios simultáneos sin congelación.
-
-### Ejecutar los tests
-
-**Terminal 1: Inicia la app**
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+app/
+  main.py                — rutas FastAPI, deduplicación, orquestación
+  robot.py               — extracción de licitaciones (Gemini)
+  robot_comparativas.py  — extracción de comparativas (Gemini, chunking)
+  parsers.py             — pipeline PDF: pdfplumber → Docling → Vision
+  persistent_chunking.py — CRUD de processing_sessions en Supabase
+  persistent_output.py   — INSERT en extraction_results y tablas hijas
+  background_tasks.py    — retry con backoff exponencial
+  supabase_client.py     — cliente Supabase singleton
+  config.py              — rutas de salida, clientes Gemini
+  gemini_errors.py       — manejo de errores de la API
 
-**Terminal 2: Corre los tests**
-```bash
-cd test
-python test_concurrency.py
-```
+supabase/migrations/     — migraciones SQL (tablas, RPC, pg_cron TTL)
+tests/                   — suite de tests con pytest
+scripts/run.bat          — script de inicio para Windows
 
-### Qué valida
-
-- ✅ 3 usuarios simultáneos (baseline)
-- ✅ 7 usuarios simultáneos (objetivo del fix de concurrencia)
-- ✅ 10 usuarios simultáneos (stress test)
-
-### Resultados esperados
-
-Todos los tests deberían pasar con eficiencia de paralelismo **> 300%**:
-
-| Users | Time | Efficiency | Status |
-|-------|------|-----------|--------|
-| 3 | ~45s | 295% | ✓ PASS |
-| 7 | ~28s | 501% | ✓ PASS |
-| 10 | ~30s | 759% | ✓ PASS |
-
-**Nota:** Eficiencia > 300% indica paralelismo real (no serialización).
-
-Ver más detalles en `test/README.md`
-
----
-
-## Arquitectura de Concurrencia
-
-### El Problema
-
-Las llamadas a Gemini API son **bloqueantes**. Sin optimización, cada usuario bloquea el event loop de FastAPI, causando que otros usuarios esperen.
-
-### La Solución
-
-Implementamos `asyncio.run_in_executor()` para mover operaciones bloqueantes a un thread pool, liberando el event loop.
-
-**Beneficio:** La aplicación ahora soporta **7+ usuarios simultáneos sin congelación** (validado en commit e0d6dbc).
-
-```python
-# app/main.py (líneas 126-133)
-loop = asyncio.get_event_loop()
-csv_generado = await loop.run_in_executor(None, procesar_archivo, destino, nombre_original)
+data/
+  Salida/                — CSVs generados (ignorado por Git)
+  Procesados/            — archivos ya procesados (ignorado por Git)
 ```
 
 ---
+
+## Convención de nombres de archivo
+
+El nombre del archivo determina el `cliente`:
+
+```
+c1002_compraagil.pdf
+└─┬──┘
+  └── cliente = "c1002"
+      csv de salida = data/Salida/c1002/c1002_compraagil.csv
+      campo `origen` en el CSV = "c1002"
+```
+
+---
+
+## Deduplicación
+
+Antes de procesar, el sistema calcula el **SHA256** del archivo y consulta la RPC `reserve_extraction` en Supabase. Si el documento ya fue procesado exitosamente, devuelve HTTP 409 sin reprocesar.
+
+---
+
+## Tests
+
+```bash
+pytest tests/
+```
+
+La suite cubre: background tasks, persistent chunking, persistent output, integración de main, brand distribution y parsers.
+
+---
+
+## Concurrencia
+
+La app soporta hasta **15 requests simultáneos a Gemini** (controlado por semáforo). Las llamadas bloqueantes corren en `asyncio.to_thread()` para no bloquear el event loop de FastAPI.

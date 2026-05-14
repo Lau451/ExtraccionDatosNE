@@ -262,6 +262,11 @@ async def procesar(
             logger.debug("Could not remove tmp directory: %s", cleanup_error)
 
 
+@app.get("/guia", response_class=HTMLResponse)
+async def guia_usuario():
+    return FileResponse("docs/guia_usuario.html", media_type="text/html")
+
+
 @app.get("/descargar/{nombre_archivo}")
 def descargar(nombre_archivo: str, origen: str = "", modulo: str = ""):
     base = COMPARATIVAS_OUTPUT_BASE if modulo == "comparativas" else OUTPUT_BASE
