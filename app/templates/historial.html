@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Historial — Droguería Nueva Era</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="historial-body">
+
+    <div class="historial-wrapper">
+
+        <!-- Header -->
+        <header class="historial-header">
+            <a href="/" class="historial-back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 5l-7 7 7 7"/>
+                </svg>
+                Volver
+            </a>
+            <div class="historial-title-group">
+                <h1 class="historial-title">Historial de Documentos</h1>
+                <p class="historial-subtitle">Licitaciones y comparativas procesadas</p>
+            </div>
+        </header>
+
+        <!-- Controls -->
+        <div class="historial-controls">
+            <div class="filter-tabs" role="tablist">
+                <button class="filter-tab active" data-tipo="" role="tab">Todos</button>
+                <button class="filter-tab" data-tipo="licitacion" role="tab">Licitaciones</button>
+                <button class="filter-tab" data-tipo="comparativa" role="tab">Comparativas</button>
+            </div>
+            <input
+                class="historial-search"
+                type="text"
+                id="search-input"
+                placeholder="Buscar por nombre de archivo…"
+                autocomplete="off"
+            >
+        </div>
+
+        <!-- Table card -->
+        <div class="historial-table-wrap">
+
+            <div class="historial-state" id="loading-state">
+                <div class="spinner"></div>
+                Cargando documentos…
+            </div>
+
+            <div class="historial-state hidden" id="empty-state">
+                <svg class="historial-state-icon" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5">
+                    <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+                </svg>
+                No hay documentos procesados todavía
+            </div>
+
+            <table class="historial-table hidden" id="docs-table">
+                <thead>
+                    <tr>
+                        <th>Archivo</th>
+                        <th>Tipo</th>
+                        <th>Cliente</th>
+                        <th>Fecha</th>
+                        <th>Renglones</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="docs-tbody"></tbody>
+            </table>
+
+        </div>
+
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="detail-overlay hidden" id="detail-overlay" role="dialog" aria-modal="true">
+        <div class="detail-modal">
+
+            <div class="detail-modal-header">
+                <div class="detail-modal-title-group">
+                    <p class="detail-modal-filename" id="modal-filename">—</p>
+                    <div class="detail-modal-meta" id="modal-meta"></div>
+                </div>
+                <button class="detail-close-btn" id="detail-close" aria-label="Cerrar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 6 6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="detail-modal-body">
+                <div class="detail-table-wrap">
+                    <div class="historial-state" id="modal-loading">
+                        <div class="spinner"></div>
+                        Cargando datos…
+                    </div>
+                    <table class="detail-table hidden" id="modal-table">
+                        <thead id="modal-thead"></thead>
+                        <tbody id="modal-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="detail-modal-footer">
+                <span class="detail-row-count" id="modal-row-count"></span>
+                <a class="btn-action btn-csv" id="modal-download-btn" href="#">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    Descargar CSV
+                </a>
+                <button class="btn-action btn-ver" id="modal-close-footer">Cerrar</button>
+            </div>
+
+        </div>
+    </div>
+
+    <a href="/guia" target="_blank" rel="noopener" class="guide-fab" aria-label="Abrir guía de usuario">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+        Guía de usuario
+    </a>
+
+    <script>
+        // ─── State ────────────────────────────────────────────────────────────
+        let allDocs = [];
+        let currentTipo = '';
+        let currentSearch = '';
+        let currentDocId = null;
+
+        // ─── Helpers ──────────────────────────────────────────────────────────
+        function formatDate(iso) {
+            if (!iso) return '—';
+            try {
+                const d = new Date(iso);
+                return d.toLocaleDateString('es-AR', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch { return iso; }
+        }
+
+        function tipoChip(t) {
+            const label = t === 'comparativa' ? 'Comparativa' : 'Licitación';
+            return `<span class="tipo-chip ${t}">${label}</span>`;
+        }
+
+        function statusChip(s) {
+            const labels = {
+                completed: 'Completado',
+                partial:   'Parcial',
+                failed:    'Error',
+                running:   'Procesando'
+            };
+            return `<span class="status-chip ${s}">${labels[s] || s}</span>`;
+        }
+
+        // ─── Load / Render ────────────────────────────────────────────────────
+        async function loadDocs() {
+            setState('loading');
+            try {
+                const qs = currentTipo ? `?tipo=${currentTipo}` : '';
+                const res = await fetch(`/api/documentos${qs}`);
+                const data = await res.json();
+                allDocs = data.documentos || [];
+                renderTable();
+            } catch {
+                setState('empty');
+            }
+        }
+
+        function setState(state) {
+            document.getElementById('loading-state').classList.toggle('hidden', state !== 'loading');
+            document.getElementById('empty-state').classList.toggle('hidden',   state !== 'empty');
+            document.getElementById('docs-table').classList.toggle('hidden',    state !== 'table');
+        }
+
+        function renderTable() {
+            const q = currentSearch.toLowerCase();
+            const filtered = allDocs.filter(d =>
+                !q || d.source_filename.toLowerCase().includes(q)
+            );
+
+            if (!filtered.length) { setState('empty'); return; }
+
+            const ESC = s => String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+            document.getElementById('docs-tbody').innerHTML = filtered.map(d => `
+                <tr>
+                    <td><span class="doc-filename" title="${ESC(d.source_filename)}">${ESC(d.source_filename)}</span></td>
+                    <td>${tipoChip(d.document_type)}</td>
+                    <td>${ESC(d.client_id) || '—'}</td>
+                    <td>${formatDate(d.created_at)}</td>
+                    <td>${d.row_count != null ? d.row_count : '—'}</td>
+                    <td>${statusChip(d.status)}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn-action btn-ver"
+                                    onclick="openDetail('${d.id}','${ESC(d.source_filename)}')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+                                    <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                Ver
+                            </button>
+                            <a class="btn-action btn-csv"
+                               href="/api/documentos/${d.id}/descargar" download>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                </svg>
+                                CSV
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            setState('table');
+        }
+
+        // ─── Filter tabs ──────────────────────────────────────────────────────
+        document.querySelectorAll('.filter-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTipo = btn.dataset.tipo;
+                loadDocs();
+            });
+        });
+
+        // ─── Search ───────────────────────────────────────────────────────────
+        let searchTimer;
+        document.getElementById('search-input').addEventListener('input', e => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                currentSearch = e.target.value;
+                renderTable();
+            }, 250);
+        });
+
+        // ─── Modal ────────────────────────────────────────────────────────────
+        async function openDetail(id, filename) {
+            currentDocId = id;
+            document.getElementById('modal-filename').textContent = filename;
+            document.getElementById('modal-meta').innerHTML = '';
+            document.getElementById('modal-row-count').textContent = '';
+            document.getElementById('modal-loading').classList.remove('hidden');
+            document.getElementById('modal-table').classList.add('hidden');
+            document.getElementById('modal-download-btn').href = `/api/documentos/${id}/descargar`;
+            document.getElementById('detail-overlay').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            try {
+                const res = await fetch(`/api/documentos/${id}`);
+                if (!res.ok) throw new Error('error');
+                const data = await res.json();
+                renderModal(data);
+            } catch {
+                document.getElementById('modal-loading').textContent = 'Error al cargar los datos.';
+            }
+        }
+
+        function renderModal({ meta, rows }) {
+            document.getElementById('modal-meta').innerHTML = `
+                ${tipoChip(meta.document_type)}
+                <span class="detail-meta-item">Cliente: <strong>${meta.client_id || '—'}</strong></span>
+                <span class="detail-meta-item">Fecha: <strong>${formatDate(meta.created_at)}</strong></span>
+                ${statusChip(meta.status)}
+            `;
+            document.getElementById('modal-row-count').textContent =
+                `${rows.length} renglón${rows.length !== 1 ? 'es' : ''}`;
+
+            if (!rows.length) {
+                document.getElementById('modal-loading').textContent = 'Sin datos disponibles.';
+                return;
+            }
+
+            const cols = Object.keys(rows[0]);
+            const ESC = s => String(s ?? '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+            document.getElementById('modal-thead').innerHTML =
+                `<tr>${cols.map(c => `<th>${ESC(c)}</th>`).join('')}</tr>`;
+            document.getElementById('modal-tbody').innerHTML = rows.map(row =>
+                `<tr>${cols.map(c => `<td title="${ESC(row[c])}">${ESC(row[c]) || '—'}</td>`).join('')}</tr>`
+            ).join('');
+
+            document.getElementById('modal-loading').classList.add('hidden');
+            document.getElementById('modal-table').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detail-overlay').classList.add('hidden');
+            document.body.style.overflow = '';
+            currentDocId = null;
+        }
+
+        document.getElementById('detail-close').addEventListener('click', closeModal);
+        document.getElementById('modal-close-footer').addEventListener('click', closeModal);
+        document.getElementById('detail-overlay').addEventListener('click', e => {
+            if (e.target.id === 'detail-overlay') closeModal();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // ─── Init ─────────────────────────────────────────────────────────────
+        loadDocs();
+    </script>
+
+</body>
+</html>
