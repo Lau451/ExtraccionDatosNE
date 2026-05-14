@@ -1,9 +1,10 @@
 import asyncio
 import csv
+import io
 import logging
 import os
 from fastapi import BackgroundTasks, FastAPI, Form, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse
@@ -12,6 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlencode
 
+from app.supabase_client import get_client
 from app.robot import obtener_cliente, procesar_archivo
 from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
@@ -260,6 +262,115 @@ async def procesar(
                 logger.debug("Deleted empty tmp directory: %s", tmp_dir)
         except Exception as cleanup_error:
             logger.debug("Could not remove tmp directory: %s", cleanup_error)
+
+
+@app.get("/historial", response_class=HTMLResponse)
+async def historial_page(request: Request):
+    return templates.TemplateResponse(request, "historial.html")
+
+
+@app.get("/api/documentos")
+async def listar_documentos(tipo: str = ""):
+    client = get_client()
+    if not client:
+        return JSONResponse({"documentos": [], "sin_persistencia": True})
+
+    def _query():
+        q = (
+            client.table("extraction_results")
+            .select("id,source_filename,document_type,client_id,row_count,status,created_at")
+            .order("created_at", desc=True)
+        )
+        if tipo in ("comparativa", "licitacion"):
+            q = q.eq("document_type", tipo)
+        return q.execute()
+
+    result = await asyncio.to_thread(_query)
+    return JSONResponse({"documentos": result.data})
+
+
+@app.get("/api/documentos/{doc_id}")
+async def detalle_documento(doc_id: str):
+    client = get_client()
+    if not client:
+        return JSONResponse({"error": "Persistencia no disponible"}, status_code=503)
+
+    def _query():
+        meta_r = (
+            client.table("extraction_results")
+            .select("id,source_filename,document_type,client_id,row_count,status,created_at")
+            .eq("id", doc_id)
+            .limit(1)
+            .execute()
+        )
+        if not meta_r.data:
+            return None, None
+        meta = meta_r.data[0]
+        tabla = "comparativas_results" if meta["document_type"] == "comparativa" else "licitaciones_results"
+        rows_r = (
+            client.table(tabla)
+            .select("rows")
+            .eq("extraction_id", doc_id)
+            .limit(1)
+            .execute()
+        )
+        rows = rows_r.data[0]["rows"] if rows_r.data else []
+        return meta, rows
+
+    meta, rows = await asyncio.to_thread(_query)
+    if meta is None:
+        return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
+
+    return JSONResponse({"meta": meta, "rows": rows})
+
+
+@app.get("/api/documentos/{doc_id}/descargar")
+async def descargar_documento_supabase(doc_id: str):
+    client = get_client()
+    if not client:
+        return JSONResponse({"error": "Persistencia no disponible"}, status_code=503)
+
+    def _query():
+        meta_r = (
+            client.table("extraction_results")
+            .select("document_type,source_filename")
+            .eq("id", doc_id)
+            .limit(1)
+            .execute()
+        )
+        if not meta_r.data:
+            return None, None
+        meta = meta_r.data[0]
+        tabla = "comparativas_results" if meta["document_type"] == "comparativa" else "licitaciones_results"
+        rows_r = (
+            client.table(tabla)
+            .select("rows")
+            .eq("extraction_id", doc_id)
+            .limit(1)
+            .execute()
+        )
+        rows = rows_r.data[0]["rows"] if rows_r.data else []
+        return meta["source_filename"], rows
+
+    source_filename, rows = await asyncio.to_thread(_query)
+
+    if source_filename is None:
+        return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
+    if not rows:
+        return JSONResponse({"error": "Sin datos para descargar"}, status_code=404)
+
+    stem = Path(source_filename).stem
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()), delimiter=";")
+    writer.writeheader()
+    writer.writerows(rows)
+    csv_bytes = output.getvalue().encode("utf-8-sig")  # utf-8-sig: Excel abre sin conversión
+
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'},
+    )
 
 
 @app.get("/guia", response_class=HTMLResponse)
