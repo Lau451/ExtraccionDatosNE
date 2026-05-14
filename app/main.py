@@ -375,7 +375,7 @@ async def descargar_documento_supabase(doc_id: str):
 
 @app.get("/guia", response_class=HTMLResponse)
 async def guia_usuario():
-    return FileResponse("docs/guia_usuario.html", media_type="text/html")
+    return FileResponse(Path(__file__).parent.parent / "docs" / "guia_usuario.html", media_type="text/html")
 
 
 @app.get("/descargar/{nombre_archivo}")
