@@ -8,6 +8,7 @@ RUN python -m pip install --upgrade pip
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY docs ./docs
 
 # Directorio de salida de archivos
 ENV OUTPUT_BASE_DIR=C:/app/output
