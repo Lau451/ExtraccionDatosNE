@@ -294,3 +294,207 @@ class TestProcesarComparativaChunksSavings:
         kwargs = mock_schedule.await_args.kwargs
         assert kwargs["doc_type"] == "comparativa"
         assert kwargs["session_id"] == session_uuid
+
+
+# ---------------------------------------------------------------------------
+# SC-23 — licitacion_id válido → propagado a schedule_persist_output
+# ---------------------------------------------------------------------------
+
+class TestProcesarConLicitacionIdValido:
+    """SC-23: licitacion_id en el form → llega como kwarg a schedule_persist_output."""
+
+    def test_licitacion_id_propagado(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        session_uuid = uuid.uuid4()
+        lic_id = str(uuid.uuid4())
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("app.main.calcular_sha256", return_value="d" * 64)
+        mocker.patch("app.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
+        mocker.patch("app.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("app.main.procesar_archivo", return_value=str(csv_path))
+        # validar_licitacion_id retorna el mismo id (ya existe en BD)
+        mocker.patch(
+            "app.main.validar_licitacion_id",
+            new_callable=AsyncMock,
+            return_value=lic_id,
+        )
+        mock_schedule = mocker.patch("app.main.schedule_persist_output", new_callable=AsyncMock)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "", "licitacion_id": lic_id},
+            files={"archivo": ("doc.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+        mock_schedule.assert_awaited_once()
+        assert mock_schedule.await_args.kwargs["licitacion_id"] == lic_id
+
+
+# ---------------------------------------------------------------------------
+# SC-24 — licitacion_id vacío → None propagado
+# ---------------------------------------------------------------------------
+
+class TestProcesarSinLicitacionId:
+    """SC-24: sin licitacion_id en el form → None en schedule_persist_output."""
+
+    def test_licitacion_id_none_cuando_vacio(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("app.main.calcular_sha256", return_value="e" * 64)
+        mocker.patch("app.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
+        mocker.patch("app.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("app.main.procesar_archivo", return_value=str(csv_path))
+        # Vacío → validar_licitacion_id retorna None
+        mocker.patch(
+            "app.main.validar_licitacion_id",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mock_schedule = mocker.patch("app.main.schedule_persist_output", new_callable=AsyncMock)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("doc.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+        assert mock_schedule.await_args.kwargs["licitacion_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# SC-25 — fail-fast: licitacion_id inválido → 422, robot NO invocado
+# ---------------------------------------------------------------------------
+
+class TestProcesarLicitacionIdInvalido:
+    """SC-25: licitacion_id que no existe → 422 antes de invocar robot/Gemini."""
+
+    def test_uuid_no_existente_retorna_422_sin_llamar_robot(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        from fastapi import HTTPException
+
+        mocker.patch(
+            "app.main.validar_licitacion_id",
+            new_callable=AsyncMock,
+            side_effect=HTTPException(
+                status_code=422,
+                detail="Licitación <uuid> no existe",
+            ),
+        )
+        mock_robot = mocker.patch("app.main.procesar_archivo")
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "", "licitacion_id": str(uuid.uuid4())},
+            files={"archivo": ("doc.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 422
+        mock_robot.assert_not_called()
+
+    def test_uuid_malformado_retorna_422_sin_llamar_robot(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        from fastapi import HTTPException
+
+        mocker.patch(
+            "app.main.validar_licitacion_id",
+            new_callable=AsyncMock,
+            side_effect=HTTPException(
+                status_code=422,
+                detail="licitacion_id no es un UUID válido: no-es-uuid",
+            ),
+        )
+        mock_robot = mocker.patch("app.main.procesar_archivo")
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "", "licitacion_id": "no-es-uuid"},
+            files={"archivo": ("doc.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 422
+        mock_robot.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# SC-27 — GET /api/documentos incluye campo licitacion
+# ---------------------------------------------------------------------------
+
+class TestListarDocumentosConLicitacion:
+    """SC-27: GET /api/documentos → campo licitacion embebido por Supabase join."""
+
+    def test_documentos_incluyen_campo_licitacion(self, client, mocker):
+        from unittest.mock import MagicMock
+
+        lic_data = {"id": str(uuid.uuid4()), "nombre": "Lic. Trimestral"}
+        doc_row = {
+            "id": str(uuid.uuid4()),
+            "source_filename": "doc.pdf",
+            "document_type": "licitacion",
+            "client_id": "cliente1",
+            "row_count": 5,
+            "status": "completed",
+            "created_at": "2026-05-14T10:00:00+00:00",
+            "licitacion": lic_data,
+        }
+
+        mock_result = MagicMock()
+        mock_result.data = [doc_row]
+        mock_qb = MagicMock()
+        mock_qb.select.return_value = mock_qb
+        mock_qb.order.return_value = mock_qb
+        mock_qb.execute.return_value = mock_result
+
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_qb
+        mocker.patch("app.main.get_client", return_value=mock_client)
+
+        response = client.get("/api/documentos")
+
+        assert response.status_code == 200
+        docs = response.json()["documentos"]
+        assert len(docs) == 1
+        assert docs[0]["licitacion"] == lic_data
+
+    def test_documentos_sin_licitacion_son_none(self, client, mocker):
+        from unittest.mock import MagicMock
+
+        doc_row = {
+            "id": str(uuid.uuid4()),
+            "source_filename": "comparativa.xlsx",
+            "document_type": "comparativa",
+            "client_id": "cliente2",
+            "row_count": 3,
+            "status": "completed",
+            "created_at": "2026-05-14T10:00:00+00:00",
+            "licitacion": None,
+        }
+
+        mock_result = MagicMock()
+        mock_result.data = [doc_row]
+        mock_qb = MagicMock()
+        mock_qb.select.return_value = mock_qb
+        mock_qb.order.return_value = mock_qb
+        mock_qb.execute.return_value = mock_result
+
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_qb
+        mocker.patch("app.main.get_client", return_value=mock_client)
+
+        response = client.get("/api/documentos")
+
+        assert response.status_code == 200
+        docs = response.json()["documentos"]
+        assert docs[0]["licitacion"] is None

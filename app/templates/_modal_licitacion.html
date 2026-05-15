@@ -1,0 +1,91 @@
+<!-- Modal de Licitación -->
+<dialog id="lic-modal-dialog" class="lic-dialog">
+    <div class="lic-dialog-inner">
+        <header class="lic-dialog-header">
+            <h2 data-modal-title>Nueva Licitación</h2>
+            <button type="button" class="lic-dialog-close" data-cancel aria-label="Cerrar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </header>
+
+        <form class="lic-form" method="dialog" novalidate>
+
+            <div class="lic-form-row">
+                <label for="lf-nombre">Nombre *</label>
+                <input id="lf-nombre" name="nombre" type="text"
+                       placeholder="Ej: Licitación Trimestral Medicamentos"
+                       maxlength="255" required>
+            </div>
+
+            <div class="lic-form-cols">
+                <div class="lic-form-row">
+                    <label for="lf-tipo">Tipo *</label>
+                    <select id="lf-tipo" name="tipo" required>
+                        <option value="">Seleccionar…</option>
+                        <option value="medicamentos">Medicamentos</option>
+                        <option value="descartables">Descartables</option>
+                        <option value="soluciones">Soluciones</option>
+                    </select>
+                </div>
+                <div class="lic-form-row">
+                    <label for="lf-modalidad">Modalidad</label>
+                    <select id="lf-modalidad" name="modalidad">
+                        <option value="mail">Mail</option>
+                        <option value="pliego">Pliego</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="lic-form-cols">
+                <div class="lic-form-row">
+                    <label for="lf-apertura">Apertura</label>
+                    <input id="lf-apertura" name="apertura" type="date">
+                </div>
+                <div class="lic-form-row">
+                    <label for="lf-vencimiento">Vencimiento</label>
+                    <input id="lf-vencimiento" name="vencimiento" type="date">
+                </div>
+            </div>
+
+            <div class="lic-form-cols">
+                <div class="lic-form-row">
+                    <label for="lf-estado">Estado</label>
+                    <select id="lf-estado" name="estado">
+                        <option value="abierta">Abierta</option>
+                        <option value="en_evaluacion">En evaluación</option>
+                        <option value="adjudicada">Adjudicada</option>
+                        <option value="cerrada">Cerrada</option>
+                    </select>
+                </div>
+                <div class="lic-form-row">
+                    <label for="lf-monto">Monto estimado</label>
+                    <input id="lf-monto" name="monto_estimado" type="number"
+                           min="0" step="0.01" placeholder="0.00">
+                </div>
+            </div>
+
+            <div class="lic-form-row">
+                <label for="lf-tipogestion">Tipo de gestión</label>
+                <input id="lf-tipogestion" name="tipo_gestion" type="text"
+                       maxlength="120" placeholder="Ej: Compra directa">
+            </div>
+
+            <div class="lic-form-row">
+                <label for="lf-notas">Notas</label>
+                <textarea id="lf-notas" name="notas" rows="2"
+                          placeholder="Observaciones opcionales…"></textarea>
+            </div>
+
+            <p class="lic-modal-error" id="lic-modal-error"></p>
+
+            <div class="lic-form-actions">
+                <button type="button" class="btn btn-ghost" data-cancel>Cancelar</button>
+                <button type="submit" class="btn" data-submit>Guardar</button>
+            </div>
+
+        </form>
+    </div>
+</dialog>

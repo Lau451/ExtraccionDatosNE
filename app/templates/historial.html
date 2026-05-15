@@ -64,6 +64,7 @@
                         <th>Archivo</th>
                         <th>Tipo</th>
                         <th>Cliente</th>
+                        <th>Licitación</th>
                         <th>Fecha</th>
                         <th>Renglones</th>
                         <th>Estado</th>
@@ -199,6 +200,7 @@
                     <td><span class="doc-filename" title="${ESC(d.source_filename)}">${ESC(d.source_filename)}</span></td>
                     <td>${tipoChip(d.document_type)}</td>
                     <td>${ESC(d.client_id) || '—'}</td>
+                    <td>${d.licitacion ? `<span class="lic-badge" title="${ESC(d.licitacion.nombre)}">${ESC(d.licitacion.nombre)}</span>` : '—'}</td>
                     <td>${formatDate(d.created_at)}</td>
                     <td>${d.row_count != null ? d.row_count : '—'}</td>
                     <td>${statusChip(d.status)}</td>

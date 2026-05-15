@@ -230,6 +230,8 @@ function setupUploadForm() {
         const formData = new FormData();
         formData.append("archivo", inputArchivo.files[0]);
         formData.append("tipo", document.getElementById("tipo-input")?.value || "");
+        const licId = document.getElementById("licitacion-id-hidden")?.value || "";
+        if (licId) formData.append("licitacion_id", licId);
 
         try {
             const response = await fetch("/procesar", {
@@ -284,5 +286,45 @@ const backBtn = document.getElementById("back-btn");
 if (backBtn) {
     backBtn.addEventListener("click", () => {
         window.location.href = "/";
+    });
+}
+
+/* ============================================
+   LICITACIÓN SELECTOR (upload page)
+   ============================================ */
+
+async function bootstrapLicitacionSelector() {
+    const wrap   = document.getElementById("lic-selector-wrap");
+    const sel    = document.getElementById("licitacion-select");
+    const hidden = document.getElementById("licitacion-id-hidden");
+    const btnNew = document.getElementById("btn-nueva-lic-inline");
+
+    if (!wrap || !sel || !hidden || !btnNew) return;
+
+    wrap.classList.remove("hidden");
+
+    async function refreshSelect(selectId) {
+        const activas = await window.LicitacionesModule.apiActivas();
+        sel.innerHTML = '<option value="">Sin licitación</option>';
+        activas.forEach(l => {
+            const opt = document.createElement("option");
+            opt.value = l.id;
+            opt.textContent = l.nombre;
+            if (l.id === selectId) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        hidden.value = sel.value;
+    }
+
+    await refreshSelect(null);
+
+    sel.addEventListener("change", () => {
+        hidden.value = sel.value;
+    });
+
+    btnNew.addEventListener("click", () => {
+        window.LicitacionesModule.openModal({
+            onCreated: (lic) => refreshSelect(lic.id),
+        });
     });
 }

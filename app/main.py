@@ -14,6 +14,7 @@ from uuid import uuid4
 from urllib.parse import urlencode
 
 from app.supabase_client import get_client
+from app.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
 from app.robot import obtener_cliente, procesar_archivo
 from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 # ======================
 
 app = FastAPI(title="Extractor de Documentos")
+app.include_router(licitaciones_router)
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
@@ -84,6 +86,11 @@ async def home(request: Request):
     return templates.TemplateResponse(request, "home.html")
 
 
+@app.get("/licitaciones", response_class=HTMLResponse)
+async def licitaciones_page(request: Request):
+    return templates.TemplateResponse(request, "licitaciones.html", {})
+
+
 @app.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request, tipo: str = ""):
     return templates.TemplateResponse(request, "index.html", {"tipo": tipo})
@@ -95,7 +102,11 @@ async def procesar(
     bg_tasks: BackgroundTasks,
     archivo: UploadFile = File(...),
     tipo: str = Form(""),
+    licitacion_id: str = Form(""),
 ):
+    # SC-25: fail-fast antes de cualquier I/O o invocación a Gemini
+    licitacion_id_validado = await validar_licitacion_id(licitacion_id)
+
     # ======================
     # GUARDAR ARCHIVO
     # ======================
@@ -187,6 +198,7 @@ async def procesar(
             client_id=origen_id,
             source_filename=nombre_original,
             source_sha256=sha256_doc,
+            licitacion_id=licitacion_id_validado,
         )
 
         return render_upload_response(request, {"tipo": tipo})
@@ -278,7 +290,7 @@ async def listar_documentos(tipo: str = ""):
     def _query():
         q = (
             client.table("extraction_results")
-            .select("id,source_filename,document_type,client_id,row_count,status,created_at")
+            .select("id,source_filename,document_type,client_id,row_count,status,created_at,licitacion:licitaciones(id,nombre)")
             .order("created_at", desc=True)
         )
         if tipo in ("comparativa", "licitacion"):
@@ -286,7 +298,10 @@ async def listar_documentos(tipo: str = ""):
         return q.execute()
 
     result = await asyncio.to_thread(_query)
-    return JSONResponse({"documentos": result.data})
+    docs = result.data or []
+    for row in docs:
+        row["licitacion"] = row.get("licitacion") or None
+    return JSONResponse({"documentos": docs})
 
 
 @app.get("/api/documentos/{doc_id}")

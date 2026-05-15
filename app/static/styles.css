@@ -1623,3 +1623,310 @@ body.historial-body {
 .back-link:active {
     transform: scale(0.95);
 }
+
+/* =============================================================
+   LICITACIONES — Dialog modal
+   ============================================================= */
+
+.lic-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: min(540px, calc(100vw - 32px));
+    max-height: calc(100vh - 40px);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 20px;
+    background: #1c2130;
+    color: #e8ecf2;
+    padding: 0;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    overflow: hidden;
+}
+
+.lic-dialog::backdrop {
+    background: rgba(10,15,25,0.72);
+    backdrop-filter: blur(4px);
+}
+
+.lic-dialog-inner {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    padding: 28px 32px 24px;
+    gap: 0;
+}
+
+.lic-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.lic-dialog-header h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: #e8ecf2;
+}
+
+.lic-dialog-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(255,255,255,0.5);
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s, background 0.15s;
+}
+
+.lic-dialog-close:hover {
+    color: #e8ecf2;
+    background: rgba(255,255,255,0.08);
+}
+
+.lic-dialog-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Form layout */
+.lic-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.lic-form-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.lic-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.lic-form-row label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.lic-form-row input,
+.lic-form-row select,
+.lic-form-row textarea {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px;
+    color: #e8ecf2;
+    font-size: 14px;
+    padding: 8px 12px;
+    font-family: inherit;
+    transition: border-color 0.15s, background 0.15s;
+    outline: none;
+    width: 100%;
+}
+
+.lic-form-row input:focus,
+.lic-form-row select:focus,
+.lic-form-row textarea:focus {
+    border-color: rgba(42,82,152,0.8);
+    background: rgba(255,255,255,0.09);
+    box-shadow: 0 0 0 3px rgba(42,82,152,0.2);
+}
+
+.lic-form-row select option {
+    background: #1c2130;
+    color: #e8ecf2;
+}
+
+.lic-form-row textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+.lic-modal-error {
+    font-size: 13px;
+    color: #f87171;
+    min-height: 18px;
+    margin: 0;
+}
+
+.lic-form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+/* =============================================================
+   LICITACIONES — Upload page selector
+   ============================================================= */
+
+.lic-selector-wrap {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.lic-selector-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lic-selector-hint {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: rgba(255,255,255,0.35);
+}
+
+.lic-selector-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.lic-select {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px;
+    color: #e8ecf2;
+    font-size: 14px;
+    padding: 9px 12px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+    cursor: pointer;
+}
+
+.lic-select:focus {
+    border-color: rgba(42,82,152,0.8);
+    box-shadow: 0 0 0 3px rgba(42,82,152,0.2);
+}
+
+.lic-select option {
+    background: #1c2130;
+    color: #e8ecf2;
+}
+
+.btn-nueva-lic-inline {
+    white-space: nowrap;
+    font-size: 13px;
+    padding: 8px 14px;
+    flex-shrink: 0;
+}
+
+/* =============================================================
+   LICITACIONES — Panel header button
+   ============================================================= */
+
+.btn-nueva-lic {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #2a5298, #1e3c72);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+    white-space: nowrap;
+}
+
+.btn-nueva-lic:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-nueva-lic:active { transform: scale(0.97); }
+.btn-nueva-lic svg { width: 16px; height: 16px; }
+
+/* =============================================================
+   LICITACIONES — Estado chips
+   ============================================================= */
+
+.lic-estado-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    text-transform: uppercase;
+}
+
+.lic-estado-chip.abierta        { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+.lic-estado-chip.en_evaluacion  { background: rgba(234,179,8,0.15);  color: #facc15; border: 1px solid rgba(250,204,21,0.25); }
+.lic-estado-chip.adjudicada     { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(96,165,250,0.25); }
+.lic-estado-chip.cerrada        { background: rgba(107,114,128,0.15);color: #9ca3af; border: 1px solid rgba(156,163,175,0.2); }
+
+/* =============================================================
+   HISTORIAL — Licitación badge column
+   ============================================================= */
+
+.lic-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(42,82,152,0.18);
+    color: #93b4f0;
+    border: 1px solid rgba(42,82,152,0.3);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Nav secundario en home */
+.historial-nav-btn--sec {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.1);
+}
+
+.historial-nav-btn--sec:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+/* historial-header con botón de acción */
+.historial-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.historial-title-group {
+    flex: 1;
+}
+
+@media (max-width: 600px) {
+    .lic-form-cols {
+        grid-template-columns: 1fr;
+    }
+    .lic-dialog-inner {
+        padding: 20px 20px 18px;
+    }
+    .btn-nueva-lic span { display: none; }
+}

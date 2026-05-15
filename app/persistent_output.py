@@ -111,6 +111,7 @@ async def persistir_output_final(
     client_id: str,
     source_filename: str,
     source_sha256: str,
+    licitacion_id: str | None = None,
 ) -> UUID | None:
     """
     Persiste el resultado final de una extraccion en Supabase.
@@ -182,6 +183,7 @@ async def persistir_output_final(
         "row_count": len(rows),
         "csv_disk_path": str(csv_path),
         "status": "completed",
+        "licitacion_id": licitacion_id,
     }
 
     try:

@@ -45,6 +45,7 @@ async def _retry_persist(
     client_id: str,
     source_filename: str,
     source_sha256: str,
+    licitacion_id: str | None = None,
     attempt: int = 0,
     max_attempts: int = _MAX_ATTEMPTS,
 ) -> None:
@@ -77,6 +78,7 @@ async def _retry_persist(
                 client_id=client_id,
                 source_filename=source_filename,
                 source_sha256=source_sha256,
+                licitacion_id=licitacion_id,
             ),
             timeout=60.0,
         )
@@ -142,6 +144,7 @@ async def _retry_persist(
             client_id=client_id,
             source_filename=source_filename,
             source_sha256=source_sha256,
+            licitacion_id=licitacion_id,
             attempt=siguiente_intento,
             max_attempts=max_attempts,
         )
@@ -157,6 +160,7 @@ async def schedule_persist_output(
     client_id: str,
     source_filename: str,
     source_sha256: str,
+    licitacion_id: str | None = None,
 ) -> None:
     """
     Registra la persistencia del resultado final como BackgroundTask de FastAPI.
@@ -186,6 +190,7 @@ async def schedule_persist_output(
         client_id=client_id,
         source_filename=source_filename,
         source_sha256=source_sha256,
+        licitacion_id=licitacion_id,
         attempt=0,
         max_attempts=_MAX_ATTEMPTS,
     )

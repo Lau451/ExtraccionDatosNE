@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Licitaciones — Droguería Nueva Era</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/fonts/manrope.css">
+    <link rel="stylesheet" href="/static/styles.css?v=2026-05-14">
+</head>
+<body class="historial-body">
+
+    <div class="historial-wrapper">
+
+        <!-- Header -->
+        <header class="historial-header">
+            <a href="/" class="historial-back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 5l-7 7 7 7"/>
+                </svg>
+                Volver
+            </a>
+            <div class="historial-title-group">
+                <h1 class="historial-title">Gestión de Licitaciones</h1>
+                <p class="historial-subtitle">Administrá las licitaciones activas de la droguería</p>
+            </div>
+            <button class="btn btn-nueva-lic" id="btn-nueva-lic">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Nueva Licitación
+            </button>
+        </header>
+
+        <!-- Controls -->
+        <div class="historial-controls">
+            <div class="filter-tabs" role="tablist">
+                <button class="filter-tab active" data-estado="" role="tab">Todas</button>
+                <button class="filter-tab" data-estado="abierta" role="tab">Abiertas</button>
+                <button class="filter-tab" data-estado="en_evaluacion" role="tab">En evaluación</button>
+                <button class="filter-tab" data-estado="adjudicada" role="tab">Adjudicadas</button>
+                <button class="filter-tab" data-estado="cerrada" role="tab">Cerradas</button>
+            </div>
+            <input
+                class="historial-search"
+                type="text"
+                id="search-input"
+                placeholder="Buscar por nombre…"
+                autocomplete="off"
+            >
+        </div>
+
+        <!-- Table -->
+        <div class="historial-table-wrap">
+
+            <div class="historial-state" id="loading-state">
+                <div class="spinner"></div>
+                Cargando licitaciones…
+            </div>
+
+            <div class="historial-state hidden" id="empty-state">
+                <svg class="historial-state-icon" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5">
+                    <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+                </svg>
+                No hay licitaciones registradas
+            </div>
+
+            <table class="historial-table hidden" id="lic-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Tipo</th>
+                        <th>Estado</th>
+                        <th>Apertura</th>
+                        <th>Vencimiento</th>
+                        <th>Archivos</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="lic-tbody"></tbody>
+            </table>
+
+        </div>
+
+    </div>
+
+    <!-- Modal -->
+    {% include '_modal_licitacion.html' %}
+
+    <a href="/guia" target="_blank" rel="noopener" class="guide-fab" aria-label="Abrir guía de usuario">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+        Guía de usuario
+    </a>
+
+    <script src="/static/licitaciones.js?v=2026-05-14"></script>
+    <script>
+        // ─── State ────────────────────────────────────────────────────────────
+        let allLics = [];
+        let currentEstado = '';
+        let currentSearch = '';
+        const PAGE_SIZE = 50;
+
+        // ─── Helpers ──────────────────────────────────────────────────────────
+        function formatDate(iso) {
+            if (!iso) return '—';
+            try {
+                const d = new Date(iso + 'T00:00:00');
+                return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            } catch { return iso; }
+        }
+
+        const ESTADO_LABELS = {
+            abierta: 'Abierta', en_evaluacion: 'En evaluación',
+            adjudicada: 'Adjudicada', cerrada: 'Cerrada',
+        };
+
+        const TIPO_LABELS = {
+            medicamentos: 'Medicamentos', descartables: 'Descartables', soluciones: 'Soluciones',
+        };
+
+        function estadoChip(e) {
+            return `<span class="lic-estado-chip ${e}">${ESTADO_LABELS[e] || e}</span>`;
+        }
+
+        function tipoChip(t) {
+            return `<span class="tipo-chip ${t}">${TIPO_LABELS[t] || t}</span>`;
+        }
+
+        const ESC = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+
+        // ─── Load ─────────────────────────────────────────────────────────────
+        async function loadLics() {
+            setState('loading');
+            try {
+                const qs = currentEstado ? `?estado=${currentEstado}` : '';
+                const res = await fetch(`/api/licitaciones${qs}`);
+                const data = await res.json();
+                allLics = data.items || [];
+                renderTable();
+            } catch {
+                setState('empty');
+            }
+        }
+
+        function setState(state) {
+            document.getElementById('loading-state').classList.toggle('hidden', state !== 'loading');
+            document.getElementById('empty-state').classList.toggle('hidden',   state !== 'empty');
+            document.getElementById('lic-table').classList.toggle('hidden',     state !== 'table');
+        }
+
+        function renderTable() {
+            const q = currentSearch.toLowerCase();
+            const filtered = allLics.filter(l =>
+                !q || l.nombre.toLowerCase().includes(q)
+            );
+
+            if (!filtered.length) { setState('empty'); return; }
+
+            document.getElementById('lic-tbody').innerHTML = filtered.map(l => `
+                <tr>
+                    <td><span class="doc-filename" title="${ESC(l.nombre)}">${ESC(l.nombre)}</span></td>
+                    <td>${tipoChip(l.tipo)}</td>
+                    <td>${estadoChip(l.estado)}</td>
+                    <td>${formatDate(l.apertura)}</td>
+                    <td>${formatDate(l.vencimiento)}</td>
+                    <td>${l.archivos_count}</td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="btn-action btn-ver"
+                                    onclick="editarLic('${l.id}')">
+                                Editar
+                            </button>
+                            <button class="btn-action btn-csv"
+                                    onclick="eliminarLic('${l.id}','${ESC(l.nombre)}')">
+                                Eliminar
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            setState('table');
+        }
+
+        // ─── Acciones ─────────────────────────────────────────────────────────
+        function editarLic(id) {
+            const lic = allLics.find(l => l.id === id);
+            if (!lic) return;
+            window.LicitacionesModule.openPanelModal({
+                mode: 'edit',
+                licData: lic,
+                onSaved: () => loadLics(),
+            });
+        }
+
+        async function eliminarLic(id, nombre) {
+            if (!confirm(`¿Eliminar "${nombre}"? Esta acción no se puede deshacer.`)) return;
+            try {
+                await window.LicitacionesModule._delete(id);
+                loadLics();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        // ─── Filtros ──────────────────────────────────────────────────────────
+        document.querySelectorAll('.filter-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentEstado = btn.dataset.estado;
+                loadLics();
+            });
+        });
+
+        let searchTimer;
+        document.getElementById('search-input').addEventListener('input', e => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                currentSearch = e.target.value;
+                renderTable();
+            }, 250);
+        });
+
+        // ─── Nueva licitación ─────────────────────────────────────────────────
+        document.getElementById('btn-nueva-lic').addEventListener('click', () => {
+            window.LicitacionesModule.openPanelModal({
+                mode: 'create',
+                onSaved: () => loadLics(),
+            });
+        });
+
+        // ─── Init ─────────────────────────────────────────────────────────────
+        loadLics();
+    </script>
+
+</body>
+</html>

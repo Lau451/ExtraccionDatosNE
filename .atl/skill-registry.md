@@ -1,76 +1,64 @@
-# Skill Registry
+# Skill Registry — ExtraccionDatosNE
 
-**Generated**: 2026-04-02
+**Generated**: 2026-05-14
 **Project**: ExtraccionDatosNE
-**Stack**: Python 3.9+, FastAPI, Pandas, Google Generative AI
+**Stack**: Python + FastAPI + Jinja2 + Supabase + Gemini 2.5 Flash
+**Persistence**: engram
+**Strict TDD Mode**: enabled
 
-## Global Skills (User-level)
+## Project Skills (`.claude/skills/`)
 
-### SDD Workflow Skills
-- **sdd-apply** (v3.0): Implement tasks from change specs
-- **sdd-archive** (v?): Archive completed changes
-- **sdd-design** (v?): Create technical design documents
-- **sdd-explore** (v?): Investigate and explore ideas
-- **sdd-init** (v?): Initialize SDD context in project
-- **sdd-onboard** (v?): Guided SDD workflow walkthrough
-- **sdd-propose** (v?): Create change proposals
-- **sdd-spec** (v?): Write specifications with scenarios
-- **sdd-tasks** (v?): Break down changes into task checklists
-- **sdd-verify** (v?): Validate implementation against specs
+### frontend-design
+**Triggers**: building web components, pages, HTML/CSS layouts, templates, styling UI
+**Path**: `.claude/skills/frontend-design/SKILL.md`
+**Compact Rules**:
+- Choose BOLD aesthetic direction before coding — commit to it
+- NEVER use generic fonts (Inter, Roboto, Arial) or purple gradients
+- Use CSS variables; cohesive palette with sharp accents
+- Match existing Manrope + dark theme aesthetic of this project
 
-### Integration Skills
-- **branch-pr** (v2.0): PR creation workflow for Agent Teams Lite
-- **issue-creation** (v?): Issue creation workflow for Agent Teams Lite
-- **judgment-day** (v?): Parallel adversarial review protocol
+### ui-ux-pro-max
+**Triggers**: new pages, UI components (modals, forms, tables), UX reviews, responsive design
+**Path**: `.claude/skills/ui-ux-pro-max/SKILL.md`
+**Compact Rules**:
+- Apply UX guidelines before designing
+- Check accessibility on every component
+- Stack for this project: HTML/CSS + vanilla JS (Jinja2 templates)
 
-### Quality & Testing Skills
-- **go-testing** (v?): Go testing patterns including Bubbletea TUI testing
-- **skill-creator** (v?): Create new AI agent skills
+### supabase
+**Triggers**: ANY Supabase task — schema, queries, RLS, migrations, supabase-py client
+**Path**: `.claude/skills/supabase/SKILL.md`
+**Compact Rules**:
+- Verify against Supabase changelog before implementing
+- Enable RLS on every table in exposed schemas
+- NEVER use `user_metadata` for authorization (user-editable)
+- Service role key used server-side only (existing pattern)
+- Newly created tables may not be auto-exposed to Data API — grant roles explicitly
+- After implementing: run a test query to confirm
 
-### Shared Utilities
-- **_shared**: Common conventions and patterns
+### supabase-postgres-best-practices
+**Triggers**: SQL queries, schema design, indexes, DB performance, connection pooling, RLS
+**Path**: `.claude/skills/supabase-postgres-best-practices/SKILL.md`
+**Compact Rules**:
+- Index all foreign keys and frequently queried columns
+- Use partial indexes for filtered queries
+- Avoid N+1: use joins or batch selects
+- Use UPSERT (ON CONFLICT) for idempotent writes — already used in this project
+- Keep transactions short; acquire locks late
 
----
+## When to Trigger Skills
 
-## Project Skills (.agents/skills)
+| Context | Skills |
+|---------|--------|
+| HTML templates, modals, CSS | frontend-design, ui-ux-pro-max |
+| Supabase schema / queries / client | supabase, supabase-postgres-best-practices |
+| PR creation | branch-pr |
 
-### UI/Design Skills
-- **frontend-design**: Create distinctive, production-grade frontend interfaces with high design quality
-  - Use when building web components, pages, dashboards, React components, or styling web UI
-  - Trigger: User asks to build web components, pages, applications, posters, or interfaces
+## Testing Infrastructure
 
-- **ui-ux-pro-max**: Professional UI/UX design patterns and implementations
-  - Specialized UX design for this project
-
----
-
-## Compact Rules (Auto-resolved on delegation)
-
-### Project Conventions
-- **Python style**: Follow PEP 8 conventions
-- **API design**: FastAPI patterns for endpoints
-- **Error handling**: Google Generative AI API error handling
-- **File I/O**: Use pathlib for cross-platform paths
-- **Logging**: Standard Python logging module
-- **Testing**: Integration with Google Sheets/Excel data
-
-### When to Trigger Skills
-| Context | Skill | Trigger |
-|---------|-------|---------|
-| Frontend/Web UI work | frontend-design, ui-ux-pro-max | Building templates, static assets, web components |
-| Change management | sdd-* | SDD workflow (proposal, spec, design, tasks, apply, verify) |
-| PR creation | branch-pr | Creating pull requests or preparing branch for review |
-| Issue tracking | issue-creation | Creating GitHub issues, reporting bugs, requesting features |
-| Code review | judgment-day | Parallel adversarial review ("judgment day", "doble review") |
-
----
-
-## Testing Infrastructure Status
-
-See `sdd-init/{project-name}/testing-capabilities` in engram for current test capability matrix.
-
-**Current State**: No test framework installed (pytest not in requirements.txt)
-
-To enable Strict TDD Mode:
-1. Add `pytest` and `pytest-cov` to requirements.txt
-2. Re-run `/sdd-init` to update testing capabilities
+- **Runner**: `pytest tests/` (pytest>=7.0, asyncio_mode=auto)
+- **Unit**: ✅ pytest + pytest-mock
+- **Integration**: ✅ httpx + FastAPI TestClient
+- **E2E**: ❌ not installed
+- **Coverage**: ❌ pytest-cov not in requirements.txt
+- **Linter / Type checker**: ❌ not configured

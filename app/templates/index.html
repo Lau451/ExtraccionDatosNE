@@ -82,6 +82,23 @@
                 </button>
             </div>
 
+            <!-- Selector de licitación (se oculta para comparativas) -->
+            <div id="lic-selector-wrap" class="lic-selector-wrap hidden">
+                <label class="lic-selector-label" for="licitacion-select">
+                    Licitación vinculada
+                    <span class="lic-selector-hint">(opcional)</span>
+                </label>
+                <div class="lic-selector-row">
+                    <select id="licitacion-select" class="lic-select">
+                        <option value="">Sin licitación</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-nueva-lic-inline" id="btn-nueva-lic-inline">
+                        + Nueva
+                    </button>
+                </div>
+                <input type="hidden" name="licitacion_id" id="licitacion-id-hidden" value="">
+            </div>
+
             <button type="submit" class="btn" id="procesar-btn" disabled>
                 Procesar archivo
             </button>
@@ -105,7 +122,8 @@
         Guía de usuario
     </a>
 
-    <script src="/static/main.js?v=2026-04-03-nodownload"></script>
+    <script src="/static/licitaciones.js?v=2026-05-14"></script>
+    <script src="/static/main.js?v=2026-05-14"></script>
     <script>
         const params = new URLSearchParams(window.location.search);
         const tipo = params.get("tipo") || "";
@@ -123,6 +141,10 @@
         }
 
         document.getElementById("tipo-input").value = tipo;
+
+        bootstrapLicitacionSelector();
     </script>
+
+    {% include '_modal_licitacion.html' %}
 </body>
 </html>
