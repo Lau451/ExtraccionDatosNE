@@ -101,7 +101,7 @@ window.LicitacionesModule = (function () {
         const f = dialog.querySelector('form');
         if (!f) return;
         f.reset();
-        ['nombre','tipo','apertura','vencimiento','tipo_gestion','modalidad','estado','monto_estimado','notas'].forEach(k => {
+        ['nombre','tipo','cliente','apertura','vencimiento','tipo_gestion','modalidad','estado','monto_estimado','notas'].forEach(k => {
             const el = f.elements[k];
             if (el && data[k] != null) el.value = data[k];
         });

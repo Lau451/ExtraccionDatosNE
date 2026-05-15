@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-TipoLicitacion = Literal["descartables", "medicamentos", "soluciones"]
+TipoLicitacion = Literal["descartables", "medicamentos", "soluciones", "panales", "formulas"]
 ModalidadLicitacion = Literal["mail", "pliego"]
 EstadoLicitacion = Literal["abierta", "en_evaluacion", "adjudicada", "cerrada"]
 
@@ -32,6 +32,7 @@ class LicitacionBase(BaseModel):
 
     nombre: str = Field(..., min_length=1, max_length=255)
     tipo: TipoLicitacion
+    cliente: Optional[str] = Field(None, max_length=255)
     apertura: Optional[date] = None
     vencimiento: Optional[date] = None
     tipo_gestion: Optional[str] = Field(None, max_length=120)
@@ -62,6 +63,7 @@ class LicitacionUpdate(BaseModel):
 
     nombre: Optional[str] = Field(None, min_length=1, max_length=255)
     tipo: Optional[TipoLicitacion] = None
+    cliente: Optional[str] = Field(None, max_length=255)
     apertura: Optional[date] = None
     vencimiento: Optional[date] = None
     tipo_gestion: Optional[str] = Field(None, max_length=120)
