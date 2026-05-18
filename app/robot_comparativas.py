@@ -1,11 +1,19 @@
 """
 Comparativas extraction pipeline: app/robot_comparativas.py
 
-Extracts price comparison documents using Gemini with automatic chunking for
-large files (> _CHUNK_THRESHOLD chars):
-  1. Parse document to Markdown, compress to reduce tokens.
-  2. If small: single Gemini call. If large: split into chunks of _CHUNK_SIZE
-     renglones each, call Gemini per chunk, merge results.
+Extracts price comparison documents using Gemini with two chunking strategies:
+
+  PDF (large, > _PDF_PAGE_THRESHOLD pages):
+    1. Split PDF into overlapping page-range chunks (_PAGE_CHUNK_SIZE pages,
+       _PAGE_OVERLAP overlap) using pypdf.
+    2. Parse each chunk to Markdown via docling, compress, call Gemini per chunk.
+    3. Merge results grouping providers by renglon number before top-3 filter.
+
+  Other formats / small PDFs (markdown > _CHUNK_THRESHOLD chars):
+    1. Parse document to Markdown, compress to reduce tokens.
+    2. If small: single Gemini call. If large: split into markdown chunks of
+       _CHUNK_SIZE renglones each, call Gemini per chunk, merge results.
+
   3. Filter: Keep only top 3 providers per renglon (Python, no API call).
 
 Public API (signature unchanged from prior version):
@@ -18,8 +26,10 @@ Custom Exceptions:
 import csv
 import json
 import logging
+import os
 import re
 import shutil
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -42,6 +52,10 @@ _JSON_CONFIG = types.GenerateContentConfig(
 _CHUNK_THRESHOLD = 40_000   # chars; above this, use chunked Gemini calls
 _CHUNK_SIZE = 15            # items per chunk (reduce to 10 if truncation persists in Phase 3)
 _MAX_PARALLEL_CHUNKS = 3    # concurrent Gemini calls; lower to 2 on free-tier API keys
+
+_PDF_PAGE_THRESHOLD = 20    # PDFs with more pages than this use page-based splitting
+_PAGE_CHUNK_SIZE = 15       # pages per PDF chunk
+_PAGE_OVERLAP = 1           # overlap pages between consecutive chunks
 
 # ======================
 # PROMPTS
@@ -197,7 +211,11 @@ def _limpiar_precio(raw: str) -> str:
     # Handle comma-only decimal: "12,34"
     elif "," in cleaned and "." not in cleaned:
         cleaned = cleaned.replace(",", ".")
-    # else: dot-only format "1234.56" or "1234567" — no change needed
+    # Handle multiple dots: "8.100.00000" → last dot is decimal, rest are thousands
+    elif cleaned.count(".") > 1:
+        integer_part, decimal_part = cleaned.rsplit(".", 1)
+        cleaned = integer_part.replace(".", "") + "." + decimal_part
+    # else: single dot "1234.56" — no change needed
 
     try:
         value = float(cleaned)
@@ -547,36 +565,203 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
     return {"proveedores": providers, "renglones": all_renglones}
 
 
+# ======================
+# PDF PAGE-BASED CHUNKING
+# ======================
+
+
+def _split_pdf_by_pages(
+    ruta_pdf: Path,
+    pages_per_chunk: int = _PAGE_CHUNK_SIZE,
+    overlap: int = _PAGE_OVERLAP,
+) -> list[Path]:
+    """Split a PDF into overlapping page-range temp files using pypdf.
+
+    Each chunk contains `pages_per_chunk` pages. Consecutive chunks share
+    `overlap` pages so items that fall on a boundary appear complete in at
+    least one chunk.
+
+    Args:
+        ruta_pdf: Path to the source PDF.
+        pages_per_chunk: Maximum pages per chunk.
+        overlap: Pages shared between consecutive chunks.
+
+    Returns:
+        List of temp PDF paths. Caller is responsible for deleting them.
+    """
+    from pypdf import PdfReader, PdfWriter  # noqa: PLC0415
+
+    reader = PdfReader(str(ruta_pdf))
+    total = len(reader.pages)
+    step = max(1, pages_per_chunk - overlap)
+    chunks: list[Path] = []
+
+    for start in range(0, total, step):
+        end = min(start + pages_per_chunk, total)
+        writer = PdfWriter()
+        for i in range(start, end):
+            writer.add_page(reader.pages[i])
+
+        fd, tmp_str = tempfile.mkstemp(suffix=".pdf")
+        os.close(fd)
+        tmp_path = Path(tmp_str)
+        with open(tmp_path, "wb") as f:
+            writer.write(f)
+        chunks.append(tmp_path)
+
+        if end >= total:
+            break
+
+    logger.info(
+        "PDF split: %d pages → %d chunks (%d pages/chunk, %d overlap)",
+        total, len(chunks), pages_per_chunk, overlap,
+    )
+    return chunks
+
+
+def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int) -> dict:
+    """Parse a PDF page-chunk to Markdown and extract via Gemini JSON.
+
+    Args:
+        chunk_path: Path to the temp PDF chunk.
+        chunk_idx: 1-based index for logging.
+        total: Total number of chunks for logging.
+
+    Returns:
+        Dict with "proveedores" and "renglones" keys.
+    """
+    from app.parsers import parse_document  # noqa: PLC0415
+
+    markdown = parse_document(chunk_path)
+    markdown = _comprimir_markdown(markdown)
+    logger.info("PDF chunk %d/%d parsed: %d chars", chunk_idx, total, len(markdown))
+    return _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+
+
+def _extraer_comparativa_por_paginas(
+    ruta_pdf: Path,
+    *,
+    session_id: Optional[UUID] = None,
+) -> dict:
+    """Extract providers and renglones from a large PDF using page-based chunking.
+
+    Splits the PDF into overlapping chunks, processes them in parallel via
+    Gemini, then merges. Temp files are deleted after processing regardless
+    of success or failure.
+
+    Args:
+        ruta_pdf: Path to the source PDF.
+        session_id: Optional session UUID for Supabase partial-result persistence.
+
+    Returns:
+        Dict with "proveedores" (list[str]) and "renglones" (list[dict]).
+
+    Raises:
+        NoProvidersDetectedError: If no providers detected across all chunks.
+    """
+    chunk_paths = _split_pdf_by_pages(ruta_pdf)
+    total = len(chunk_paths)
+    workers = min(_MAX_PARALLEL_CHUNKS, total)
+
+    results: list[Optional[dict]] = [None] * total
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_idx = {
+            executor.submit(_procesar_chunk_pdf, chunk_paths[i], i + 1, total): i
+            for i in range(total)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+                logger.info(
+                    "PDF chunk %d/%d completado: %d renglones",
+                    idx + 1, total,
+                    len((results[idx] or {}).get("renglones", [])),
+                )
+            except Exception as exc:
+                logger.error("PDF chunk %d/%d falló: %s", idx + 1, total, exc)
+                results[idx] = {"proveedores": [], "renglones": []}
+            finally:
+                try:
+                    chunk_paths[idx].unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+    all_renglones: list[dict] = []
+    providers: list[str] = []
+
+    for idx, result in enumerate(results):
+        if not result:
+            continue
+        for p in result.get("proveedores", []):
+            if p not in providers:
+                providers.append(p)
+        all_renglones.extend(result.get("renglones", []))
+
+        if session_id:
+            try:
+                guardar_chunk(session_id=session_id, chunk_num=idx, resultado_json=result)
+            except Exception as exc:
+                logger.warning("Error guardando chunk %d en Supabase: %s", idx, exc)
+
+    if not providers:
+        raise NoProvidersDetectedError(
+            f"No providers detected in PDF '{ruta_pdf.name}' across {total} page-chunks. "
+            "The document may not be a valid price comparison, or the format is unrecognized."
+        )
+
+    logger.info(
+        "Page-chunks: %d providers, %d renglones from %d chunks",
+        len(providers), len(all_renglones), total,
+    )
+    return {"proveedores": providers, "renglones": all_renglones}
+
 
 def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
     """Filter extracted data to keep only top 3 providers per renglon by price.
 
-    Parses and normalizes all prices using _limpiar_precio(), sorts by
-    numeric value (lowest first), and keeps at most 3 providers per item.
-    Items with no valid prices are logged and skipped.
+    First groups all providers for the same renglon number (handles duplicates
+    from page-overlap chunking), then sorts by price and keeps the top 3.
 
     Args:
-        all_data: Dict returned by _extraer_todos_con_precios().
+        all_data: Dict with "proveedores" and "renglones" keys.
         cliente: Client name derived from the filename.
 
     Returns:
         List of row dicts with keys: renglon, proveedor, marca,
-        precio, cliente — ready for csv.DictWriter. Contains at most 3 rows
+        precio, cliente — ready for csv.DictWriter. At most 3 rows
         per renglon, ordered by ascending price.
     """
-    rows: list[dict] = []
     cliente_clean = str(cliente).replace(";", "")
+
+    # Group providers by renglon number, preserving first-appearance order.
+    # This merges duplicate renglones that appear in multiple chunks due to
+    # page overlap — same provider in two chunks keeps the first value.
+    renglon_providers: dict = {}
+    renglon_order: list = []
 
     for idx, renglon_data in enumerate(all_data.get("renglones", []), start=1):
         renglon = renglon_data.get("renglon", "")
-        # Si no viene el renglon, generar número incremental
         if not renglon or str(renglon).strip() == "":
             renglon = idx
-        proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
 
+        proveedores_precios: dict = renglon_data.get("proveedores_precios", {})
         if not proveedores_precios:
-            logger.warning("Renglon %s has no provider prices, skipping", renglon)
             continue
+
+        if renglon not in renglon_providers:
+            renglon_providers[renglon] = {}
+            renglon_order.append(renglon)
+
+        for proveedor, datos in proveedores_precios.items():
+            if proveedor not in renglon_providers[renglon]:
+                renglon_providers[renglon][proveedor] = datos
+
+    rows: list[dict] = []
+
+    for renglon in renglon_order:
+        proveedores_precios = renglon_providers[renglon]
 
         # Parse and validate each provider's price.
         # Supports both new format {"precio": "12.50", "marca": "BRAND"} and
@@ -603,15 +788,10 @@ def _filtrar_top_3_por_renglon(all_data: dict, cliente: str) -> list[dict]:
             logger.warning("Renglon %s has no valid prices from any provider, skipping", renglon)
             continue
 
-        # Sort by numeric price ascending, keep top 3
         provider_price_list.sort(key=lambda x: x[3])
         top_3 = provider_price_list[:3]
 
-        logger.debug(
-            "Renglon %s: top 3 providers %s",
-            renglon,
-            [p[0] for p in top_3],
-        )
+        logger.debug("Renglon %s: top 3 providers %s", renglon, [p[0] for p in top_3])
 
         for proveedor, precio, marca_proveedor, _ in top_3:
             proveedor_clean = str(proveedor).replace(";", "").strip() or "sin proveedor"
@@ -753,18 +933,31 @@ def procesar_comparativa(
         cliente,
     )
 
-    # 1. Parse document to Markdown
-    markdown = parse_document(ruta_archivo)
-    logger.info("Document parsed to Markdown (%d chars)", len(markdown))
+    # Determine extraction strategy: large PDFs use page-based chunking;
+    # everything else uses the markdown-based flow.
+    es_pdf = extension == ".pdf"
+    usar_page_chunks = False
 
-    # 1.5 Save docling output before compression
-    _guardar_docling_output(markdown, nombre_base, cliente)
+    if es_pdf:
+        try:
+            from pypdf import PdfReader  # noqa: PLC0415
+            total_pages = len(PdfReader(str(ruta_archivo)).pages)
+            usar_page_chunks = total_pages > _PDF_PAGE_THRESHOLD
+            logger.info("PDF detected: %d pages (threshold=%d)", total_pages, _PDF_PAGE_THRESHOLD)
+        except Exception as exc:
+            logger.warning("Could not count PDF pages (%s) — falling back to markdown flow", exc)
 
-    # 2. Compress Markdown (Fase 2: reduce tokens)
-    markdown = _comprimir_markdown(markdown)
+    if usar_page_chunks:
+        # New flow: split PDF by pages, parse each chunk, merge results
+        all_data = _extraer_comparativa_por_paginas(ruta_archivo, session_id=session_id)
+    else:
+        # Existing flow: parse full document to Markdown, chunk if too large
+        markdown = parse_document(ruta_archivo)
+        logger.info("Document parsed to Markdown (%d chars)", len(markdown))
 
-    # 3. Extraccion unificada: detecta proveedores + extrae precios (con chunking si aplica)
-    all_data = _extraer_comparativa(markdown, ruta_archivo, session_id=session_id)
+        _guardar_docling_output(markdown, nombre_base, cliente)
+        markdown = _comprimir_markdown(markdown)
+        all_data = _extraer_comparativa(markdown, ruta_archivo, session_id=session_id)
 
     if not all_data.get("renglones"):
         raise json.JSONDecodeError(
