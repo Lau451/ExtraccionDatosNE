@@ -237,6 +237,58 @@ def _merge_fragmented_rows(rows: list[list]) -> list[list]:
     return merged
 
 
+_ORPHAN_NO_PRICE = {"", "-", "no cotiza", "nc", "no cotiza.", "n/c", "s/p"}
+
+
+def _is_orphan_row(row: list) -> bool:
+    """Return True if the row has empty product/quantity cols but has prices.
+
+    This pattern occurs when a PDF page break splits a table row: the product
+    name cell ends on the previous page and only the remaining price cells are
+    visible at the top of the next page.
+    """
+    col0_empty = row[0] is None or not str(row[0]).strip()
+    col1_empty = len(row) < 2 or row[1] is None or not str(row[1]).strip()
+    has_prices = any(
+        c is not None and str(c).strip().lower() not in _ORPHAN_NO_PRICE
+        for c in row[2:]
+    ) if len(row) > 2 else False
+    return col0_empty and col1_empty and has_prices
+
+
+def _parse_orphan_product(page_text: str) -> tuple[str, str]:
+    """Extract the first product name and quantity from a page's raw text.
+
+    Used to recover product info lost when pdfplumber's table extractor returns
+    empty col 0/1 for the first row of a page (PDF page-break cell splitting).
+    extract_text() still returns the full text including the product name even
+    when extract_tables() cannot reconstruct the split cell.
+
+    Flattens multi-line text then looks for:  CODE - DESCRIPTION QUANTITY $PRICE
+
+    Returns (product_name, quantity). quantity is "" if not determinable.
+    """
+    if not page_text:
+        return "", ""
+
+    text = " ".join(page_text.strip().split())
+
+    # Primary: CODE - DESCRIPTION QUANTITY $PRICE
+    match = re.search(
+        r"([A-Z]\w*\d\w*\s+-\s+.+?)\s+([\d][\d.,]*)\s+\$",
+        text,
+    )
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+
+    # Fallback: just grab everything up to the first price marker
+    match = re.search(r"([A-Z]\w*\d\w*\s+-\s+.+?)\s*\$", text)
+    if match:
+        return match.group(1).strip(), ""
+
+    return "", ""
+
+
 def _clean_brand(raw: str) -> str:
     """Strip PM/C. catalog codes and trailing notes from a brand entry.
 
@@ -394,6 +446,22 @@ def _extract_native_pdf(filepath: Path) -> str:
                     merged = _merge_fragmented_rows(table)
                     if not merged:
                         continue
+
+                    # If first row lost its product name at a page break, recover it
+                    # from page.extract_text() which sees the full page content.
+                    if _is_orphan_row(merged[0]):
+                        page_text = page.extract_text() or ""
+                        product_name, quantity = _parse_orphan_product(page_text)
+                        if product_name:
+                            merged[0] = list(merged[0])
+                            merged[0][0] = product_name
+                            if len(merged[0]) > 1 and quantity:
+                                merged[0][1] = quantity
+                            logger.info(
+                                "Recovered orphan row on page %d: '%s'",
+                                page_num, product_name[:60],
+                            )
+
                     this_header = tuple(
                         str(c).replace('\n', ' ').strip() if c is not None else ""
                         for c in merged[0]

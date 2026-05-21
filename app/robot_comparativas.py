@@ -95,7 +95,8 @@ RULES:
 - "precio": unit price as a number string, empty string if provider does not quote
 - "proveedor": full provider name. Use "sin proveedor" if name cannot be determined
 - Include ALL providers for every renglon, even those that don't quote
-- Return ALL items found"""
+- Return ALL items found
+- DUPLICATES: if the same product description appears in multiple consecutive rows, they belong to the SAME renglon — assign them the same renglon number and merge all their provider prices together"""
 
 # ======================
 # CUSTOM EXCEPTIONS
