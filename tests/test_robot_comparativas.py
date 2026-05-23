@@ -23,6 +23,9 @@ from app.robot_comparativas import (
     NoProvidersDetectedError,
     _limpiar_precio,
     _comprimir_markdown,
+    _restructurar_si_formato_plano,
+    _detectar_gaps,
+    _reintentar_gaps,
     _filtrar_top_3_por_renglon,
     _split_markdown_chunks,
     _llamar_gemini_json,
@@ -122,6 +125,209 @@ def test_comprimir_reduce_el_tamano():
     md = "a\n\n\n\n\nb\n\n\n\n\nc"
     resultado = _comprimir_markdown(md)
     assert len(resultado) < len(md)
+
+
+# =============================
+# _restructurar_si_formato_plano
+# =============================
+
+_FLAT_MD = """\
+| Municipalidad | | Comparación de Ofertas | |
+| --- | --- | --- | --- |
+| Alt | Proveedor | Detalle | Precio |
+| 1234 DROGUERIA A MEDICAMENTOS UNIDAD 100 10,00 C. HOSPITALARIOS Item: - 5 - AMOXICILINA Cantidad: 500 1234 DROGUERIA A MEDICAMENTOS UNIDAD 500 5,00 2345 DROGUERIA B MEDICAMENTOS UNIDAD 500 6,00 Item: - 6 - IBUPROFENO Cantidad: 200 3456 DROGUERIA C MEDICAMENTOS UNIDAD 200 3,50 | | | |
+| 4567 DROGUERIA D MEDICAMENTOS UNIDAD 200 4,00 Item: - 7 - PARACETAMOL Cantidad: 300 5678 DROGUERIA E MEDICAMENTOS UNIDAD 300 2,00 | | | |
+"""
+
+_NO_FLAT_MD = """\
+| renglon | proveedor | precio |
+| --- | --- | --- |
+| 1 | DROGUERIA A | 10.00 |
+| 2 | DROGUERIA B | 20.00 |
+"""
+
+
+def test_restructurar_detecta_formato_plano():
+    resultado = _restructurar_si_formato_plano(_FLAT_MD)
+    assert "## Item 5" in resultado
+    assert "## Item 6" in resultado
+    assert "## Item 7" in resultado
+
+
+def test_restructurar_preserva_cuerpo_de_cada_item():
+    resultado = _restructurar_si_formato_plano(_FLAT_MD)
+    # El cuerpo de Item 5 contiene sus proveedores
+    idx_5 = resultado.index("## Item 5")
+    idx_6 = resultado.index("## Item 6")
+    body_5 = resultado[idx_5:idx_6]
+    assert "AMOXICILINA" in body_5
+    assert "DROGUERIA A" in body_5
+
+
+def test_restructurar_no_toca_markdown_estructurado():
+    resultado = _restructurar_si_formato_plano(_NO_FLAT_MD)
+    assert resultado == _NO_FLAT_MD
+
+
+def test_restructurar_string_vacio():
+    assert _restructurar_si_formato_plano("") == ""
+
+
+def test_restructurar_sin_items_devuelve_original():
+    md = "| col1 | col2 |\n| --- | --- |\n| dato | valor |\n"
+    assert _restructurar_si_formato_plano(md) == md
+
+
+def test_restructurar_mantiene_orden_de_items():
+    resultado = _restructurar_si_formato_plano(_FLAT_MD)
+    idx_5 = resultado.index("## Item 5")
+    idx_6 = resultado.index("## Item 6")
+    idx_7 = resultado.index("## Item 7")
+    assert idx_5 < idx_6 < idx_7
+
+
+# =============================
+# _detectar_gaps
+# =============================
+
+def _make_renglones(*nums: int) -> list[dict]:
+    return [{"renglon": n, "proveedores_precios": {}} for n in nums]
+
+
+def test_detectar_gaps_secuencia_completa():
+    renglones = _make_renglones(1, 2, 3, 4, 5)
+    assert _detectar_gaps(renglones) == []
+
+
+def test_detectar_gaps_gap_pequeño_ignorado():
+    # Gap de 2 (1, 3): 1 item faltante < threshold=3
+    renglones = _make_renglones(1, 3, 4, 5)
+    assert _detectar_gaps(renglones) == []
+
+
+def test_detectar_gaps_gap_justo_en_threshold():
+    # Gap de 3 items faltantes (2,3,4) entre 1 y 5 — exactamente el threshold
+    renglones = _make_renglones(1, 5, 6, 7)
+    assert _detectar_gaps(renglones) == [(2, 4)]
+
+
+def test_detectar_gaps_gap_grande():
+    renglones = _make_renglones(73, 84, 85, 86)
+    gaps = _detectar_gaps(renglones)
+    assert gaps == [(74, 83)]
+
+
+def test_detectar_gaps_multiples_gaps():
+    renglones = _make_renglones(1, 2, 10, 11, 20, 21)
+    gaps = _detectar_gaps(renglones)
+    assert (3, 9) in gaps
+    assert (12, 19) in gaps
+
+
+def test_detectar_gaps_lista_vacia():
+    assert _detectar_gaps([]) == []
+
+
+def test_detectar_gaps_un_solo_renglon():
+    assert _detectar_gaps(_make_renglones(5)) == []
+
+
+def test_detectar_gaps_threshold_personalizado():
+    renglones = _make_renglones(1, 3, 4, 5)  # gap de 1 item
+    assert _detectar_gaps(renglones, min_size=1) == [(2, 2)]
+    assert _detectar_gaps(renglones, min_size=2) == []
+
+
+# =============================
+# _reintentar_gaps
+# =============================
+
+def test_reintentar_gaps_recupera_items_faltantes():
+    gaps = [(74, 76)]
+    # El chunk 1 (vacío) contiene marcadores de los ítems faltantes en su markdown
+    markdowns = [
+        "## Item 73\ncontenido del item 73",
+        "## Item 74\ncontenido\n## Item 75\ncontenido\n## Item 76\ncontenido",
+        "## Item 77\ncontenido del item 77",
+    ]
+    chunk_results = [
+        {"proveedores": ["P1"], "renglones": [{"renglon": 73, "proveedores_precios": {}}]},
+        {"proveedores": [], "renglones": []},
+        {"proveedores": ["P2"], "renglones": [{"renglon": 77, "proveedores_precios": {}}]},
+    ]
+    recovered_item = {"renglon": 75, "proveedores_precios": {"P3": {"precio": "10.00", "marca": "X"}}}
+
+    with patch("app.robot_comparativas._llamar_gemini_json") as mock_gemini:
+        mock_gemini.return_value = {
+            "proveedores": ["P3"],
+            "renglones": [recovered_item],
+        }
+        new_renglones, new_providers = _reintentar_gaps(gaps, markdowns, chunk_results)
+
+    assert any(r["renglon"] == 75 for r in new_renglones)
+    assert "P3" in new_providers
+
+
+def test_reintentar_gaps_sin_gaps_no_llama_gemini():
+    with patch("app.robot_comparativas._llamar_gemini_json") as mock_gemini:
+        new_renglones, new_providers = _reintentar_gaps([], ["md"], [{"proveedores": [], "renglones": []}])
+    mock_gemini.assert_not_called()
+    assert new_renglones == []
+    assert new_providers == []
+
+
+def test_reintentar_gaps_sin_chunks_adyacentes_no_falla():
+    gaps = [(10, 15)]
+    markdowns = ["Item: - 1 - contenido"]
+    chunk_results = [{"proveedores": [], "renglones": [{"renglon": 1, "proveedores_precios": {}}]}]
+    new_renglones, new_providers = _reintentar_gaps(gaps, markdowns, chunk_results)
+    assert new_renglones == []
+
+
+def test_reintentar_gaps_excluye_items_fuera_del_gap():
+    gaps = [(5, 7)]
+    # Markdowns con marcadores de ítem dentro del gap para pasar el pre-check
+    markdowns = [
+        "Item: - 4 - contenido\nItem: - 5 - contenido\nItem: - 6 - contenido",
+        "Item: - 7 - contenido\nItem: - 8 - contenido",
+    ]
+    chunk_results = [
+        {"proveedores": [], "renglones": [{"renglon": 4, "proveedores_precios": {}}]},
+        {"proveedores": [], "renglones": [{"renglon": 8, "proveedores_precios": {}}]},
+    ]
+    with patch("app.robot_comparativas._llamar_gemini_json") as mock_gemini:
+        mock_gemini.return_value = {
+            "proveedores": [],
+            "renglones": [
+                {"renglon": 3, "proveedores_precios": {}},
+                {"renglon": 6, "proveedores_precios": {}},
+                {"renglon": 10, "proveedores_precios": {}},
+            ],
+        }
+        new_renglones, _ = _reintentar_gaps(gaps, markdowns, chunk_results)
+
+    # Solo el item 6 debe ser incluido (está dentro del gap 5-7)
+    assert all(r["renglon"] in (5, 6, 7) for r in new_renglones)
+    assert any(r["renglon"] == 6 for r in new_renglones)
+
+
+def test_reintentar_gaps_skip_si_items_ausentes_en_markdown():
+    # Gap real del documento: 74→86, los ítems 75-85 no existen en el PDF
+    gaps = [(75, 85)]
+    markdowns = [
+        "## Item 73\ncontenido del 73",   # chunk antes del gap — sin marcadores 75-85
+        "## Item 86\ncontenido del 86",   # chunk después del gap — sin marcadores 75-85
+    ]
+    chunk_results = [
+        {"proveedores": [], "renglones": [{"renglon": 73, "proveedores_precios": {}}]},
+        {"proveedores": [], "renglones": [{"renglon": 86, "proveedores_precios": {}}]},
+    ]
+    with patch("app.robot_comparativas._llamar_gemini_json") as mock_gemini:
+        new_renglones, new_providers = _reintentar_gaps(gaps, markdowns, chunk_results)
+
+    # Pre-check detecta que los ítems no están en el markdown → 0 API calls
+    mock_gemini.assert_not_called()
+    assert new_renglones == []
 
 
 # =============================

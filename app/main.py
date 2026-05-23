@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from app.supabase_client import get_client
 from app.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
 from app.robot import obtener_cliente, procesar_archivo
-from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
+from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError, ChunkExtractionError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
 from app.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from app.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
@@ -224,6 +224,22 @@ async def procesar(
         return render_upload_response(
             request,
             {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
+            status_code=422,
+        )
+
+    except ChunkExtractionError as e:
+        logger.error("Chunk extraction failed: %s", e)
+        chunks_str = ", ".join(str(c) for c in e.failed_chunks)
+        return render_upload_response(
+            request,
+            {
+                "error": (
+                    f"No se pudo completar la extracción: {len(e.failed_chunks)} sección(es) "
+                    f"del documento fallaron definitivamente (chunks {chunks_str}). "
+                    "Reintentá subir el archivo."
+                ),
+                "tipo": tipo,
+            },
             status_code=422,
         )
 

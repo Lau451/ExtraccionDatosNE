@@ -21,6 +21,7 @@ Public API (signature unchanged from prior version):
 
 Custom Exceptions:
   NoProvidersDetectedError  -- No providers detected in the document.
+  ChunkExtractionError      -- One or more chunks failed definitively after sequential retry.
 """
 
 import csv
@@ -56,6 +57,7 @@ _MAX_PARALLEL_CHUNKS = 3    # concurrent Gemini calls; lower to 2 on free-tier A
 _PDF_PAGE_THRESHOLD = 20    # PDFs with more pages than this use page-based splitting
 _PAGE_CHUNK_SIZE = 15       # pages per PDF chunk
 _PAGE_OVERLAP = 1           # overlap pages between consecutive chunks
+_GAP_RETRY_THRESHOLD = 3   # min consecutive missing renglones to trigger targeted retry
 
 # ======================
 # PROMPTS
@@ -113,6 +115,24 @@ class NoProvidersDetectedError(ValueError):
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
+
+
+class ChunkExtractionError(RuntimeError):
+    """Raised when one or more chunks fail definitively after sequential retry.
+
+    Signals that the output CSV would be incomplete. No CSV is written.
+    Attributes:
+        failed_chunks: 1-based indices of the chunks that could not be processed.
+    """
+
+    def __init__(self, failed_chunks: list[int]):
+        self.failed_chunks = failed_chunks
+        count = len(failed_chunks)
+        indices = ", ".join(str(i) for i in failed_chunks)
+        super().__init__(
+            f"{count} chunk(s) fallaron definitivamente tras reintento secuencial "
+            f"(chunks: {indices}). El CSV no fue generado para evitar datos incompletos."
+        )
 
 
 # ======================
@@ -289,6 +309,248 @@ def _comprimir_markdown(markdown: str) -> str:
     return result
 
 
+def _restructurar_si_formato_plano(markdown: str) -> str:
+    """Detect flat-text PDF markdown and restructure into explicit item sections.
+
+    Some PDFs are parsed by docling into a table where each page's entire
+    content collapses into a single huge cell. Item boundaries appear as
+    "Item: - N -" markers buried within that cell text, making them easy
+    for Gemini to miss.
+
+    This function detects that pattern and splits the flat text into clearly
+    delimited Markdown sections — one "## Item N" heading per item — so
+    Gemini receives explicit boundaries and extracts all items reliably.
+
+    Returns the original markdown unchanged when the flat-text pattern is
+    not detected (safe for all other document formats).
+    """
+    if not re.search(r'Item:\s*-\s*\d+\s*-', markdown):
+        return markdown
+
+    # Extract text from the first non-empty cell of each table data row.
+    # In the flat format, all real content lands in cell[0]; the rest are empty.
+    text_parts: list[str] = []
+    for line in markdown.split('\n'):
+        stripped = line.strip()
+        if not stripped.startswith('|'):
+            continue
+        # Skip separator rows (|---|---|)
+        if re.match(r'\|[\s|:-]{3,}', stripped):
+            continue
+        cells = [c.strip() for c in stripped.split('|') if c.strip()]
+        if cells and len(cells[0]) > 20 and re.search(r'\d', cells[0]):
+            text_parts.append(cells[0])
+
+    if not text_parts:
+        return markdown
+
+    flat = ' '.join(text_parts)
+
+    # Split into segments using "Item: - N -" as delimiters.
+    # re.split with a capturing group keeps the delimiter in the result list,
+    # producing: [pre, marker1, body1, marker2, body2, ...]
+    segments = re.split(r'(Item:\s*-\s*\d+\s*-)', flat)
+
+    sections: list[str] = []
+    for i in range(1, len(segments), 2):
+        marker = segments[i]
+        body = segments[i + 1].strip() if i + 1 < len(segments) else ''
+        item_num = re.search(r'\d+', marker).group()
+        sections.append(f'## Item {item_num}')
+        sections.append(body)
+        sections.append('')
+
+    if not sections:
+        return markdown
+
+    restructured = '\n'.join(sections)
+    logger.info(
+        "Flat-text markdown detected and restructured: %d items extracted (%d → %d chars)",
+        len(sections) // 3,
+        len(markdown),
+        len(restructured),
+    )
+    return restructured
+
+
+def _detectar_gaps(
+    renglones: list[dict],
+    min_size: int = _GAP_RETRY_THRESHOLD,
+) -> list[tuple[int, int]]:
+    """Find suspicious numeric gaps in the merged renglon sequence.
+
+    Small gaps (< min_size) are common in documents that legitimately skip
+    item numbers. Only gaps of min_size or more are worth a retry.
+
+    Args:
+        renglones: All extracted renglon dicts (merged from all chunks).
+        min_size: Minimum number of consecutive missing items to report.
+
+    Returns:
+        Sorted list of (lo, hi) inclusive ranges of missing item numbers.
+    """
+    nums: set[int] = set()
+    for r in renglones:
+        try:
+            nums.add(int(float(r["renglon"])))
+        except (KeyError, TypeError, ValueError):
+            pass
+    sorted_nums = sorted(nums)
+    gaps: list[tuple[int, int]] = []
+    for i in range(len(sorted_nums) - 1):
+        lo = sorted_nums[i] + 1
+        hi = sorted_nums[i + 1] - 1
+        if hi >= lo and (hi - lo + 1) >= min_size:
+            gaps.append((lo, hi))
+    return gaps
+
+
+def _prompt_con_foco(numeros: list[int]) -> str:
+    """Return a focused extraction prompt that names specific missing item numbers.
+
+    Appended after the base prompt so Gemini re-examines the document
+    looking for items it may have skipped.
+    """
+    nums_str = ", ".join(str(n) for n in sorted(numeros))
+    return (
+        f"{_PROMPT_UNIFIED}\n\n"
+        f"ATTENTION: Look specifically for items numbered {nums_str} — "
+        "they may be present but were missed in a previous pass. "
+        "Return an empty renglones list only if the items are genuinely absent."
+    )
+
+
+def _reintentar_gaps(
+    gaps: list[tuple[int, int]],
+    chunk_markdowns: list[str],
+    chunk_results: list[dict],
+) -> tuple[list[dict], list[str]]:
+    """Retry specific chunks with a focused prompt for known missing item ranges.
+
+    For each gap, identifies which chunks (by index range bracketed between the
+    chunk that has the item just before the gap and the chunk that has the item
+    just after) likely contain the missing items, then calls Gemini with a
+    prompt that explicitly names the missing item numbers.
+
+    Chunks with 0 renglones that fall between bracketing chunks are also
+    retried — this handles the case where a chunk returned an empty result
+    without raising an exception.
+
+    Args:
+        gaps: List of (lo, hi) inclusive ranges to recover.
+        chunk_markdowns: Parsed+compressed markdown per chunk (index-aligned).
+        chunk_results: Extraction result dict per chunk (index-aligned).
+
+    Returns:
+        Tuple (new_renglones, new_providers) with newly recovered items.
+    """
+    if not gaps:
+        return [], []
+
+    # Build per-chunk integer renglon sets for adjacency lookup
+    chunk_nums: list[set[int]] = []
+    for result in chunk_results:
+        nums: set[int] = set()
+        for r in result.get("renglones", []):
+            try:
+                nums.add(int(float(r["renglon"])))
+            except (KeyError, TypeError, ValueError):
+                pass
+        chunk_nums.append(nums)
+
+    new_renglones: list[dict] = []
+    new_providers: list[str] = []
+    retried: set[int] = set()
+
+    for lo, hi in gaps:
+        missing = list(range(lo, hi + 1))
+
+        # Find the last chunk whose results include lo-1 (item before gap)
+        # and the first chunk whose results include hi+1 (item after gap).
+        before_idx: Optional[int] = None
+        after_idx: Optional[int] = None
+        for i, nums in enumerate(chunk_nums):
+            if (lo - 1) in nums:
+                before_idx = i
+            if after_idx is None and (hi + 1) in nums:
+                after_idx = i
+
+        if before_idx is not None and after_idx is not None:
+            target = list(range(before_idx, after_idx + 1))
+        elif before_idx is not None:
+            target = [before_idx]
+        elif after_idx is not None:
+            target = [after_idx]
+        else:
+            logger.warning(
+                "Gap [%d-%d]: sin chunks adyacentes detectados — se omite el retry",
+                lo, hi,
+            )
+            continue
+
+        for idx in target:
+            if idx in retried or not chunk_markdowns[idx]:
+                continue
+            retried.add(idx)
+
+            # Pre-check: verify at least one missing item number appears in the
+            # chunk markdown before spending an API call. Items absent from the
+            # markdown are genuinely missing from the document — not a Gemini miss.
+            chunk_md = chunk_markdowns[idx]
+            items_en_markdown = any(
+                re.search(rf'##\s*Item\s+{n}\b', chunk_md)
+                or re.search(rf'Item[:\s\-]*\b{n}\b', chunk_md)
+                for n in missing
+            )
+            if not items_en_markdown:
+                logger.info(
+                    "Gap [%d-%d] chunk %d: items %s ausentes en markdown — "
+                    "salto real en el documento, sin retry",
+                    lo, hi, idx + 1, missing,
+                )
+                continue
+
+            logger.info(
+                "Gap retry [%d-%d]: chunk %d — items %s presentes en markdown, llamando a Gemini",
+                lo, hi, idx + 1, missing,
+            )
+            try:
+                retry_result = _llamar_gemini_json(
+                    _prompt_con_foco(missing), chunk_markdowns[idx]
+                )
+                recovered = []
+                missing_set = set(missing)
+                for r in retry_result.get("renglones", []):
+                    try:
+                        if int(float(r["renglon"])) in missing_set:
+                            recovered.append(r)
+                    except (KeyError, TypeError, ValueError):
+                        pass
+
+                if recovered:
+                    found_nums = sorted(int(float(r["renglon"])) for r in recovered)
+                    logger.info(
+                        "Gap retry chunk %d: recuperados %d items %s",
+                        idx + 1, len(recovered), found_nums,
+                    )
+                    new_renglones.extend(recovered)
+                    for p in retry_result.get("proveedores", []):
+                        if p not in new_providers:
+                            new_providers.append(p)
+                else:
+                    logger.info(
+                        "Gap retry chunk %d: items %s confirmados ausentes en el documento",
+                        idx + 1, missing,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Gap retry chunk %d falló (%s: %s) — se continúa sin esos items",
+                    idx + 1, type(exc).__name__, exc,
+                )
+
+    return new_renglones, new_providers
+
+
 # ======================
 # PIPELINE STEPS
 # ======================
@@ -459,7 +721,9 @@ def _process_chunk(prompt: str, chunk: str, chunk_idx: int, total: int) -> dict:
     """Process a single chunk; split in half automatically on truncation.
 
     On GeminiTruncationError: logs the event, splits the chunk in half,
-    processes each half independently, and merges the results.
+    processes each half independently, and merges the results. Truncation errors
+    on individual sub-chunks are caught and produce empty results for that half
+    rather than raising and discarding the entire chunk.
     """
     try:
         return _llamar_gemini_json(prompt, chunk)
@@ -472,8 +736,25 @@ def _process_chunk(prompt: str, chunk: str, chunk_idx: int, total: int) -> dict:
         if len(sub_chunks) < 2:
             logger.warning("Chunk %d no se pudo dividir — renglones vacíos", chunk_idx)
             return {"proveedores": [], "renglones": []}
-        r1 = _llamar_gemini_json(prompt, sub_chunks[0])
-        r2 = _llamar_gemini_json(prompt, sub_chunks[1])
+
+        partial: list[dict] = []
+        for sc_idx, sc in enumerate(sub_chunks, start=1):
+            try:
+                partial.append(_llamar_gemini_json(prompt, sc))
+            except GeminiTruncationError:
+                logger.warning(
+                    "Subchunk %d del chunk %d también truncado — se omite esa mitad",
+                    sc_idx, chunk_idx,
+                )
+                partial.append({"proveedores": [], "renglones": []})
+            except Exception as exc:
+                logger.error(
+                    "Subchunk %d del chunk %d falló (%s: %s) — se omite esa mitad",
+                    sc_idx, chunk_idx, type(exc).__name__, exc,
+                )
+                partial.append({"proveedores": [], "renglones": []})
+
+        r1, r2 = partial
         merged_providers = list(dict.fromkeys(
             r1.get("proveedores", []) + r2.get("proveedores", [])
         ))
@@ -517,6 +798,7 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
 
     results: list[Optional[dict]] = [None] * total
     workers = min(_MAX_PARALLEL_CHUNKS, total)
+    failed_parallel: list[int] = []
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_idx = {
@@ -533,8 +815,38 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
                     len((results[idx] or {}).get("renglones", [])),
                 )
             except Exception as exc:
-                logger.error("Chunk %d/%d falló definitivamente: %s", idx + 1, total, exc)
+                logger.error(
+                    "Chunk %d/%d falló en paralelo (%s: %s) — se reintentará secuencial",
+                    idx + 1, total, type(exc).__name__, exc,
+                )
+                failed_parallel.append(idx)
+
+    failed_definitive: list[int] = []
+
+    if failed_parallel:
+        logger.info(
+            "Reintentando %d chunks fallidos secuencialmente: %s",
+            len(failed_parallel),
+            [i + 1 for i in failed_parallel],
+        )
+        for idx in failed_parallel:
+            try:
+                results[idx] = _process_chunk(_PROMPT_UNIFIED, chunks[idx], idx + 1, total)
+                logger.info(
+                    "Chunk %d/%d resuelto en reintento secuencial: %d renglones",
+                    idx + 1, total,
+                    len((results[idx] or {}).get("renglones", [])),
+                )
+            except Exception as exc:
+                logger.error(
+                    "Chunk %d/%d falló definitivamente tras reintento secuencial (%s: %s)",
+                    idx + 1, total, type(exc).__name__, exc,
+                )
+                failed_definitive.append(idx + 1)
                 results[idx] = {"proveedores": [], "renglones": []}
+
+    if failed_definitive:
+        raise ChunkExtractionError(failed_definitive)
 
     all_renglones: list[dict] = []
     providers: list[str] = []
@@ -558,6 +870,20 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
             f"No providers detected in document '{filepath.name}'. "
             "The document may not be a valid price comparison, or the format is unrecognized."
         )
+
+    # Gap detection: retry chunks with focused prompt for missing item ranges
+    gaps = _detectar_gaps(all_renglones)
+    if gaps:
+        logger.warning(
+            "Gaps detectados en resultado final: %s — iniciando retry con foco",
+            gaps,
+        )
+        safe_results = [r or {"proveedores": [], "renglones": []} for r in results]
+        extra_renglones, extra_providers = _reintentar_gaps(gaps, chunks, safe_results)
+        all_renglones.extend(extra_renglones)
+        for p in extra_providers:
+            if p not in providers:
+                providers.append(p)
 
     logger.info(
         "Detected %d providers in '%s': %s", len(providers), filepath.name, providers,
@@ -620,8 +946,14 @@ def _split_pdf_by_pages(
     return chunks
 
 
-def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int) -> dict:
+def _procesar_chunk_pdf(
+    chunk_path: Path, chunk_idx: int, total: int
+) -> tuple[str, dict]:
     """Parse a PDF page-chunk to Markdown and extract via Gemini JSON.
+
+    Returns the compressed markdown alongside the extraction result so the
+    caller can keep it in memory for gap-detection retries without re-parsing
+    the (already-deleted) temp PDF.
 
     Args:
         chunk_path: Path to the temp PDF chunk.
@@ -629,14 +961,15 @@ def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int) -> dict:
         total: Total number of chunks for logging.
 
     Returns:
-        Dict with "proveedores" and "renglones" keys.
+        Tuple of (compressed_markdown, result_dict).
     """
     from app.parsers import parse_document  # noqa: PLC0415
 
     markdown = parse_document(chunk_path)
+    markdown = _restructurar_si_formato_plano(markdown)
     markdown = _comprimir_markdown(markdown)
     logger.info("PDF chunk %d/%d parsed: %d chars", chunk_idx, total, len(markdown))
-    return _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+    return markdown, _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
 
 
 def _extraer_comparativa_por_paginas(
@@ -665,6 +998,8 @@ def _extraer_comparativa_por_paginas(
     workers = min(_MAX_PARALLEL_CHUNKS, total)
 
     results: list[Optional[dict]] = [None] * total
+    markdowns: list[str] = [""] * total
+    failed_parallel: list[int] = []
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_idx = {
@@ -674,14 +1009,49 @@ def _extraer_comparativa_por_paginas(
         for future in as_completed(future_to_idx):
             idx = future_to_idx[future]
             try:
-                results[idx] = future.result()
+                markdowns[idx], results[idx] = future.result()
                 logger.info(
                     "PDF chunk %d/%d completado: %d renglones",
                     idx + 1, total,
                     len((results[idx] or {}).get("renglones", [])),
                 )
             except Exception as exc:
-                logger.error("PDF chunk %d/%d falló: %s", idx + 1, total, exc)
+                logger.error(
+                    "PDF chunk %d/%d falló en paralelo (%s: %s) — se reintentará secuencial",
+                    idx + 1, total, type(exc).__name__, exc,
+                )
+                failed_parallel.append(idx)
+            finally:
+                if idx not in failed_parallel:
+                    try:
+                        chunk_paths[idx].unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+    failed_definitive: list[int] = []
+
+    if failed_parallel:
+        logger.info(
+            "Reintentando %d PDF chunks fallidos secuencialmente: %s",
+            len(failed_parallel),
+            [i + 1 for i in failed_parallel],
+        )
+        for idx in failed_parallel:
+            try:
+                markdowns[idx], results[idx] = _procesar_chunk_pdf(
+                    chunk_paths[idx], idx + 1, total
+                )
+                logger.info(
+                    "PDF chunk %d/%d resuelto en reintento secuencial: %d renglones",
+                    idx + 1, total,
+                    len((results[idx] or {}).get("renglones", [])),
+                )
+            except Exception as exc:
+                logger.error(
+                    "PDF chunk %d/%d falló definitivamente tras reintento secuencial (%s: %s)",
+                    idx + 1, total, type(exc).__name__, exc,
+                )
+                failed_definitive.append(idx + 1)
                 results[idx] = {"proveedores": [], "renglones": []}
             finally:
                 try:
@@ -689,12 +1059,15 @@ def _extraer_comparativa_por_paginas(
                 except Exception:
                     pass
 
+    if failed_definitive:
+        raise ChunkExtractionError(failed_definitive)
+
     all_renglones: list[dict] = []
     providers: list[str] = []
 
-    for idx, result in enumerate(results):
-        if not result:
-            continue
+    safe_results = [r or {"proveedores": [], "renglones": []} for r in results]
+
+    for idx, result in enumerate(safe_results):
         for p in result.get("proveedores", []):
             if p not in providers:
                 providers.append(p)
@@ -711,6 +1084,19 @@ def _extraer_comparativa_por_paginas(
             f"No providers detected in PDF '{ruta_pdf.name}' across {total} page-chunks. "
             "The document may not be a valid price comparison, or the format is unrecognized."
         )
+
+    # Gap detection: if Gemini missed items in any chunk, retry with focused prompt
+    gaps = _detectar_gaps(all_renglones)
+    if gaps:
+        logger.warning(
+            "Gaps detectados en resultado final: %s — iniciando retry con foco",
+            gaps,
+        )
+        extra_renglones, extra_providers = _reintentar_gaps(gaps, markdowns, safe_results)
+        all_renglones.extend(extra_renglones)
+        for p in extra_providers:
+            if p not in providers:
+                providers.append(p)
 
     logger.info(
         "Page-chunks: %d providers, %d renglones from %d chunks",
