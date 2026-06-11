@@ -98,7 +98,12 @@ RULES:
 - "proveedor": full provider name. Use "sin proveedor" if name cannot be determined
 - Include ALL providers for every renglon, even those that don't quote
 - Return ALL items found
-- DUPLICATES: if the same product description appears in multiple consecutive rows, they belong to the SAME renglon — assign them the same renglon number and merge all their provider prices together"""
+- DUPLICATES: if the same product description appears in multiple consecutive rows, they belong to the SAME renglon — assign them the same renglon number and merge all their provider prices together
+
+NUMBER FORMAT — CRITICAL:
+Copy "precio" VERBATIM from the document — every digit, dot, and comma exactly as printed.
+Do NOT evaluate, convert, round, or normalize any number.
+If the document shows "20.227,00" → return "20.227,00". If it shows "4,650.00" → return "4,650.00". If it shows "362.50" → return "362.50"."""
 
 # ======================
 # CUSTOM EXCEPTIONS
@@ -138,6 +143,60 @@ class ChunkExtractionError(RuntimeError):
 # ======================
 # HELPERS
 # ======================
+
+
+@handle_gemini_errors(max_retries=4, backoff_factor=40.0)
+def _llamar_gemini_pdf(prompt: str, pdf_bytes: bytes) -> dict:
+    """Call Gemini with a PDF as inline_data (vision) instead of markdown text.
+
+    Used by the page-based chunking flow to bypass docling's lossy table parsing.
+    Gemini reads the PDF structure natively, capturing all providers per renglon.
+    """
+    client = get_next_client()
+    contents = [
+        types.Content(parts=[
+            types.Part(text=prompt),
+            types.Part(inline_data=types.Blob(mime_type="application/pdf", data=pdf_bytes)),
+        ])
+    ]
+    response = generate_with_fallback(client, contents, config=_JSON_CONFIG)
+
+    finish_reason = None
+    if response.candidates:
+        finish_reason = str(response.candidates[0].finish_reason)
+
+    logger.info(
+        "Gemini PDF vision response: %d chars, finish_reason=%s",
+        len(response.text), finish_reason,
+    )
+
+    if finish_reason and "MAX_TOKENS" in finish_reason:
+        raise GeminiTruncationError(
+            f"Respuesta truncada en {len(response.text)} chars (finish_reason={finish_reason})"
+        )
+
+    try:
+        result = json.loads(response.text)
+    except json.JSONDecodeError as exc:
+        raise GeminiTruncationError(
+            f"JSON inválido tras {len(response.text)} chars "
+            f"(finish_reason={finish_reason}): {exc}"
+        ) from exc
+
+    if isinstance(result, list):
+        logger.warning(
+            "Respuesta como lista en lugar de dict (%d items) — inferiendo estructura",
+            len(result),
+        )
+        if result and isinstance(result[0], dict):
+            first = result[0]
+            if "renglones" in first:
+                return first
+            if "renglon" in first:
+                return {"proveedores": [], "renglones": result}
+        return {"proveedores": [], "renglones": []}
+
+    return result
 
 
 @handle_gemini_errors(max_retries=4, backoff_factor=40.0)
@@ -183,8 +242,14 @@ def _llamar_gemini_json(prompt: str, markdown: str) -> dict:
             "Respuesta como lista en lugar de dict (%d items) — inferiendo estructura",
             len(result),
         )
-        if result and isinstance(result[0], dict) and "renglon" in result[0]:
-            return {"proveedores": [], "renglones": result}
+        if result and isinstance(result[0], dict):
+            first = result[0]
+            if "renglones" in first:
+                # Wrapped dict: [{"proveedores": [...], "renglones": [...]}]
+                return first
+            if "renglon" in first:
+                # List of renglon dicts directly
+                return {"proveedores": [], "renglones": result}
         return {"proveedores": [], "renglones": []}
 
     return result
@@ -226,9 +291,14 @@ def _limpiar_precio(raw: str) -> str:
     if not cleaned:
         return ""
 
-    # Handle Argentine/European format: "1.234,56" (dot thousands, comma decimal)
+    # Determine format by which separator appears last (= decimal separator)
     if "," in cleaned and "." in cleaned:
-        cleaned = cleaned.replace(".", "").replace(",", ".")
+        if cleaned.rfind(".") > cleaned.rfind(","):
+            # US format: "1,234.56" → dot is decimal, comma is thousands
+            cleaned = cleaned.replace(",", "")
+        else:
+            # Argentine format: "1.234,56" → comma is decimal, dot is thousands
+            cleaned = cleaned.replace(".", "").replace(",", ".")
     # Handle comma-only decimal: "12,34"
     elif "," in cleaned and "." not in cleaned:
         cleaned = cleaned.replace(",", ".")
@@ -496,12 +566,24 @@ def _reintentar_gaps(
             # Pre-check: verify at least one missing item number appears in the
             # chunk markdown before spending an API call. Items absent from the
             # markdown are genuinely missing from the document — not a Gemini miss.
+            # Exception: a chunk with 0 renglones despite having content is a
+            # Gemini failure — always retry regardless of pattern match.
             chunk_md = chunk_markdowns[idx]
-            items_en_markdown = any(
-                re.search(rf'##\s*Item\s+{n}\b', chunk_md)
-                or re.search(rf'Item[:\s\-]*\b{n}\b', chunk_md)
-                for n in missing
-            )
+            chunk_renglones = len(chunk_results[idx].get("renglones", []))
+            if chunk_renglones == 0 and chunk_md:
+                items_en_markdown = True
+                logger.info(
+                    "Gap [%d-%d] chunk %d: 0 renglones con markdown no vacío — "
+                    "fallo de Gemini, forzando retry",
+                    lo, hi, idx + 1,
+                )
+            else:
+                items_en_markdown = any(
+                    re.search(rf'##\s*Item\s+{n}\b', chunk_md)
+                    or re.search(rf'Item[:\s\-]*\b{n}\b', chunk_md)
+                    or re.search(rf'(?:^|\|)\s*{n}\s*(?:\||$)', chunk_md, re.MULTILINE)
+                    for n in missing
+                )
             if not items_en_markdown:
                 logger.info(
                     "Gap [%d-%d] chunk %d: items %s ausentes en markdown — "
@@ -949,11 +1031,16 @@ def _split_pdf_by_pages(
 def _procesar_chunk_pdf(
     chunk_path: Path, chunk_idx: int, total: int
 ) -> tuple[str, dict]:
-    """Parse a PDF page-chunk to Markdown and extract via Gemini JSON.
+    """Extract a PDF page-chunk via Gemini vision (inline_data).
 
-    Returns the compressed markdown alongside the extraction result so the
-    caller can keep it in memory for gap-detection retries without re-parsing
-    the (already-deleted) temp PDF.
+    Sends the raw PDF bytes directly to Gemini instead of converting to Markdown
+    via docling. This preserves multi-column table structure that docling loses,
+    allowing Gemini to capture all providers per renglon.
+
+    Falls back to docling+markdown if vision call truncates.
+
+    Returns the raw pypdf text alongside the extraction result so the caller
+    can keep it for gap-detection retries without re-reading the deleted temp PDF.
 
     Args:
         chunk_path: Path to the temp PDF chunk.
@@ -961,21 +1048,54 @@ def _procesar_chunk_pdf(
         total: Total number of chunks for logging.
 
     Returns:
-        Tuple of (compressed_markdown, result_dict).
+        Tuple of (raw_text_for_gap_detection, result_dict).
     """
-    from app.parsers import parse_document  # noqa: PLC0415
+    from pypdf import PdfReader  # noqa: PLC0415
 
-    markdown = parse_document(chunk_path)
-    markdown = _restructurar_si_formato_plano(markdown)
-    markdown = _comprimir_markdown(markdown)
-    logger.info("PDF chunk %d/%d parsed: %d chars", chunk_idx, total, len(markdown))
-    return markdown, _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+    pdf_bytes = chunk_path.read_bytes()
+
+    # Extract raw text via pypdf — used only for gap-detection checks,
+    # not sent to Gemini. pypdf preserves all provider rows even when
+    # column order is scrambled.
+    try:
+        reader = PdfReader(str(chunk_path))
+        raw_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:
+        logger.warning("pypdf text extraction failed for chunk %d: %s", chunk_idx, exc)
+        raw_text = ""
+
+    logger.info(
+        "PDF chunk %d/%d: %d bytes → Gemini vision",
+        chunk_idx, total, len(pdf_bytes),
+    )
+
+    try:
+        result = _llamar_gemini_pdf(_PROMPT_UNIFIED, pdf_bytes)
+    except GeminiTruncationError:
+        logger.warning(
+            "PDF chunk %d/%d vision truncated — falling back to docling+markdown",
+            chunk_idx, total,
+        )
+        from app.parsers import parse_document  # noqa: PLC0415
+        markdown = parse_document(chunk_path)
+        markdown = _restructurar_si_formato_plano(markdown)
+        markdown = _comprimir_markdown(markdown)
+        raw_text = markdown
+        result = _process_chunk(_PROMPT_UNIFIED, markdown, chunk_idx, total)
+
+    logger.info(
+        "PDF chunk %d/%d completed: %d renglones",
+        chunk_idx, total, len(result.get("renglones", [])),
+    )
+    return raw_text, result
 
 
 def _extraer_comparativa_por_paginas(
     ruta_pdf: Path,
     *,
     session_id: Optional[UUID] = None,
+    nombre_base: str = "",
+    cliente: str = "",
 ) -> dict:
     """Extract providers and renglones from a large PDF using page-based chunking.
 
@@ -1084,6 +1204,12 @@ def _extraer_comparativa_por_paginas(
             f"No providers detected in PDF '{ruta_pdf.name}' across {total} page-chunks. "
             "The document may not be a valid price comparison, or the format is unrecognized."
         )
+
+    if nombre_base and cliente:
+        combined = "\n\n---\n\n".join(
+            f"<!-- chunk {i+1}/{total} -->\n{md}" for i, md in enumerate(markdowns) if md
+        )
+        _guardar_docling_output(combined, nombre_base, cliente)
 
     # Gap detection: if Gemini missed items in any chunk, retry with focused prompt
     gaps = _detectar_gaps(all_renglones)
@@ -1336,7 +1462,12 @@ def procesar_comparativa(
 
     if usar_page_chunks:
         # New flow: split PDF by pages, parse each chunk, merge results
-        all_data = _extraer_comparativa_por_paginas(ruta_archivo, session_id=session_id)
+        all_data = _extraer_comparativa_por_paginas(
+            ruta_archivo,
+            session_id=session_id,
+            nombre_base=nombre_base,
+            cliente=cliente,
+        )
     else:
         # Existing flow: parse full document to Markdown, chunk if too large
         markdown = parse_document(ruta_archivo)
