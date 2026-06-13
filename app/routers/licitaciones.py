@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.schemas.licitaciones import (
     ArchivoVinculado,
     LicitacionActiva,
+    LicitacionCalendario,
     LicitacionCreate,
     LicitacionDetalle,
     LicitacionListResponse,
@@ -22,6 +24,12 @@ from app.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/licitaciones", tags=["licitaciones"])
+
+_SELECT_FIELDS = (
+    "id, nombre, tipo, apertura, vencimiento, tipo_gestion, "
+    "modalidad, estado, monto_estimado, notas, comparativa_estado, "
+    "created_at, updated_at, archivos_count:extraction_results(count)"
+)
 
 
 def _require_client():
@@ -68,7 +76,7 @@ async def validar_licitacion_id(licitacion_id: Optional[str]) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Endpoints — ORDEN IMPORTA: /activas debe ir antes de /{lic_id}
+# Endpoints — ORDEN IMPORTA: /activas y /calendario deben ir antes de /{lic_id}
 # ---------------------------------------------------------------------------
 
 @router.get("", response_model=LicitacionListResponse)
@@ -86,12 +94,7 @@ async def listar(
     def _run():
         qb = (
             client.table("licitaciones")
-            .select(
-                "id, nombre, tipo, apertura, vencimiento, tipo_gestion, "
-                "modalidad, estado, monto_estimado, notas, created_at, updated_at, "
-                "archivos_count:extraction_results(count)",
-                count="exact",
-            )
+            .select(_SELECT_FIELDS, count="exact")
             .order("created_at", desc=True)
             .range(offset, offset + page_size - 1)
         )
@@ -127,6 +130,63 @@ async def listar_activas():
     return [LicitacionActiva(**r) for r in (res.data or [])]
 
 
+@router.get("/calendario", response_model=list[LicitacionCalendario])
+async def calendario(
+    desde: Optional[date] = Query(None),
+    hasta: Optional[date] = Query(None),
+):
+    """Licitaciones con estado derivado de comparativa para el calendario."""
+    client = _require_client()
+
+    def _run():
+        lics_qb = (
+            client.table("licitaciones")
+            .select("id, nombre, tipo, apertura, vencimiento, estado, comparativa_estado")
+            .order("apertura", desc=False)
+        )
+        if desde and hasta:
+            lics_qb = lics_qb.or_(
+                f"apertura.is.null,and(apertura.gte.{desde},apertura.lte.{hasta})"
+            )
+        lics_res = lics_qb.execute()
+        comps_res = (
+            client.table("extraction_results")
+            .select("licitacion_id")
+            .eq("document_type", "comparativa")
+            .not_.is_("licitacion_id", "null")
+            .execute()
+        )
+        return lics_res, comps_res
+
+    lics_res, comps_res = await asyncio.to_thread(_run)
+    con_comparativa = {
+        str(r["licitacion_id"])
+        for r in (comps_res.data or [])
+        if r.get("licitacion_id")
+    }
+
+    items = []
+    for row in (lics_res.data or []):
+        if str(row["id"]) in con_comparativa:
+            derivado = "cargada"
+        elif row.get("comparativa_estado") == "pedida":
+            derivado = "pedida"
+        else:
+            derivado = "sin_comparativa"
+        items.append(LicitacionCalendario(
+            id=row["id"],
+            nombre=row["nombre"],
+            tipo=row["tipo"],
+            apertura=row.get("apertura"),
+            vencimiento=row.get("vencimiento"),
+            estado=row["estado"],
+            comparativa_estado=derivado,
+        ))
+
+    items.sort(key=lambda x: (x.apertura or x.vencimiento or date.max))
+    return items
+
+
 @router.get("/{lic_id}", response_model=LicitacionDetalle)
 async def obtener(lic_id: UUID):
     client = _require_client()
@@ -134,11 +194,7 @@ async def obtener(lic_id: UUID):
     def _run():
         lic_res = (
             client.table("licitaciones")
-            .select(
-                "id, nombre, tipo, apertura, vencimiento, tipo_gestion, "
-                "modalidad, estado, monto_estimado, notas, created_at, updated_at, "
-                "archivos_count:extraction_results(count)"
-            )
+            .select(_SELECT_FIELDS)
             .eq("id", str(lic_id))
             .limit(1)
             .execute()
@@ -198,11 +254,7 @@ async def actualizar(lic_id: UUID, payload: LicitacionUpdate):
             return None
         return (
             client.table("licitaciones")
-            .select(
-                "id, nombre, tipo, apertura, vencimiento, tipo_gestion, "
-                "modalidad, estado, monto_estimado, notas, created_at, updated_at, "
-                "archivos_count:extraction_results(count)"
-            )
+            .select(_SELECT_FIELDS)
             .eq("id", str(lic_id))
             .limit(1)
             .execute()

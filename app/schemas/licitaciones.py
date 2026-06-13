@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 TipoLicitacion = Literal["descartables", "medicamentos", "soluciones", "panales", "formulas"]
 ModalidadLicitacion = Literal["mail", "pliego"]
 EstadoLicitacion = Literal["abierta", "en_evaluacion", "adjudicada", "cerrada"]
+ComparativaEstadoSet = Literal["pedida"]
+ComparativaEstadoDerivado = Literal["cargada", "pedida", "sin_comparativa"]
 
 
 def _normalize_count(row: dict) -> dict:
@@ -50,7 +52,7 @@ class LicitacionBase(BaseModel):
 
 class LicitacionCreate(LicitacionBase):
     """Payload para POST /api/licitaciones."""
-    pass
+    apertura: date  # obligatorio — override del Optional en LicitacionBase
 
 
 class LicitacionUpdate(BaseModel):
@@ -71,6 +73,7 @@ class LicitacionUpdate(BaseModel):
     estado: Optional[EstadoLicitacion] = None
     monto_estimado: Optional[Decimal] = Field(None, ge=0)
     notas: Optional[str] = None
+    comparativa_estado: Optional[ComparativaEstadoSet] = None
 
     def to_db_payload(self) -> dict:
         """Devuelve solo los campos seteados (excluye campos no enviados) para PATCH."""
@@ -109,11 +112,40 @@ class LicitacionDetalle(LicitacionOut):
     archivos: List[ArchivoVinculado] = Field(default_factory=list)
 
 
+class ExtractionResultUpdate(BaseModel):
+    """Payload para PATCH /api/extraction-results/{id}. Todos los campos opcionales."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    licitacion_id: Optional[UUID] = None
+    document_type: Optional[Literal["comparativa", "licitacion", "orden_compra"]] = None
+
+    def to_db_payload(self) -> dict:
+        return self.model_dump(exclude_unset=True, mode="json")
+
+
+class ExtractionResultOut(ArchivoVinculado):
+    """Extraction result con licitacion_id para respuesta del PATCH."""
+    licitacion_id: Optional[UUID] = None
+
+
 class LicitacionActiva(BaseModel):
     """Payload mínimo para el selector de upload."""
     id: UUID
     nombre: str
     tipo: TipoLicitacion
+
+
+class LicitacionCalendario(BaseModel):
+    """Vista calendario: licitación con comparativa_estado derivado en runtime."""
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID
+    nombre: str
+    tipo: TipoLicitacion
+    apertura: Optional[date] = None
+    vencimiento: Optional[date] = None
+    estado: EstadoLicitacion
+    comparativa_estado: ComparativaEstadoDerivado
 
 
 class LicitacionListResponse(BaseModel):

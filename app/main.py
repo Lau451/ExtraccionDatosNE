@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 
 from app.supabase_client import get_client
 from app.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
+from app.routers.extraction_results import router as extraction_results_router
 from app.robot import obtener_cliente, procesar_archivo
 from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Extractor de Documentos")
 app.include_router(licitaciones_router)
+app.include_router(extraction_results_router)
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
@@ -274,6 +276,11 @@ async def procesar(
                 logger.debug("Deleted empty tmp directory: %s", tmp_dir)
         except Exception as cleanup_error:
             logger.debug("Could not remove tmp directory: %s", cleanup_error)
+
+
+@app.get("/calendario", response_class=HTMLResponse)
+async def calendario_page(request: Request):
+    return templates.TemplateResponse(request, "calendario.html", {})
 
 
 @app.get("/historial", response_class=HTMLResponse)

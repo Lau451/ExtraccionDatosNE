@@ -1147,7 +1147,8 @@ body.historial-body {
     -webkit-backdrop-filter: blur(24px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
 }
 
@@ -1155,6 +1156,27 @@ body.historial-body {
     width: 100%;
     border-collapse: collapse;
 }
+
+/* Historial de documentos — 8 columnas */
+#docs-table { table-layout: fixed; min-width: 760px; }
+#docs-table th:nth-child(1) { width: auto; min-width: 160px; }
+#docs-table th:nth-child(2) { width: 112px; }
+#docs-table th:nth-child(3) { width: 72px; }
+#docs-table th:nth-child(4) { width: 118px; }
+#docs-table th:nth-child(5) { width: 108px; }
+#docs-table th:nth-child(6) { width: 75px; }
+#docs-table th:nth-child(7) { width: 130px; }
+#docs-table th:nth-child(8) { width: 155px; }
+
+/* Gestión de licitaciones — 7 columnas */
+#lic-table { table-layout: fixed; }
+#lic-table th:nth-child(1) { width: auto; min-width: 180px; }
+#lic-table th:nth-child(2) { width: 128px; }
+#lic-table th:nth-child(3) { width: 152px; }
+#lic-table th:nth-child(4) { width: 105px; }
+#lic-table th:nth-child(5) { width: 110px; }
+#lic-table th:nth-child(6) { width: 78px; }
+#lic-table th:nth-child(7) { width: 210px; }
 
 .historial-table thead {
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
@@ -1177,6 +1199,7 @@ body.historial-body {
     color: rgba(255, 255, 255, 0.75);
     border-bottom: 1px solid rgba(255, 255, 255, 0.055);
     vertical-align: middle;
+    overflow: hidden;
 }
 
 .historial-table tr:last-child td {
@@ -1223,6 +1246,42 @@ body.historial-body {
     background: rgba(99, 102, 241, 0.14);
     color: #a5b4fc;
     border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.tipo-chip.medicamentos {
+    background: rgba(34, 197, 94, 0.13);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.tipo-chip.descartables {
+    background: rgba(249, 115, 22, 0.13);
+    color: #fdba74;
+    border: 1px solid rgba(249, 115, 22, 0.22);
+}
+
+.tipo-chip.soluciones {
+    background: rgba(14, 165, 233, 0.13);
+    color: #7dd3fc;
+    border: 1px solid rgba(14, 165, 233, 0.22);
+}
+
+.tipo-chip.panales {
+    background: rgba(168, 85, 247, 0.13);
+    color: #d8b4fe;
+    border: 1px solid rgba(168, 85, 247, 0.22);
+}
+
+.tipo-chip.formulas {
+    background: rgba(236, 72, 153, 0.13);
+    color: #f9a8d4;
+    border: 1px solid rgba(236, 72, 153, 0.22);
+}
+
+.tipo-chip.orden_compra {
+    background: rgba(234, 179, 8, 0.13);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.22);
 }
 
 /* Status chip */
@@ -1929,4 +1988,280 @@ body.historial-body {
         padding: 20px 20px 18px;
     }
     .btn-nueva-lic span { display: none; }
+}
+
+/* ── Botón Ver (detalle) ─────────────────────────────────────── */
+.btn-action.btn-detalle {
+    background: rgba(42, 82, 152, 0.15);
+    border-color: rgba(42, 82, 152, 0.35);
+    color: #93b4ef;
+}
+
+.btn-action.btn-detalle:hover:not(:disabled) {
+    background: rgba(42, 82, 152, 0.28);
+    border-color: rgba(42, 82, 152, 0.55);
+    color: #c3d5f8;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ── Dialog detalle — documentos vinculados ──────────────────── */
+.det-dialog {
+    width: min(760px, calc(100vw - 32px));
+}
+
+.det-dialog .lic-dialog-inner {
+    padding: 24px 24px 20px;
+    overflow-x: auto;
+}
+
+.det-dialog .lic-dialog-header {
+    align-items: flex-start;
+}
+
+.det-meta {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+
+.det-table {
+    margin-top: 4px;
+    min-width: 540px;
+}
+
+.det-table th,
+.det-table td {
+    padding: 10px 12px;
+}
+
+.det-table th:last-child,
+.det-table td:last-child {
+    width: 120px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.det-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.06);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    color: #e8ecf2;
+    font-size: 12px;
+    font-family: inherit;
+    padding: 4px 28px 4px 8px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.det-select:focus {
+    border-color: rgba(42, 82, 152, 0.8);
+    background-color: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.2);
+}
+
+.det-select option {
+    background: #1c2130;
+    color: #e8ecf2;
+}
+
+.det-btn-desvincular {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+}
+
+.det-btn-desvincular:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(239, 68, 68, 0.38);
+    color: #fecaca;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ============================================
+   CALENDARIO DE COMPARATIVAS
+   ============================================ */
+
+.comp-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.comp-chip--cargada {
+    background: rgba(34, 197, 94, 0.11);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.18);
+}
+
+.comp-chip--pedida {
+    background: rgba(234, 179, 8, 0.11);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.18);
+}
+
+.comp-chip--sin {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cal-months {
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+    padding: 20px 24px;
+}
+
+.cal-month-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+    padding-bottom: 10px;
+    margin: 0 0 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cal-month-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    padding: 2px 9px;
+}
+
+.cal-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.025);
+    transition: background 0.15s ease, border-color 0.15s ease;
+    margin-bottom: 6px;
+}
+
+.cal-row:hover {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.cal-row-nombre {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.cal-row-fecha {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+}
+
+.btn-pedir {
+    background: rgba(234, 179, 8, 0.12);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.22);
+}
+
+.btn-pedir:hover:not(:disabled) {
+    background: rgba(234, 179, 8, 0.22);
+    border-color: rgba(234, 179, 8, 0.38);
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-pedir:disabled {
+    opacity: 0.55;
+    cursor: default;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-anular {
+    background: rgba(239, 68, 68, 0.08);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.btn-anular:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(239, 68, 68, 0.38);
+    color: #fecaca;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-anular:disabled {
+    opacity: 0.55;
+    cursor: default;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Navegación de año — calendario */
+.cal-year-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    padding: 2px;
+    flex-shrink: 0;
+}
+.cal-year-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255,255,255,.85);
+    letter-spacing: 0.3px;
+    padding: 0 10px;
+    white-space: nowrap;
+    min-width: 96px;
+    text-align: center;
+}
+.btn-year-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,.6);
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+    flex-shrink: 0;
+}
+.btn-year-nav svg {
+    width: 15px;
+    height: 15px;
+}
+.btn-year-nav:hover {
+    background: rgba(255,255,255,.1);
+    color: rgba(255,255,255,.9);
 }

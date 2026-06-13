@@ -5,7 +5,7 @@
     <title>Licitaciones — Droguería Nueva Era</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/static/fonts/manrope.css">
-    <link rel="stylesheet" href="/static/styles.css?v=2026-05-14">
+    <link rel="stylesheet" href="/static/styles.css?v=2026-06-13">
 </head>
 <body class="historial-body">
 
@@ -86,8 +86,11 @@
 
     </div>
 
-    <!-- Modal -->
+    <!-- Modal creación/edición -->
     {% include '_modal_licitacion.html' %}
+
+    <!-- Panel detalle documentos -->
+    {% include '_panel_detalle_licitacion.html' %}
 
     <a href="/guia" target="_blank" rel="noopener" class="guide-fab" aria-label="Abrir guía de usuario">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -97,7 +100,7 @@
         Guía de usuario
     </a>
 
-    <script src="/static/licitaciones.js?v=2026-05-14"></script>
+    <script src="/static/licitaciones.js?v=2026-06-13"></script>
     <script>
         // ─── State ────────────────────────────────────────────────────────────
         let allLics = [];
@@ -171,6 +174,10 @@
                     <td>${l.archivos_count}</td>
                     <td>
                         <div class="action-btns">
+                            <button class="btn-action btn-detalle"
+                                    onclick="window.LicitacionesModule.openDetalle('${l.id}')">
+                                Ver
+                            </button>
                             <button class="btn-action btn-ver"
                                     onclick="editarLic('${l.id}')">
                                 Editar

@@ -1,0 +1,44 @@
+<!-- Panel de detalle de licitación — documentos vinculados -->
+<dialog id="lic-detalle-dialog" class="lic-dialog det-dialog">
+    <div class="lic-dialog-inner">
+        <header class="lic-dialog-header">
+            <h2 id="det-title">Documentos vinculados</h2>
+            <button type="button" class="lic-dialog-close" id="det-close" aria-label="Cerrar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </header>
+
+        <div id="det-meta" class="det-meta"></div>
+
+        <div id="det-loading" class="historial-state hidden">
+            <div class="spinner"></div>
+            Cargando documentos…
+        </div>
+
+        <div id="det-empty" class="historial-state hidden">
+            <svg class="historial-state-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.5">
+                <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+            </svg>
+            Sin documentos vinculados
+        </div>
+
+        <table class="historial-table det-table hidden" id="det-table">
+            <thead>
+                <tr>
+                    <th>Archivo</th>
+                    <th>Tipo</th>
+                    <th>Estado</th>
+                    <th>Fecha</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="det-tbody"></tbody>
+        </table>
+
+        <p class="lic-modal-error" id="det-error"></p>
+    </div>
+</dialog>
