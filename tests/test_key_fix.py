@@ -140,7 +140,7 @@ async def test_dos_usuarios_simultaneos_no_cruzan_clientes(tmp_path: Path):
         pool_idx += 1
         return c
 
-    def fake_procesar(ruta_archivo, nombre_original=None):
+    def fake_procesar(ruta_archivo, nombre_original=None, session_id=None):
         time.sleep(0.3)
         csv = ruta_archivo.parent / f"{ruta_archivo.stem}.csv"
         csv.write_text("item;cantidad;descripcion;origen\n1;10;Prod;CLI\n")

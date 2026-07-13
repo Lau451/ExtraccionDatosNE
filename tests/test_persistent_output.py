@@ -25,10 +25,12 @@ from app import persistent_output
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
-    """Resetea el singleton de Supabase antes de cada test."""
+    """Resetea el singleton de Supabase y el cache de drogueria_id antes de cada test."""
     sc_module.reset_client_for_testing()
+    persistent_output._drogueria_id_cache = None
     yield
     sc_module.reset_client_for_testing()
+    persistent_output._drogueria_id_cache = None
 
 
 @pytest.fixture
@@ -51,13 +53,25 @@ def otro_archivo_temp():
 def mock_supabase_client(mocker):
     """
     Mock de supabase.Client para persistent_output.
-    Retorna una UUID al insert en extraction_results.
+    - table("droguerias").select(...).limit(...).execute() → una fila (resolución de
+      drogueria_id, ver _resolver_drogueria_id).
+    - cualquier otro table(...).insert(...).execute() → una fila con el id generado.
     """
     mock = MagicMock()
     extraction_uuid = str(uuid.uuid4())
-    mock.table.return_value.insert.return_value.execute.return_value.data = [
-        {"id": extraction_uuid}
-    ]
+    drogueria_uuid = str(uuid.uuid4())
+
+    def _table(nombre):
+        tabla_mock = MagicMock()
+        if nombre == "droguerias":
+            tabla_mock.select.return_value.limit.return_value.execute.return_value.data = [
+                {"id": drogueria_uuid}
+            ]
+        else:
+            tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
+        return tabla_mock
+
+    mock.table.side_effect = _table
     mocker.patch("app.persistent_output.get_client", return_value=mock)
     return mock, extraction_uuid
 
@@ -215,8 +229,9 @@ class TestPersistirOutputFinal:
         )
 
         assert resultado is None
-        # No se debe haber llamado a insert si rows está vacío
-        mock.table.return_value.insert.assert_not_called()
+        # No se debe haber llamado a table() en absoluto si rows está vacío
+        # (la validación corta antes de resolver drogueria_id o insertar)
+        mock.table.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_persistir_output_final_many_rows_warning(

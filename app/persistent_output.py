@@ -4,10 +4,12 @@ SHA256 + deduplicacion + persistencia del resultado final: app/persistent_output
 Funciones:
   calcular_sha256()           — hexdigest SHA256 del archivo fuente
   buscar_duplicado_con_lock() — llama a RPC reserve_extraction (SELECT FOR UPDATE)
-  persistir_output_final()    — INSERT en extraction_results + tabla hija JSONB
+  persistir_output_final()    — INSERT de metadata en extraction_results
 
 Todas las funciones retornan None (sin propagar excepcion) si el cliente Supabase
-no esta disponible. El CSV en disco es siempre la fuente de verdad para descargas.
+no esta disponible. El CSV en disco es siempre la fuente de verdad: las filas
+extraidas (`rows`) NO se persisten en Supabase, solo la metadata del documento.
+`presupuestacion/extraccion/` lee las filas parseando `csv_disk_path` del disco.
 """
 
 import asyncio
@@ -23,11 +25,32 @@ logger = logging.getLogger(__name__)
 # Umbral de filas que dispara un WARNING (el INSERT igualmente se ejecuta)
 _WARN_ROW_COUNT = 50_000
 
-# Tipos de documento validos y su tabla hija correspondiente
-_TABLA_HIJA: dict[str, str] = {
-    "comparativa": "comparativas_results",
-    "licitacion": "licitaciones_results",
-}
+# Tipos de documento con pipeline de extraccion real hoy. "orden_compra" todavia
+# no tiene extractor propio (ver presupuestacion/extraccion/) y "cotizacion" es
+# manejado como "licitacion" por el robot generico.
+_DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion"}
+
+# Cache en proceso del id de la (unica) drogueria — esta app hoy sirve una sola.
+# Si en el futuro sirve mas de una, esto necesita resolverse por request, no acá.
+_drogueria_id_cache: str | None = None
+
+
+async def _resolver_drogueria_id(client) -> str | None:
+    global _drogueria_id_cache
+    if _drogueria_id_cache is not None:
+        return _drogueria_id_cache
+
+    try:
+        respuesta = await asyncio.to_thread(
+            lambda: client.table("droguerias").select("id").limit(1).execute()
+        )
+        if respuesta.data:
+            _drogueria_id_cache = respuesta.data[0]["id"]
+            return _drogueria_id_cache
+    except Exception as exc:
+        logger.error("_resolver_drogueria_id: error consultando droguerias — %s", exc)
+
+    return None
 
 
 def calcular_sha256(path: Path) -> str:
@@ -114,25 +137,35 @@ async def persistir_output_final(
     licitacion_id: str | None = None,
 ) -> UUID | None:
     """
-    Persiste el resultado final de una extraccion en Supabase.
+    Persiste la METADATA de una extraccion en extraction_results (schema nuevo de
+    presupuestacion/). Las filas extraidas (`rows`) NO se insertan en Supabase —
+    quedan en el CSV en disco (`csv_path`), que es la fuente de verdad;
+    presupuestacion/extraccion/ las lee parseando `csv_disk_path`.
 
     Ejecuta en este orden:
-      1. Valida que rows no este vacio.
+      1. Valida que rows no este vacio (igual se descartan del INSERT, pero un
+         documento sin filas no es una extraccion valida).
       2. Emite WARNING si rows supera 50k filas.
-      3. INSERT en extraction_results.
-      4. INSERT en la tabla hija (comparativas_results o licitaciones_results).
+      3. Resuelve drogueria_id (unica droguoria que sirve esta app hoy).
+      4. INSERT en extraction_results.
       5. Retorna el UUID generado.
 
     Esta funcion se ejecuta como BackgroundTask (post-respuesta), por lo que
     los errores se logean pero NUNCA se propagan al caller.
 
+    NOTA: `session_id`, `client_id` y `licitacion_id` se siguen aceptando para no
+    romper a los callers (background_tasks.py/main.py), pero YA NO se persisten:
+    no existen como columnas usables en el extraction_results del schema nuevo
+    (session_id necesitaria una fila real en processing_sessions del schema nuevo,
+    que persistent_chunking.py todavia no crea correctamente — mismo tipo de gap,
+    fuera del alcance de este cambio puntual).
+
     Args:
-        session_id:      UUID de la sesion de procesamiento (puede ser None si
-                         Supabase estuvo down durante la extraccion).
+        session_id:      Aceptado por compatibilidad, no se persiste (ver NOTA).
         doc_type:        "comparativa" | "licitacion".
         rows:            Lista de dicts con los datos extraidos (leidos del CSV).
-        csv_path:        Path al CSV generado en disco (source of truth para descargas).
-        client_id:       Identificador del cliente/origen.
+        csv_path:        Path al CSV generado en disco (source of truth).
+        client_id:       Aceptado por compatibilidad, no se persiste (ver NOTA).
         source_filename: Nombre del archivo original subido.
         source_sha256:   SHA256 del archivo original (para deduplicacion futura).
 
@@ -163,27 +196,32 @@ async def persistir_output_final(
         )
 
     # --- Validar doc_type soportado ---
-    tabla_hija = _TABLA_HIJA.get(doc_type)
-    if tabla_hija is None:
+    if doc_type not in _DOC_TYPES_SOPORTADOS:
         logger.error(
-            "persistir_output_final: doc_type='%s' no soportado. "
-            "Valores validos: %s",
+            "persistir_output_final: doc_type='%s' no soportado. Valores validos: %s",
             doc_type,
-            list(_TABLA_HIJA.keys()),
+            sorted(_DOC_TYPES_SOPORTADOS),
         )
         return None
 
-    # --- INSERT en extraction_results ---
+    drogueria_id = await _resolver_drogueria_id(client)
+    if drogueria_id is None:
+        logger.error(
+            "persistir_output_final: no se pudo resolver drogueria_id — INSERT abortado. "
+            "source_filename=%s",
+            source_filename,
+        )
+        return None
+
+    # --- INSERT en extraction_results (solo metadata, ver docstring) ---
     payload_base = {
-        "session_id": str(session_id) if session_id else None,
+        "drogueria_id": drogueria_id,
         "document_type": doc_type,
         "source_filename": source_filename,
         "source_sha256": source_sha256,
-        "client_id": client_id,
         "row_count": len(rows),
         "csv_disk_path": str(csv_path),
         "status": "completed",
-        "licitacion_id": licitacion_id,
     }
 
     try:
@@ -209,6 +247,7 @@ async def persistir_output_final(
             len(rows),
             doc_type,
         )
+        return extraction_id
     except Exception as exc:
         logger.error(
             "persistir_output_final: error en INSERT extraction_results — %s. "
@@ -218,34 +257,3 @@ async def persistir_output_final(
             source_sha256[:12] + "...",
         )
         return None
-
-    # --- INSERT en tabla hija con JSONB ---
-    payload_hija = {
-        "extraction_id": str(extraction_id),
-        "rows": rows,
-    }
-
-    try:
-        await asyncio.to_thread(
-            lambda: (
-                client.table(tabla_hija)
-                .insert(payload_hija)
-                .execute()
-            )
-        )
-        logger.info(
-            "%s insertado — extraction_id=%s", tabla_hija, extraction_id
-        )
-    except Exception as exc:
-        logger.error(
-            "persistir_output_final: error en INSERT %s — %s. "
-            "extraction_result ya creado con extraction_id=%s (inconsistencia parcial).",
-            tabla_hija,
-            exc,
-            extraction_id,
-        )
-        # Retornamos el extraction_id de todas formas — extraction_results existe,
-        # solo fallo la tabla hija. El operador puede reconciliar manualmente.
-        return extraction_id
-
-    return extraction_id

@@ -166,7 +166,7 @@ class TestListarActivas:
 # ---------------------------------------------------------------------------
 
 class TestCrearLicitacion:
-    _PAYLOAD = {"nombre": "Nueva Licitacion", "tipo": "medicamentos"}
+    _PAYLOAD = {"nombre": "Nueva Licitacion", "tipo": "medicamentos", "apertura": "2026-08-01"}
 
     def test_crear_exitoso_retorna_201(self, client, mocker):
         nueva_lic = {**_LIC_ROW, "nombre": "Nueva Licitacion"}

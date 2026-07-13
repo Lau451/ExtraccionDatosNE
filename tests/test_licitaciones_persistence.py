@@ -1,15 +1,21 @@
 """
-Tests de persistencia para el campo licitacion_id en persistent_output.py.
+Tests de compatibilidad para el parámetro licitacion_id en persistent_output.py.
+
+Desde que persistir_output_final dejó de insertar en la tabla hija (comparativas_results/
+licitaciones_results, que no existen en el schema nuevo) y pasó a insertar solo metadata
+en extraction_results del schema de presupuestacion/, licitacion_id ya NO se persiste —
+se sigue aceptando como parámetro únicamente para no romper a los callers existentes
+(background_tasks.py). Ver app/persistent_output.py para el detalle.
 
 Verifica que:
-- persistir_output_final incluye licitacion_id en el payload de extraction_results
-- licitacion_id=None se persiste sin error (campo nullable)
-- schedule_persist_output propaga licitacion_id correctamente
+- persistir_output_final acepta licitacion_id sin persistirlo en el payload
+- licitacion_id=None no rompe nada (siempre fue nullable, ahora es directamente ignorado)
+- schedule_persist_output sigue propagando licitacion_id hacia _retry_persist
 """
 
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,8 +31,10 @@ from app.background_tasks import schedule_persist_output
 @pytest.fixture(autouse=True)
 def reset_singleton():
     sc_module.reset_client_for_testing()
+    persistent_output._drogueria_id_cache = None
     yield
     sc_module.reset_client_for_testing()
+    persistent_output._drogueria_id_cache = None
 
 
 @pytest.fixture
@@ -46,13 +54,29 @@ def extraction_uuid():
     return str(uuid.uuid4())
 
 
-def _supabase_mock(extraction_uuid: str) -> MagicMock:
-    """Mock del cliente Supabase que simula INSERT exitoso."""
+def _supabase_mock(extraction_uuid: str) -> tuple[MagicMock, dict[str, MagicMock]]:
+    """Mock del cliente Supabase: resuelve drogueria_id y simula el INSERT en
+    extraction_results como exitoso. Devuelve también el dict de mocks por tabla
+    (side_effect crea mocks desconectados del padre — hay que guardar la referencia
+    para poder assertear sobre ellos, `mock.mock_calls` no los ve)."""
     mock = MagicMock()
-    mock.table.return_value.insert.return_value.execute.return_value.data = [
-        {"id": extraction_uuid}
-    ]
-    return mock
+    drogueria_uuid = str(uuid.uuid4())
+    tablas: dict[str, MagicMock] = {}
+
+    def _table(nombre):
+        if nombre not in tablas:
+            tabla_mock = MagicMock()
+            if nombre == "droguerias":
+                tabla_mock.select.return_value.limit.return_value.execute.return_value.data = [
+                    {"id": drogueria_uuid}
+                ]
+            else:
+                tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
+            tablas[nombre] = tabla_mock
+        return tablas[nombre]
+
+    mock.table.side_effect = _table
+    return mock, tablas
 
 
 # ---------------------------------------------------------------------------
@@ -61,15 +85,16 @@ def _supabase_mock(extraction_uuid: str) -> MagicMock:
 
 class TestPersistirConLicitacionId:
     @pytest.mark.asyncio
-    async def test_licitacion_id_incluido_en_payload(
+    async def test_licitacion_id_no_se_persiste_pero_no_rompe(
         self, mocker, rows, csv_path, extraction_uuid
     ):
         """
-        Cuando persistir_output_final recibe licitacion_id,
-        el INSERT en extraction_results incluye ese campo.
+        Pasar licitacion_id no debe romper la persistencia — se acepta y se ignora.
+        El payload de extraction_results NO debe incluir la clave licitacion_id (esa
+        columna no existe en el schema nuevo).
         """
         lic_id = str(uuid.uuid4())
-        mock_client = _supabase_mock(extraction_uuid)
+        mock_client, tablas = _supabase_mock(extraction_uuid)
         mocker.patch("app.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
@@ -84,21 +109,18 @@ class TestPersistirConLicitacionId:
         )
 
         assert result is not None
-        # call_args_list[0] = primer INSERT = extraction_results (tiene licitacion_id)
-        # call_args_list[1] = segundo INSERT = tabla hija
-        first_insert = mock_client.table.return_value.insert.call_args_list[0]
-        payload = first_insert[0][0]
-        assert payload["licitacion_id"] == lic_id
+
+        tabla_er = tablas["extraction_results"]
+        tabla_er.insert.assert_called_once()
+        payload = tabla_er.insert.call_args[0][0]
+        assert "licitacion_id" not in payload
+        assert "client_id" not in payload
+        assert "session_id" not in payload
 
     @pytest.mark.asyncio
-    async def test_licitacion_id_none_persiste_sin_error(
-        self, mocker, rows, csv_path, extraction_uuid
-    ):
-        """
-        licitacion_id=None → el campo va como None en el payload (FK nullable).
-        No debe lanzar excepción ni retornar None.
-        """
-        mock_client = _supabase_mock(extraction_uuid)
+    async def test_licitacion_id_none_no_rompe(self, mocker, rows, csv_path, extraction_uuid):
+        """licitacion_id=None tampoco debe romper nada — mismo camino que con valor."""
+        mock_client, _tablas = _supabase_mock(extraction_uuid)
         mocker.patch("app.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
@@ -113,9 +135,6 @@ class TestPersistirConLicitacionId:
         )
 
         assert result is not None
-        first_insert = mock_client.table.return_value.insert.call_args_list[0]
-        payload = first_insert[0][0]
-        assert payload["licitacion_id"] is None
 
 
 class TestSchedulePersistOutputPropagaLicitacionId:
@@ -123,7 +142,8 @@ class TestSchedulePersistOutputPropagaLicitacionId:
     async def test_licitacion_id_propagado_a_background_task(self, mocker):
         """
         schedule_persist_output debe pasar licitacion_id a _retry_persist
-        como kwarg en bg.add_task().
+        como kwarg en bg.add_task(). Esto no cambió: sigue siendo plomería
+        de background_tasks.py, ajena al cambio en el payload de persistencia.
         """
         from fastapi import BackgroundTasks
         bg = BackgroundTasks()
