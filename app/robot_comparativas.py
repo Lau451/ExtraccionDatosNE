@@ -488,7 +488,13 @@ def _process_chunk(prompt: str, chunk: str, chunk_idx: int, total: int) -> dict:
         }
 
 
-def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[UUID] = None) -> dict:
+def _extraer_comparativa(
+    markdown: str,
+    filepath: Path,
+    *,
+    session_id: Optional[UUID] = None,
+    prompt: str = _PROMPT_UNIFIED,
+) -> dict:
     """Extract providers and all items with prices from a comparativa document.
 
     Processes chunks in parallel (up to _MAX_PARALLEL_CHUNKS concurrent Gemini
@@ -498,6 +504,7 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
     Args:
         markdown: Compressed document content as a Markdown string.
         filepath: Original file path — used only in error messages.
+        prompt: Prompt a usar (default: _PROMPT_UNIFIED). Ver _procesar_chunk_pdf.
 
     Returns:
         Dict with keys "proveedores" (list[str]) and "renglones" (list[dict]).
@@ -519,7 +526,7 @@ def _extraer_comparativa(markdown: str, filepath: Path, *, session_id: Optional[
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_idx = {
-            executor.submit(_process_chunk, _PROMPT_UNIFIED, chunk, i + 1, total): i
+            executor.submit(_process_chunk, prompt, chunk, i + 1, total): i
             for i, chunk in enumerate(chunks)
         }
         for future in as_completed(future_to_idx):
@@ -619,13 +626,15 @@ def _split_pdf_by_pages(
     return chunks
 
 
-def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int) -> dict:
+def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int, prompt: str = _PROMPT_UNIFIED) -> dict:
     """Parse a PDF page-chunk to Markdown and extract via Gemini JSON.
 
     Args:
         chunk_path: Path to the temp PDF chunk.
         chunk_idx: 1-based index for logging.
         total: Total number of chunks for logging.
+        prompt: Prompt a usar (default: _PROMPT_UNIFIED). Permite inyectar
+            instrucciones específicas de cliente (§8) sin tocar la constante global.
 
     Returns:
         Dict with "proveedores" and "renglones" keys.
@@ -635,13 +644,14 @@ def _procesar_chunk_pdf(chunk_path: Path, chunk_idx: int, total: int) -> dict:
     markdown = parse_document(chunk_path)
     markdown = _comprimir_markdown(markdown)
     logger.info("PDF chunk %d/%d parsed: %d chars", chunk_idx, total, len(markdown))
-    return _llamar_gemini_json(_PROMPT_UNIFIED, markdown)
+    return _llamar_gemini_json(prompt, markdown)
 
 
 def _extraer_comparativa_por_paginas(
     ruta_pdf: Path,
     *,
     session_id: Optional[UUID] = None,
+    prompt: str = _PROMPT_UNIFIED,
 ) -> dict:
     """Extract providers and renglones from a large PDF using page-based chunking.
 
@@ -652,6 +662,7 @@ def _extraer_comparativa_por_paginas(
     Args:
         ruta_pdf: Path to the source PDF.
         session_id: Optional session UUID for Supabase partial-result persistence.
+        prompt: Prompt a usar (default: _PROMPT_UNIFIED). Ver _procesar_chunk_pdf.
 
     Returns:
         Dict with "proveedores" (list[str]) and "renglones" (list[dict]).
@@ -667,7 +678,7 @@ def _extraer_comparativa_por_paginas(
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_idx = {
-            executor.submit(_procesar_chunk_pdf, chunk_paths[i], i + 1, total): i
+            executor.submit(_procesar_chunk_pdf, chunk_paths[i], i + 1, total, prompt): i
             for i in range(total)
         }
         for future in as_completed(future_to_idx):
@@ -884,6 +895,7 @@ def procesar_comparativa(
     nombre_original: Optional[str] = None,
     *,
     session_id: Optional[UUID] = None,
+    instrucciones_extra: Optional[str] = None,  # §8: formato por cliente, ver v_formato_para_prompt
 ) -> Path:
     """Process a price comparison document using optimized single-extraction flow.
 
@@ -933,6 +945,12 @@ def procesar_comparativa(
         cliente,
     )
 
+    prompt_efectivo = (
+        f"{_PROMPT_UNIFIED}\n\nINSTRUCCIONES ESPECIFICAS DE ESTE CLIENTE:\n{instrucciones_extra}\n"
+        if instrucciones_extra
+        else _PROMPT_UNIFIED
+    )
+
     # Determine extraction strategy: large PDFs use page-based chunking;
     # everything else uses the markdown-based flow.
     es_pdf = extension == ".pdf"
@@ -949,7 +967,9 @@ def procesar_comparativa(
 
     if usar_page_chunks:
         # New flow: split PDF by pages, parse each chunk, merge results
-        all_data = _extraer_comparativa_por_paginas(ruta_archivo, session_id=session_id)
+        all_data = _extraer_comparativa_por_paginas(
+            ruta_archivo, session_id=session_id, prompt=prompt_efectivo
+        )
     else:
         # Existing flow: parse full document to Markdown, chunk if too large
         markdown = parse_document(ruta_archivo)
@@ -957,7 +977,9 @@ def procesar_comparativa(
 
         _guardar_docling_output(markdown, nombre_base, cliente)
         markdown = _comprimir_markdown(markdown)
-        all_data = _extraer_comparativa(markdown, ruta_archivo, session_id=session_id)
+        all_data = _extraer_comparativa(
+            markdown, ruta_archivo, session_id=session_id, prompt=prompt_efectivo
+        )
 
     if not all_data.get("renglones"):
         raise json.JSONDecodeError(

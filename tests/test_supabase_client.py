@@ -156,3 +156,62 @@ class TestSingleton:
         assert resultado is mock_client
 
         del sc_module.create_client  # limpieza
+
+
+class TestResolverDrogueriaIdUnica:
+    """Tests para resolver_drogueria_id_unica() — cache en proceso del id de la
+    (única) droguería que sirve esta app."""
+
+    def test_resuelve_y_cachea(self, mocker):
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "drogueria-123"}
+        ]
+
+        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert resultado == "drogueria-123"
+        mock_client.table.assert_called_once_with("droguerias")
+
+        # Segunda llamada: no vuelve a consultar (cache en proceso).
+        mock_client.table.reset_mock()
+        segundo = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert segundo == "drogueria-123"
+        mock_client.table.assert_not_called()
+
+    def test_sin_filas_retorna_none(self, mocker):
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+
+        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert resultado is None
+
+    def test_excepcion_retorna_none_sin_propagar(self, mocker):
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.side_effect = (
+            RuntimeError("DB error simulado")
+        )
+
+        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert resultado is None
+
+    def test_reset_client_for_testing_limpia_el_cache(self, mocker):
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "drogueria-abc"}
+        ]
+        sc_module.resolver_drogueria_id_unica(mock_client)
+
+        sc_module.reset_client_for_testing()
+        mock_client.table.reset_mock()
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "drogueria-xyz"}
+        ]
+
+        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert resultado == "drogueria-xyz"
+        mock_client.table.assert_called_once_with("droguerias")

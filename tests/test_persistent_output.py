@@ -25,12 +25,11 @@ from app import persistent_output
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
-    """Resetea el singleton de Supabase y el cache de drogueria_id antes de cada test."""
+    """Resetea el singleton de Supabase y el cache de drogueria_id (compartido en
+    app.supabase_client) antes de cada test."""
     sc_module.reset_client_for_testing()
-    persistent_output._drogueria_id_cache = None
     yield
     sc_module.reset_client_for_testing()
-    persistent_output._drogueria_id_cache = None
 
 
 @pytest.fixture

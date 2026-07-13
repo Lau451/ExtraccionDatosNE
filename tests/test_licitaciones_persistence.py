@@ -31,10 +31,8 @@ from app.background_tasks import schedule_persist_output
 @pytest.fixture(autouse=True)
 def reset_singleton():
     sc_module.reset_client_for_testing()
-    persistent_output._drogueria_id_cache = None
     yield
     sc_module.reset_client_for_testing()
-    persistent_output._drogueria_id_cache = None
 
 
 @pytest.fixture

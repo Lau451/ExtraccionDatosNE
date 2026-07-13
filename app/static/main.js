@@ -232,6 +232,8 @@ function setupUploadForm() {
         formData.append("tipo", document.getElementById("tipo-input")?.value || "");
         const licId = document.getElementById("licitacion-id-hidden")?.value || "";
         if (licId) formData.append("licitacion_id", licId);
+        const clienteId = document.getElementById("cliente-id-hidden")?.value || "";
+        if (clienteId) formData.append("cliente_id", clienteId);
 
         try {
             const response = await fetch("/procesar", {
@@ -327,4 +329,39 @@ async function bootstrapLicitacionSelector() {
             onCreated: (lic) => refreshSelect(lic.id),
         });
     });
+}
+
+/* ============================================
+   CLIENTE SELECTOR (upload page) — §8: permite inyectar instrucciones de
+   formato específicas del cliente al prompt de Gemini (opcional).
+   ============================================ */
+
+async function bootstrapClienteSelector() {
+    const wrap   = document.getElementById("cliente-selector-wrap");
+    const sel    = document.getElementById("cliente-select");
+    const hidden = document.getElementById("cliente-id-hidden");
+
+    if (!wrap || !sel || !hidden) return;
+
+    try {
+        const res = await fetch("/api/clientes");
+        const clientes = res.ok ? await res.json() : [];
+
+        if (!clientes.length) return; // sin clientes cargados: no mostrar el selector
+
+        wrap.classList.remove("hidden");
+        sel.innerHTML = '<option value="">Sin cliente</option>';
+        clientes.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.nombre;
+            sel.appendChild(opt);
+        });
+
+        sel.addEventListener("change", () => {
+            hidden.value = sel.value;
+        });
+    } catch {
+        // Sin selector de cliente, la carga sigue funcionando igual que hoy.
+    }
 }

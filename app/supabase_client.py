@@ -32,6 +32,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _client: "Client | None" = None  # type: ignore
 
+# Cache en proceso del id de la (unica) drogueria — esta app hoy sirve una sola.
+# Si en el futuro sirve mas de una, esto necesita resolverse por request, no aca.
+_drogueria_id_cache: "str | None" = None
+
 
 def _persistence_enabled() -> bool:
     """Verifica si el feature flag ENABLE_RESULT_PERSISTENCE está activo."""
@@ -96,10 +100,36 @@ def is_enabled() -> bool:
     return get_client() is not None
 
 
+def resolver_drogueria_id_unica(client: "Client") -> "str | None":
+    """
+    Resuelve el id de la (unica) drogueria que sirve esta app — cacheado en
+    proceso. Usado por todo el codigo que persiste en el schema nuevo de
+    presupuestacion/ (extraction_results, processing_sessions, chunk_results),
+    donde drogueria_id es NOT NULL pero esta app no tiene ese concepto en su
+    propio dominio.
+
+    Retorna None si la consulta falla (el llamador decide si eso es fatal).
+    """
+    global _drogueria_id_cache
+    if _drogueria_id_cache is not None:
+        return _drogueria_id_cache
+
+    try:
+        respuesta = client.table("droguerias").select("id").limit(1).execute()
+        if respuesta.data:
+            _drogueria_id_cache = respuesta.data[0]["id"]
+            return _drogueria_id_cache
+    except Exception as exc:
+        logger.error("resolver_drogueria_id_unica: error consultando droguerias — %s", exc)
+
+    return None
+
+
 def reset_client_for_testing() -> None:
     """
-    Resetea el singleton. SOLO para usar en tests con mocks de entorno.
-    No llamar en código de producción.
+    Resetea el singleton (y el cache de drogueria_id). SOLO para usar en tests
+    con mocks de entorno. No llamar en código de producción.
     """
-    global _client
+    global _client, _drogueria_id_cache
     _client = None
+    _drogueria_id_cache = None

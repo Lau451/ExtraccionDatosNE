@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from uuid import UUID
 
-from app.supabase_client import get_client
+from app.supabase_client import get_client, resolver_drogueria_id_unica
 
 logger = logging.getLogger(__name__)
 
@@ -29,28 +29,6 @@ _WARN_ROW_COUNT = 50_000
 # no tiene extractor propio (ver presupuestacion/extraccion/) y "cotizacion" es
 # manejado como "licitacion" por el robot generico.
 _DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion"}
-
-# Cache en proceso del id de la (unica) drogueria — esta app hoy sirve una sola.
-# Si en el futuro sirve mas de una, esto necesita resolverse por request, no acá.
-_drogueria_id_cache: str | None = None
-
-
-async def _resolver_drogueria_id(client) -> str | None:
-    global _drogueria_id_cache
-    if _drogueria_id_cache is not None:
-        return _drogueria_id_cache
-
-    try:
-        respuesta = await asyncio.to_thread(
-            lambda: client.table("droguerias").select("id").limit(1).execute()
-        )
-        if respuesta.data:
-            _drogueria_id_cache = respuesta.data[0]["id"]
-            return _drogueria_id_cache
-    except Exception as exc:
-        logger.error("_resolver_drogueria_id: error consultando droguerias — %s", exc)
-
-    return None
 
 
 def calcular_sha256(path: Path) -> str:
@@ -204,7 +182,7 @@ async def persistir_output_final(
         )
         return None
 
-    drogueria_id = await _resolver_drogueria_id(client)
+    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
     if drogueria_id is None:
         logger.error(
             "persistir_output_final: no se pudo resolver drogueria_id — INSERT abortado. "

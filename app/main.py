@@ -13,9 +13,10 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlencode
 
-from app.supabase_client import get_client
+from app.supabase_client import get_client, resolver_drogueria_id_unica
 from app.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
 from app.routers.extraction_results import router as extraction_results_router
+from app.routers.clientes import router as clientes_router
 from app.robot import obtener_cliente, procesar_archivo
 from app.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from app.parsers import parse_document, ParserError, UnsupportedFormatError
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Extractor de Documentos")
 app.include_router(licitaciones_router)
 app.include_router(extraction_results_router)
+app.include_router(clientes_router)
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
@@ -98,6 +100,36 @@ async def upload_page(request: Request, tipo: str = ""):
     return templates.TemplateResponse(request, "index.html", {"tipo": tipo})
 
 
+async def _resolver_formato_prompt(
+    client, *, cliente_id: str, doc_type: str
+) -> tuple[str | None, str | None]:
+    """§8: si hay instrucciones cargadas para este cliente+doc_type, las devuelve para
+    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt) — ambos None si no
+    hay nada configurado o la consulta falla (nunca bloquea la carga del documento)."""
+    if client is None or not cliente_id:
+        return None, None
+
+    try:
+        respuesta = await asyncio.to_thread(
+            lambda: client.table("cliente_formato_documentos")
+            .select("id, instrucciones_prompt")
+            .eq("cliente_id", cliente_id)
+            .eq("doc_type", doc_type)
+            .eq("activo", True)
+            .limit(1)
+            .execute()
+        )
+        if respuesta.data and respuesta.data[0].get("instrucciones_prompt"):
+            fila = respuesta.data[0]
+            return fila["id"], fila["instrucciones_prompt"]
+    except Exception as exc:
+        logger.warning(
+            "_resolver_formato_prompt: error consultando cliente_formato_documentos — %s", exc
+        )
+
+    return None, None
+
+
 @app.post("/procesar", response_class=HTMLResponse)
 async def procesar(
     request: Request,
@@ -105,6 +137,7 @@ async def procesar(
     archivo: UploadFile = File(...),
     tipo: str = Form(""),
     licitacion_id: str = Form(""),
+    cliente_id: str = Form(""),
 ):
     # SC-25: fail-fast antes de cualquier I/O o invocación a Gemini
     licitacion_id_validado = await validar_licitacion_id(licitacion_id)
@@ -151,14 +184,22 @@ async def procesar(
         )
 
     # ======================
-    # CREAR SESIÓN EN SUPABASE
+    # FORMATO POR CLIENTE (§8) — opcional, nunca bloquea la carga
     # ======================
     doc_type = "comparativa" if tipo == "comparativas" else "licitacion"
+    formato_id, instrucciones_prompt = await _resolver_formato_prompt(
+        get_client(), cliente_id=cliente_id, doc_type=doc_type
+    )
+
+    # ======================
+    # CREAR SESIÓN EN SUPABASE
+    # ======================
     session_id = await crear_sesion(
         doc_name=nombre_original,
         client_id=origen_id,
         total_chunks=0,  # placeholder; se actualiza al procesar chunks
         doc_type=doc_type,
+        formato_usado_id=formato_id,
     )
 
     # ======================
@@ -170,12 +211,14 @@ async def procesar(
                 csv_generado = await asyncio.to_thread(
                     procesar_comparativa, destino, nombre_original,
                     session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
                 )
                 params = urlencode({"origen": origen_id, "modulo": "comparativas"})
             else:
                 csv_generado = await asyncio.to_thread(
                     procesar_archivo, destino, nombre_original,
                     session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
                 )
                 params = urlencode({"origen": origen_id})
 

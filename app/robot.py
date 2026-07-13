@@ -270,6 +270,7 @@ def procesar_archivo(
     nombre_original: Optional[str] = None,
     *,
     session_id: Optional[UUID] = None,  # reservado para uso futuro (licitaciones)
+    instrucciones_extra: Optional[str] = None,  # §8: formato por cliente, ver v_formato_para_prompt
 ) -> Path:
     if nombre_original:
         original_name = Path(nombre_original).name
@@ -323,6 +324,9 @@ REGLAS:
 - No uses comillas
 - El campo origen debe ser exactamente: {cliente}
 """
+
+    if instrucciones_extra:
+        prompt += f"\n\nINSTRUCCIONES ESPECIFICAS DE ESTE CLIENTE:\n{instrucciones_extra}\n"
 
     if es_excel:
         prompt = prompt + "\n\nCONTENIDO DEL EXCEL (CSV):\n" + texto_excel

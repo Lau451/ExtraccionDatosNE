@@ -99,6 +99,18 @@
                 <input type="hidden" name="licitacion_id" id="licitacion-id-hidden" value="">
             </div>
 
+            <!-- Selector de cliente (opcional) — inyecta instrucciones de formato al prompt -->
+            <div id="cliente-selector-wrap" class="lic-selector-wrap hidden">
+                <label class="lic-selector-label" for="cliente-select">
+                    Cliente
+                    <span class="lic-selector-hint">(opcional)</span>
+                </label>
+                <select id="cliente-select" class="lic-select">
+                    <option value="">Sin cliente</option>
+                </select>
+                <input type="hidden" name="cliente_id" id="cliente-id-hidden" value="">
+            </div>
+
             <button type="submit" class="btn" id="procesar-btn" disabled>
                 Procesar archivo
             </button>
@@ -143,6 +155,7 @@
         document.getElementById("tipo-input").value = tipo;
 
         bootstrapLicitacionSelector();
+        bootstrapClienteSelector();
     </script>
 
     {% include '_modal_licitacion.html' %}

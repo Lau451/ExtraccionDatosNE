@@ -1,25 +1,4 @@
-import uuid
-
 import pytest
-
-
-@pytest.fixture
-def seed_producto_factory(service_client, seed_drogueria):
-    creados = []
-
-    def _seed(nombre: str = "Producto de test"):
-        fila = {
-            "drogueria_id": seed_drogueria["id"],
-            "codigo_interno": f"TEST-{uuid.uuid4().hex[:8]}",
-            "nombre": nombre,
-        }
-        producto = service_client.table("productos").insert(fila).execute().data[0]
-        creados.append(producto)
-        return producto
-
-    yield _seed
-    for producto in creados:
-        service_client.table("productos").delete().eq("id", producto["id"]).execute()
 
 
 @pytest.fixture
@@ -128,24 +107,3 @@ def seed_presupuesto_item_factory(service_client, seed_drogueria, seed_producto,
     yield _seed
     for presupuesto_item in creados:
         service_client.table("presupuesto_items").delete().eq("id", presupuesto_item["id"]).execute()
-
-
-@pytest.fixture
-def seed_stock_factory(service_client, seed_drogueria):
-    creados = []
-
-    def _seed(producto_id: str, *, disponible: str, comprometida: str = "0", deposito: str | None = None):
-        fila = {
-            "producto_id": producto_id,
-            "drogueria_id": seed_drogueria["id"],
-            "deposito": deposito,
-            "cantidad_disponible": disponible,
-            "cantidad_comprometida": comprometida,
-        }
-        fila_stock = service_client.table("stock_productos").insert(fila).execute().data[0]
-        creados.append(fila_stock)
-        return fila_stock
-
-    yield _seed
-    for fila_stock in creados:
-        service_client.table("stock_productos").delete().eq("id", fila_stock["id"]).execute()

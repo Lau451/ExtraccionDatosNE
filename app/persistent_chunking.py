@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.supabase_client import get_client
+from app.supabase_client import get_client, resolver_drogueria_id_unica
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +27,20 @@ async def crear_sesion(
     client_id: str,
     total_chunks: int,
     doc_type: str,
+    formato_usado_id: str | None = None,
 ) -> UUID | None:
     """
     Crea un registro en processing_sessions con status='running'.
 
     Args:
         doc_name:     Nombre del documento original (ej: "comparativa_mayo.xlsx").
-        client_id:    Identificador del cliente/origen del documento.
+        client_id:    Aceptado por compatibilidad con los callers existentes, no se
+                      persiste (esa columna no existe en el schema nuevo de
+                      presupuestacion/ — mismo criterio que persistent_output.py).
         total_chunks: Número estimado de chunks (puede ser 0 si aún no se sabe).
         doc_type:     Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
+        formato_usado_id: id de cliente_formato_documentos usado para enriquecer el
+                      prompt (§8), si se resolvió uno. Trazabilidad.
 
     Returns:
         UUID de la sesión creada, o None si la persistencia no está disponible.
@@ -44,12 +49,18 @@ async def crear_sesion(
     if client is None:
         return None
 
+    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
+    if drogueria_id is None:
+        logger.error("crear_sesion: no se pudo resolver drogueria_id — INSERT abortado.")
+        return None
+
     payload = {
+        "drogueria_id": drogueria_id,
         "doc_name": doc_name,
-        "client_id": client_id,
         "doc_type": doc_type,
         "total_chunks": total_chunks,
         "status": "running",
+        "formato_usado_id": formato_usado_id,
     }
 
     try:
@@ -101,7 +112,13 @@ def guardar_chunk(
     if client is None:
         return False
 
+    drogueria_id = resolver_drogueria_id_unica(client)
+    if drogueria_id is None:
+        logger.warning("guardar_chunk: no se pudo resolver drogueria_id — upsert abortado.")
+        return False
+
     payload = {
+        "drogueria_id": drogueria_id,
         "session_id": str(session_id),
         "chunk_number": chunk_num,
         "resultado": resultado_json,

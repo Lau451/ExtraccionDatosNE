@@ -8,8 +8,8 @@ from supabase import Client
 from presupuestacion.core.audit import registrar_cambio
 from presupuestacion.core.database import get_service_client
 from presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
+from presupuestacion.core import stock
 from presupuestacion.presupuestos import repository as repo
-from presupuestacion.presupuestos import stock
 from presupuestacion.presupuestos.models import ResultadoPresupuesto
 
 _DOS_DECIMALES = Decimal("0.01")

@@ -33,7 +33,10 @@ def test_pdf(tmp_path: Path) -> Path:
 
 
 def _fake_procesar(
-    ruta_archivo: Path, nombre_original: str | None = None, session_id: str | None = None
+    ruta_archivo: Path,
+    nombre_original: str | None = None,
+    session_id: str | None = None,
+    instrucciones_extra: str | None = None,
 ) -> Path:
     """Simula procesar_archivo: tarda 1s y devuelve un CSV válido."""
     time.sleep(1)
@@ -104,7 +107,7 @@ async def test_semaforo_limita_concurrencia(test_pdf: Path):
     """
     call_count = 0
 
-    def _fake_con_contador(ruta, nombre=None, session_id=None):
+    def _fake_con_contador(ruta, nombre=None, session_id=None, instrucciones_extra=None):
         nonlocal call_count
         call_count += 1
         time.sleep(0.5)

@@ -3,9 +3,8 @@ from decimal import Decimal
 
 import pytest
 
+from presupuestacion.core import stock
 from presupuestacion.core.exceptions import ConflictError
-from presupuestacion.presupuestos import repository as repo
-from presupuestacion.presupuestos import stock
 
 
 @pytest.mark.integration
@@ -88,7 +87,7 @@ def test_comprometer_stock_producto_revierte_deposito_a_si_deposito_b_agota_rein
     fila_a = seed_stock_factory(seed_producto["id"], disponible="6", deposito="deposito-a")
     fila_b = seed_stock_factory(seed_producto["id"], disponible="5", deposito="deposito-b")
 
-    original = repo.actualizar_comprometida_si_no_cambio
+    original = stock.actualizar_comprometida_si_no_cambio
 
     def _perder_siempre_en_b(client, *, fila_id, valor_esperado, nuevo_valor):
         if fila_id == fila_b["id"]:
@@ -96,10 +95,10 @@ def test_comprometer_stock_producto_revierte_deposito_a_si_deposito_b_agota_rein
         return original(client, fila_id=fila_id, valor_esperado=valor_esperado, nuevo_valor=nuevo_valor)
 
     mocker.patch(
-        "presupuestacion.presupuestos.stock.repo.actualizar_comprometida_si_no_cambio",
+        "presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
         side_effect=_perder_siempre_en_b,
     )
-    mocker.patch("presupuestacion.presupuestos.stock.time.sleep", lambda _: None)
+    mocker.patch("presupuestacion.core.stock.time.sleep", lambda _: None)
 
     with pytest.raises(ConflictError):
         stock.comprometer_stock_producto(
@@ -141,7 +140,7 @@ def test_comprometer_stock_producto_si_la_reversion_tambien_falla_no_pierde_el_m
     fila_a = seed_stock_factory(seed_producto["id"], disponible="6", deposito="deposito-a")
     fila_b = seed_stock_factory(seed_producto["id"], disponible="5", deposito="deposito-b")
 
-    original = repo.actualizar_comprometida_si_no_cambio
+    original = stock.actualizar_comprometida_si_no_cambio
 
     def _falla_b_al_comprometer_y_a_al_liberar(client, *, fila_id, valor_esperado, nuevo_valor):
         if fila_id == fila_b["id"]:
@@ -151,10 +150,10 @@ def test_comprometer_stock_producto_si_la_reversion_tambien_falla_no_pierde_el_m
         return original(client, fila_id=fila_id, valor_esperado=valor_esperado, nuevo_valor=nuevo_valor)
 
     mocker.patch(
-        "presupuestacion.presupuestos.stock.repo.actualizar_comprometida_si_no_cambio",
+        "presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
         side_effect=_falla_b_al_comprometer_y_a_al_liberar,
     )
-    mocker.patch("presupuestacion.presupuestos.stock.time.sleep", lambda _: None)
+    mocker.patch("presupuestacion.core.stock.time.sleep", lambda _: None)
 
     with pytest.raises(ConflictError) as excinfo:
         stock.comprometer_stock_producto(
@@ -299,3 +298,174 @@ def test_comprometer_stock_producto_concurrencia_con_stock_suficiente_ambos_gana
         .data[0]
     )
     assert Decimal(str(fila_final["cantidad_comprometida"])) == Decimal("12")
+
+
+@pytest.mark.integration
+def test_entregar_stock_producto_descuenta_comprometida_y_disponible(
+    service_client, seed_drogueria, seed_producto, seed_stock_factory
+):
+    seed_stock_factory(seed_producto["id"], disponible="10", comprometida="6")
+
+    liberado, descontado = stock.entregar_stock_producto(
+        service_client,
+        producto_id=seed_producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        cantidad_entregada=Decimal("6"),
+    )
+
+    assert liberado == Decimal("6")
+    assert descontado == Decimal("6")
+    fila = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("producto_id", seed_producto["id"])
+        .execute()
+        .data[0]
+    )
+    assert Decimal(str(fila["cantidad_comprometida"])) == Decimal("0")
+    assert Decimal(str(fila["cantidad_disponible"])) == Decimal("4")
+
+
+@pytest.mark.integration
+def test_entregar_stock_producto_con_rechazo_parcial_no_descuenta_lo_rechazado(
+    service_client, seed_drogueria, seed_producto, seed_stock_factory
+):
+    """De 6 unidades entregadas, 2 se rechazan (vencidas). El compromiso se libera por
+    las 6 (la entrega ya ocurrió, aceptada o no) pero cantidad_disponible solo baja por
+    las 4 aceptadas -- lo rechazado nunca entró al stock vendible."""
+    seed_stock_factory(seed_producto["id"], disponible="10", comprometida="6")
+
+    liberado, descontado = stock.entregar_stock_producto(
+        service_client,
+        producto_id=seed_producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        cantidad_entregada=Decimal("6"),
+        cantidad_rechazada=Decimal("2"),
+    )
+
+    assert liberado == Decimal("6")
+    assert descontado == Decimal("4")
+    fila = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("producto_id", seed_producto["id"])
+        .execute()
+        .data[0]
+    )
+    assert Decimal(str(fila["cantidad_comprometida"])) == Decimal("0")
+    assert Decimal(str(fila["cantidad_disponible"])) == Decimal("6")
+
+
+@pytest.mark.integration
+def test_entregar_stock_producto_reparte_entre_depositos_de_forma_independiente(
+    service_client, seed_drogueria, seed_producto, seed_stock_factory
+):
+    """Depósito A tiene más comprometido pero menos disponible que B: liberar y
+    descontar recorren los depósitos en órdenes distintos (mayor comprometida primero
+    para liberar, mayor disponible primero para descontar) porque son ajustes
+    independientes sobre el mismo pool, no atados a la misma fila."""
+    fila_a = seed_stock_factory(
+        seed_producto["id"], disponible="3", comprometida="6", deposito="deposito-a"
+    )
+    fila_b = seed_stock_factory(
+        seed_producto["id"], disponible="8", comprometida="2", deposito="deposito-b"
+    )
+
+    liberado, descontado = stock.entregar_stock_producto(
+        service_client,
+        producto_id=seed_producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        cantidad_entregada=Decimal("8"),
+    )
+
+    assert liberado == Decimal("8")
+    assert descontado == Decimal("8")
+    fila_a_final = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("id", fila_a["id"])
+        .execute()
+        .data[0]
+    )
+    fila_b_final = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("id", fila_b["id"])
+        .execute()
+        .data[0]
+    )
+    # Liberar: A (comprometida=6) primero, después B (comprometida=2) -> ambas en 0.
+    assert Decimal(str(fila_a_final["cantidad_comprometida"])) == Decimal("0")
+    assert Decimal(str(fila_b_final["cantidad_comprometida"])) == Decimal("0")
+    # Descontar: B (disponible=8) primero, cubre las 8 solo -> A queda con su disponible intacto.
+    assert Decimal(str(fila_b_final["cantidad_disponible"])) == Decimal("0")
+    assert Decimal(str(fila_a_final["cantidad_disponible"])) == Decimal("3")
+
+
+@pytest.mark.integration
+def test_entregar_stock_producto_topea_cada_columna_por_separado(
+    service_client, seed_drogueria, seed_producto, seed_stock_factory
+):
+    """Si se entrega más de lo que había comprometido, liberar topea en lo comprometido
+    -- pero descontar disponible es independiente de eso y solo topea en lo disponible
+    (si la mercadería físicamente llegó y se aceptó, el disponible baja igual aunque
+    nunca hubiese existido un compromiso formal por esa cantidad)."""
+    seed_stock_factory(seed_producto["id"], disponible="10", comprometida="3")
+
+    liberado, descontado = stock.entregar_stock_producto(
+        service_client,
+        producto_id=seed_producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        cantidad_entregada=Decimal("8"),
+    )
+
+    assert liberado == Decimal("3"), "no hay más de 3 comprometidas -- no puede liberar 8"
+    assert descontado == Decimal("8"), "disponible=10 alcanza para descontar las 8 aceptadas"
+    fila = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("producto_id", seed_producto["id"])
+        .execute()
+        .data[0]
+    )
+    assert Decimal(str(fila["cantidad_comprometida"])) == Decimal("0")
+    assert Decimal(str(fila["cantidad_disponible"])) == Decimal("2")
+
+
+@pytest.mark.integration
+def test_entregar_stock_producto_concurrencia_no_descuenta_doble(
+    service_client, seed_drogueria, seed_producto, seed_stock_factory
+):
+    """Dos confirmaciones de entrega simultáneas por 4 unidades cada una contra un
+    compromiso de 6 (demanda total 8 > 6 comprometidas). La suma de lo realmente
+    liberado nunca puede superar lo que había comprometido, sin importar la carrera."""
+    seed_stock_factory(seed_producto["id"], disponible="10", comprometida="6")
+    barrera = threading.Barrier(2)
+    resultados: dict[str, tuple[Decimal, Decimal]] = {}
+
+    def _intentar(nombre: str) -> None:
+        barrera.wait()
+        resultados[nombre] = stock.entregar_stock_producto(
+            service_client,
+            producto_id=seed_producto["id"],
+            drogueria_id=seed_drogueria["id"],
+            cantidad_entregada=Decimal("4"),
+        )
+
+    hilos = [threading.Thread(target=_intentar, args=(nombre,)) for nombre in ("A", "B")]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+
+    assert sum(liberado for liberado, _ in resultados.values()) == Decimal("6")
+
+    fila_final = (
+        service_client.table("stock_productos")
+        .select("cantidad_comprometida, cantidad_disponible")
+        .eq("producto_id", seed_producto["id"])
+        .execute()
+        .data[0]
+    )
+    assert Decimal(str(fila_final["cantidad_comprometida"])) == Decimal("0")
+    assert Decimal(str(fila_final["cantidad_disponible"])) == Decimal("2")
