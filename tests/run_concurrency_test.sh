@@ -28,7 +28,7 @@ if ! curl -s http://localhost:8000/ > /dev/null 2>&1; then
     echo ""
     echo "Para iniciar la app, abre otra terminal y corre:"
     echo "  cd $(pwd)"
-    echo "  python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    echo "  python -m uvicorn services.extraccion.main:app --host 0.0.0.0 --port 8000"
     echo ""
     echo "O usa el script run.bat:"
     echo "  .\scripts\run.bat"

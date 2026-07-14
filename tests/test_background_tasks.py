@@ -1,5 +1,5 @@
 """
-Tests para app/background_tasks.py — Retry 3x con backoff exponencial.
+Tests para services/extraccion/background_tasks.py — Retry 3x con backoff exponencial.
 
 Verifica:
 - schedule_persist_output: registra la tarea sin error
@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 import pytest
 from fastapi import BackgroundTasks
 
-from app import background_tasks
-from app.background_tasks import _retry_persist, schedule_persist_output
+from services.extraccion import background_tasks
+from services.extraccion.background_tasks import _retry_persist, schedule_persist_output
 
 
 # ---------------------------------------------------------------------------
@@ -84,11 +84,11 @@ class TestRetryPersist:
         """
         extraction_uuid = uuid.uuid4()
         mock_persistir = mocker.patch(
-            "app.background_tasks.persistir_output_final",
+            "services.extraccion.background_tasks.persistir_output_final",
             new_callable=AsyncMock,
             return_value=extraction_uuid,
         )
-        mock_sleep = mocker.patch("app.background_tasks.asyncio.sleep", new_callable=AsyncMock)
+        mock_sleep = mocker.patch("services.extraccion.background_tasks.asyncio.sleep", new_callable=AsyncMock)
 
         await _retry_persist(**kwargs_base, attempt=0, max_attempts=3)
 
@@ -104,13 +104,13 @@ class TestRetryPersist:
         import logging
 
         mocker.patch(
-            "app.background_tasks.persistir_output_final",
+            "services.extraccion.background_tasks.persistir_output_final",
             new_callable=AsyncMock,
             side_effect=RuntimeError("Error de BD simulado"),
         )
-        mocker.patch("app.background_tasks.asyncio.sleep", new_callable=AsyncMock)
+        mocker.patch("services.extraccion.background_tasks.asyncio.sleep", new_callable=AsyncMock)
 
-        with caplog.at_level(logging.ERROR, logger="app.background_tasks"):
+        with caplog.at_level(logging.ERROR, logger="services.extraccion.background_tasks"):
             # No debe lanzar excepción
             await _retry_persist(**kwargs_base, attempt=0, max_attempts=3)
 
@@ -131,12 +131,12 @@ class TestRetryPersist:
           intento 2 → falla → ERROR (no sleep)
         """
         mocker.patch(
-            "app.background_tasks.persistir_output_final",
+            "services.extraccion.background_tasks.persistir_output_final",
             new_callable=AsyncMock,
             side_effect=RuntimeError("Error"),
         )
         mock_sleep = mocker.patch(
-            "app.background_tasks.asyncio.sleep",
+            "services.extraccion.background_tasks.asyncio.sleep",
             new_callable=AsyncMock,
         )
 
@@ -159,12 +159,12 @@ class TestRetryPersist:
         falla = RuntimeError("Error temporal")
 
         mock_persistir = mocker.patch(
-            "app.background_tasks.persistir_output_final",
+            "services.extraccion.background_tasks.persistir_output_final",
             new_callable=AsyncMock,
             side_effect=[falla, falla, extraction_uuid],
         )
         mock_sleep = mocker.patch(
-            "app.background_tasks.asyncio.sleep",
+            "services.extraccion.background_tasks.asyncio.sleep",
             new_callable=AsyncMock,
         )
 

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.robot_comparativas import (
+from services.extraccion.robot_comparativas import (
     NoProvidersDetectedError,
     _limpiar_precio,
     _comprimir_markdown,
@@ -86,7 +86,7 @@ def test_limpiar_precio(entrada: str, esperado: str):
 
 
 def test_limpiar_precio_loguea_warning_para_no_numerico(caplog):
-    with caplog.at_level(logging.WARNING, logger="app.robot_comparativas"):
+    with caplog.at_level(logging.WARNING, logger="services.extraccion.robot_comparativas"):
         _limpiar_precio("valor_invalido")
     assert any("Non-numeric" in msg for msg in caplog.messages)
 
@@ -256,8 +256,8 @@ def test_filtrar_sin_renglones_retorna_lista_vacia():
 @pytest.fixture
 def mock_gemini():
     """Parchea get_next_client y generate_with_fallback en robot_comparativas."""
-    with patch("app.robot_comparativas.get_next_client") as mock_client, \
-         patch("app.robot_comparativas.generate_with_fallback") as mock_gen:
+    with patch("services.extraccion.robot_comparativas.get_next_client") as mock_client, \
+         patch("services.extraccion.robot_comparativas.generate_with_fallback") as mock_gen:
         mock_client.return_value = MagicMock()
         yield mock_gen
 
@@ -279,9 +279,9 @@ def test_llamar_gemini_pasa_config_json(mock_gemini):
 
 
 def test_llamar_gemini_lanza_error_si_api_falla(mock_gemini):
-    from app.gemini_errors import GeminiRateLimitError
+    from services.extraccion.gemini_errors import GeminiRateLimitError
     mock_gemini.side_effect = Exception("503 error")
-    with patch("app.gemini_errors.time.sleep"):
+    with patch("services.extraccion.gemini_errors.time.sleep"):
         with pytest.raises(GeminiRateLimitError):
             _llamar_gemini_json("prompt", "markdown")
 
@@ -359,7 +359,7 @@ def test_split_markdown_sin_tabla_retorna_lista_con_original():
 
 def test_extraer_comparativa_lanza_error_sin_proveedores():
     datos = {"proveedores": [], "renglones": []}
-    with patch("app.robot_comparativas._llamar_gemini_json", return_value=datos):
+    with patch("services.extraccion.robot_comparativas._llamar_gemini_json", return_value=datos):
         with pytest.raises(NoProvidersDetectedError):
             _extraer_comparativa("markdown", Path("archivo.pdf"))
 
@@ -369,14 +369,14 @@ def test_extraer_comparativa_retorna_datos_completos():
         "proveedores": ["Prov A", "Prov B"],
         "renglones": [{"renglon": 1, "descripcion": "Prod", "proveedores_precios": {}}],
     }
-    with patch("app.robot_comparativas._llamar_gemini_json", return_value=datos):
+    with patch("services.extraccion.robot_comparativas._llamar_gemini_json", return_value=datos):
         result = _extraer_comparativa("markdown", Path("archivo.pdf"))
     assert result["proveedores"] == ["Prov A", "Prov B"]
     assert len(result["renglones"]) == 1
 
 
 def test_extraer_comparativa_usa_chunking_para_markdown_grande():
-    from app.robot_comparativas import _CHUNK_THRESHOLD
+    from services.extraccion.robot_comparativas import _CHUNK_THRESHOLD
     chunk1 = {
         "proveedores": ["Prov A"],
         "renglones": [{"renglon": 1, "descripcion": "Prod 1", "proveedores_precios": {}}],
@@ -386,8 +386,8 @@ def test_extraer_comparativa_usa_chunking_para_markdown_grande():
         "renglones": [{"renglon": 2, "descripcion": "Prod 2", "proveedores_precios": {}}],
     }
     markdown_grande = "x" * (_CHUNK_THRESHOLD + 1)
-    with patch("app.robot_comparativas._split_markdown_chunks", return_value=["chunk1", "chunk2"]) as p_split, \
-         patch("app.robot_comparativas._llamar_gemini_json", side_effect=[chunk1, chunk2]):
+    with patch("services.extraccion.robot_comparativas._split_markdown_chunks", return_value=["chunk1", "chunk2"]) as p_split, \
+         patch("services.extraccion.robot_comparativas._llamar_gemini_json", side_effect=[chunk1, chunk2]):
         result = _extraer_comparativa(markdown_grande, Path("grande.pdf"))
     p_split.assert_called_once_with(markdown_grande)
     assert len(result["renglones"]) == 2
@@ -396,11 +396,11 @@ def test_extraer_comparativa_usa_chunking_para_markdown_grande():
 
 
 def test_extraer_comparativa_no_usa_chunking_para_markdown_pequeno():
-    from app.robot_comparativas import _CHUNK_THRESHOLD
+    from services.extraccion.robot_comparativas import _CHUNK_THRESHOLD
     datos = {"proveedores": ["A"], "renglones": []}
     markdown_pequeno = "x" * (_CHUNK_THRESHOLD - 1)
-    with patch("app.robot_comparativas._split_markdown_chunks") as p_split, \
-         patch("app.robot_comparativas._llamar_gemini_json", return_value=datos):
+    with patch("services.extraccion.robot_comparativas._split_markdown_chunks") as p_split, \
+         patch("services.extraccion.robot_comparativas._llamar_gemini_json", return_value=datos):
         _extraer_comparativa(markdown_pequeno, Path("pequeno.pdf"))
     p_split.assert_not_called()
 
@@ -432,11 +432,11 @@ def pipeline(tmp_path):
         ],
     }
 
-    with patch("app.parsers.parse_document", return_value="## Markdown") as p_parse, \
-         patch("app.robot_comparativas._guardar_docling_output") as p_docling, \
-         patch("app.robot_comparativas._extraer_comparativa", return_value=datos_gemini) as p_extraer, \
-         patch("app.robot_comparativas._escribir_csv", return_value=csv_destino) as p_csv, \
-         patch("app.robot_comparativas._mover_a_procesados", return_value=procesado_destino) as p_mover:
+    with patch("services.extraccion.parsers.parse_document", return_value="## Markdown") as p_parse, \
+         patch("services.extraccion.robot_comparativas._guardar_docling_output") as p_docling, \
+         patch("services.extraccion.robot_comparativas._extraer_comparativa", return_value=datos_gemini) as p_extraer, \
+         patch("services.extraccion.robot_comparativas._escribir_csv", return_value=csv_destino) as p_csv, \
+         patch("services.extraccion.robot_comparativas._mover_a_procesados", return_value=procesado_destino) as p_mover:
         yield {
             "archivo": archivo,
             "csv_destino": csv_destino,

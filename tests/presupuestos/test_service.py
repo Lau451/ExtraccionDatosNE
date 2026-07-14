@@ -2,8 +2,8 @@ from decimal import Decimal
 
 import pytest
 
-from presupuestacion.core.exceptions import ConflictError, ValidationError
-from presupuestacion.presupuestos.service import (
+from services.presupuestacion.core.exceptions import ConflictError, ValidationError
+from services.presupuestacion.presupuestos.service import (
     ajustar_item,
     aprobar_presupuesto,
     presentar_presupuesto,

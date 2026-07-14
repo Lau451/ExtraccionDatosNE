@@ -6,7 +6,9 @@ schema: spec-driven
 
 context: |
   Tech stack: Python 3.9+, FastAPI, Pandas, Google Generative AI (Gemini)
-  Architecture: FastAPI web API + document processing pipeline (robot.py, robot_comparativas.py)
+  Architecture: two sibling services under services/ — services/extraccion (document processing
+    pipeline: robot.py, robot_comparativas.py) and services/presupuestacion (domain-layered
+    business backend: pricing/matching/presupuestos/etc., each with models/repository/service/router)
   Testing: pytest + pytest-cov (just installed)
   Style: PEP 8 conventions
 
@@ -35,7 +37,7 @@ rules:
     - Mock Gemini API calls in tests (use fixtures from tests/fixtures/)
     - Update requirements.txt if adding dependencies
   verify:
-    - Run full test suite: pytest --cov=app
+    - Run full test suite: pytest --cov=services
     - Coverage target: 70%+ for robot.py and robot_comparativas.py, 100% for config.py
     - Compare implementation against every spec scenario
   archive:
@@ -44,7 +46,7 @@ rules:
 
 testing:
   framework: pytest
-  command: pytest --cov=app --cov-report=html
+  command: pytest --cov=services --cov-report=html
   coverage_tool: pytest-cov
   test_directory: tests/
 

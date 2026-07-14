@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 import httpx
 
-from app.main import app
+from services.extraccion.main import app
 
 
 @pytest.fixture
@@ -52,8 +52,8 @@ def test_mismo_cliente_para_upload_y_generate(pdf: Path):
         call_sequence.append(client._mock_name)
         return client
 
-    with patch("app.robot.get_next_client", side_effect=fake_get_next_client):
-        from app.robot import procesar_archivo
+    with patch("services.extraccion.robot.get_next_client", side_effect=fake_get_next_client):
+        from services.extraccion.robot import procesar_archivo
         procesar_archivo(pdf, pdf.name)
 
     # get_next_client debe haberse llamado exactamente UNA vez por request
@@ -76,8 +76,8 @@ def test_round_robin_alterna_entre_requests(tmp_path: Path):
     """
     Requests distintos deben rotar entre clientes disponibles.
     """
-    from app.config import CLIENTS, _client_index
-    import app.config as config_module
+    from services.extraccion.config import CLIENTS, _client_index
+    import services.extraccion.config as config_module
 
     clientes_usados = []
 
@@ -110,8 +110,8 @@ def test_round_robin_alterna_entre_requests(tmp_path: Path):
     pdf1.write_bytes(contenido_pdf)
     pdf2.write_bytes(contenido_pdf)
 
-    with patch("app.robot.get_next_client", side_effect=get_next_alternating):
-        from app.robot import procesar_archivo
+    with patch("services.extraccion.robot.get_next_client", side_effect=get_next_alternating):
+        from services.extraccion.robot import procesar_archivo
         procesar_archivo(pdf1, pdf1.name)
         procesar_archivo(pdf2, pdf2.name)
 
@@ -165,7 +165,7 @@ async def test_dos_usuarios_simultaneos_no_cruzan_clientes(tmp_path: Path):
                 data={"tipo": ""},
             )
 
-    with patch("app.main.procesar_archivo", side_effect=fake_procesar):
+    with patch("services.extraccion.main.procesar_archivo", side_effect=fake_procesar):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), timeout=30
         ) as client:

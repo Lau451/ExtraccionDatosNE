@@ -3,8 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
-from presupuestacion.extraccion.service import validar_extraccion
+from services.presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
+from services.presupuestacion.extraccion.service import validar_extraccion
 
 
 @pytest.mark.integration

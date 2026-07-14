@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-import app.supabase_client as sc_module
-from app.main import app
+import services.extraccion.supabase_client as sc_module
+from services.extraccion.main import app
 
 
 def _qb(execute_result=None):
@@ -65,7 +65,7 @@ def ext_id():
 
 class TestPatchExtractionResult:
     def test_body_vacio_retorna_400(self, client, ext_id, mocker):
-        mocker.patch("app.routers.extraction_results.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.extraction_results.get_client", return_value=MagicMock())
 
         response = client.patch(f"/api/extraction-results/{ext_id}", json={})
 
@@ -75,7 +75,7 @@ class TestPatchExtractionResult:
         qb = _qb(_result([]))
         mc = MagicMock()
         mc.table.return_value = qb
-        mocker.patch("app.routers.extraction_results.get_client", return_value=mc)
+        mocker.patch("services.extraccion.routers.extraction_results.get_client", return_value=mc)
 
         response = client.patch(
             f"/api/extraction-results/{ext_id}",
@@ -85,7 +85,7 @@ class TestPatchExtractionResult:
         assert response.status_code == 404
 
     def test_document_type_invalido_retorna_422(self, client, ext_id, mocker):
-        mocker.patch("app.routers.extraction_results.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.extraction_results.get_client", return_value=MagicMock())
 
         response = client.patch(
             f"/api/extraction-results/{ext_id}",
@@ -100,7 +100,7 @@ class TestPatchExtractionResult:
         qb.execute.side_effect = [_result([updated_row]), _result([updated_row])]
         mc = MagicMock()
         mc.table.return_value = qb
-        mocker.patch("app.routers.extraction_results.get_client", return_value=mc)
+        mocker.patch("services.extraccion.routers.extraction_results.get_client", return_value=mc)
 
         response = client.patch(
             f"/api/extraction-results/{ext_id}",
@@ -116,7 +116,7 @@ class TestPatchExtractionResult:
         qb.execute.side_effect = [_result([updated_row]), _result([updated_row])]
         mc = MagicMock()
         mc.table.return_value = qb
-        mocker.patch("app.routers.extraction_results.get_client", return_value=mc)
+        mocker.patch("services.extraccion.routers.extraction_results.get_client", return_value=mc)
 
         response = client.patch(
             f"/api/extraction-results/{ext_id}",

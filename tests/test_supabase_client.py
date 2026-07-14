@@ -1,5 +1,5 @@
 """
-Tests para app/supabase_client.py — Feature flag + singleton.
+Tests para services/extraccion/supabase_client.py — Feature flag + singleton.
 
 Verifica:
 - ENABLE_RESULT_PERSISTENCE=false → retorna None
@@ -10,7 +10,7 @@ Verifica:
 
 import pytest
 from unittest.mock import MagicMock
-import app.supabase_client as sc_module
+import services.extraccion.supabase_client as sc_module
 
 
 @pytest.fixture(autouse=True)

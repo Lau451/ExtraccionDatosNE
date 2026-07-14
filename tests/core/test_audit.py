@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 import pytest
 
-from presupuestacion.core.audit import (
+from services.presupuestacion.core.audit import (
     _COLUMNA_FK_POR_ENTIDAD,
     _a_texto,
     registrar_cambios,

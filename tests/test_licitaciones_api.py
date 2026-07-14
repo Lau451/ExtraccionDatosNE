@@ -1,5 +1,5 @@
 """
-Tests HTTP para el router de licitaciones — app/routers/licitaciones.py
+Tests HTTP para el router de licitaciones — services/extraccion/routers/licitaciones.py
 
 Escenarios cubiertos:
 - Listar (vacío sin Supabase, exitoso, filtros estado/tipo)
@@ -16,8 +16,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-import app.supabase_client as sc_module
-from app.main import app
+import services.extraccion.supabase_client as sc_module
+from services.extraccion.main import app
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ def _mock_client(mocker, *, table_map=None, default_qb=None):
         mc.table.side_effect = _side
     elif default_qb is not None:
         mc.table.return_value = default_qb
-    mocker.patch("app.routers.licitaciones.get_client", return_value=mc)
+    mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=mc)
     return mc
 
 
@@ -102,7 +102,7 @@ def lic_id():
 
 class TestListarLicitaciones:
     def test_sin_supabase_retorna_503(self, client, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=None)
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=None)
         response = client.get("/api/licitaciones")
         assert response.status_code == 503
 
@@ -143,7 +143,7 @@ class TestListarLicitaciones:
 
 class TestListarActivas:
     def test_sin_supabase_retorna_503(self, client, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=None)
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=None)
         response = client.get("/api/licitaciones/activas")
         assert response.status_code == 503
 
@@ -181,14 +181,14 @@ class TestCrearLicitacion:
         assert body["archivos_count"] == 0
 
     def test_tipo_invalido_retorna_422(self, client, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=MagicMock())
 
         response = client.post("/api/licitaciones", json={"nombre": "Test", "tipo": "invalido"})
 
         assert response.status_code == 422
 
     def test_vencimiento_antes_apertura_retorna_422(self, client, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=MagicMock())
 
         response = client.post("/api/licitaciones", json={
             "nombre": "Test",
@@ -200,7 +200,7 @@ class TestCrearLicitacion:
         assert response.status_code == 422
 
     def test_sin_nombre_retorna_422(self, client, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=MagicMock())
 
         response = client.post("/api/licitaciones", json={"tipo": "medicamentos"})
 
@@ -265,7 +265,7 @@ class TestActualizarLicitacion:
         assert response.json()["estado"] == "en_evaluacion"
 
     def test_body_vacio_retorna_400(self, client, lic_id, mocker):
-        mocker.patch("app.routers.licitaciones.get_client", return_value=MagicMock())
+        mocker.patch("services.extraccion.routers.licitaciones.get_client", return_value=MagicMock())
 
         response = client.patch(f"/api/licitaciones/{lic_id}", json={})
 

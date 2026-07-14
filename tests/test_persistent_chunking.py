@@ -1,5 +1,5 @@
 """
-Tests para app/persistent_chunking.py — CRUD de sesiones y chunks.
+Tests para services/extraccion/persistent_chunking.py — CRUD de sesiones y chunks.
 
 Verifica:
 - crear_sesion: retorna UUID válida o None según disponibilidad del client
@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.supabase_client as sc_module
-from app import persistent_chunking
+import services.extraccion.supabase_client as sc_module
+from services.extraccion import persistent_chunking
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ def mock_supabase_client(mocker):
         {"id": session_uuid}
     ]
     # Patch del módulo para que get_client() retorne nuestro mock
-    mocker.patch("app.persistent_chunking.get_client", return_value=mock)
+    mocker.patch("services.extraccion.persistent_chunking.get_client", return_value=mock)
     return mock, session_uuid
 
 
@@ -84,7 +84,7 @@ class TestCrearSesion:
         Cuando get_client() retorna None → crear_sesion retorna None
         sin lanzar excepción (no crash).
         """
-        mocker.patch("app.persistent_chunking.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_chunking.get_client", return_value=None)
 
         resultado = await persistent_chunking.crear_sesion(
             doc_name="documento.pdf",
@@ -152,7 +152,7 @@ class TestGuardarChunk:
         Cuando get_client() retorna None → guardar_chunk retorna False
         sin lanzar excepción.
         """
-        mocker.patch("app.persistent_chunking.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_chunking.get_client", return_value=None)
         session_id = UUID("12345678-1234-5678-1234-567812345678")
 
         resultado = persistent_chunking.guardar_chunk(
@@ -225,7 +225,7 @@ class TestCargarChunksExistentes:
         """
         Cuando get_client() retorna None → retorna dict vacío sin crash.
         """
-        mocker.patch("app.persistent_chunking.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_chunking.get_client", return_value=None)
         session_id = UUID("12345678-1234-5678-1234-567812345678")
 
         resultado = persistent_chunking.cargar_chunks_existentes(session_id=session_id)
@@ -268,7 +268,7 @@ class TestCerrarSesion:
         Cuando get_client() retorna None → cerrar_sesion retorna
         silenciosamente sin crash.
         """
-        mocker.patch("app.persistent_chunking.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_chunking.get_client", return_value=None)
         session_id = UUID("12345678-1234-5678-1234-567812345678")
 
         # No debe lanzar excepción

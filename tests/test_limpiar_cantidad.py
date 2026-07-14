@@ -4,7 +4,7 @@ ignorando todo lo que va después de la coma.
 """
 
 import pytest
-from app.robot import _limpiar_cantidad
+from services.extraccion.robot import _limpiar_cantidad
 
 
 def csv(*filas: str) -> str:

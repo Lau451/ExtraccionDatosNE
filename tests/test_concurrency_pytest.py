@@ -15,7 +15,7 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-from app.main import app
+from services.extraccion.main import app
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ async def test_concurrent_uploads(num_users: int, test_pdf: Path, tmp_path: Path
     Criterio: el tiempo total debe ser menor a (num_users * tiempo_individual),
     lo que confirma que los requests corren en paralelo y no en serie.
     """
-    with patch("app.main.procesar_archivo", side_effect=_fake_procesar):
+    with patch("services.extraccion.main.procesar_archivo", side_effect=_fake_procesar):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), timeout=30
         ) as client:
@@ -115,7 +115,7 @@ async def test_semaforo_limita_concurrencia(test_pdf: Path):
         csv.write_text("item;cantidad;descripcion;origen\n1;5;Producto;CLIENTE\n")
         return csv
 
-    with patch("app.main.procesar_archivo", side_effect=_fake_con_contador):
+    with patch("services.extraccion.main.procesar_archivo", side_effect=_fake_con_contador):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), timeout=30
         ) as client:

@@ -3,8 +3,8 @@ import uuid
 
 import pytest
 
-from presupuestacion.core.config import get_settings
-from presupuestacion.core.database import get_service_client
+from services.presupuestacion.core.config import get_settings
+from services.presupuestacion.core.database import get_service_client
 
 _PROYECTO_TEST_ESPERADO = "grnamollopxdlstcpxhc"
 

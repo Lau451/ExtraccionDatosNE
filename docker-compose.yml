@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  extractor-api:
+  extraccion-api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: services/extraccion/Dockerfile
 
-    image: extractor-ne:latest
-    container_name: extractor-instancia
+    image: extraccion-ne:latest
+    container_name: extraccion-instancia
 
     # Forzamos aislamiento Hyper-V
     isolation: hyperv
@@ -21,6 +21,30 @@ services:
 
       # Directorio de salida
       - OUTPUT_BASE_DIR=C:/app/output
+
+      # Opcional
+      - PYTHONDONTWRITEBYTECODE=1
+
+    restart: always
+
+  presupuestacion-api:
+    build:
+      context: .
+      dockerfile: services/presupuestacion/Dockerfile
+
+    image: presupuestacion-ne:latest
+    container_name: presupuestacion-instancia
+
+    # Forzamos aislamiento Hyper-V
+    isolation: hyperv
+
+    ports:
+      - "8001:8001"
+
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
 
       # Opcional
       - PYTHONDONTWRITEBYTECODE=1

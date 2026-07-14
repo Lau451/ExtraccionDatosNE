@@ -2,14 +2,14 @@ import secrets
 
 import pytest
 
-from presupuestacion.clientes.models import ClienteFormatoDocumentoUpsert, ClienteObservacionCreate
-from presupuestacion.clientes.service import (
+from services.presupuestacion.clientes.models import ClienteFormatoDocumentoUpsert, ClienteObservacionCreate
+from services.presupuestacion.clientes.service import (
     crear_observacion,
     listar_formato_documentos,
     listar_observaciones,
     upsert_formato_documento,
 )
-from presupuestacion.core.exceptions import NotFoundError, ValidationError
+from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
 
 
 @pytest.mark.integration

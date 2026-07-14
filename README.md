@@ -94,31 +94,48 @@ SUPABASE_KEY=tu_service_role_key
 O directamente:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn services.extraccion.main:app --host 0.0.0.0 --port 8000
 ```
 
 La app queda disponible en **http://localhost:8000**
+
+Para levantar el backend de presupuestación (aparte, puerto 8001):
+
+```bash
+.\scripts\run_presupuestacion.bat
+# o directamente:
+uvicorn services.presupuestacion.main:app --host 0.0.0.0 --port 8001
+```
 
 ---
 
 ## Estructura del proyecto
 
 ```
-app/
-  main.py                — rutas FastAPI, deduplicación, orquestación
-  robot.py               — extracción de licitaciones (Gemini)
-  robot_comparativas.py  — extracción de comparativas (Gemini, chunking)
-  parsers.py             — pipeline PDF: pdfplumber → Docling → Vision
-  persistent_chunking.py — CRUD de processing_sessions en Supabase
-  persistent_output.py   — INSERT en extraction_results y tablas hijas
-  background_tasks.py    — retry con backoff exponencial
-  supabase_client.py     — cliente Supabase singleton
-  config.py              — rutas de salida, clientes Gemini
-  gemini_errors.py       — manejo de errores de la API
+services/
+  extraccion/             — backend legacy: bot de extracción con Gemini
+    main.py                — rutas FastAPI, deduplicación, orquestación
+    robot.py               — extracción de licitaciones (Gemini)
+    robot_comparativas.py  — extracción de comparativas (Gemini, chunking)
+    parsers.py             — pipeline PDF: pdfplumber → Docling → Vision
+    persistent_chunking.py — CRUD de processing_sessions en Supabase
+    persistent_output.py   — INSERT en extraction_results y tablas hijas
+    background_tasks.py    — retry con backoff exponencial
+    supabase_client.py     — cliente Supabase singleton
+    config.py              — rutas de salida, clientes Gemini
+    gemini_errors.py       — manejo de errores de la API
+    Dockerfile
+
+  presupuestacion/         — backend nuevo: presupuestación automática (por dominio)
+    core/                   — config, database, auth, audit, exceptions, texto, stock
+    pricing/ matching/ presupuestos/ extraccion/ comparativas/ compras/ clientes/
+    main.py
+    Dockerfile
 
 supabase/migrations/     — migraciones SQL (tablas, RPC, pg_cron TTL)
-tests/                   — suite de tests con pytest
-scripts/run.bat          — script de inicio para Windows
+tests/                   — suite de tests con pytest (espeja services/presupuestacion/ por dominio)
+scripts/run.bat                    — inicia services/extraccion (puerto 8000)
+scripts/run_presupuestacion.bat    — inicia services/presupuestacion (puerto 8001)
 
 data/
   Salida/                — CSVs generados (ignorado por Git)

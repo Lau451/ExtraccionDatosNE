@@ -14,7 +14,7 @@ Validación de concurrencia para `run_in_executor()` implementado en commit e0d6
 **Terminal 1: Inicia la app**
 ```bash
 cd ..
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn services.extraccion.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Terminal 2: Corre los tests**
@@ -54,7 +54,7 @@ Eficiencia > 300% = Verdadero paralelismo (no espera bloqueante)
 Para correr manualmente sin script:
 ```bash
 # Terminal 1: App
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn services.extraccion.main:app --host 0.0.0.0 --port 8000
 
 # Terminal 2+: Abre 7 tabs del navegador y sube archivos simultáneamente
 # http://localhost:8000/upload?tipo=licitaciones

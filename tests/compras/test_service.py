@@ -2,9 +2,9 @@ from decimal import Decimal
 
 import pytest
 
-from presupuestacion.compras.models import CrearOrdenCompraRequest, EntregaItemRequest, OrdenCompraItemRequest
-from presupuestacion.compras.service import confirmar_orden_compra, crear_entrega, crear_orden_compra
-from presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
+from services.presupuestacion.compras.models import CrearOrdenCompraRequest, EntregaItemRequest, OrdenCompraItemRequest
+from services.presupuestacion.compras.service import confirmar_orden_compra, crear_entrega, crear_orden_compra
+from services.presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
 
 
 def _item(**overrides):

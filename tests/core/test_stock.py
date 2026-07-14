@@ -3,8 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from presupuestacion.core import stock
-from presupuestacion.core.exceptions import ConflictError
+from services.presupuestacion.core import stock
+from services.presupuestacion.core.exceptions import ConflictError
 
 
 @pytest.mark.integration
@@ -95,10 +95,10 @@ def test_comprometer_stock_producto_revierte_deposito_a_si_deposito_b_agota_rein
         return original(client, fila_id=fila_id, valor_esperado=valor_esperado, nuevo_valor=nuevo_valor)
 
     mocker.patch(
-        "presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
+        "services.presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
         side_effect=_perder_siempre_en_b,
     )
-    mocker.patch("presupuestacion.core.stock.time.sleep", lambda _: None)
+    mocker.patch("services.presupuestacion.core.stock.time.sleep", lambda _: None)
 
     with pytest.raises(ConflictError):
         stock.comprometer_stock_producto(
@@ -150,10 +150,10 @@ def test_comprometer_stock_producto_si_la_reversion_tambien_falla_no_pierde_el_m
         return original(client, fila_id=fila_id, valor_esperado=valor_esperado, nuevo_valor=nuevo_valor)
 
     mocker.patch(
-        "presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
+        "services.presupuestacion.core.stock.actualizar_comprometida_si_no_cambio",
         side_effect=_falla_b_al_comprometer_y_a_al_liberar,
     )
-    mocker.patch("presupuestacion.core.stock.time.sleep", lambda _: None)
+    mocker.patch("services.presupuestacion.core.stock.time.sleep", lambda _: None)
 
     with pytest.raises(ConflictError) as excinfo:
         stock.comprometer_stock_producto(

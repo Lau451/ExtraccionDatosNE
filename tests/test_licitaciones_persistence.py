@@ -5,7 +5,7 @@ Desde que persistir_output_final dejó de insertar en la tabla hija (comparativa
 licitaciones_results, que no existen en el schema nuevo) y pasó a insertar solo metadata
 en extraction_results del schema de presupuestacion/, licitacion_id ya NO se persiste —
 se sigue aceptando como parámetro únicamente para no romper a los callers existentes
-(background_tasks.py). Ver app/persistent_output.py para el detalle.
+(background_tasks.py). Ver services/extraccion/persistent_output.py para el detalle.
 
 Verifica que:
 - persistir_output_final acepta licitacion_id sin persistirlo en el payload
@@ -19,9 +19,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.supabase_client as sc_module
-from app import persistent_output
-from app.background_tasks import schedule_persist_output
+import services.extraccion.supabase_client as sc_module
+from services.extraccion import persistent_output
+from services.extraccion.background_tasks import schedule_persist_output
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class TestPersistirConLicitacionId:
         """
         lic_id = str(uuid.uuid4())
         mock_client, tablas = _supabase_mock(extraction_uuid)
-        mocker.patch("app.persistent_output.get_client", return_value=mock_client)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
             session_id=uuid.uuid4(),
@@ -119,7 +119,7 @@ class TestPersistirConLicitacionId:
     async def test_licitacion_id_none_no_rompe(self, mocker, rows, csv_path, extraction_uuid):
         """licitacion_id=None tampoco debe romper nada — mismo camino que con valor."""
         mock_client, _tablas = _supabase_mock(extraction_uuid)
-        mocker.patch("app.persistent_output.get_client", return_value=mock_client)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
             session_id=uuid.uuid4(),

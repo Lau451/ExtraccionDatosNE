@@ -1,7 +1,7 @@
 """Tests for _clean_brand and _distribute_brands in parsers.py."""
 
 import pytest
-from app.parsers import _clean_brand, _distribute_brands
+from services.extraccion.parsers import _clean_brand, _distribute_brands
 
 
 # ---------------------------------------------------------------------------

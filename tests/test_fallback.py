@@ -6,7 +6,7 @@ debe redirigir automáticamente a gemini-3-flash-preview.
 import pytest
 from unittest.mock import MagicMock, call, patch
 
-from app.config import generate_with_fallback, PRIMARY_MODEL, FALLBACK_MODEL
+from services.extraccion.config import generate_with_fallback, PRIMARY_MODEL, FALLBACK_MODEL
 
 
 def _mock_client(side_effects):
@@ -67,7 +67,7 @@ def test_loguea_warning_cuando_usa_fallback(caplog):
     respuesta_fallback = MagicMock()
     client = _mock_client([Exception("503 Service Unavailable"), respuesta_fallback])
 
-    with caplog.at_level(logging.WARNING, logger="app.config"):
+    with caplog.at_level(logging.WARNING, logger="services.extraccion.config"):
         generate_with_fallback(client, "contenido")
 
     assert any(PRIMARY_MODEL in msg for msg in caplog.messages)

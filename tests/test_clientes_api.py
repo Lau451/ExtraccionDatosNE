@@ -1,5 +1,5 @@
 """
-Tests HTTP para el router de clientes — app/routers/clientes.py
+Tests HTTP para el router de clientes — services/extraccion/routers/clientes.py
 
 GET /api/clientes nunca debe bloquear ni devolver error al frontend: si Supabase no
 está disponible, o no se puede resolver drogueria_id, o la consulta falla, devuelve
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from services.extraccion.main import app
 
 client = TestClient(app)
 
@@ -30,9 +30,9 @@ class TestListarClientesActivos:
         mock_supabase.table.return_value = _qb(
             [{"id": "cli-1", "nombre": "Hospital A"}, {"id": "cli-2", "nombre": "Hospital B"}]
         )
-        mocker.patch("app.routers.clientes.get_client", return_value=mock_supabase)
+        mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
         mocker.patch(
-            "app.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
+            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
         )
 
         response = client.get("/api/clientes")
@@ -45,7 +45,7 @@ class TestListarClientesActivos:
         ]
 
     def test_sin_supabase_devuelve_lista_vacia(self, mocker):
-        mocker.patch("app.routers.clientes.get_client", return_value=None)
+        mocker.patch("services.extraccion.routers.clientes.get_client", return_value=None)
 
         response = client.get("/api/clientes")
 
@@ -54,8 +54,8 @@ class TestListarClientesActivos:
 
     def test_sin_drogueria_resuelta_devuelve_lista_vacia(self, mocker):
         mock_supabase = MagicMock()
-        mocker.patch("app.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch("app.routers.clientes.resolver_drogueria_id_unica", return_value=None)
+        mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
+        mocker.patch("services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value=None)
 
         response = client.get("/api/clientes")
 
@@ -67,9 +67,9 @@ class TestListarClientesActivos:
         mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.execute.side_effect = RuntimeError(
             "DB error simulado"
         )
-        mocker.patch("app.routers.clientes.get_client", return_value=mock_supabase)
+        mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
         mocker.patch(
-            "app.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
+            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
         )
 
         response = client.get("/api/clientes")

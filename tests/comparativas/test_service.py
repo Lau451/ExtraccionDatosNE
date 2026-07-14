@@ -2,9 +2,9 @@ import secrets
 
 import pytest
 
-from presupuestacion.comparativas.repository import listar_renglones_ganados
-from presupuestacion.comparativas.service import asignar_proveedor
-from presupuestacion.core.exceptions import NotFoundError, ValidationError
+from services.presupuestacion.comparativas.repository import listar_renglones_ganados
+from services.presupuestacion.comparativas.service import asignar_proveedor
+from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
 
 
 @pytest.mark.integration

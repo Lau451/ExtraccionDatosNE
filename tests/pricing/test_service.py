@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from presupuestacion.pricing.service import generar_presupuesto
+from services.presupuestacion.pricing.service import generar_presupuesto
 
 
 @pytest.mark.integration

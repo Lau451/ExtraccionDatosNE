@@ -1,5 +1,5 @@
 """
-Tests de integración para app/main.py — Flujo completo con TestClient.
+Tests de integración para services/extraccion/main.py — Flujo completo con TestClient.
 
 Verifica:
 - Documento pequeño → CSV generado + persistencia en Supabase (background)
@@ -21,8 +21,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-import app.supabase_client as sc_module
-from app.main import app
+import services.extraccion.supabase_client as sc_module
+from services.extraccion.main import app
 
 
 # ---------------------------------------------------------------------------
@@ -99,29 +99,29 @@ class TestProcesarFileSmallSuccess:
 
         # Mock SHA256 — operación rápida sin acceso a disco real
         mocker.patch(
-            "app.main.calcular_sha256",
+            "services.extraccion.main.calcular_sha256",
             return_value="a" * 64,
         )
         # Sin duplicado
         mocker.patch(
-            "app.main.buscar_duplicado_con_lock",
+            "services.extraccion.main.buscar_duplicado_con_lock",
             new_callable=AsyncMock,
             return_value=None,
         )
         # Sesión creada exitosamente
         mocker.patch(
-            "app.main.crear_sesion",
+            "services.extraccion.main.crear_sesion",
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
         # Robot retorna el CSV sin llamar a Gemini
         mocker.patch(
-            "app.main.procesar_archivo",
+            "services.extraccion.main.procesar_archivo",
             return_value=str(csv_path),
         )
         # Background task registrada (no ejecutamos la task real)
         mock_schedule = mocker.patch(
-            "app.main.schedule_persist_output",
+            "services.extraccion.main.schedule_persist_output",
             new_callable=AsyncMock,
         )
 
@@ -155,12 +155,12 @@ class TestProcesarFileDuplicateBlocks:
         existing_uuid = uuid.uuid4()
 
         mocker.patch(
-            "app.main.calcular_sha256",
+            "services.extraccion.main.calcular_sha256",
             return_value="a" * 64,
         )
         # El duplicado ya existe
         mocker.patch(
-            "app.main.buscar_duplicado_con_lock",
+            "services.extraccion.main.buscar_duplicado_con_lock",
             new_callable=AsyncMock,
             return_value=existing_uuid,
         )
@@ -197,22 +197,22 @@ class TestProcesarFileGeminiFailsChunk1:
         session_uuid = uuid.uuid4()
 
         mocker.patch(
-            "app.main.calcular_sha256",
+            "services.extraccion.main.calcular_sha256",
             return_value="b" * 64,
         )
         mocker.patch(
-            "app.main.buscar_duplicado_con_lock",
+            "services.extraccion.main.buscar_duplicado_con_lock",
             new_callable=AsyncMock,
             return_value=None,
         )
         mocker.patch(
-            "app.main.crear_sesion",
+            "services.extraccion.main.crear_sesion",
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
         # Robot falla con excepción genérica
         mocker.patch(
-            "app.main.procesar_archivo",
+            "services.extraccion.main.procesar_archivo",
             side_effect=RuntimeError("Gemini chunk 1 failed after 3 retries"),
         )
 
@@ -249,26 +249,26 @@ class TestProcesarComparativaChunksSavings:
         csv_path = _mock_csv_output(tmp_path)
 
         mocker.patch(
-            "app.main.calcular_sha256",
+            "services.extraccion.main.calcular_sha256",
             return_value="c" * 64,
         )
         mocker.patch(
-            "app.main.buscar_duplicado_con_lock",
+            "services.extraccion.main.buscar_duplicado_con_lock",
             new_callable=AsyncMock,
             return_value=None,
         )
         mocker.patch(
-            "app.main.crear_sesion",
+            "services.extraccion.main.crear_sesion",
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
         # Robot de comparativas retorna CSV exitosamente
         mocker.patch(
-            "app.main.procesar_comparativa",
+            "services.extraccion.main.procesar_comparativa",
             return_value=str(csv_path),
         )
         mock_schedule = mocker.patch(
-            "app.main.schedule_persist_output",
+            "services.extraccion.main.schedule_persist_output",
             new_callable=AsyncMock,
         )
 
@@ -310,17 +310,17 @@ class TestProcesarConLicitacionIdValido:
         lic_id = str(uuid.uuid4())
         csv_path = _mock_csv_output(tmp_path)
 
-        mocker.patch("app.main.calcular_sha256", return_value="d" * 64)
-        mocker.patch("app.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
-        mocker.patch("app.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
-        mocker.patch("app.main.procesar_archivo", return_value=str(csv_path))
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="d" * 64)
+        mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
+        mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         # validar_licitacion_id retorna el mismo id (ya existe en BD)
         mocker.patch(
-            "app.main.validar_licitacion_id",
+            "services.extraccion.main.validar_licitacion_id",
             new_callable=AsyncMock,
             return_value=lic_id,
         )
-        mock_schedule = mocker.patch("app.main.schedule_persist_output", new_callable=AsyncMock)
+        mock_schedule = mocker.patch("services.extraccion.main.schedule_persist_output", new_callable=AsyncMock)
 
         response = client.post(
             "/procesar",
@@ -347,17 +347,17 @@ class TestProcesarSinLicitacionId:
         session_uuid = uuid.uuid4()
         csv_path = _mock_csv_output(tmp_path)
 
-        mocker.patch("app.main.calcular_sha256", return_value="e" * 64)
-        mocker.patch("app.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
-        mocker.patch("app.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
-        mocker.patch("app.main.procesar_archivo", return_value=str(csv_path))
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="e" * 64)
+        mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
+        mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         # Vacío → validar_licitacion_id retorna None
         mocker.patch(
-            "app.main.validar_licitacion_id",
+            "services.extraccion.main.validar_licitacion_id",
             new_callable=AsyncMock,
             return_value=None,
         )
-        mock_schedule = mocker.patch("app.main.schedule_persist_output", new_callable=AsyncMock)
+        mock_schedule = mocker.patch("services.extraccion.main.schedule_persist_output", new_callable=AsyncMock)
 
         response = client.post(
             "/procesar",
@@ -383,14 +383,14 @@ class TestProcesarLicitacionIdInvalido:
         from fastapi import HTTPException
 
         mocker.patch(
-            "app.main.validar_licitacion_id",
+            "services.extraccion.main.validar_licitacion_id",
             new_callable=AsyncMock,
             side_effect=HTTPException(
                 status_code=422,
                 detail="Licitación <uuid> no existe",
             ),
         )
-        mock_robot = mocker.patch("app.main.procesar_archivo")
+        mock_robot = mocker.patch("services.extraccion.main.procesar_archivo")
 
         response = client.post(
             "/procesar",
@@ -408,14 +408,14 @@ class TestProcesarLicitacionIdInvalido:
         from fastapi import HTTPException
 
         mocker.patch(
-            "app.main.validar_licitacion_id",
+            "services.extraccion.main.validar_licitacion_id",
             new_callable=AsyncMock,
             side_effect=HTTPException(
                 status_code=422,
                 detail="licitacion_id no es un UUID válido: no-es-uuid",
             ),
         )
-        mock_robot = mocker.patch("app.main.procesar_archivo")
+        mock_robot = mocker.patch("services.extraccion.main.procesar_archivo")
 
         response = client.post(
             "/procesar",
@@ -459,7 +459,7 @@ class TestListarDocumentosConLicitacion:
 
         mock_client = MagicMock()
         mock_client.table.return_value = mock_qb
-        mocker.patch("app.main.get_client", return_value=mock_client)
+        mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
 
         response = client.get("/api/documentos")
 
@@ -491,7 +491,7 @@ class TestListarDocumentosConLicitacion:
 
         mock_client = MagicMock()
         mock_client.table.return_value = mock_qb
-        mocker.patch("app.main.get_client", return_value=mock_client)
+        mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
 
         response = client.get("/api/documentos")
 

@@ -1,5 +1,5 @@
 """
-Tests para app/persistent_output.py — SHA256 + deduplicación + persistencia final.
+Tests para services/extraccion/persistent_output.py — SHA256 + deduplicación + persistencia final.
 
 Verifica:
 - calcular_sha256: mismo archivo → mismo hash; archivos distintos → hashes distintos
@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.supabase_client as sc_module
-from app import persistent_output
+import services.extraccion.supabase_client as sc_module
+from services.extraccion import persistent_output
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ def mock_supabase_client(mocker):
         return tabla_mock
 
     mock.table.side_effect = _table
-    mocker.patch("app.persistent_output.get_client", return_value=mock)
+    mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
     return mock, extraction_uuid
 
 
@@ -121,7 +121,7 @@ class TestBuscarDuplicadoConLock:
         existing_uuid = str(uuid.uuid4())
         mock = MagicMock()
         mock.rpc.return_value.execute.return_value.data = existing_uuid
-        mocker.patch("app.persistent_output.get_client", return_value=mock)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
             source_sha256="a" * 64
@@ -139,7 +139,7 @@ class TestBuscarDuplicadoConLock:
         """
         mock = MagicMock()
         mock.rpc.return_value.execute.return_value.data = None
-        mocker.patch("app.persistent_output.get_client", return_value=mock)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
             source_sha256="b" * 64
@@ -152,7 +152,7 @@ class TestBuscarDuplicadoConLock:
         """
         Cuando get_client() retorna None → retorna None sin crash.
         """
-        mocker.patch("app.persistent_output.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
             source_sha256="c" * 64
@@ -168,7 +168,7 @@ class TestBuscarDuplicadoConLock:
         """
         mock = MagicMock()
         mock.rpc.return_value.execute.side_effect = RuntimeError("RPC error simulado")
-        mocker.patch("app.persistent_output.get_client", return_value=mock)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
             source_sha256="d" * 64
@@ -248,7 +248,7 @@ class TestPersistirOutputFinal:
         # Generamos 50.001 filas
         rows_grandes = [{"col": str(i)} for i in range(50_001)]
 
-        with caplog.at_level(logging.WARNING, logger="app.persistent_output"):
+        with caplog.at_level(logging.WARNING, logger="services.extraccion.persistent_output"):
             resultado = await persistent_output.persistir_output_final(
                 session_id=UUID("12345678-1234-5678-1234-567812345678"),
                 doc_type="comparativa",
@@ -271,7 +271,7 @@ class TestPersistirOutputFinal:
         """
         Cuando get_client() retorna None → retorna None sin crash.
         """
-        mocker.patch("app.persistent_output.get_client", return_value=None)
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
         csv_path = tmp_path / "resultado.csv"
         csv_path.touch()
 

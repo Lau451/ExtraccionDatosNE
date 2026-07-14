@@ -1,4 +1,4 @@
-from presupuestacion.core.texto import normalizar_descripcion
+from services.presupuestacion.core.texto import normalizar_descripcion
 
 
 def test_normalizar_descripcion_pasa_a_mayusculas():
