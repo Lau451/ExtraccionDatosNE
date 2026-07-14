@@ -4,7 +4,14 @@ from supabase import Client
 
 
 def buscar_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
-    resultado = client.table("presupuestos").select("*").eq("id", presupuesto_id).limit(1).execute()
+    resultado = (
+        client.table("presupuestos")
+        .select("*")
+        .eq("id", presupuesto_id)
+        .is_("deleted_at", None)
+        .limit(1)
+        .execute()
+    )
     return resultado.data[0] if resultado.data else None
 
 
