@@ -10,6 +10,7 @@ from services.presupuestacion.comparativas.router import router as comparativas_
 from services.presupuestacion.compras.router import router as compras_router
 from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.exceptions import register_exception_handlers
+from services.presupuestacion.eventos.router import router as eventos_router
 from services.presupuestacion.extraccion.router import router as extraccion_router
 from services.presupuestacion.imports.router import router as imports_router
 from services.presupuestacion.matching.router import router as matching_router
@@ -44,3 +45,4 @@ app.include_router(clientes_router, tags=["clientes"])
 app.include_router(imports_router, tags=["imports"])
 app.include_router(catalogo_router, tags=["catalogo"])
 app.include_router(usuarios_router, tags=["usuarios"])
+app.include_router(eventos_router, tags=["eventos"])
