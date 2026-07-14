@@ -3,6 +3,10 @@ from decimal import Decimal
 import pytest
 
 from services.presupuestacion.core.exceptions import ConflictError, ValidationError
+from services.presupuestacion.presupuestos.repository import (
+    listar_presupuesto_comercial,
+    listar_presupuesto_revision,
+)
 from services.presupuestacion.presupuestos.service import (
     ajustar_item,
     aprobar_presupuesto,
@@ -461,3 +465,84 @@ def test_presentar_con_stock_insuficiente_no_presenta_y_no_deja_compromisos_parc
         service_client.table("presupuestos").select("estado").eq("id", presupuesto["id"]).execute().data[0]
     )
     assert presupuesto_final["estado"] == "aprobado"
+
+
+@pytest.mark.integration
+def test_v_presupuesto_comercial_no_expone_costo(
+    service_client,
+    seed_drogueria,
+    seed_proceso_cotizacion,
+    seed_presupuesto_factory,
+    seed_item_proceso_factory,
+    seed_presupuesto_item_factory,
+    seed_producto,
+):
+    presupuesto = seed_presupuesto_factory(seed_proceso_cotizacion["id"])
+    item = seed_item_proceso_factory(seed_proceso_cotizacion["id"], producto_id=seed_producto["id"])
+    seed_presupuesto_item_factory(
+        presupuesto["id"],
+        item["id"],
+        producto_id=seed_producto["id"],
+        precio_unitario="130.00",
+        cantidad_ofertada="10",
+        costo_usado="100.00",
+        metodo_precio="margen_objetivo",
+    )
+
+    filas = listar_presupuesto_comercial(service_client, presupuesto_id=presupuesto["id"])
+
+    assert len(filas) == 1
+    assert "costo_usado" not in filas[0]
+    assert Decimal(str(filas[0]["precio_unitario"])) == Decimal("130.00")
+
+
+@pytest.mark.integration
+def test_v_presupuesto_revision_expone_costo_y_alerta_mantenimiento(
+    service_client,
+    seed_drogueria,
+    seed_proceso_cotizacion,
+    seed_presupuesto_factory,
+    seed_item_proceso_factory,
+    seed_presupuesto_item_factory,
+    seed_producto,
+):
+    presupuesto = seed_presupuesto_factory(seed_proceso_cotizacion["id"])
+    item = seed_item_proceso_factory(seed_proceso_cotizacion["id"], producto_id=seed_producto["id"])
+    seed_presupuesto_item_factory(
+        presupuesto["id"],
+        item["id"],
+        producto_id=seed_producto["id"],
+        precio_unitario="130.00",
+        cantidad_ofertada="10",
+        costo_usado="100.00",
+        metodo_precio="margen_objetivo",
+    )
+
+    filas = listar_presupuesto_revision(service_client, presupuesto_id=presupuesto["id"])
+
+    assert len(filas) == 1
+    assert Decimal(str(filas[0]["costo_usado"])) == Decimal("100.00")
+    assert "alerta_mantenimiento" in filas[0]
+
+
+@pytest.mark.integration
+def test_v_presupuesto_comercial_filtra_por_presupuesto_id(
+    service_client,
+    seed_drogueria,
+    seed_proceso_cotizacion,
+    seed_proceso_licitacion,
+    seed_presupuesto_factory,
+    seed_item_proceso_factory,
+    seed_presupuesto_item_factory,
+    seed_producto,
+):
+    presupuesto_1 = seed_presupuesto_factory(seed_proceso_cotizacion["id"])
+    presupuesto_2 = seed_presupuesto_factory(seed_proceso_licitacion["id"])
+    item_1 = seed_item_proceso_factory(seed_proceso_cotizacion["id"], producto_id=seed_producto["id"])
+    item_2 = seed_item_proceso_factory(seed_proceso_licitacion["id"], producto_id=seed_producto["id"])
+    seed_presupuesto_item_factory(presupuesto_1["id"], item_1["id"], producto_id=seed_producto["id"])
+    seed_presupuesto_item_factory(presupuesto_2["id"], item_2["id"], producto_id=seed_producto["id"])
+
+    filas = listar_presupuesto_comercial(service_client, presupuesto_id=presupuesto_1["id"])
+
+    assert {f["presupuesto_id"] for f in filas} == {presupuesto_1["id"]}

@@ -62,3 +62,23 @@ def actualizar_proceso_comercial(
     client: Client, *, proceso_comercial_id: str, campos: dict[str, Any]
 ) -> None:
     client.table("procesos_comerciales").update(campos).eq("id", proceso_comercial_id).execute()
+
+
+def listar_presupuesto_comercial(client: Client, *, presupuesto_id: str) -> list[dict[str, Any]]:
+    return (
+        client.table("v_presupuesto_comercial")
+        .select("*")
+        .eq("presupuesto_id", presupuesto_id)
+        .execute()
+        .data
+    )
+
+
+def listar_presupuesto_revision(client: Client, *, presupuesto_id: str) -> list[dict[str, Any]]:
+    return (
+        client.table("v_presupuesto_revision")
+        .select("*")
+        .eq("presupuesto_id", presupuesto_id)
+        .execute()
+        .data
+    )

@@ -10,6 +10,7 @@ from services.presupuestacion.pricing.service import generar_presupuesto_para_en
 router = APIRouter()
 
 _ROLES_GENERAR_PRESUPUESTO = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
+_ROLES_PRECIOS_ESPECIALES = ("superadmin", "admin", "gerencia", "compras")
 
 
 @router.post("/procesos/{proceso_id}/generar-presupuesto", response_model=ResultadoGenerarPresupuesto)
@@ -37,3 +38,11 @@ def generar_presupuesto_endpoint(
         drogueria_id=proceso_drogueria_id,
         disparado_por=usuario.id,
     )
+
+
+@router.get("/precios-especiales")
+def precios_especiales_endpoint(
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_PRECIOS_ESPECIALES)),
+    user_client: Client = Depends(get_user_client),
+) -> list[dict]:
+    return user_client.table("v_precios_especiales_vigentes").select("*").execute().data

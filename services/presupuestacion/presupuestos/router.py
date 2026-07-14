@@ -4,6 +4,7 @@ from supabase import Client
 from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
+from services.presupuestacion.presupuestos import repository as repo
 from services.presupuestacion.presupuestos.models import AjustarItemRequest, ResultadoPresupuesto
 from services.presupuestacion.presupuestos.service import (
     ajustar_item_para_endpoint,
@@ -16,6 +17,8 @@ router = APIRouter()
 _ROLES_APROBAR = ("superadmin", "admin", "gerencia", "lider_comercial")
 _ROLES_AJUSTAR = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
 _ROLES_PRESENTAR = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
+_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
+_ROLES_VEN_COSTO = ("superadmin", "admin", "gerencia")
 
 
 def _validar_presupuesto_de_la_drogueria(
@@ -52,6 +55,25 @@ def _validar_item_de_la_drogueria(
     item_drogueria_id = resultado.data[0]["drogueria_id"]
     if usuario.rol != "superadmin" and item_drogueria_id != usuario.drogueria_id:
         raise ForbiddenError("El ítem no pertenece a tu droguería")
+
+
+@router.get("/presupuestos/{presupuesto_id}")
+def obtener_presupuesto_endpoint(
+    presupuesto_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    user_client: Client = Depends(get_user_client),
+) -> list[dict]:
+    """comercial/lider_comercial ven v_presupuesto_comercial (sin costo_usado ni
+    detalle_calculo); admin/gerencia/superadmin ven v_presupuesto_revision completa
+    (incluye alerta_mantenimiento) -- matriz de visibilidad del spec."""
+    filas = (
+        repo.listar_presupuesto_revision(user_client, presupuesto_id=presupuesto_id)
+        if usuario.rol in _ROLES_VEN_COSTO
+        else repo.listar_presupuesto_comercial(user_client, presupuesto_id=presupuesto_id)
+    )
+    if not filas:
+        raise NotFoundError("No se encontró el presupuesto")
+    return filas
 
 
 @router.post("/presupuestos/{presupuesto_id}/aprobar", response_model=ResultadoPresupuesto)
