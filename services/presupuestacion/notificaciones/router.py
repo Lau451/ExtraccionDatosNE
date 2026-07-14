@@ -7,13 +7,12 @@ from services.presupuestacion.notificaciones.models import (
     NotificacionPreferenciaUpsert,
 )
 from services.presupuestacion.notificaciones.service import (
-    listar_no_leidas,
-    listar_preferencias,
+    listar_no_leidas_para_endpoint,
+    listar_preferencias_para_endpoint,
     marcar_archivada_para_endpoint,
     marcar_leida_para_endpoint,
-    upsert_preferencia,
+    upsert_preferencia_para_endpoint,
 )
-from services.presupuestacion.core.database import get_service_client
 
 router = APIRouter()
 
@@ -22,7 +21,7 @@ router = APIRouter()
 def listar_no_leidas_endpoint(
     usuario: UsuarioPerfil = Depends(get_current_user),
 ) -> list[NotificacionOut]:
-    return listar_no_leidas(get_service_client(), destinatario_id=usuario.id)
+    return listar_no_leidas_para_endpoint(destinatario_id=usuario.id)
 
 
 @router.patch("/notificaciones/{notificacion_id}/leer", response_model=NotificacionOut)
@@ -43,13 +42,13 @@ def marcar_archivada_endpoint(
 def listar_preferencias_endpoint(
     usuario: UsuarioPerfil = Depends(get_current_user),
 ) -> list[NotificacionPreferenciaOut]:
-    return listar_preferencias(get_service_client(), usuario_id=usuario.id)
+    return listar_preferencias_para_endpoint(usuario_id=usuario.id)
 
 
 @router.put("/notificacion-preferencias", response_model=NotificacionPreferenciaOut)
 def upsert_preferencia_endpoint(
     body: NotificacionPreferenciaUpsert, usuario: UsuarioPerfil = Depends(get_current_user)
 ) -> NotificacionPreferenciaOut:
-    return upsert_preferencia(
-        get_service_client(), usuario_id=usuario.id, drogueria_id=usuario.drogueria_id, body=body
+    return upsert_preferencia_para_endpoint(
+        usuario_id=usuario.id, drogueria_id=usuario.drogueria_id, body=body
     )

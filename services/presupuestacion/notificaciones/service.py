@@ -109,3 +109,23 @@ def marcar_leida_para_endpoint(*, notificacion_id: str, usuario_id: str) -> dict
 
 def marcar_archivada_para_endpoint(*, notificacion_id: str, usuario_id: str) -> dict[str, Any]:
     return marcar_archivada(get_service_client(), notificacion_id=notificacion_id, usuario_id=usuario_id)
+
+
+def listar_no_leidas_para_endpoint(*, destinatario_id: str) -> list[dict[str, Any]]:
+    """Corre con service_role, como ya corría antes de mover esto a un wrapper propio
+    (sin acceso a las policies reales para confirmar por qué user_client no alcanza acá,
+    ver Check #1 pendiente) -- lo que sí cambia es que el router ya no importa
+    get_service_client directamente, mismo criterio que el resto de los módulos."""
+    return listar_no_leidas(get_service_client(), destinatario_id=destinatario_id)
+
+
+def listar_preferencias_para_endpoint(*, usuario_id: str) -> list[dict[str, Any]]:
+    return listar_preferencias(get_service_client(), usuario_id=usuario_id)
+
+
+def upsert_preferencia_para_endpoint(
+    *, usuario_id: str, drogueria_id: str, body: NotificacionPreferenciaUpsert
+) -> dict[str, Any]:
+    return upsert_preferencia(
+        get_service_client(), usuario_id=usuario_id, drogueria_id=drogueria_id, body=body
+    )
