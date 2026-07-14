@@ -15,6 +15,7 @@ from services.presupuestacion.imports.router import router as imports_router
 from services.presupuestacion.matching.router import router as matching_router
 from services.presupuestacion.presupuestos.router import router as presupuestos_router
 from services.presupuestacion.pricing.router import router as pricing_router
+from services.presupuestacion.usuarios.router import router as usuarios_router
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -42,3 +43,4 @@ app.include_router(compras_router, tags=["compras"])
 app.include_router(clientes_router, tags=["clientes"])
 app.include_router(imports_router, tags=["imports"])
 app.include_router(catalogo_router, tags=["catalogo"])
+app.include_router(usuarios_router, tags=["usuarios"])
