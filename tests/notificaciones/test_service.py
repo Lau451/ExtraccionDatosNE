@@ -133,3 +133,82 @@ def test_upsert_preferencia_es_idempotente_por_usuario_tipo_canal(
     coincidencias = [p for p in preferencias if p["tipo"] == "evento_vencido" and p["canal"] == "web"]
     assert len(coincidencias) == 1
     assert coincidencias[0]["habilitada"] is False
+
+
+@pytest.mark.integration
+def test_rls_bloquea_lectura_de_notificaciones_ajenas_aunque_el_codigo_no_filtre(
+    service_client, seed_drogueria, crear_usuario_autenticado, limpiar_notificaciones
+):
+    """No alcanza con que listar_no_leidas() filtre por destinatario_id en Python --
+    esto confirma que si ESE filtro se rompiera (se borrara el .eq de repository.py),
+    RLS solo ya deja pasar cero filas ajenas. Por eso acá NO se llama a
+    listar_no_leidas(): se consulta la tabla directa, sin ningún filtro de
+    destinatario_id, simulando el código roto."""
+    _, cliente_a = crear_usuario_autenticado(rol="comercial", drogueria_id=seed_drogueria["id"])
+    usuario_b, cliente_b = crear_usuario_autenticado(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    notificacion_de_b = crear_notificacion(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        destinatario_id=usuario_b,
+        tipo="sistema",
+        titulo="Solo para B",
+    )
+
+    # cliente_a consulta SIN filtrar por destinatario_id -- si el código de
+    # aplicación fuera la única defensa, esto traería la notificación de B.
+    vistas_por_a = cliente_a.table("notificaciones").select("*").execute().data
+    ids_vistos_por_a = {n["id"] for n in vistas_por_a}
+    assert notificacion_de_b["id"] not in ids_vistos_por_a
+
+    # Confirma que la policy es "solo la propia", no "nadie ve nada": B sí la ve.
+    vistas_por_b = cliente_b.table("notificaciones").select("*").execute().data
+    assert notificacion_de_b["id"] in {n["id"] for n in vistas_por_b}
+
+
+@pytest.mark.integration
+def test_rls_bloquea_update_de_preferencia_ajena_aunque_el_codigo_no_filtre(
+    service_client, seed_drogueria, crear_usuario_autenticado, limpiar_notificaciones
+):
+    """Mismo criterio que el test de lectura, pero sobre UPDATE: sin el .eq("usuario_id", ...)
+    del código, la policy np_upd (usuario_id = auth.uid() OR es_superadmin()) tiene que
+    ser la que bloquee la escritura sobre la fila de otro usuario."""
+    _, cliente_a = crear_usuario_autenticado(rol="comercial", drogueria_id=seed_drogueria["id"])
+    usuario_b, cliente_b = crear_usuario_autenticado(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    preferencia_de_b = upsert_preferencia(
+        service_client,
+        usuario_id=usuario_b,
+        drogueria_id=seed_drogueria["id"],
+        body=NotificacionPreferenciaUpsert(tipo="evento_vencido", canal="web", habilitada=True),
+    )
+
+    # cliente_a intenta actualizar la fila de B por id, SIN filtrar por usuario_id --
+    # si el código fuera la única defensa, esto la deshabilitaría igual.
+    resultado = (
+        cliente_a.table("notificacion_preferencias")
+        .update({"habilitada": False})
+        .eq("id", preferencia_de_b["id"])
+        .execute()
+    )
+    assert resultado.data == []
+
+    fila_real = (
+        service_client.table("notificacion_preferencias")
+        .select("habilitada")
+        .eq("id", preferencia_de_b["id"])
+        .execute()
+        .data[0]
+    )
+    assert fila_real["habilitada"] is True
+
+    # Confirma que la policy discrimina por identidad, no que bloquea todo: B sí
+    # puede actualizar su propia fila por el mismo camino (sin filtrar por usuario_id).
+    resultado_b = (
+        cliente_b.table("notificacion_preferencias")
+        .update({"habilitada": False})
+        .eq("id", preferencia_de_b["id"])
+        .execute()
+    )
+    assert len(resultado_b.data) == 1
+    assert resultado_b.data[0]["habilitada"] is False

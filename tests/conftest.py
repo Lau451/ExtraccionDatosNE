@@ -2,6 +2,7 @@ import secrets
 import uuid
 
 import pytest
+from supabase import Client
 
 from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.database import get_service_client
@@ -139,3 +140,46 @@ def seed_usuario_sistema(service_client):
     service_client.table("usuarios").insert(fila).execute()
     yield {"id": usuario_id, "rol": "sistema"}
     service_client.auth.admin.delete_user(usuario_id)
+
+
+@pytest.fixture
+def crear_usuario_autenticado(service_client):
+    """Factory que crea un usuario real (con password conocida) y devuelve un Client
+    autenticado con su JWT real (anon key + sign_in_with_password), no service_client.
+    Para tests que necesitan ejercitar RLS de verdad -- confirmar que una policy
+    contiene, no solo que el filtro del código de aplicación funciona.
+
+    Es la primera vez en el proyecto que se prueba RLS con un JWT real: hasta ahora
+    todos los tests de integración usaban service_client, que bypasea RLS por
+    completo, así que ninguna policy se había ejercitado de verdad, solo confirmado
+    en el papel contra pg_policies. Nota para retomar (no bloquea nada de hoy): con
+    este fixture disponible, valdría la pena agregar tests de aislamiento
+    cross-tenant real -- confirmar empíricamente que un comercial de una droguería
+    no puede ver/tocar datos de otra droguería, no solo que la policy lo diga."""
+    from supabase import create_client
+
+    creados: list[str] = []
+
+    def _crear(*, rol: str, drogueria_id: str | None) -> tuple[str, Client]:
+        settings = get_settings()
+        email = f"rls-test-{uuid.uuid4()}@seed.local"
+        password = secrets.token_urlsafe(24)
+        auth_response = service_client.auth.admin.create_user(
+            {"email": email, "password": password, "email_confirm": True}
+        )
+        usuario_id = auth_response.user.id
+        creados.append(usuario_id)
+        service_client.table("usuarios").insert(
+            {"id": usuario_id, "drogueria_id": drogueria_id, "rol": rol, "nombre": "RLS test"}
+        ).execute()
+
+        cliente_autenticado = create_client(settings.supabase_url, settings.supabase_anon_key)
+        sesion = cliente_autenticado.auth.sign_in_with_password(
+            {"email": email, "password": password}
+        )
+        cliente_autenticado.postgrest.auth(sesion.session.access_token)
+        return usuario_id, cliente_autenticado
+
+    yield _crear
+    for usuario_id in creados:
+        service_client.auth.admin.delete_user(usuario_id)
