@@ -239,6 +239,18 @@ def presentar_presupuesto(
     repo.actualizar_proceso_comercial(
         client, proceso_comercial_id=proceso["id"], campos={"estado": "presentado"}
     )
+    registrar_cambio(
+        client,
+        entidad="proceso_comercial",
+        entidad_id=proceso["id"],
+        drogueria_id=presupuesto["drogueria_id"],
+        campo="estado",
+        valor_anterior=proceso["estado"],
+        valor_nuevo="presentado",
+        origen="usuario",
+        usuario_id=usuario_id,
+        batch_id=str(uuid.uuid4()),
+    )
 
     return _resultado(presupuesto_actualizado)
 

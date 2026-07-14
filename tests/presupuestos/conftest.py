@@ -2,7 +2,11 @@ import pytest
 
 
 @pytest.fixture
-def seed_proceso_cotizacion(service_client, seed_drogueria):
+def seed_proceso_cotizacion(service_client, seed_drogueria, seed_usuario_sistema):
+    # Depende de seed_usuario_sistema (aunque no lo use en el setup) para garantizar que
+    # el historial_cambios de este proceso -- que puede referenciar a usuario_sistema como
+    # usuario_id si el test llama presentar_presupuesto -- se borre ANTES que el usuario.
+    # Mismo motivo que seed_presupuesto_factory.
     fila = {
         "drogueria_id": seed_drogueria["id"],
         "clase": "cotizacion",
@@ -10,11 +14,18 @@ def seed_proceso_cotizacion(service_client, seed_drogueria):
     }
     proceso = service_client.table("procesos_comerciales").insert(fila).execute().data[0]
     yield proceso
+    # historial_cambios.proceso_comercial_id (fk_hc_proc) no tiene CASCADE -- hay que
+    # borrar el historial antes que el proceso que referencia, ahora que presentar_presupuesto
+    # audita el cambio de estado de procesos_comerciales.
+    service_client.table("historial_cambios").delete().eq(
+        "proceso_comercial_id", proceso["id"]
+    ).execute()
     service_client.table("procesos_comerciales").delete().eq("id", proceso["id"]).execute()
 
 
 @pytest.fixture
-def seed_proceso_licitacion(service_client, seed_drogueria):
+def seed_proceso_licitacion(service_client, seed_drogueria, seed_usuario_sistema):
+    # Ver comentario de seed_proceso_cotizacion.
     fila = {
         "drogueria_id": seed_drogueria["id"],
         "clase": "licitacion",
@@ -22,6 +33,9 @@ def seed_proceso_licitacion(service_client, seed_drogueria):
     }
     proceso = service_client.table("procesos_comerciales").insert(fila).execute().data[0]
     yield proceso
+    service_client.table("historial_cambios").delete().eq(
+        "proceso_comercial_id", proceso["id"]
+    ).execute()
     service_client.table("procesos_comerciales").delete().eq("id", proceso["id"]).execute()
 
 

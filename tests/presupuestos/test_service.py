@@ -468,6 +468,50 @@ def test_presentar_con_stock_insuficiente_no_presenta_y_no_deja_compromisos_parc
 
 
 @pytest.mark.integration
+def test_presentar_registra_historial_del_proceso_comercial(
+    service_client,
+    seed_drogueria,
+    seed_proceso_cotizacion,
+    seed_presupuesto_factory,
+    seed_item_proceso_factory,
+    seed_presupuesto_item_factory,
+    seed_producto,
+    seed_stock_factory,
+    seed_usuario_sistema,
+):
+    seed_stock_factory(seed_producto["id"], disponible="20")
+    presupuesto = seed_presupuesto_factory(
+        seed_proceso_cotizacion["id"],
+        estado="aprobado",
+        aprobado_por=seed_usuario_sistema["id"],
+        aprobado_at="2026-01-01T00:00:00Z",
+    )
+    item = seed_item_proceso_factory(seed_proceso_cotizacion["id"], producto_id=seed_producto["id"])
+    seed_presupuesto_item_factory(
+        presupuesto["id"],
+        item["id"],
+        producto_id=seed_producto["id"],
+        precio_unitario="130.00",
+        cantidad_ofertada="8",
+        excluido=False,
+    )
+
+    presentar_presupuesto(
+        service_client, presupuesto_id=presupuesto["id"], usuario_id=seed_usuario_sistema["id"]
+    )
+
+    historial = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("proceso_comercial_id", seed_proceso_cotizacion["id"])
+        .eq("campo", "estado")
+        .execute()
+        .data
+    )
+    assert any(h["valor_nuevo"] == "presentado" for h in historial)
+
+
+@pytest.mark.integration
 def test_v_presupuesto_comercial_no_expone_costo(
     service_client,
     seed_drogueria,
