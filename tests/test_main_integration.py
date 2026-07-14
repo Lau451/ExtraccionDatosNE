@@ -24,6 +24,10 @@ from fastapi.testclient import TestClient
 import services.extraccion.supabase_client as sc_module
 from services.extraccion.main import app
 
+# Sin dependency_override deliberadamente: estos tests llaman a /procesar sin
+# Authorization, igual que el HTML viejo -- ejercitan el camino anónimo real
+# (usuario_id=None) en vez de simular un login que ese flujo nunca tuvo.
+
 
 # ---------------------------------------------------------------------------
 # Fixtures globales

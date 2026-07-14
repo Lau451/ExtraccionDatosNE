@@ -17,6 +17,9 @@ from fastapi.testclient import TestClient
 
 from services.extraccion.main import app
 
+# Sin dependency_override deliberadamente: estos tests llaman a /procesar sin
+# Authorization, igual que el HTML viejo -- ejercitan el camino anónimo real.
+
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 @pytest.fixture

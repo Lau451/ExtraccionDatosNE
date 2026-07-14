@@ -71,6 +71,26 @@ proveedor(es) por canal (ej. Resend/SendGrid para email, alguna API de WhatsApp 
 y un worker que tome las entregas pendientes y las procese, análogo al de
 automatizaciones.
 
+## De la transición al frontend nuevo
+
+### Identificación opcional en `extraccion/` — pasa a obligatoria cuando se retire el HTML viejo
+
+`services/extraccion/auth.py` (`get_usuario_id_actual`) identifica al usuario real
+cuando `POST /procesar` recibe un JWT válido (para `processing_sessions.subido_por`),
+pero es **opcional**, no un gate: sin header `Authorization`, la request sigue
+funcionando exactamente igual que antes (sin atribución), porque el HTML viejo
+(`templates/`, `static/main.js`) nunca mandó ni va a mandar un token — no tiene ningún
+concepto de sesión, y corre en un servidor interno sin exposición a internet, sin
+cuentas creadas todavía para nadie. El resto de `extraccion/` (`licitaciones.py`,
+`extraction_results.py`, `clientes.py`, `/api/documentos*`) sigue sin ningún tipo de
+identificación, por la misma razón.
+
+Cuando el frontend nuevo reemplace al HTML viejo (y con él, el onboarding real de
+cuentas para la droguería), esto debería pasar a ser obligatorio en todos esos
+endpoints — no antes, porque exigirlo ahora requeriría enseñarle a usar login a gente
+que va a usar un sistema que está por descontinuarse, para repetir el mismo onboarding
+después en el sistema que lo reemplaza.
+
 ## De seguridad / testing
 
 ### Allowlist de campos en `historial_cambios`

@@ -8,6 +8,7 @@ RUN python -m pip install --upgrade pip
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY services/extraccion ./services/extraccion
+COPY services/shared ./services/shared
 COPY docs ./docs
 
 # Directorio de salida de archivos

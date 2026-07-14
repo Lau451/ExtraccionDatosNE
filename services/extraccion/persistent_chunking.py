@@ -28,6 +28,7 @@ async def crear_sesion(
     total_chunks: int,
     doc_type: str,
     formato_usado_id: str | None = None,
+    subido_por: str | None = None,
 ) -> UUID | None:
     """
     Crea un registro en processing_sessions con status='running'.
@@ -41,6 +42,8 @@ async def crear_sesion(
         doc_type:     Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
         formato_usado_id: id de cliente_formato_documentos usado para enriquecer el
                       prompt (§8), si se resolvió uno. Trazabilidad.
+        subido_por:   usuario_id (auth.uid()) de quien subió el documento, resuelto
+                      del JWT verificado en el endpoint. None si no se pudo identificar.
 
     Returns:
         UUID de la sesión creada, o None si la persistencia no está disponible.
@@ -61,6 +64,7 @@ async def crear_sesion(
         "total_chunks": total_chunks,
         "status": "running",
         "formato_usado_id": formato_usado_id,
+        "subido_por": subido_por,
     }
 
     try:

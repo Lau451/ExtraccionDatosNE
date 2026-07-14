@@ -3,7 +3,8 @@ import csv
 import io
 import logging
 import os
-from fastapi import BackgroundTasks, FastAPI, Form, UploadFile, File, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, UploadFile, File, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlencode
 
+from services.extraccion.auth import get_usuario_id_actual
 from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
 from services.extraccion.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
 from services.extraccion.routers.extraction_results import router as extraction_results_router
@@ -44,6 +46,19 @@ app = FastAPI(title="Extractor de Documentos")
 app.include_router(licitaciones_router)
 app.include_router(extraction_results_router)
 app.include_router(clientes_router)
+
+_cors_origins = [
+    origen.strip()
+    for origen in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+    if origen.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
@@ -138,6 +153,7 @@ async def procesar(
     tipo: str = Form(""),
     licitacion_id: str = Form(""),
     cliente_id: str = Form(""),
+    usuario_id: str | None = Depends(get_usuario_id_actual),
 ):
     # SC-25: fail-fast antes de cualquier I/O o invocación a Gemini
     licitacion_id_validado = await validar_licitacion_id(licitacion_id)
@@ -200,6 +216,7 @@ async def procesar(
         total_chunks=0,  # placeholder; se actualiza al procesar chunks
         doc_type=doc_type,
         formato_usado_id=formato_id,
+        subido_por=usuario_id,
     )
 
     # ======================
