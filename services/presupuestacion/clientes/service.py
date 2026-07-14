@@ -3,7 +3,14 @@ from typing import Any
 from supabase import Client
 
 from services.presupuestacion.clientes import repository as repo
-from services.presupuestacion.clientes.models import ClienteFormatoDocumentoUpsert, ClienteObservacionCreate
+from services.presupuestacion.clientes.models import (
+    ClienteContactoCreate,
+    ClienteContactoUpdate,
+    ClienteCreate,
+    ClienteFormatoDocumentoUpsert,
+    ClienteObservacionCreate,
+    ClienteUpdate,
+)
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
 
@@ -87,6 +94,115 @@ def crear_observacion(
 
 def listar_observaciones(client: Client, *, cliente_id: str) -> list[dict[str, Any]]:
     return repo.listar_observaciones(client, cliente_id=cliente_id)
+
+
+def crear_cliente(
+    client: Client, *, drogueria_id: str, body: ClienteCreate, usuario_id: str
+) -> dict[str, Any]:
+    return repo.crear_cliente(
+        client,
+        {
+            "drogueria_id": drogueria_id,
+            "nombre": body.nombre,
+            "tipo": body.tipo,
+            "direccion": body.direccion,
+            "ciudad": body.ciudad,
+            "provincia": body.provincia,
+            "codigo_postal": body.codigo_postal,
+            "plazo_pago_dias": body.plazo_pago_dias,
+            "condiciones_pago": body.condiciones_pago,
+            "created_by": usuario_id,
+            "updated_by": usuario_id,
+        },
+    )
+
+
+def listar_clientes(
+    client: Client, *, drogueria_id: str, activo: bool | None = None
+) -> list[dict[str, Any]]:
+    return repo.listar_clientes(client, drogueria_id=drogueria_id, activo=activo)
+
+
+def obtener_cliente(client: Client, *, cliente_id: str, drogueria_id: str) -> dict[str, Any]:
+    cliente = repo.obtener_cliente(client, cliente_id=cliente_id)
+    if cliente is None or cliente["drogueria_id"] != drogueria_id:
+        raise NotFoundError("No se encontró el cliente")
+    return cliente
+
+
+def actualizar_cliente(
+    client: Client, *, cliente_id: str, drogueria_id: str, body: ClienteUpdate, usuario_id: str
+) -> dict[str, Any]:
+    obtener_cliente(client, cliente_id=cliente_id, drogueria_id=drogueria_id)
+    campos = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    campos["updated_by"] = usuario_id
+    return repo.actualizar_cliente(client, cliente_id=cliente_id, campos=campos)
+
+
+def eliminar_cliente(client: Client, *, cliente_id: str, drogueria_id: str, usuario_id: str) -> None:
+    obtener_cliente(client, cliente_id=cliente_id, drogueria_id=drogueria_id)
+    repo.soft_delete_cliente(client, cliente_id=cliente_id, usuario_id=usuario_id)
+
+
+def crear_contacto(
+    client: Client, *, cliente_id: str, drogueria_id: str, body: ClienteContactoCreate
+) -> dict[str, Any]:
+    _validar_cliente_de_la_drogueria(client, cliente_id=cliente_id, drogueria_id=drogueria_id)
+    return repo.crear_contacto(
+        client,
+        {
+            "cliente_id": cliente_id,
+            "drogueria_id": drogueria_id,
+            "nombre": body.nombre,
+            "cargo": body.cargo,
+            "email": body.email,
+            "telefono": body.telefono,
+            "es_principal": body.es_principal,
+            "notas": body.notas,
+        },
+    )
+
+
+def listar_contactos(client: Client, *, cliente_id: str) -> list[dict[str, Any]]:
+    return repo.listar_contactos(client, cliente_id=cliente_id)
+
+
+def actualizar_contacto(
+    client: Client, *, cliente_id: str, contacto_id: str, body: ClienteContactoUpdate
+) -> dict[str, Any]:
+    contacto = repo.buscar_contacto(client, contacto_id=contacto_id)
+    if contacto is None or contacto["cliente_id"] != cliente_id:
+        raise NotFoundError("No se encontró el contacto")
+    campos = body.model_dump(exclude_unset=True)
+    return repo.actualizar_contacto(client, contacto_id=contacto_id, campos=campos)
+
+
+def crear_cliente_para_endpoint(*, drogueria_id: str, body: ClienteCreate, usuario_id: str) -> dict[str, Any]:
+    return crear_cliente(get_service_client(), drogueria_id=drogueria_id, body=body, usuario_id=usuario_id)
+
+
+def actualizar_cliente_para_endpoint(
+    *, cliente_id: str, drogueria_id: str, body: ClienteUpdate, usuario_id: str
+) -> dict[str, Any]:
+    return actualizar_cliente(
+        get_service_client(), cliente_id=cliente_id, drogueria_id=drogueria_id, body=body, usuario_id=usuario_id
+    )
+
+
+def eliminar_cliente_para_endpoint(*, cliente_id: str, drogueria_id: str, usuario_id: str) -> None:
+    eliminar_cliente(get_service_client(), cliente_id=cliente_id, drogueria_id=drogueria_id, usuario_id=usuario_id)
+
+
+def crear_contacto_para_endpoint(
+    *, cliente_id: str, drogueria_id: str, body: ClienteContactoCreate
+) -> dict[str, Any]:
+    return crear_contacto(get_service_client(), cliente_id=cliente_id, drogueria_id=drogueria_id, body=body)
+
+
+def actualizar_contacto_para_endpoint(
+    *, cliente_id: str, contacto_id: str, body: ClienteContactoUpdate
+) -> dict[str, Any]:
+    return actualizar_contacto(get_service_client(), cliente_id=cliente_id, contacto_id=contacto_id, body=body)
 
 
 def upsert_formato_documento_para_endpoint(

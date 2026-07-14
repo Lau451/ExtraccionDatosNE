@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from services.presupuestacion.catalogo.router import router as catalogo_router
 from services.presupuestacion.clientes.router import router as clientes_router
 from services.presupuestacion.comparativas.router import router as comparativas_router
 from services.presupuestacion.compras.router import router as compras_router
@@ -40,3 +41,4 @@ app.include_router(comparativas_router, tags=["comparativas"])
 app.include_router(compras_router, tags=["compras"])
 app.include_router(clientes_router, tags=["clientes"])
 app.include_router(imports_router, tags=["imports"])
+app.include_router(catalogo_router, tags=["catalogo"])
