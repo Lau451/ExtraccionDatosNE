@@ -1,10 +1,12 @@
 import csv
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
 from supabase import Client
 
+from services.presupuestacion.core.audit import registrar_cambio, registrar_evento_ciclo_vida
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
 from services.presupuestacion.core.texto import normalizar_descripcion
@@ -138,6 +140,7 @@ def _materializar_comparativa(
     extraction: dict[str, Any],
     proceso_comercial_id: str,
     drogueria_id: str,
+    usuario_id: str,
 ) -> tuple[str, int, bool]:
     filas_csv = _leer_filas_csv(extraction["csv_disk_path"])
 
@@ -167,9 +170,30 @@ def _materializar_comparativa(
         fila_comparativa["motivo_version"] = "nueva extracción validada"
 
     comparativa = repo.crear_comparativa(client, fila_comparativa)
+    registrar_evento_ciclo_vida(
+        client,
+        entidad="comparativa",
+        entidad_id=comparativa["id"],
+        drogueria_id=drogueria_id,
+        tipo_cambio="creacion",
+        origen="usuario",
+        usuario_id=usuario_id,
+    )
 
     if reemplazo:
         repo.invalidar_comparativa(client, comparativa_id=vigente_previa["id"])
+        registrar_cambio(
+            client,
+            entidad="comparativa",
+            entidad_id=vigente_previa["id"],
+            drogueria_id=drogueria_id,
+            campo="es_vigente",
+            valor_anterior=True,
+            valor_nuevo=False,
+            origen="usuario",
+            usuario_id=usuario_id,
+            batch_id=str(uuid.uuid4()),
+        )
 
     # es_drogueria_propia NO se auto-detecta: el texto de "proveedor" no trae ningún
     # marcador confiable y un falso positivo dispara compras sobre una premisa falsa
@@ -257,6 +281,7 @@ def validar_extraccion(
             extraction=extraction,
             proceso_comercial_id=proceso_comercial_id_resuelto,
             drogueria_id=extraction["drogueria_id"],
+            usuario_id=usuario_id,
         )
     else:
         raise ValidationError(

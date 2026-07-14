@@ -95,6 +95,12 @@ def seed_extraction_result_factory(
             service_client.table("ofertas_items").delete().eq(
                 "comparativa_id", comparativa["id"]
             ).execute()
+            # historial_cambios.comparativa_id (fk_hc_comp) no tiene CASCADE -- hay que
+            # borrar el historial antes que la comparativa que referencia, ahora que crear
+            # y reemplazar una comparativa generan filas de auditoría.
+            service_client.table("historial_cambios").delete().eq(
+                "comparativa_id", comparativa["id"]
+            ).execute()
         for comparativa in comparativas:
             service_client.table("comparativas").delete().eq("id", comparativa["id"]).execute()
 

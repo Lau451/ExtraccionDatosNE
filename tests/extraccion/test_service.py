@@ -373,3 +373,75 @@ def test_validar_comparativa_segunda_vez_versiona_y_notifica(
         service_client.table("notificaciones").delete().eq("destinatario_id", admin_id).execute()
         service_client.table("usuarios").delete().eq("id", admin_id).execute()
         service_client.auth.admin.delete_user(admin_id)
+
+
+@pytest.mark.integration
+def test_validar_comparativa_registra_historial_de_creacion(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    extraction = seed_extraction_result_factory(
+        "comparativa",
+        filas=[{"renglon": "1", "proveedor": "Proveedor A", "marca": "", "precio": "10.00", "cliente": "X"}],
+        columnas=["renglon", "proveedor", "marca", "precio", "cliente"],
+    )
+
+    resultado = validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    historial = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("comparativa_id", resultado.comparativa_id)
+        .execute()
+        .data
+    )
+    assert len(historial) == 1
+    assert historial[0]["tipo_cambio"] == "creacion"
+    assert historial[0]["usuario_id"] == seed_usuario_sistema["id"]
+
+
+@pytest.mark.integration
+def test_validar_comparativa_reemplazo_registra_historial_de_invalidacion(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    extraction_1 = seed_extraction_result_factory(
+        "comparativa",
+        filas=[{"renglon": "1", "proveedor": "Proveedor A", "marca": "", "precio": "10.00", "cliente": "X"}],
+        columnas=["renglon", "proveedor", "marca", "precio", "cliente"],
+    )
+    resultado_1 = validar_extraccion(
+        service_client,
+        extraction_id=extraction_1["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    extraction_2 = seed_extraction_result_factory(
+        "comparativa",
+        filas=[{"renglon": "1", "proveedor": "Proveedor A", "marca": "", "precio": "9.00", "cliente": "X"}],
+        columnas=["renglon", "proveedor", "marca", "precio", "cliente"],
+    )
+    validar_extraccion(
+        service_client,
+        extraction_id=extraction_2["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    historial_vieja = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("comparativa_id", resultado_1.comparativa_id)
+        .eq("campo", "es_vigente")
+        .execute()
+        .data
+    )
+    assert len(historial_vieja) == 1
+    assert historial_vieja[0]["valor_anterior"] == "true"
+    assert historial_vieja[0]["valor_nuevo"] == "false"
