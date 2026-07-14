@@ -9,6 +9,11 @@ Variables de entorno requeridas:
   SUPABASE_URL             — URL del proyecto (ej: https://xyz.supabase.co)
   SUPABASE_SERVICE_KEY     — Service role key (nunca anon; necesita bypassear RLS)
   ENABLE_RESULT_PERSISTENCE — "true" / "false" (default: "true")
+
+Variable de entorno opcional:
+  DROGUERIA_ID — id de la droguería que sirve esta app. Si no está seteada, se
+  resuelve con un fallback no determinístico (ver resolver_drogueria_id_unica);
+  configurarla es obligatorio apenas exista más de una droguería en la base.
 """
 
 import logging
@@ -108,12 +113,32 @@ def resolver_drogueria_id_unica(client: "Client") -> "str | None":
     donde drogueria_id es NOT NULL pero esta app no tiene ese concepto en su
     propio dominio.
 
-    Retorna None si la consulta falla (el llamador decide si eso es fatal).
+    Prioridad: variable de entorno DROGUERIA_ID si está configurada (determinística,
+    sin ambigüedad posible). Si no está seteada, hace fallback a la primera fila de
+    `droguerias` (SELECT ... LIMIT 1 sin filtro) — válido HOY porque esta base tiene
+    una sola droguería, pero deja de ser seguro apenas se agregue una segunda: sin
+    ORDER BY, Postgres puede devolver cualquiera de las dos de forma no determinística,
+    y el resultado se cachea para toda la vida del proceso. El schema de
+    presupuestacion/ es explícitamente multi-tenant (drogueria_id + RLS en todas las
+    tablas), así que agregar una segunda droguería a esta misma base es un escenario
+    real, no hipotético — configurar DROGUERIA_ID elimina el riesgo por completo.
+
+    Retorna None si no se pudo resolver de ninguna forma (el llamador decide si eso
+    es fatal).
     """
     global _drogueria_id_cache
     if _drogueria_id_cache is not None:
         return _drogueria_id_cache
 
+    env_id = os.getenv("DROGUERIA_ID", "").strip()
+    if env_id:
+        _drogueria_id_cache = env_id
+        return _drogueria_id_cache
+
+    logger.warning(
+        "resolver_drogueria_id_unica: DROGUERIA_ID no configurada — usando fallback "
+        "SELECT...LIMIT 1 sin filtro (no determinístico si hay más de una droguería)."
+    )
     try:
         respuesta = client.table("droguerias").select("id").limit(1).execute()
         if respuesta.data:

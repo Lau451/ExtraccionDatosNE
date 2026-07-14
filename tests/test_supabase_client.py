@@ -160,9 +160,23 @@ class TestSingleton:
 
 class TestResolverDrogueriaIdUnica:
     """Tests para resolver_drogueria_id_unica() — cache en proceso del id de la
-    (única) droguería que sirve esta app."""
+    droguería que sirve esta app, con DROGUERIA_ID como fuente determinística y
+    fallback a SELECT...LIMIT 1 (sin filtro) si no está configurada."""
 
-    def test_resuelve_y_cachea(self, mocker):
+    def test_usa_droguria_id_de_env_sin_consultar_la_tabla(self, monkeypatch):
+        """Regresión: si DROGUERIA_ID está seteada, NUNCA debe consultar
+        droguerias — la variable de entorno es la única fuente de verdad, sin la
+        ambigüedad de un LIMIT 1 no determinístico."""
+        monkeypatch.setenv("DROGUERIA_ID", "drogueria-de-env")
+        mock_client = MagicMock()
+
+        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+
+        assert resultado == "drogueria-de-env"
+        mock_client.table.assert_not_called()
+
+    def test_resuelve_y_cachea_via_fallback_sin_env(self, monkeypatch):
+        monkeypatch.delenv("DROGUERIA_ID", raising=False)
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
             {"id": "drogueria-123"}
@@ -180,7 +194,8 @@ class TestResolverDrogueriaIdUnica:
         assert segundo == "drogueria-123"
         mock_client.table.assert_not_called()
 
-    def test_sin_filas_retorna_none(self, mocker):
+    def test_sin_filas_retorna_none(self, monkeypatch):
+        monkeypatch.delenv("DROGUERIA_ID", raising=False)
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
 
@@ -188,7 +203,8 @@ class TestResolverDrogueriaIdUnica:
 
         assert resultado is None
 
-    def test_excepcion_retorna_none_sin_propagar(self, mocker):
+    def test_excepcion_retorna_none_sin_propagar(self, monkeypatch):
+        monkeypatch.delenv("DROGUERIA_ID", raising=False)
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.limit.return_value.execute.side_effect = (
             RuntimeError("DB error simulado")
@@ -198,7 +214,8 @@ class TestResolverDrogueriaIdUnica:
 
         assert resultado is None
 
-    def test_reset_client_for_testing_limpia_el_cache(self, mocker):
+    def test_reset_client_for_testing_limpia_el_cache(self, monkeypatch):
+        monkeypatch.delenv("DROGUERIA_ID", raising=False)
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
             {"id": "drogueria-abc"}
