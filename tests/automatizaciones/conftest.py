@@ -12,4 +12,7 @@ def limpiar_automatizaciones(service_client, seed_drogueria):
     service_client.table("reglas_automatizacion").delete().eq("drogueria_id", drog_id).execute()
     service_client.table("notificacion_entregas").delete().eq("drogueria_id", drog_id).execute()
     service_client.table("notificaciones").delete().eq("drogueria_id", drog_id).execute()
+    # historial_cambios.evento_id (fk_hc_ev) no tiene CASCADE -- crear_evento vía
+    # disparar_reglas también audita, igual que el resto de eventos/service.py.
+    service_client.table("historial_cambios").delete().eq("drogueria_id", drog_id).execute()
     service_client.table("eventos").delete().eq("drogueria_id", drog_id).execute()

@@ -233,6 +233,102 @@ def test_generar_instancias_recurrentes_materializa_y_recalcula(
 
 
 @pytest.mark.integration
+def test_crear_evento_registra_historial_de_creacion(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_eventos
+):
+    evento = crear_evento(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=EventoCreate(tipo="llamada", titulo="Con auditoría"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    historial = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("evento_id", evento["id"])
+        .execute()
+        .data
+    )
+    assert len(historial) == 1
+    assert historial[0]["tipo_cambio"] == "creacion"
+    assert historial[0]["usuario_id"] == seed_usuario_sistema["id"]
+
+
+@pytest.mark.integration
+def test_completar_evento_registra_historial_propio_y_del_dependiente(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_eventos
+):
+    previo = crear_evento(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=EventoCreate(tipo="compra", titulo="Generar OC"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    dependiente = crear_evento(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=EventoCreate(tipo="recepcion", titulo="Recibir mercadería", depende_de_id=previo["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    completar_evento(
+        service_client, evento_id=previo["id"], drogueria_id=seed_drogueria["id"],
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    historial_previo = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("evento_id", previo["id"])
+        .eq("campo", "estado")
+        .execute()
+        .data
+    )
+    assert any(h["valor_nuevo"] == "completado" for h in historial_previo)
+
+    historial_dependiente = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("evento_id", dependiente["id"])
+        .eq("campo", "estado")
+        .execute()
+        .data
+    )
+    assert any(
+        h["valor_anterior"] == "bloqueado" and h["valor_nuevo"] == "pendiente"
+        for h in historial_dependiente
+    )
+
+
+@pytest.mark.integration
+def test_eliminar_evento_registra_historial_de_eliminacion(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_eventos
+):
+    evento = crear_evento(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=EventoCreate(tipo="llamada", titulo="A borrar"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    eliminar_evento(
+        service_client, evento_id=evento["id"], drogueria_id=seed_drogueria["id"],
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    historial = (
+        service_client.table("historial_cambios")
+        .select("*")
+        .eq("evento_id", evento["id"])
+        .eq("tipo_cambio", "eliminacion")
+        .execute()
+        .data
+    )
+    assert len(historial) == 1
+
+
+@pytest.mark.integration
 def test_generar_instancias_recurrentes_desactiva_al_superar_fecha_fin(
     service_client, seed_drogueria, seed_usuario_sistema, limpiar_eventos
 ):

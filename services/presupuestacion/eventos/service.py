@@ -1,9 +1,11 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from dateutil.rrule import rrulestr
 from supabase import Client
 
+from services.presupuestacion.core.audit import registrar_cambio, registrar_cambios, registrar_evento_ciclo_vida
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
 from services.presupuestacion.eventos import repository as repo
@@ -12,12 +14,29 @@ from services.presupuestacion.eventos.models import (
     EventoRecurrenteCreate,
     EventoRecurrenteUpdate,
     EventoUpdate,
+    OrigenEvento,
 )
+
+# eventos.origen usa 'automatico'; historial_cambios.origen usa 'automatizacion' (mismo
+# concepto, vocabulario distinto -- ver core/audit.py OrigenCambio). dict[OrigenEvento, str]
+# en vez de dict[str, str] para que agregar un valor a OrigenEvento sin agregarlo acá
+# rompa el chequeo de tipos, no falle en silencio recién en runtime con un KeyError.
+_ORIGEN_EVENTO_A_ORIGEN_CAMBIO: dict[OrigenEvento, str] = {
+    "usuario": "usuario",
+    "ia": "ia",
+    "sistema": "sistema",
+    "automatico": "automatizacion",
+}
 
 # -- eventos -----------------------------------------------------------------
 
 def crear_evento(
-    client: Client, *, drogueria_id: str, body: EventoCreate, usuario_id: str, origen: str = "usuario"
+    client: Client,
+    *,
+    drogueria_id: str,
+    body: EventoCreate,
+    usuario_id: str,
+    origen: OrigenEvento = "usuario",
 ) -> dict[str, Any]:
     estado = "pendiente"
     if body.depende_de_id is not None:
@@ -27,7 +46,7 @@ def crear_evento(
         if dependencia["estado"] != "completado":
             estado = "bloqueado"
 
-    return repo.crear_evento(
+    evento = repo.crear_evento(
         client,
         {
             "drogueria_id": drogueria_id,
@@ -51,6 +70,16 @@ def crear_evento(
             "updated_by": usuario_id,
         },
     )
+    registrar_evento_ciclo_vida(
+        client,
+        entidad="evento",
+        entidad_id=evento["id"],
+        drogueria_id=drogueria_id,
+        tipo_cambio="creacion",
+        origen=_ORIGEN_EVENTO_A_ORIGEN_CAMBIO[origen],
+        usuario_id=usuario_id,
+    )
+    return evento
 
 
 def obtener_evento(client: Client, *, evento_id: str, drogueria_id: str) -> dict[str, Any]:
@@ -80,17 +109,38 @@ def listar_eventos(
 def actualizar_evento(
     client: Client, *, evento_id: str, drogueria_id: str, body: EventoUpdate, usuario_id: str
 ) -> dict[str, Any]:
-    obtener_evento(client, evento_id=evento_id, drogueria_id=drogueria_id)
+    evento = obtener_evento(client, evento_id=evento_id, drogueria_id=drogueria_id)
     campos = body.model_dump(exclude_unset=True)
     for campo in ("fecha_programada", "fecha_limite"):
         if campo in campos and campos[campo] is not None:
             campos[campo] = campos[campo].isoformat()
+
+    cambios_reales = {
+        campo: (evento.get(campo), nuevo)
+        for campo, nuevo in campos.items()
+        if evento.get(campo) != nuevo
+    }
+
     campos["updated_by"] = usuario_id
-    return repo.actualizar_evento(client, evento_id=evento_id, campos=campos)
+    evento_actualizado = repo.actualizar_evento(client, evento_id=evento_id, campos=campos)
+
+    if cambios_reales:
+        registrar_cambios(
+            client,
+            entidad="evento",
+            entidad_id=evento_id,
+            drogueria_id=drogueria_id,
+            cambios=cambios_reales,
+            origen="usuario",
+            usuario_id=usuario_id,
+        )
+
+    return evento_actualizado
 
 
 def completar_evento(client: Client, *, evento_id: str, drogueria_id: str, usuario_id: str) -> dict[str, Any]:
-    obtener_evento(client, evento_id=evento_id, drogueria_id=drogueria_id)
+    evento = obtener_evento(client, evento_id=evento_id, drogueria_id=drogueria_id)
+    estado_anterior = evento["estado"]
     actualizado = repo.actualizar_evento(
         client,
         evento_id=evento_id,
@@ -100,10 +150,34 @@ def completar_evento(client: Client, *, evento_id: str, drogueria_id: str, usuar
             "updated_by": usuario_id,
         },
     )
+    registrar_cambio(
+        client,
+        entidad="evento",
+        entidad_id=evento_id,
+        drogueria_id=drogueria_id,
+        campo="estado",
+        valor_anterior=estado_anterior,
+        valor_nuevo="completado",
+        origen="usuario",
+        usuario_id=usuario_id,
+        batch_id=str(uuid.uuid4()),
+    )
 
     for bloqueado in repo.listar_bloqueados_por_dependencia(client, depende_de_id=evento_id):
         repo.actualizar_evento(
             client, evento_id=bloqueado["id"], campos={"estado": "pendiente", "updated_by": usuario_id}
+        )
+        registrar_cambio(
+            client,
+            entidad="evento",
+            entidad_id=bloqueado["id"],
+            drogueria_id=drogueria_id,
+            campo="estado",
+            valor_anterior="bloqueado",
+            valor_nuevo="pendiente",
+            origen="usuario",
+            usuario_id=usuario_id,
+            batch_id=str(uuid.uuid4()),
         )
 
     return actualizado
@@ -112,6 +186,15 @@ def completar_evento(client: Client, *, evento_id: str, drogueria_id: str, usuar
 def eliminar_evento(client: Client, *, evento_id: str, drogueria_id: str, usuario_id: str) -> None:
     obtener_evento(client, evento_id=evento_id, drogueria_id=drogueria_id)
     repo.soft_delete_evento(client, evento_id=evento_id, usuario_id=usuario_id)
+    registrar_evento_ciclo_vida(
+        client,
+        entidad="evento",
+        entidad_id=evento_id,
+        drogueria_id=drogueria_id,
+        tipo_cambio="eliminacion",
+        origen="usuario",
+        usuario_id=usuario_id,
+    )
 
 
 def obtener_bloqueo(client: Client, *, evento_id: str, drogueria_id: str) -> dict[str, Any]:
@@ -236,7 +319,7 @@ def generar_instancias_recurrentes(client: Client, *, usuario_scheduler_id: str)
     de fecha_fin, desactiva la plantilla en vez de seguir generando."""
     generadas = 0
     for plantilla in repo.listar_recurrentes_a_ejecutar(client):
-        repo.crear_evento(
+        evento = repo.crear_evento(
             client,
             {
                 "drogueria_id": plantilla["drogueria_id"],
@@ -255,6 +338,15 @@ def generar_instancias_recurrentes(client: Client, *, usuario_scheduler_id: str)
                 "created_by": usuario_scheduler_id,
                 "updated_by": usuario_scheduler_id,
             },
+        )
+        registrar_evento_ciclo_vida(
+            client,
+            entidad="evento",
+            entidad_id=evento["id"],
+            drogueria_id=plantilla["drogueria_id"],
+            tipo_cambio="creacion",
+            origen="sistema",
+            usuario_id=usuario_scheduler_id,
         )
         generadas += 1
 
