@@ -143,7 +143,15 @@ def disparar_reglas(
 ) -> list[dict[str, Any]]:
     """Busca reglas activas que matcheen entidad_objetivo+evento_disparador, evalúa
     su condición y ejecuta (inmediato) o encola (cola) la acción. Devuelve las
-    acciones_ejecutadas creadas/actualizadas."""
+    acciones_ejecutadas creadas/actualizadas.
+
+    Nota de alcance: esta función y `procesar_acciones_pendientes()` están completas y
+    testeadas, pero HOY nada en el código las llama fuera de los tests -- ningún flujo de
+    negocio (confirmar una OC, adjudicar una licitación, etc.) dispara `disparar_reglas()`,
+    y no existe un worker/cron real que corra `procesar_acciones_pendientes()` ni el
+    scheduler de `eventos.generar_instancias_recurrentes()` periódicamente. Es exactamente
+    el "motor mínimo, sin conectar a los eventos de negocio todavía" que pedía el spec para
+    esta ronda -- conectarlo es la próxima ronda, no una omisión de esta."""
     resultados = []
     for regla in repo.reglas_activas_para(
         client, drogueria_id=drogueria_id, entidad_objetivo=entidad_objetivo, evento_disparador=evento_disparador

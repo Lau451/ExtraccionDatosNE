@@ -62,6 +62,12 @@ def invalidar_alias(client: Client, *, alias_id: str) -> None:
     client.table("cliente_producto_alias").update({"vigente": False}).eq("id", alias_id).execute()
 
 
+# proveedor_producto_alias (espejo por proveedor de cliente_producto_alias, §2 del spec)
+# no tiene ningún código propio todavía -- ni lectura ni escritura. Scope futuro, igual
+# que orden_compra/compras vs. comparativas en su momento: no bloquea el cierre de esta
+# ronda porque nada del pipeline actual depende de esa tabla.
+
+
 def crear_alias(
     client: Client,
     *,

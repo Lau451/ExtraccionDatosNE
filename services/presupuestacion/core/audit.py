@@ -41,6 +41,13 @@ def registrar_cambio(
     usuario_id: str,
     batch_id: str,
 ) -> None:
+    # Riesgo latente (no explotado hoy): este módulo no tiene un allowlist de qué
+    # `campo` puede auditarse por entidad. GET /historial/{entidad}/{id} es legible por
+    # comercial/lider_comercial (matriz de visibilidad del spec), y hoy es seguro porque
+    # ningún call site pasa nunca costo_usado/origen_costo/detalle_calculo como campo de
+    # presupuesto -- pero nada en este helper lo impediría si algún call site futuro lo
+    # hiciera. Si se agrega auditoría de un campo sensible, filtrar en el router de
+    # auditoria/ o agregar un allowlist acá antes de exponerlo.
     fila = {
         "drogueria_id": drogueria_id,
         _COLUMNA_FK_POR_ENTIDAD[entidad]: entidad_id,
