@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import clsx from 'clsx'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useAuth } from '@/features/auth/AuthContext'
 
 interface NavItem {
   label: string
@@ -19,6 +19,14 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 export function Sidebar() {
+  const { perfil, signOut } = useAuth()
+  const navigate = useNavigate()
+
+  async function handleLogout() {
+    await signOut()
+    navigate({ to: '/login' })
+  }
+
   return (
     <aside className="flex w-64 shrink-0 flex-col bg-navy text-slate-100">
       <div className="px-6 py-6 text-lg font-semibold tracking-tight">Droguería Nueva Era</div>
@@ -46,8 +54,11 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className={clsx('border-t border-white/10 px-6 py-4 text-xs text-slate-400')}>
-        Sesión sin autenticación (fase de transición)
+      <div className="border-t border-white/10 px-6 py-4 text-xs text-slate-400">
+        <p className="mb-2 truncate text-slate-300">{perfil?.nombre ?? 'Cargando…'}</p>
+        <button type="button" onClick={handleLogout} className="hover:text-white">
+          Cerrar sesión
+        </button>
       </div>
     </aside>
   )
