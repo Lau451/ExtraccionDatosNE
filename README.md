@@ -91,21 +91,24 @@ SUPABASE_KEY=tu_service_role_key
 .\scripts\run.bat
 ```
 
-O directamente:
+Levanta los 3 procesos necesarios para usar el proyecto completo, cada uno en su
+propia ventana de consola:
+
+- **http://localhost:8000** — `services/extraccion` (backend legacy + HTML viejo)
+- **http://localhost:8001** — `services/presupuestacion` (backend nuevo, exige JWT)
+- **http://localhost:5173** — `frontend/` (Vite + React, el frontend nuevo — requiere
+  login contra `services/presupuestacion`, ver `frontend/.env.example`)
+
+O directamente, cada uno por separado:
 
 ```bash
 uvicorn services.extraccion.main:app --host 0.0.0.0 --port 8000
-```
-
-La app queda disponible en **http://localhost:8000**
-
-Para levantar el backend de presupuestación (aparte, puerto 8001):
-
-```bash
-.\scripts\run_presupuestacion.bat
-# o directamente:
 uvicorn services.presupuestacion.main:app --host 0.0.0.0 --port 8001
+cd frontend && npm run dev
 ```
+
+`scripts\run_presupuestacion.bat` sigue disponible para levantar solo el backend de
+presupuestación (puerto 8001), sin los otros dos.
 
 ---
 
@@ -132,10 +135,15 @@ services/
     main.py
     Dockerfile
 
+frontend/                — frontend nuevo (Vite + React + TanStack Router/Query), reemplaza
+                            gradualmente el HTML legacy de services/extraccion/templates
+
 supabase/migrations/     — migraciones SQL (tablas, RPC, pg_cron TTL)
+docs/schema/              — snapshot de referencia del DDL y las políticas RLS aplicadas
+                            (no son migraciones ejecutables, ya están corridas)
 tests/                   — suite de tests con pytest (espeja services/presupuestacion/ por dominio)
-scripts/run.bat                    — inicia services/extraccion (puerto 8000)
-scripts/run_presupuestacion.bat    — inicia services/presupuestacion (puerto 8001)
+scripts/run.bat                    — inicia extraccion (8000) + presupuestacion (8001) + frontend (5173)
+scripts/run_presupuestacion.bat    — inicia solo services/presupuestacion (puerto 8001)
 
 data/
   Salida/                — CSVs generados (ignorado por Git)
