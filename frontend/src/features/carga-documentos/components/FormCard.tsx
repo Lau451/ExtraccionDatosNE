@@ -1,13 +1,9 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import {
-  listarClientes,
-  listarLicitacionesActivas,
-  procesarDocumento,
-  type TipoDocumento,
-} from '@/lib/api/extraccion'
-import { NuevaLicitacionDialog } from './NuevaLicitacionDialog'
+import { listarClientes, procesarDocumento, type TipoDocumento } from '@/lib/api/extraccion'
+import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
+import { NuevaLiciCotiDialog } from './NuevaLiciCotiDialog'
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
   { value: 'licitaciones', label: 'Licitación / Cotización' },
@@ -31,9 +27,9 @@ export function FormCard() {
   const queryClient = useQueryClient()
 
   const clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })
-  const licitacionesQuery = useQuery({
-    queryKey: ['licitaciones-activas'],
-    queryFn: listarLicitacionesActivas,
+  const procesosQuery = useQuery({
+    queryKey: ['procesos-comerciales'],
+    queryFn: listarProcesosComerciales,
     enabled: tipo !== 'comparativas',
   })
 
@@ -120,7 +116,7 @@ export function FormCard() {
               <span className="text-sm text-slate-600">
                 Licitación vinculada <span className="text-slate-400">(opcional)</span>
               </span>
-              <NuevaLicitacionDialog onCreated={(licitacion) => setLicitacionId(licitacion.id)} />
+              <NuevaLiciCotiDialog onCreated={(proceso) => setLicitacionId(proceso.id)} />
             </div>
             <select
               value={licitacionId}
@@ -128,9 +124,9 @@ export function FormCard() {
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             >
               <option value="">Sin licitación</option>
-              {licitacionesQuery.data?.map((licitacion) => (
-                <option key={licitacion.id} value={licitacion.id}>
-                  {licitacion.nombre}
+              {procesosQuery.data?.map((proceso) => (
+                <option key={proceso.id} value={proceso.id}>
+                  {proceso.nombre}
                 </option>
               ))}
             </select>

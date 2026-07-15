@@ -1,29 +1,44 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { crearLicitacion, type LicitacionActiva, type TipoLicitacion } from '@/lib/api/extraccion'
-
-const TIPOS: TipoLicitacion[] = ['descartables', 'medicamentos', 'soluciones', 'panales', 'formulas']
+import {
+  crearProcesoComercial,
+  type Clase,
+  type Modalidad,
+  type ProcesoComercialResumen,
+} from '@/lib/api/procesosComerciales'
 
 interface Props {
-  onCreated: (licitacion: LicitacionActiva) => void
+  onCreated: (proceso: ProcesoComercialResumen) => void
 }
 
-export function NuevaLicitacionDialog({ onCreated }: Props) {
+export function NuevaLiciCotiDialog({ onCreated }: Props) {
   const [open, setOpen] = useState(false)
   const [nombre, setNombre] = useState('')
-  const [tipo, setTipo] = useState<TipoLicitacion>('descartables')
+  const [clase, setClase] = useState<Clase>('cotizacion')
   const [apertura, setApertura] = useState('')
+  const [modalidad, setModalidad] = useState<Modalidad>('mail')
   const queryClient = useQueryClient()
 
+  const esLicitacion = clase === 'licitacion'
+
   const mutation = useMutation({
-    mutationFn: () => crearLicitacion({ nombre, tipo, apertura }),
-    onSuccess: (licitacion) => {
-      queryClient.invalidateQueries({ queryKey: ['licitaciones-activas'] })
-      onCreated(licitacion)
+    mutationFn: () =>
+      crearProcesoComercial({
+        nombre,
+        clase,
+        // El backend rechaza apertura/modalidad para clase=cotizacion (constraint
+        // ck_proc_cotizacion_sin_seguimiento) — solo se mandan si es licitación.
+        ...(esLicitacion && apertura ? { apertura } : {}),
+        ...(esLicitacion ? { modalidad } : {}),
+      }),
+    onSuccess: (proceso) => {
+      queryClient.invalidateQueries({ queryKey: ['procesos-comerciales'] })
+      onCreated(proceso)
       setOpen(false)
       setNombre('')
       setApertura('')
+      setClase('cotizacion')
     },
   })
 
@@ -39,7 +54,7 @@ export function NuevaLicitacionDialog({ onCreated }: Props) {
         <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-slate-900">
-            Nueva licitación
+            Nueva licitación / cotización
           </Dialog.Title>
 
           <form
@@ -62,31 +77,45 @@ export function NuevaLicitacionDialog({ onCreated }: Props) {
             <label className="block text-sm">
               <span className="mb-1 block text-slate-600">Tipo</span>
               <select
-                value={tipo}
-                onChange={(event) => setTipo(event.target.value as TipoLicitacion)}
+                value={clase}
+                onChange={(event) => setClase(event.target.value as Clase)}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               >
-                {TIPOS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
+                <option value="cotizacion">Cotización</option>
+                <option value="licitacion">Licitación</option>
               </select>
             </label>
 
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-600">Apertura</span>
-              <input
-                required
-                type="date"
-                value={apertura}
-                onChange={(event) => setApertura(event.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+            {esLicitacion && (
+              <>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-600">Apertura</span>
+                  <input
+                    type="date"
+                    value={apertura}
+                    onChange={(event) => setApertura(event.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-600">Modalidad</span>
+                  <select
+                    value={modalidad}
+                    onChange={(event) => setModalidad(event.target.value as Modalidad)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="mail">Mail</option>
+                    <option value="pliego">Pliego</option>
+                  </select>
+                </label>
+              </>
+            )}
 
             {mutation.isError && (
-              <p className="text-sm text-red-600">No se pudo crear la licitación.</p>
+              <p className="text-sm text-red-600">
+                {mutation.error instanceof Error ? mutation.error.message : 'No se pudo crear.'}
+              </p>
             )}
 
             <div className="flex justify-end gap-2 pt-2">

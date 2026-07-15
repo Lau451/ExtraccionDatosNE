@@ -32,6 +32,13 @@ class ProcesoComercialCreate(BaseModel):
     comparativa_pedida: bool = False
 
 
+class ProcesoComercialResumen(BaseModel):
+    id: str
+    nombre: str
+    clase: Clase
+    estado: Estado
+
+
 class ProcesoComercialOut(BaseModel):
     id: str
     drogueria_id: str

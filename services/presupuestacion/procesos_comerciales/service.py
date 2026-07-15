@@ -75,3 +75,9 @@ def crear_proceso_comercial_para_endpoint(
     return crear_proceso_comercial(
         get_service_client(), drogueria_id=drogueria_id, body=body, usuario_id=usuario_id
     )
+
+
+def listar_procesos_comerciales(
+    client: Client, *, drogueria_id: str, activos: bool = True
+) -> list[dict[str, Any]]:
+    return repo.listar_procesos_comerciales(client, drogueria_id=drogueria_id, activos=activos)
