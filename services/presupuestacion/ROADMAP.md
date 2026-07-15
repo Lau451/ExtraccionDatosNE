@@ -91,6 +91,36 @@ endpoints — no antes, porque exigirlo ahora requeriría enseñarle a usar logi
 que va a usar un sistema que está por descontinuarse, para repetir el mismo onboarding
 después en el sistema que lo reemplaza.
 
+### `services/extraccion/routers/licitaciones.py` — atado al ciclo de vida del HTML legacy, se retira junto con él
+
+Todo el router (`validar_licitacion_id`, `listar`, `listar_activas`, `calendario`,
+`obtener`, `crear`, `actualizar`, `eliminar`) apunta a la tabla `licitaciones`, que ya
+no existe (el modelo real es `procesos_comerciales`, ver
+`services/presupuestacion/procesos_comerciales/`). En el frontend nuevo (Vite/React) ya
+no tiene ningún call site — `NuevaLiciCotiDialog.tsx`/`FormCard.tsx` pegan contra
+`POST/GET /procesos-comerciales` de `services/presupuestacion`.
+
+Pero **el HTML legacy sí lo sigue usando activamente**: `GET /licitaciones`
+(`services/extraccion/main.py:108-110`) renderiza `templates/licitaciones.html`, que
+carga `static/licitaciones.js` — ese JS llama a `/api/licitaciones/activas`,
+`POST /api/licitaciones`, `GET/PATCH /api/licitaciones/{id}`. `static/calendario.js`
+(servido desde `GET /calendario`) llama además a `/api/licitaciones/calendario`. El
+router está incluido en `main.py` (`app.include_router(licitaciones_router)`), o sea que
+estas rutas están activas y enlazadas desde páginas reales, aunque cada llamada real
+contra la tabla inexistente termine en error — el código sigue siendo el que sirve esas
+páginas hoy.
+
+Mismo criterio que la identificación opcional de arriba: no tocar hasta que el HTML
+legacy (`templates/licitaciones.html`, `templates/calendario.html`,
+`static/licitaciones.js`, `static/calendario.js`) se retire. Se retira junto con él, no
+antes — sacarlo ahora rompería esas dos páginas del sistema viejo en producción, aunque
+ya estén devolviendo errores contra la tabla vieja.
+
+También queda el select embebido roto en `services/extraccion/main.py:360`
+(`GET /api/documentos`, `licitacion:licitaciones(id,nombre)` →
+`Could not find a relationship between 'extraction_results' and 'licitaciones'`, 500
+real) — mismo bloque de limpieza, mismo momento.
+
 ## De seguridad / testing
 
 ### Allowlist de campos en `historial_cambios`
