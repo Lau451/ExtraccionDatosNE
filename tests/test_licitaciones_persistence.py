@@ -1,15 +1,15 @@
 """
-Tests de compatibilidad para el parámetro licitacion_id en persistent_output.py.
+Tests para el parámetro licitacion_id en persistent_output.py.
 
-Desde que persistir_output_final dejó de insertar en la tabla hija (comparativas_results/
-licitaciones_results, que no existen en el schema nuevo) y pasó a insertar solo metadata
-en extraction_results del schema de presupuestacion/, licitacion_id ya NO se persiste —
-se sigue aceptando como parámetro únicamente para no romper a los callers existentes
-(background_tasks.py). Ver services/extraccion/persistent_output.py para el detalle.
+`licitacion_id` (conceptualmente un proceso_comercial_id) SE PERSISTE en la columna
+`proceso_comercial_id` de extraction_results (corregido en el change carga-documentos —
+antes se aceptaba el parámetro y se descartaba sin escribirlo, dejando siempre NULL la
+vinculación). `client_id` y `session_id` siguen sin persistirse — esas sí son compatibilidad
+pura, ver el docstring de persistir_output_final para el detalle de por qué.
 
 Verifica que:
-- persistir_output_final acepta licitacion_id sin persistirlo en el payload
-- licitacion_id=None no rompe nada (siempre fue nullable, ahora es directamente ignorado)
+- persistir_output_final persiste licitacion_id como proceso_comercial_id en el payload
+- licitacion_id=None no agrega la clave proceso_comercial_id al payload (columna nullable)
 - schedule_persist_output sigue propagando licitacion_id hacia _retry_persist
 """
 
@@ -83,13 +83,13 @@ def _supabase_mock(extraction_uuid: str) -> tuple[MagicMock, dict[str, MagicMock
 
 class TestPersistirConLicitacionId:
     @pytest.mark.asyncio
-    async def test_licitacion_id_no_se_persiste_pero_no_rompe(
+    async def test_licitacion_id_se_persiste_como_proceso_comercial_id(
         self, mocker, rows, csv_path, extraction_uuid
     ):
         """
-        Pasar licitacion_id no debe romper la persistencia — se acepta y se ignora.
-        El payload de extraction_results NO debe incluir la clave licitacion_id (esa
-        columna no existe en el schema nuevo).
+        Pasar licitacion_id debe persistirlo en el payload de extraction_results bajo la
+        columna proceso_comercial_id. client_id y session_id siguen sin persistirse (esos
+        sí son compatibilidad pura, no columnas usables en el schema nuevo).
         """
         lic_id = str(uuid.uuid4())
         mock_client, tablas = _supabase_mock(extraction_uuid)
@@ -111,14 +111,18 @@ class TestPersistirConLicitacionId:
         tabla_er = tablas["extraction_results"]
         tabla_er.insert.assert_called_once()
         payload = tabla_er.insert.call_args[0][0]
+        assert payload["proceso_comercial_id"] == lic_id
         assert "licitacion_id" not in payload
         assert "client_id" not in payload
         assert "session_id" not in payload
 
     @pytest.mark.asyncio
-    async def test_licitacion_id_none_no_rompe(self, mocker, rows, csv_path, extraction_uuid):
-        """licitacion_id=None tampoco debe romper nada — mismo camino que con valor."""
-        mock_client, _tablas = _supabase_mock(extraction_uuid)
+    async def test_licitacion_id_none_no_agrega_proceso_comercial_id(
+        self, mocker, rows, csv_path, extraction_uuid
+    ):
+        """licitacion_id=None no debe romper nada, ni agregar la clave proceso_comercial_id
+        al payload (columna nullable, se omite en vez de mandar None explícito)."""
+        mock_client, tablas = _supabase_mock(extraction_uuid)
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
@@ -133,6 +137,9 @@ class TestPersistirConLicitacionId:
         )
 
         assert result is not None
+
+        payload = tablas["extraction_results"].insert.call_args[0][0]
+        assert "proceso_comercial_id" not in payload
 
 
 class TestSchedulePersistOutputPropagaLicitacionId:

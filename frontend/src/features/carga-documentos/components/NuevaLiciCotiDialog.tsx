@@ -9,13 +9,15 @@ import {
 } from '@/lib/api/procesosComerciales'
 
 interface Props {
+  /** Controlada desde FormCard — el selector de clase vive en el flujo principal,
+   * no en este modal (ver openspec/changes/carga-documentos/spec.md). */
+  clase: Clase
   onCreated: (proceso: ProcesoComercialResumen) => void
 }
 
-export function NuevaLiciCotiDialog({ onCreated }: Props) {
+export function NuevaLiciCotiDialog({ clase, onCreated }: Props) {
   const [open, setOpen] = useState(false)
   const [nombre, setNombre] = useState('')
-  const [clase, setClase] = useState<Clase>('cotizacion')
   const [apertura, setApertura] = useState('')
   const [modalidad, setModalidad] = useState<Modalidad>('mail')
   const queryClient = useQueryClient()
@@ -38,7 +40,6 @@ export function NuevaLiciCotiDialog({ onCreated }: Props) {
       setOpen(false)
       setNombre('')
       setApertura('')
-      setClase('cotizacion')
     },
   })
 
@@ -54,7 +55,7 @@ export function NuevaLiciCotiDialog({ onCreated }: Props) {
         <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-slate-900">
-            Nueva licitación / cotización
+            Nueva {esLicitacion ? 'licitación' : 'directa'}
           </Dialog.Title>
 
           <form
@@ -72,18 +73,6 @@ export function NuevaLiciCotiDialog({ onCreated }: Props) {
                 onChange={(event) => setNombre(event.target.value)}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
-            </label>
-
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-600">Tipo</span>
-              <select
-                value={clase}
-                onChange={(event) => setClase(event.target.value as Clase)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="cotizacion">Cotización</option>
-                <option value="licitacion">Licitación</option>
-              </select>
             </label>
 
             {esLicitacion && (

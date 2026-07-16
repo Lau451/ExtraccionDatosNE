@@ -131,12 +131,16 @@ async def persistir_output_final(
     Esta funcion se ejecuta como BackgroundTask (post-respuesta), por lo que
     los errores se logean pero NUNCA se propagan al caller.
 
-    NOTA: `session_id`, `client_id` y `licitacion_id` se siguen aceptando para no
-    romper a los callers (background_tasks.py/main.py), pero YA NO se persisten:
-    no existen como columnas usables en el extraction_results del schema nuevo
-    (session_id necesitaria una fila real en processing_sessions del schema nuevo,
-    que persistent_chunking.py todavia no crea correctamente — mismo tipo de gap,
-    fuera del alcance de este cambio puntual).
+    NOTA: `session_id` y `client_id` se siguen aceptando para no romper a los callers
+    (background_tasks.py/main.py), pero NO se persisten: no existen como columnas usables en el
+    extraction_results del schema nuevo (session_id necesitaria una fila real en
+    processing_sessions del schema nuevo, que persistent_chunking.py todavia no crea
+    correctamente — mismo tipo de gap, fuera del alcance de este cambio puntual).
+
+    `licitacion_id` (conceptualmente un proceso_comercial_id) SI se persiste, en la columna
+    `proceso_comercial_id` — corregido en el change carga-documentos: antes se aceptaba el
+    parametro y se descartaba sin escribirlo, dejando siempre NULL la vinculacion aunque el
+    usuario la hubiera elegido en el formulario.
 
     Args:
         session_id:      Aceptado por compatibilidad, no se persiste (ver NOTA).
@@ -146,6 +150,7 @@ async def persistir_output_final(
         client_id:       Aceptado por compatibilidad, no se persiste (ver NOTA).
         source_filename: Nombre del archivo original subido.
         source_sha256:   SHA256 del archivo original (para deduplicacion futura).
+        licitacion_id:   proceso_comercial_id ya validado (o None). Se persiste tal cual.
 
     Returns:
         UUID del extraction_result insertado, o None si fallo.
@@ -201,6 +206,8 @@ async def persistir_output_final(
         "csv_disk_path": str(csv_path),
         "status": "completed",
     }
+    if licitacion_id:
+        payload_base["proceso_comercial_id"] = licitacion_id
 
     try:
         respuesta_base = await asyncio.to_thread(

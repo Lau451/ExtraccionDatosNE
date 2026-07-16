@@ -3,7 +3,7 @@ import csv
 import io
 import logging
 import os
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, UploadFile, File, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,9 +16,13 @@ from urllib.parse import urlencode
 
 from services.extraccion.auth import get_usuario_id_actual
 from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
-from services.extraccion.routers.licitaciones import router as licitaciones_router, validar_licitacion_id
+from services.extraccion.routers.licitaciones import router as licitaciones_router
 from services.extraccion.routers.extraction_results import router as extraction_results_router
 from services.extraccion.routers.clientes import router as clientes_router
+from services.extraccion.procesos_comerciales_client import (
+    validar_proceso_comercial_id,
+    listar_nombres_procesos_comerciales,
+)
 from services.extraccion.robot import obtener_cliente, procesar_archivo
 from services.extraccion.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
@@ -156,7 +160,18 @@ async def procesar(
     usuario_id: str | None = Depends(get_usuario_id_actual),
 ):
     # SC-25: fail-fast antes de cualquier I/O o invocación a Gemini
-    licitacion_id_validado = await validar_licitacion_id(licitacion_id)
+    if tipo == "ordenes":
+        raise HTTPException(
+            status_code=422,
+            detail="Carga de Orden de Compra todavía no está implementada",
+        )
+
+    # La vinculación a un proceso comercial NO se exige acá — es una decisión de negocio
+    # sin impacto en la extracción, se resuelve en la pantalla "Validar extracción" (ver
+    # openspec/changes/validar-extraccion/proposal.md). licitacion_id sigue aceptado y
+    # validado si viene seteado (por compatibilidad / otros callers), simplemente no es
+    # obligatorio para ningún tipo de documento en este endpoint.
+    licitacion_id_validado = await validar_proceso_comercial_id(licitacion_id)
 
     # ======================
     # GUARDAR ARCHIVO
@@ -357,7 +372,10 @@ async def listar_documentos(tipo: str = ""):
     def _query():
         q = (
             client.table("extraction_results")
-            .select("id,source_filename,document_type,row_count,status,created_at,licitacion:licitaciones(id,nombre)")
+            .select(
+                "id,source_filename,document_type,row_count,status,created_at,"
+                "proceso_comercial_id"
+            )
             .order("created_at", desc=True)
         )
         if tipo in ("comparativa", "licitacion"):
@@ -366,8 +384,16 @@ async def listar_documentos(tipo: str = ""):
 
     result = await asyncio.to_thread(_query)
     docs = result.data or []
+
+    # Resuelve nombres via procesos_comerciales_client (escopeado por drogueria_id) en vez del
+    # embed roto contra la tabla "licitaciones" inexistente.
+    proceso_ids = {row["proceso_comercial_id"] for row in docs if row.get("proceso_comercial_id")}
+    nombres = await listar_nombres_procesos_comerciales(list(proceso_ids))
+
     for row in docs:
-        row["licitacion"] = row.get("licitacion") or None
+        proceso_id = row.pop("proceso_comercial_id", None)
+        nombre = nombres.get(proceso_id) if proceso_id else None
+        row["proceso_comercial"] = {"id": proceso_id, "nombre": nombre} if nombre else None
     return JSONResponse({"documentos": docs})
 
 

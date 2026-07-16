@@ -243,7 +243,9 @@ class TestProcesarComparativaChunksSavings:
         self, client, headers_json, xlsx_bytes, tmp_path, mocker
     ):
         """
-        Dado un XLSX de comparativa:
+        Dado un XLSX de comparativa SIN licitacion_id (la vinculación a un proceso
+        comercial no se exige en /procesar — es una decisión de negocio que se resuelve
+        en "Validar extracción", ver openspec/changes/validar-extraccion/proposal.md):
         1. crear_sesion retorna UUID de sesión
         2. procesar_comparativa retorna CSV
         3. schedule_persist_output es llamado con session_id y doc_type='comparativa'
@@ -318,9 +320,9 @@ class TestProcesarConLicitacionIdValido:
         mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
         mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
-        # validar_licitacion_id retorna el mismo id (ya existe en BD)
+        # validar_proceso_comercial_id retorna el mismo id (ya existe en BD, misma droguería)
         mocker.patch(
-            "services.extraccion.main.validar_licitacion_id",
+            "services.extraccion.main.validar_proceso_comercial_id",
             new_callable=AsyncMock,
             return_value=lic_id,
         )
@@ -355,9 +357,9 @@ class TestProcesarSinLicitacionId:
         mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
         mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
-        # Vacío → validar_licitacion_id retorna None
+        # Vacío → validar_proceso_comercial_id retorna None
         mocker.patch(
-            "services.extraccion.main.validar_licitacion_id",
+            "services.extraccion.main.validar_proceso_comercial_id",
             new_callable=AsyncMock,
             return_value=None,
         )
@@ -387,11 +389,11 @@ class TestProcesarLicitacionIdInvalido:
         from fastapi import HTTPException
 
         mocker.patch(
-            "services.extraccion.main.validar_licitacion_id",
+            "services.extraccion.main.validar_proceso_comercial_id",
             new_callable=AsyncMock,
             side_effect=HTTPException(
                 status_code=422,
-                detail="Licitación <uuid> no existe",
+                detail="Proceso comercial <uuid> no existe",
             ),
         )
         mock_robot = mocker.patch("services.extraccion.main.procesar_archivo")
@@ -412,7 +414,7 @@ class TestProcesarLicitacionIdInvalido:
         from fastapi import HTTPException
 
         mocker.patch(
-            "services.extraccion.main.validar_licitacion_id",
+            "services.extraccion.main.validar_proceso_comercial_id",
             new_callable=AsyncMock,
             side_effect=HTTPException(
                 status_code=422,
@@ -433,16 +435,46 @@ class TestProcesarLicitacionIdInvalido:
 
 
 # ---------------------------------------------------------------------------
-# SC-27 — GET /api/documentos incluye campo licitacion
+# tipo="ordenes" -> 422 (sin pipeline de extracción implementado — el frontend la
+# deja deshabilitada, pero el backend no confía solo en eso)
 # ---------------------------------------------------------------------------
 
-class TestListarDocumentosConLicitacion:
-    """SC-27: GET /api/documentos → campo licitacion embebido por Supabase join."""
+class TestProcesarTipoOrdenes:
+    """Orden de Compra no tiene pipeline todavía — rechazo fail-fast, antes de I/O."""
 
-    def test_documentos_incluyen_campo_licitacion(self, client, mocker):
+    def test_tipo_ordenes_retorna_422_sin_llamar_robot(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        mock_archivo = mocker.patch("services.extraccion.main.procesar_archivo")
+        mock_comparativa = mocker.patch("services.extraccion.main.procesar_comparativa")
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes"},
+            files={"archivo": ("orden.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 422
+        mock_archivo.assert_not_called()
+        mock_comparativa.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# SC-27 — GET /api/documentos incluye campo proceso_comercial
+# ---------------------------------------------------------------------------
+#
+# Desde el change carga-documentos, el nombre ya NO se resuelve con un embed de
+# Supabase contra "licitaciones" (tabla inexistente) sino con una query aparte,
+# escopeada por drogueria_id, vía procesos_comerciales_client.listar_nombres_procesos_comerciales.
+
+class TestListarDocumentosConLicitacion:
+    """SC-27: GET /api/documentos → campo proceso_comercial resuelto vía procesos_comerciales_client."""
+
+    def test_documentos_incluyen_campo_proceso_comercial(self, client, mocker):
         from unittest.mock import MagicMock
 
-        lic_data = {"id": str(uuid.uuid4()), "nombre": "Lic. Trimestral"}
+        proceso_id = str(uuid.uuid4())
         doc_row = {
             "id": str(uuid.uuid4()),
             "source_filename": "doc.pdf",
@@ -451,7 +483,7 @@ class TestListarDocumentosConLicitacion:
             "row_count": 5,
             "status": "completed",
             "created_at": "2026-05-14T10:00:00+00:00",
-            "licitacion": lic_data,
+            "proceso_comercial_id": proceso_id,
         }
 
         mock_result = MagicMock()
@@ -464,15 +496,21 @@ class TestListarDocumentosConLicitacion:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_qb
         mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
+        mocker.patch(
+            "services.extraccion.main.listar_nombres_procesos_comerciales",
+            new_callable=AsyncMock,
+            return_value={proceso_id: "Lic. Trimestral"},
+        )
 
         response = client.get("/api/documentos")
 
         assert response.status_code == 200
         docs = response.json()["documentos"]
         assert len(docs) == 1
-        assert docs[0]["licitacion"] == lic_data
+        assert docs[0]["proceso_comercial"] == {"id": proceso_id, "nombre": "Lic. Trimestral"}
+        assert "proceso_comercial_id" not in docs[0]
 
-    def test_documentos_sin_licitacion_son_none(self, client, mocker):
+    def test_documentos_sin_proceso_comercial_son_none(self, client, mocker):
         from unittest.mock import MagicMock
 
         doc_row = {
@@ -483,7 +521,7 @@ class TestListarDocumentosConLicitacion:
             "row_count": 3,
             "status": "completed",
             "created_at": "2026-05-14T10:00:00+00:00",
-            "licitacion": None,
+            "proceso_comercial_id": None,
         }
 
         mock_result = MagicMock()
@@ -496,9 +534,55 @@ class TestListarDocumentosConLicitacion:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_qb
         mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
+        mocker.patch(
+            "services.extraccion.main.listar_nombres_procesos_comerciales",
+            new_callable=AsyncMock,
+            return_value={},
+        )
 
         response = client.get("/api/documentos")
 
         assert response.status_code == 200
         docs = response.json()["documentos"]
-        assert docs[0]["licitacion"] is None
+        assert docs[0]["proceso_comercial"] is None
+
+    def test_proceso_comercial_de_otra_drogueria_se_muestra_como_none(self, client, mocker):
+        """Si listar_nombres_procesos_comerciales no devuelve el id (filtrado por
+        drogueria_id, ver procesos_comerciales_client.py), el documento se muestra
+        como sin vincular — nunca con el nombre real de un proceso de otra droguería."""
+        from unittest.mock import MagicMock
+
+        proceso_id_de_otra_drogueria = str(uuid.uuid4())
+        doc_row = {
+            "id": str(uuid.uuid4()),
+            "source_filename": "doc.pdf",
+            "document_type": "licitacion",
+            "client_id": "cliente1",
+            "row_count": 5,
+            "status": "completed",
+            "created_at": "2026-05-14T10:00:00+00:00",
+            "proceso_comercial_id": proceso_id_de_otra_drogueria,
+        }
+
+        mock_result = MagicMock()
+        mock_result.data = [doc_row]
+        mock_qb = MagicMock()
+        mock_qb.select.return_value = mock_qb
+        mock_qb.order.return_value = mock_qb
+        mock_qb.execute.return_value = mock_result
+
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_qb
+        mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
+        # El id no aparece en el dict devuelto -> filtrado por drogueria_id en la query real
+        mocker.patch(
+            "services.extraccion.main.listar_nombres_procesos_comerciales",
+            new_callable=AsyncMock,
+            return_value={},
+        )
+
+        response = client.get("/api/documentos")
+
+        assert response.status_code == 200
+        docs = response.json()["documentos"]
+        assert docs[0]["proceso_comercial"] is None

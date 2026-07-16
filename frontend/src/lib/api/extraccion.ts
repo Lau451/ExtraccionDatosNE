@@ -14,7 +14,7 @@ export interface DocumentoReciente {
   row_count: number
   status: string
   created_at: string
-  licitacion: { id: string; nombre: string } | null
+  proceso_comercial: { id: string; nombre: string } | null
 }
 
 export interface ProcesarPayload {
@@ -30,34 +30,8 @@ export interface ProcesarResultado {
   error?: string
 }
 
-export type TipoLicitacion = 'descartables' | 'medicamentos' | 'soluciones' | 'panales' | 'formulas'
-
-export interface LicitacionActiva {
-  id: string
-  nombre: string
-  tipo: TipoLicitacion
-}
-
-export interface LicitacionCreatePayload {
-  nombre: string
-  tipo: TipoLicitacion
-  apertura: string
-}
-
 export function listarClientes(): Promise<Cliente[]> {
   return extraccionFetch<Cliente[]>('/api/clientes')
-}
-
-export function listarLicitacionesActivas(): Promise<LicitacionActiva[]> {
-  return extraccionFetch<LicitacionActiva[]>('/api/licitaciones/activas')
-}
-
-export function crearLicitacion(payload: LicitacionCreatePayload): Promise<LicitacionActiva> {
-  return extraccionFetch<LicitacionActiva>('/api/licitaciones', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
 }
 
 export function listarDocumentosRecientes(tipo = ''): Promise<{ documentos: DocumentoReciente[] }> {

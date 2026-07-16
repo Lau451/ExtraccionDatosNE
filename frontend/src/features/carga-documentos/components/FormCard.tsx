@@ -2,13 +2,11 @@ import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { listarClientes, procesarDocumento, type TipoDocumento } from '@/lib/api/extraccion'
-import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
-import { NuevaLiciCotiDialog } from './NuevaLiciCotiDialog'
 
-const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
-  { value: 'licitaciones', label: 'Licitación / Cotización' },
+const TIPO_OPTIONS: { value: TipoDocumento; label: string; disabled?: boolean }[] = [
+  { value: 'licitaciones', label: 'Licitación / Directa' },
   { value: 'comparativas', label: 'Comparativa' },
-  { value: 'ordenes', label: 'Orden de compra' },
+  { value: 'ordenes', label: 'Orden de compra', disabled: true },
 ]
 
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string> = {
@@ -21,22 +19,16 @@ export function FormCard() {
   const [tipo, setTipo] = useState<TipoDocumento>('licitaciones')
   const [archivo, setArchivo] = useState<File | null>(null)
   const [clienteId, setClienteId] = useState('')
-  const [licitacionId, setLicitacionId] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
   const clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })
-  const procesosQuery = useQuery({
-    queryKey: ['procesos-comerciales'],
-    queryFn: listarProcesosComerciales,
-    enabled: tipo !== 'comparativas',
-  })
 
   const mutation = useMutation({
     mutationFn: () => {
       if (!archivo) throw new Error('Falta seleccionar un archivo')
-      return procesarDocumento({ archivo, tipo, clienteId: clienteId || undefined, licitacionId: licitacionId || undefined })
+      return procesarDocumento({ archivo, tipo, clienteId: clienteId || undefined })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documentos-recientes'] })
@@ -57,15 +49,24 @@ export function FormCard() {
           <button
             key={option.value}
             type="button"
+            disabled={option.disabled}
+            title={option.disabled ? 'Próximamente' : undefined}
             onClick={() => setTipo(option.value)}
             className={clsx(
-              'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-              tipo === option.value
-                ? 'bg-navy text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+              option.disabled
+                ? 'cursor-not-allowed bg-slate-50 text-slate-300'
+                : tipo === option.value
+                  ? 'bg-navy text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
             )}
           >
             {option.label}
+            {option.disabled && (
+              <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                Próximamente
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -109,29 +110,6 @@ export function FormCard() {
             </>
           )}
         </label>
-
-        {tipo !== 'comparativas' && (
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-sm text-slate-600">
-                Licitación vinculada <span className="text-slate-400">(opcional)</span>
-              </span>
-              <NuevaLiciCotiDialog onCreated={(proceso) => setLicitacionId(proceso.id)} />
-            </div>
-            <select
-              value={licitacionId}
-              onChange={(event) => setLicitacionId(event.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="">Sin licitación</option>
-              {procesosQuery.data?.map((proceso) => (
-                <option key={proceso.id} value={proceso.id}>
-                  {proceso.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         <div>
           <span className="mb-1 block text-sm text-slate-600">

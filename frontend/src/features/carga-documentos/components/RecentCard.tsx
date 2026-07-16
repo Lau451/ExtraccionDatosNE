@@ -31,7 +31,7 @@ export function RecentCard() {
           <li key={doc.id} className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-900">{doc.source_filename}</p>
-              <p className="text-xs text-slate-500">{doc.licitacion?.nombre ?? 'Sin licitación'}</p>
+              <p className="text-xs text-slate-500">{doc.proceso_comercial?.nombre ?? 'Sin vincular'}</p>
             </div>
             <span
               className={clsx(
