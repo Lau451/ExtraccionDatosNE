@@ -357,7 +357,7 @@ async def listar_documentos(tipo: str = ""):
     def _query():
         q = (
             client.table("extraction_results")
-            .select("id,source_filename,document_type,client_id,row_count,status,created_at,licitacion:licitaciones(id,nombre)")
+            .select("id,source_filename,document_type,row_count,status,created_at,licitacion:licitaciones(id,nombre)")
             .order("created_at", desc=True)
         )
         if tipo in ("comparativa", "licitacion"):

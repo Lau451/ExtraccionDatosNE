@@ -11,7 +11,6 @@ export interface DocumentoReciente {
   id: string
   source_filename: string
   document_type: 'licitacion' | 'comparativa'
-  client_id: string
   row_count: number
   status: string
   created_at: string
