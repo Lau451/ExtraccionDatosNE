@@ -12,11 +12,13 @@ from services.presupuestacion.comparativas.router import router as comparativas_
 from services.presupuestacion.compras.router import router as compras_router
 from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.exceptions import register_exception_handlers
+from services.presupuestacion.droguerias.router import router as droguerias_router
 from services.presupuestacion.eventos.router import router as eventos_router
 from services.presupuestacion.extraccion.router import router as extraccion_router
 from services.presupuestacion.imports.router import router as imports_router
 from services.presupuestacion.matching.router import router as matching_router
 from services.presupuestacion.notificaciones.router import router as notificaciones_router
+from services.presupuestacion.planes.router import router as planes_router
 from services.presupuestacion.presupuestos.router import router as presupuestos_router
 from services.presupuestacion.pricing.router import router as pricing_router
 from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
@@ -50,6 +52,8 @@ app.include_router(procesos_comerciales_router, tags=["procesos_comerciales"])
 app.include_router(imports_router, tags=["imports"])
 app.include_router(catalogo_router, tags=["catalogo"])
 app.include_router(usuarios_router, tags=["usuarios"])
+app.include_router(droguerias_router, tags=["droguerias"])
+app.include_router(planes_router, tags=["planes"])
 app.include_router(eventos_router, tags=["eventos"])
 app.include_router(notificaciones_router, tags=["notificaciones"])
 app.include_router(automatizaciones_router, tags=["automatizaciones"])
