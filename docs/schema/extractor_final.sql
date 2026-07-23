@@ -41,10 +41,26 @@ CREATE TABLE droguerias (
     contacto_email      TEXT            NOT NULL,
     contacto_telefono   TEXT            NOT NULL,
     activa              BOOLEAN         NOT NULL DEFAULT TRUE,
+    plan_id             UUID            NULL,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_droguerias_cuit UNIQUE (cuit)
+);
+
+-- Migración 0007 (supabase/migrations/). Solo estructura: sin lógica de
+-- facturación ni enforcement de límites todavía.
+CREATE TABLE planes (
+    id                    UUID            NOT NULL DEFAULT gen_random_uuid(),
+    nombre                TEXT            NOT NULL,
+    max_usuarios          INT             NULL,
+    max_documentos_mes    INT             NULL,
+    almacenamiento_mb     INT             NULL,
+    funcionalidades       JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    activo                BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_at            TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id)
 );
 
 CREATE TABLE clientes (
@@ -1053,6 +1069,7 @@ COMMENT ON TABLE notificacion_preferencias IS 'Qué notificaciones quiere recibi
 -- FOREIGN KEYS
 -- =============================================================================
 
+ALTER TABLE droguerias                  ADD CONSTRAINT fk_drog_plan   FOREIGN KEY (plan_id)      REFERENCES planes (id);
 ALTER TABLE clientes                    ADD CONSTRAINT fk_cli_drog    FOREIGN KEY (drogueria_id) REFERENCES droguerias (id);
 ALTER TABLE cliente_contactos           ADD CONSTRAINT fk_cc_cli      FOREIGN KEY (cliente_id, drogueria_id) REFERENCES clientes (id, drogueria_id) ON DELETE CASCADE;
 ALTER TABLE cliente_observaciones       ADD CONSTRAINT fk_cobs_cli    FOREIGN KEY (cliente_id)   REFERENCES clientes (id) ON DELETE CASCADE;

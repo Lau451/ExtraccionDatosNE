@@ -27,6 +27,7 @@ CREATE TABLE usuarios (
     drogueria_id    UUID        NULL,
     rol             TEXT        NOT NULL,
     nombre          TEXT        NOT NULL,
+    apellido        TEXT        NULL,
     es_sistema      BOOLEAN     NOT NULL DEFAULT FALSE,
     activo          BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -101,6 +102,15 @@ CREATE POLICY droguerias_sel ON droguerias FOR SELECT USING ((select es_superadm
 CREATE POLICY droguerias_ins ON droguerias FOR INSERT WITH CHECK ((select es_superadmin()));
 CREATE POLICY droguerias_upd ON droguerias FOR UPDATE USING ((select es_superadmin()) OR ((select get_rol()) = 'admin' AND id = (select get_drogueria_id()))) WITH CHECK ((select es_superadmin()) OR ((select get_rol()) = 'admin' AND id = (select get_drogueria_id())));
 CREATE POLICY droguerias_del ON droguerias FOR DELETE USING ((select es_superadmin()));
+
+-- ---------- planes ----------
+-- Catálogo de solo-lectura para cualquier autenticado; escritura solo superadmin.
+-- Migración 0007 (supabase/migrations/). Solo estructura: sin enforcement de límites todavía.
+ALTER TABLE planes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY planes_sel ON planes FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY planes_ins ON planes FOR INSERT WITH CHECK ((select es_superadmin()));
+CREATE POLICY planes_upd ON planes FOR UPDATE USING ((select es_superadmin())) WITH CHECK ((select es_superadmin()));
+CREATE POLICY planes_del ON planes FOR DELETE USING ((select es_superadmin()));
 
 -- ---------- usuarios ----------
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
