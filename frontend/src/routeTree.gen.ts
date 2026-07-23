@@ -9,13 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
+import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
+import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
+import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcceptInviteRoute = AcceptInviteRouteImport.update({
+  id: '/accept-invite',
+  path: '/accept-invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -27,41 +42,112 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
+  id: '/mi-cuenta',
+  path: '/mi-cuenta',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSuperadminEmpresasRoute =
+  AuthenticatedSuperadminEmpresasRouteImport.update({
+    id: '/superadmin/empresas',
+    path: '/superadmin/empresas',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminUsuariosRoute =
+  AuthenticatedAdminUsuariosRouteImport.update({
+    id: '/admin/usuarios',
+    path: '/admin/usuarios',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
 }
 export interface FileRoutesByTo {
+  '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login'
+  fullPaths:
+    | '/'
+    | '/accept-invite'
+    | '/login'
+    | '/reset-password'
+    | '/mi-cuenta'
+    | '/admin/usuarios'
+    | '/superadmin/empresas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/'
-  id: '__root__' | '/_authenticated' | '/login' | '/_authenticated/'
+  to:
+    | '/accept-invite'
+    | '/login'
+    | '/reset-password'
+    | '/mi-cuenta'
+    | '/'
+    | '/admin/usuarios'
+    | '/superadmin/empresas'
+  id:
+    | '__root__'
+    | '/_authenticated'
+    | '/accept-invite'
+    | '/login'
+    | '/reset-password'
+    | '/_authenticated/mi-cuenta'
+    | '/_authenticated/'
+    | '/_authenticated/admin/usuarios'
+    | '/_authenticated/superadmin/empresas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  AcceptInviteRoute: typeof AcceptInviteRoute
   LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accept-invite': {
+      id: '/accept-invite'
+      path: '/accept-invite'
+      fullPath: '/accept-invite'
+      preLoaderRoute: typeof AcceptInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -78,15 +164,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/mi-cuenta': {
+      id: '/_authenticated/mi-cuenta'
+      path: '/mi-cuenta'
+      fullPath: '/mi-cuenta'
+      preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/superadmin/empresas': {
+      id: '/_authenticated/superadmin/empresas'
+      path: '/superadmin/empresas'
+      fullPath: '/superadmin/empresas'
+      preLoaderRoute: typeof AuthenticatedSuperadminEmpresasRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/usuarios': {
+      id: '/_authenticated/admin/usuarios'
+      path: '/admin/usuarios'
+      fullPath: '/admin/usuarios'
+      preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAdminUsuariosRoute: typeof AuthenticatedAdminUsuariosRoute
+  AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminUsuariosRoute: AuthenticatedAdminUsuariosRoute,
+  AuthenticatedSuperadminEmpresasRoute: AuthenticatedSuperadminEmpresasRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -95,7 +208,9 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  AcceptInviteRoute: AcceptInviteRoute,
   LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useAuth } from './AuthContext'
 
@@ -63,6 +64,10 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
       >
         {isSubmitting ? 'Ingresando…' : 'Ingresar'}
       </button>
+
+      <Link to="/reset-password" className="block text-center text-sm text-accent">
+        ¿Olvidaste tu contraseña?
+      </Link>
     </form>
   )
 }
