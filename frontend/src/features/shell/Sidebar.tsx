@@ -27,12 +27,20 @@ export function Sidebar() {
     navigate({ to: '/login' })
   }
 
+  const navItems: NavItem[] = [
+    ...NAV_ITEMS,
+    ...(perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
+      ? [{ label: 'Usuarios', to: '/admin/usuarios' }]
+      : []),
+    ...(perfil?.rol === 'superadmin' ? [{ label: 'Empresas', to: '/superadmin/empresas' }] : []),
+  ]
+
   return (
     <aside className="flex w-64 shrink-0 flex-col bg-navy text-slate-100">
       <div className="px-6 py-6 text-lg font-semibold tracking-tight">Droguería Nueva Era</div>
 
       <nav className="flex-1 space-y-1 px-3">
-        {NAV_ITEMS.map((item) =>
+        {navItems.map((item) =>
           item.disabled ? (
             <span
               key={item.to}
@@ -56,6 +64,9 @@ export function Sidebar() {
 
       <div className="border-t border-white/10 px-6 py-4 text-xs text-slate-400">
         <p className="mb-2 truncate text-slate-300">{perfil?.nombre ?? 'Cargando…'}</p>
+        <Link to="/mi-cuenta" className="mb-2 block hover:text-white">
+          Mi cuenta
+        </Link>
         <button type="button" onClick={handleLogout} className="hover:text-white">
           Cerrar sesión
         </button>

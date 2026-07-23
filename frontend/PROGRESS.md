@@ -15,4 +15,15 @@ change está en `openspec/changes/archive/`.
 | 7 | Comparativas | ⬜ Pendiente | — |
 | 8 | Compras | ⬜ Pendiente | — |
 
-Última actualización: 2026-07-15.
+## Pantallas fuera del MVP original
+
+Estas 2 pantallas no forman parte de las 8 originales del MVP, pero siguen la misma convención de
+tracking de `openspec/AGENTS.md` (un change por pantalla, archivado recién cuando se da por
+terminada).
+
+| Pantalla | Estado | Change |
+|----------|--------|--------|
+| Gestión de usuarios (Admin/SuperAdmin) | 🔶 En progreso | [`gestion-usuarios`](../openspec/changes/gestion-usuarios/) |
+| Gestión de empresas (SuperAdmin) | 🔶 En progreso | [`gestion-empresas`](../openspec/changes/gestion-empresas/) |
+
+Última actualización: 2026-07-23.
