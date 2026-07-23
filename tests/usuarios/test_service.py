@@ -4,9 +4,20 @@ import uuid
 import pytest
 
 from services.presupuestacion.core.auth import UsuarioPerfil
-from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError, ValidationError
-from services.presupuestacion.usuarios.models import UsuarioCreate
-from services.presupuestacion.usuarios.service import cambiar_rol, crear_usuario
+from services.presupuestacion.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
+from services.presupuestacion.usuarios.models import UsuarioCreate, UsuarioPerfilUpdate
+from services.presupuestacion.usuarios.service import (
+    actualizar_perfil_propio,
+    cambiar_activo,
+    cambiar_rol,
+    crear_usuario,
+    eliminar_usuario,
+)
 
 
 def _perfil(usuario: dict) -> UsuarioPerfil:
@@ -16,8 +27,8 @@ def _perfil(usuario: dict) -> UsuarioPerfil:
 def _body(**overrides) -> UsuarioCreate:
     base = {
         "email": f"nuevo-{uuid.uuid4()}@seed.local",
-        "password": "clave-segura-123",
         "nombre": "Usuario Nuevo",
+        "apellido": "Apellido Nuevo",
         "rol": "comercial",
     }
     base.update(overrides)
@@ -26,6 +37,10 @@ def _body(**overrides) -> UsuarioCreate:
 
 # ---------------------------------------------------------------------------
 # crear_usuario
+# Estos tests SÍ ejercitan crear_usuario de punta a punta (incluida la
+# invitación real por email vía Supabase Auth) — a diferencia de los de
+# cambiar_rol/cambiar_activo más abajo, que usan crear_usuario_directo para no
+# gastar el rate limit de envío de mails en setup que no es lo que se testea.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
@@ -48,6 +63,26 @@ def test_admin_crea_usuario_fuerza_su_propia_drogueria(
 def test_admin_no_puede_crear_superadmin(service_client, seed_admin):
     with pytest.raises(ForbiddenError):
         crear_usuario(service_client, creador=_perfil(seed_admin), body=_body(rol="superadmin"))
+
+
+@pytest.mark.integration
+def test_admin_no_puede_crear_admin(service_client, seed_admin):
+    with pytest.raises(ForbiddenError):
+        crear_usuario(service_client, creador=_perfil(seed_admin), body=_body(rol="admin"))
+
+
+@pytest.mark.integration
+def test_superadmin_crea_admin(
+    service_client, seed_superadmin, seed_drogueria, limpiar_usuario_creado
+):
+    resultado = crear_usuario(
+        service_client,
+        creador=_perfil(seed_superadmin),
+        body=_body(rol="admin", drogueria_id=seed_drogueria["id"]),
+    )
+    limpiar_usuario_creado.append(resultado["id"])
+
+    assert resultado["rol"] == "admin"
 
 
 @pytest.mark.integration
@@ -103,12 +138,9 @@ def test_rol_no_autorizado_no_puede_crear_usuario(service_client, seed_drogueria
 
 @pytest.mark.integration
 def test_admin_cambia_rol_de_usuario_de_su_drogueria(
-    service_client, seed_admin, seed_drogueria, limpiar_usuario_creado
+    service_client, seed_admin, seed_drogueria, crear_usuario_directo
 ):
-    creado = crear_usuario(
-        service_client, creador=_perfil(seed_admin), body=_body(rol="comercial")
-    )
-    limpiar_usuario_creado.append(creado["id"])
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
 
     resultado = cambiar_rol(
         service_client, creador=_perfil(seed_admin), usuario_id=creado["id"], nuevo_rol="lider_comercial"
@@ -118,7 +150,7 @@ def test_admin_cambia_rol_de_usuario_de_su_drogueria(
 
 @pytest.mark.integration
 def test_admin_no_puede_cambiar_rol_de_usuario_de_otra_drogueria(
-    service_client, seed_admin, seed_superadmin, seed_drogueria, limpiar_usuario_creado
+    service_client, seed_admin, seed_superadmin, seed_drogueria, crear_usuario_directo
 ):
     otra_drogueria = service_client.table("droguerias").insert(
         {
@@ -129,32 +161,26 @@ def test_admin_no_puede_cambiar_rol_de_usuario_de_otra_drogueria(
         }
     ).execute().data[0]
     try:
-        de_otra = crear_usuario(
-            service_client,
-            creador=_perfil(seed_superadmin),
-            body=_body(rol="comercial", drogueria_id=otra_drogueria["id"]),
-        )
-        limpiar_usuario_creado.append(de_otra["id"])
+        de_otra = crear_usuario_directo(rol="comercial", drogueria_id=otra_drogueria["id"])
 
         with pytest.raises(ForbiddenError):
             cambiar_rol(
                 service_client, creador=_perfil(seed_admin), usuario_id=de_otra["id"], nuevo_rol="compras"
             )
     finally:
-        # borrar el usuario ANTES que la droguería (FK), sin esperar al teardown
-        # diferido de limpiar_usuario_creado que corre después de este finally.
+        # borrar la droguería DESPUÉS del teardown de crear_usuario_directo (que borra
+        # el usuario) no es posible con fixtures normales; se borra acá el usuario
+        # explícito antes que la droguería (FK), y el teardown del fixture es un no-op
+        # si ya no existe.
         service_client.table("usuarios").delete().eq("id", de_otra["id"]).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
 
 
 @pytest.mark.integration
 def test_cambiar_rol_no_permite_hacia_superadmin(
-    service_client, seed_admin, limpiar_usuario_creado
+    service_client, seed_admin, seed_drogueria, crear_usuario_directo
 ):
-    creado = crear_usuario(
-        service_client, creador=_perfil(seed_admin), body=_body(rol="comercial")
-    )
-    limpiar_usuario_creado.append(creado["id"])
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
 
     with pytest.raises(ForbiddenError):
         cambiar_rol(
@@ -182,3 +208,250 @@ def test_cambiar_rol_usuario_inexistente_lanza_not_found(service_client, seed_ad
             usuario_id="00000000-0000-0000-0000-000000000000",
             nuevo_rol="compras",
         )
+
+
+@pytest.mark.integration
+def test_admin_no_puede_promover_a_admin(
+    service_client, seed_admin, seed_drogueria, crear_usuario_directo
+):
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    with pytest.raises(ForbiddenError):
+        cambiar_rol(
+            service_client, creador=_perfil(seed_admin), usuario_id=creado["id"], nuevo_rol="admin"
+        )
+
+
+@pytest.mark.integration
+def test_superadmin_puede_promover_a_admin(
+    service_client, seed_superadmin, seed_drogueria, crear_usuario_directo
+):
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    resultado = cambiar_rol(
+        service_client, creador=_perfil(seed_superadmin), usuario_id=creado["id"], nuevo_rol="admin"
+    )
+    assert resultado["rol"] == "admin"
+
+
+@pytest.mark.integration
+def test_no_se_puede_cambiar_el_propio_rol(service_client, seed_admin):
+    with pytest.raises(ForbiddenError):
+        cambiar_rol(
+            service_client,
+            creador=_perfil(seed_admin),
+            usuario_id=seed_admin["id"],
+            nuevo_rol="comercial",
+        )
+
+
+# ---------------------------------------------------------------------------
+# cambiar_activo
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_admin_desactiva_usuario_de_su_drogueria(
+    service_client, seed_admin, seed_drogueria, crear_usuario_directo
+):
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    resultado = cambiar_activo(
+        service_client, creador=_perfil(seed_admin), usuario_id=creado["id"], activo=False
+    )
+    assert resultado["activo"] is False
+
+    reactivado = cambiar_activo(
+        service_client, creador=_perfil(seed_admin), usuario_id=creado["id"], activo=True
+    )
+    assert reactivado["activo"] is True
+
+
+@pytest.mark.integration
+def test_admin_no_puede_desactivar_usuario_de_otra_drogueria(
+    service_client, seed_admin, seed_superadmin, seed_drogueria, crear_usuario_directo
+):
+    otra_drogueria = service_client.table("droguerias").insert(
+        {
+            "nombre": "Otra", "razon_social": "Otra SA",
+            "cuit": f"20-{secrets.randbelow(99_999_999):08d}-9",
+            "ciudad": "Rosario", "provincia": "Santa Fe",
+            "contacto_email": f"otra-activo-{uuid.uuid4()}@seed.local", "contacto_telefono": "0",
+        }
+    ).execute().data[0]
+    try:
+        de_otra = crear_usuario_directo(rol="comercial", drogueria_id=otra_drogueria["id"])
+
+        with pytest.raises(ForbiddenError):
+            cambiar_activo(
+                service_client, creador=_perfil(seed_admin), usuario_id=de_otra["id"], activo=False
+            )
+    finally:
+        service_client.table("usuarios").delete().eq("id", de_otra["id"]).execute()
+        service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
+
+
+@pytest.mark.integration
+def test_no_se_puede_desactivar_superadmin(service_client, seed_superadmin):
+    with pytest.raises(ForbiddenError):
+        cambiar_activo(
+            service_client,
+            creador=_perfil(seed_superadmin),
+            usuario_id=seed_superadmin["id"],
+            activo=False,
+        )
+
+
+@pytest.mark.integration
+def test_no_se_puede_desactivar_el_propio_usuario(service_client, seed_admin):
+    with pytest.raises(ForbiddenError):
+        cambiar_activo(
+            service_client, creador=_perfil(seed_admin), usuario_id=seed_admin["id"], activo=False
+        )
+
+
+@pytest.mark.integration
+def test_no_se_puede_desactivar_usuario_sistema(service_client, seed_superadmin, seed_usuario_sistema):
+    with pytest.raises(ForbiddenError):
+        cambiar_activo(
+            service_client,
+            creador=_perfil(seed_superadmin),
+            usuario_id=seed_usuario_sistema["id"],
+            activo=False,
+        )
+
+
+@pytest.mark.integration
+def test_no_se_puede_cambiar_rol_de_usuario_sistema(service_client, seed_superadmin, seed_usuario_sistema):
+    with pytest.raises(ForbiddenError):
+        cambiar_rol(
+            service_client,
+            creador=_perfil(seed_superadmin),
+            usuario_id=seed_usuario_sistema["id"],
+            nuevo_rol="comercial",
+        )
+
+
+@pytest.mark.integration
+def test_no_se_puede_eliminar_usuario_sistema(service_client, seed_superadmin, seed_usuario_sistema):
+    with pytest.raises(ForbiddenError):
+        eliminar_usuario(
+            service_client, creador=_perfil(seed_superadmin), usuario_id=seed_usuario_sistema["id"]
+        )
+
+
+@pytest.mark.integration
+def test_cambiar_activo_usuario_inexistente_lanza_not_found(service_client, seed_admin):
+    with pytest.raises(NotFoundError):
+        cambiar_activo(
+            service_client,
+            creador=_perfil(seed_admin),
+            usuario_id="00000000-0000-0000-0000-000000000000",
+            activo=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# actualizar_perfil_propio
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_actualizar_perfil_propio_solo_toca_campos_provistos(service_client, seed_admin):
+    resultado = actualizar_perfil_propio(
+        service_client,
+        usuario_id=seed_admin["id"],
+        body=UsuarioPerfilUpdate(apellido="Apellido actualizado"),
+    )
+
+    assert resultado["apellido"] == "Apellido actualizado"
+    assert resultado["nombre"] == "Admin de test"
+
+
+# ---------------------------------------------------------------------------
+# eliminar_usuario
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_admin_elimina_usuario_de_su_drogueria(service_client, seed_admin, seed_drogueria, crear_usuario_directo):
+    creado = crear_usuario_directo(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    eliminar_usuario(service_client, creador=_perfil(seed_admin), usuario_id=creado["id"])
+
+    assert repo_obtener(service_client, creado["id"]) is None
+
+
+@pytest.mark.integration
+def test_no_se_puede_eliminar_el_propio_usuario(service_client, seed_admin):
+    with pytest.raises(ForbiddenError):
+        eliminar_usuario(service_client, creador=_perfil(seed_admin), usuario_id=seed_admin["id"])
+
+
+@pytest.mark.integration
+def test_no_se_puede_eliminar_superadmin(service_client, seed_superadmin):
+    with pytest.raises(ForbiddenError):
+        eliminar_usuario(
+            service_client, creador=_perfil(seed_superadmin), usuario_id=seed_superadmin["id"]
+        )
+
+
+@pytest.mark.integration
+def test_admin_no_puede_eliminar_usuario_de_otra_drogueria(
+    service_client, seed_admin, seed_superadmin, seed_drogueria, crear_usuario_directo
+):
+    otra_drogueria = service_client.table("droguerias").insert(
+        {
+            "nombre": "Otra", "razon_social": "Otra SA",
+            "cuit": f"20-{secrets.randbelow(99_999_999):08d}-9",
+            "ciudad": "Rosario", "provincia": "Santa Fe",
+            "contacto_email": f"otra-elim-{uuid.uuid4()}@seed.local", "contacto_telefono": "0",
+        }
+    ).execute().data[0]
+    try:
+        de_otra = crear_usuario_directo(rol="comercial", drogueria_id=otra_drogueria["id"])
+
+        with pytest.raises(ForbiddenError):
+            eliminar_usuario(service_client, creador=_perfil(seed_admin), usuario_id=de_otra["id"])
+    finally:
+        service_client.table("usuarios").delete().eq("id", de_otra["id"]).execute()
+        service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
+
+
+@pytest.mark.integration
+def test_eliminar_usuario_inexistente_lanza_not_found(service_client, seed_admin):
+    with pytest.raises(NotFoundError):
+        eliminar_usuario(
+            service_client,
+            creador=_perfil(seed_admin),
+            usuario_id="00000000-0000-0000-0000-000000000000",
+        )
+
+
+@pytest.mark.integration
+def test_eliminar_usuario_con_actividad_asociada_lanza_conflict(
+    service_client, seed_superadmin, seed_drogueria, crear_usuario_directo
+):
+    creado = crear_usuario_directo(rol="admin", drogueria_id=seed_drogueria["id"])
+    evento = (
+        service_client.table("eventos")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "tipo": "seguimiento",
+                "titulo": "Test FK",
+                "created_by": creado["id"],
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    try:
+        with pytest.raises(ConflictError):
+            eliminar_usuario(
+                service_client, creador=_perfil(seed_superadmin), usuario_id=creado["id"]
+            )
+    finally:
+        service_client.table("eventos").delete().eq("id", evento["id"]).execute()
+
+
+def repo_obtener(service_client, usuario_id: str):
+    resultado = service_client.table("usuarios").select("id").eq("id", usuario_id).limit(1).execute()
+    return resultado.data[0] if resultado.data else None

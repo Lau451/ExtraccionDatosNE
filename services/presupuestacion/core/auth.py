@@ -19,6 +19,7 @@ class UsuarioPerfil(BaseModel):
     id: str
     drogueria_id: str | None
     rol: str
+    activo: bool = True
 
 
 def get_current_claims(token: str = Depends(get_bearer_token)) -> UserClaims:
@@ -35,14 +36,17 @@ def get_current_user(
 ) -> UsuarioPerfil:
     result = (
         client.table("usuarios")
-        .select("id, drogueria_id, rol")
+        .select("id, drogueria_id, rol, activo")
         .eq("id", claims.sub)
         .limit(1)
         .execute()
     )
     if not result.data:
         raise NotFoundError("No se encontró el perfil de usuario")
-    return UsuarioPerfil(**result.data[0])
+    perfil = UsuarioPerfil(**result.data[0])
+    if not perfil.activo:
+        raise AuthenticationError("Usuario desactivado")
+    return perfil
 
 
 def require_roles(*roles: str) -> Callable[..., UsuarioPerfil]:

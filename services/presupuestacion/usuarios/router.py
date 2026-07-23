@@ -4,8 +4,20 @@ from supabase import Client
 from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user, require_roles
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import NotFoundError
-from services.presupuestacion.usuarios.models import UsuarioCreate, UsuarioOut, UsuarioRolUpdate
-from services.presupuestacion.usuarios.service import cambiar_rol_para_endpoint, crear_usuario_para_endpoint
+from services.presupuestacion.usuarios.models import (
+    UsuarioActivoUpdate,
+    UsuarioCreate,
+    UsuarioOut,
+    UsuarioPerfilUpdate,
+    UsuarioRolUpdate,
+)
+from services.presupuestacion.usuarios.service import (
+    actualizar_perfil_propio_para_endpoint,
+    cambiar_activo_para_endpoint,
+    cambiar_rol_para_endpoint,
+    crear_usuario_para_endpoint,
+    eliminar_usuario_para_endpoint,
+)
 
 router = APIRouter()
 
@@ -44,3 +56,28 @@ def cambiar_rol_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
 ) -> UsuarioOut:
     return cambiar_rol_para_endpoint(creador=usuario, usuario_id=usuario_id, nuevo_rol=body.rol)
+
+
+@router.patch("/usuarios/{usuario_id}/activo", response_model=UsuarioOut)
+def cambiar_activo_endpoint(
+    usuario_id: str,
+    body: UsuarioActivoUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
+) -> UsuarioOut:
+    return cambiar_activo_para_endpoint(creador=usuario, usuario_id=usuario_id, activo=body.activo)
+
+
+@router.patch("/usuarios/me", response_model=UsuarioOut)
+def actualizar_perfil_propio_endpoint(
+    body: UsuarioPerfilUpdate,
+    usuario: UsuarioPerfil = Depends(get_current_user),
+) -> UsuarioOut:
+    return actualizar_perfil_propio_para_endpoint(usuario_id=usuario.id, body=body)
+
+
+@router.delete("/usuarios/{usuario_id}", status_code=204)
+def eliminar_usuario_endpoint(
+    usuario_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
+) -> None:
+    eliminar_usuario_para_endpoint(creador=usuario, usuario_id=usuario_id)

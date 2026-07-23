@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     supabase_service_key: str
     usuario_sistema_id: str
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    frontend_url: str = "http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:
