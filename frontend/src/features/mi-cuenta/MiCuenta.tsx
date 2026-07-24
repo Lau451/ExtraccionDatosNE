@@ -124,7 +124,8 @@ function CambiarPasswordForm() {
       setPassword('')
       setConfirmacion('')
       setGuardado(true)
-    } catch {
+    } catch (error) {
+      console.error('Error al cambiar la contraseña', error)
       setError('No pudimos cambiar la contraseña.')
     } finally {
       setIsSubmitting(false)
@@ -193,7 +194,8 @@ function CambiarEmailForm({ emailActual }: { emailActual: string }) {
       const { error } = await supabase.auth.updateUser({ email })
       if (error) throw error
       setEnviado(true)
-    } catch {
+    } catch (error) {
+      console.error('Error al cambiar el email', error)
       setError('No pudimos iniciar el cambio de email.')
     } finally {
       setIsSubmitting(false)

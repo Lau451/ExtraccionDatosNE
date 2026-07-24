@@ -43,7 +43,8 @@ function SolicitarResetForm() {
       })
       if (error) throw error
       setEnviado(true)
-    } catch {
+    } catch (error) {
+      console.error('Error al solicitar el reset de contraseña', error)
       setError('No pudimos enviar el mail. Probá de nuevo.')
     } finally {
       setIsSubmitting(false)
