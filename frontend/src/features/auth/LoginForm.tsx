@@ -16,7 +16,8 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     try {
       await signIn(email, password)
       onSuccess()
-    } catch {
+    } catch (error) {
+      console.error('Error al iniciar sesión', error)
       setError('Email o contraseña incorrectos')
     } finally {
       setIsSubmitting(false)
