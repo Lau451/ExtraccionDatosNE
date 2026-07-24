@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# Duplicado a propósito de `Rol` en frontend/src/features/auth/AuthContext.tsx:6 —
+# no hay generación de tipos entre ambos proyectos. Si cambia una lista, cambiar la otra.
 Rol = Literal["superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras"]
 
 

@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { ApiError, presupuestacionFetch } from '@/lib/api/presupuestacion'
 import { supabase } from '@/lib/supabase'
 
+// Duplicado a propósito de `Rol` en services/presupuestacion/usuarios/models.py:5 —
+// no hay generación de tipos entre ambos proyectos. Si cambia una lista, cambiar la otra.
 export type Rol = 'superadmin' | 'admin' | 'gerencia' | 'lider_comercial' | 'comercial' | 'compras'
 
 export interface Perfil {
