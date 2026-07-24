@@ -24,13 +24,19 @@ export function SetPasswordForm({
       return
     }
 
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('La contraseña debe tener al menos una letra y un número')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
       await supabase.auth.signOut()
       navigate({ to: '/login' })
-    } catch {
+    } catch (error) {
+      console.error('Error al guardar la contraseña', error)
       setError('No pudimos guardar la contraseña. Probá de nuevo.')
     } finally {
       setIsSubmitting(false)
