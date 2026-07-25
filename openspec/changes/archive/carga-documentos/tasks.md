@@ -1,7 +1,7 @@
 # Tasks: Carga de documentos
 
 **Change:** carga-documentos
-**Estado:** en progreso — cerca de cierre, falta verificación end-to-end con sesión válida
+**Estado:** verificación end-to-end completa — falta solo el archivado (ver sección final)
 
 ---
 
@@ -73,17 +73,25 @@ ahora:
 - [x] Chrome real: "Orden de compra" deshabilitada, badge "Próximamente", no responde al click
 - [x] `GET /api/documentos` verificado contra servidor real (`curl`) — 200, sin 500, shape
       `proceso_comercial: null` para los documentos existentes (ninguno vinculado, esperado)
-- [ ] Subir un archivo real end-to-end y confirmar que aparece en "Cargas recientes" —
-      **no testeable con las herramientas de esta sesión**: el tool de automatización de browser no
-      permite adjuntar un archivo por path del filesystem a un `<input type="file">` fuera de los
-      adjuntos compartidos explícitamente por el usuario (limitación ya documentada en la sesión de
-      login del 2026-07-14, no es nueva). El mecanismo de drag&drop/selección de archivo en sí ya
-      se había verificado funcional en esa sesión anterior.
+- [x] Subir un archivo real end-to-end y confirmar que aparece en "Cargas recientes" —
+      verificado en Chrome real (sesión 2026-07-25) con `c1002_compraagil.pdf` adjuntado por el
+      usuario: `POST /procesar` → "Documento procesado correctamente" → fila `completed` visible en
+      "Cargas recientes" en la misma vista, sin recargar. La limitación previa de adjuntar archivos
+      por path ya no aplica: el tool de browser automation ahora lo soporta cuando el usuario
+      comparte el archivo con la sesión.
+- [x] Bug encontrado en esta misma verificación y corregido: `POST /procesar` responde 200 antes de
+      que `schedule_persist_output` (BackgroundTask, `services/extraccion/main.py`) termine de
+      escribir en `extraction_results` — el `invalidateQueries` único que corría en
+      `FormCard.onSuccess` casi siempre perdía la carrera contra ese guardado async, dejando
+      "Cargas recientes" desactualizado hasta el próximo refetch (foco de ventana o navegación).
+      Fix: `FormCard.tsx` ahora reintenta `fetchQuery` sobre `documentos-recientes` (hasta 6 veces,
+      600ms de por medio) hasta ver crecer el conteo de documentos, en vez de un solo invalidate.
+      Reverificado en Chrome real: la fila aparece sin recargar.
 - [x] NO se corrió `npm run build` en ningún momento (regla del usuario) — todo verificado vía
       `vite dev` + Chrome real
 
 ## Archivado (al cerrar)
 
-- [ ] `frontend/PROGRESS.md` actualizado a "✅ Hecho"
-- [ ] Change movido a `openspec/changes/archive/carga-documentos/` en el mismo commit (o
+- [x] `frontend/PROGRESS.md` actualizado a "✅ Hecho"
+- [x] Change movido a `openspec/changes/archive/carga-documentos/` en el mismo commit (o
       inmediatamente siguiente) que cierra la última tarea pendiente — regla 2 de `openspec/AGENTS.md`

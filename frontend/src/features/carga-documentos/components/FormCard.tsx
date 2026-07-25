@@ -1,7 +1,35 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { listarClientes, procesarDocumento, type TipoDocumento } from '@/lib/api/extraccion'
+import {
+  listarClientes,
+  listarDocumentosRecientes,
+  procesarDocumento,
+  type TipoDocumento,
+} from '@/lib/api/extraccion'
+
+const RECIENTES_KEY = ['documentos-recientes']
+
+function esperar(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// El backend responde 200 apenas termina de leer el CSV -- el guardado real en
+// `extraction_results` corre después, en un BackgroundTask (ver
+// services/extraccion/main.py: schedule_persist_output). Un solo invalidate
+// apenas llega la respuesta casi siempre le gana la carrera a ese guardado y
+// deja "Cargas recientes" desactualizado hasta el próximo refetch (foco de
+// ventana, navegación). Reintentamos hasta ver crecer el conteo, con tope.
+async function esperarNuevoDocumento(queryClient: ReturnType<typeof useQueryClient>, countAntes: number) {
+  for (let intento = 0; intento < 6; intento++) {
+    const data = await queryClient.fetchQuery({
+      queryKey: RECIENTES_KEY,
+      queryFn: () => listarDocumentosRecientes(),
+    })
+    if (data.documentos.length > countAntes) return
+    await esperar(600)
+  }
+}
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string; disabled?: boolean }[] = [
   { value: 'licitaciones', label: 'Licitación / Directa' },
@@ -26,12 +54,15 @@ export function FormCard() {
   const clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!archivo) throw new Error('Falta seleccionar un archivo')
-      return procesarDocumento({ archivo, tipo, clienteId: clienteId || undefined })
+      const countAntes = queryClient.getQueryData<{ documentos: unknown[] }>(RECIENTES_KEY)
+        ?.documentos.length ?? 0
+      const resultado = await procesarDocumento({ archivo, tipo, clienteId: clienteId || undefined })
+      await esperarNuevoDocumento(queryClient, countAntes)
+      return resultado
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['documentos-recientes'] })
       setArchivo(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     },

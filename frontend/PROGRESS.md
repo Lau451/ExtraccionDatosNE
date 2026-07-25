@@ -7,7 +7,7 @@ change está en `openspec/changes/archive/`.
 | # | Pantalla | Estado | Change |
 |---|----------|--------|--------|
 | 1 | Login | ✅ Hecho | [`archive/login-frontend`](../openspec/changes/archive/login-frontend/) |
-| 2 | Carga de documentos | 🔶 En progreso | [`carga-documentos`](../openspec/changes/carga-documentos/) |
+| 2 | Carga de documentos | ✅ Hecho | [`archive/carga-documentos`](../openspec/changes/archive/carga-documentos/) |
 | 3 | Validar extracción | ⬜ Pendiente | [`validar-extraccion`](../openspec/changes/validar-extraccion/) (solo stub de scope) |
 | 4 | Procesos comerciales | ✅ Hecho | [`archive/procesos-comerciales`](../openspec/changes/archive/procesos-comerciales/) |
 | 5 | Matching | ⬜ Pendiente | — |
