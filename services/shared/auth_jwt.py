@@ -30,6 +30,12 @@ def verificar_token(token: str, *, supabase_url: str) -> dict:
             signing_key.key,
             algorithms=["ES256", "HS256"],
             audience="authenticated",
+            # Tolera pequeños desfasajes de reloj entre esta máquina y el servidor de
+            # Supabase que emitió el token -- sin esto, `iat` puede caer segundos en
+            # el "futuro" y jwt.decode lo rechaza con ImmatureSignatureError incluso
+            # con un token recién emitido y válido (reproducido: ~2s de desfasaje
+            # bastaban para tumbar el login de forma intermitente).
+            leeway=10,
         )
     except jwt.PyJWTError as exc:
         raise TokenInvalidoError("Token inválido o vencido") from exc
