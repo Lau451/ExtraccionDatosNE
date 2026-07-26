@@ -22,8 +22,17 @@ services:
       # Directorio de salida
       - OUTPUT_BASE_DIR=C:/app/output
 
+      # Sin estas dos, get_client() devuelve None y NINGUNA extracción se persiste
+      # (services/extraccion/supabase_client.py:77-85). Bug vivo hoy en Docker.
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+
       # Opcional
       - PYTHONDONTWRITEBYTECODE=1
+
+    volumes:
+      # Mismo mount path en ambos servicios: csv_disk_path se guarda ABSOLUTO.
+      - extraccion-output:C:/app/output
 
     restart: always
 
@@ -49,4 +58,11 @@ services:
       # Opcional
       - PYTHONDONTWRITEBYTECODE=1
 
+    volumes:
+      # Read-only: presupuestacion NUNCA escribe en el output del extractor (D2).
+      - extraccion-output:C:/app/output:ro
+
     restart: always
+
+volumes:
+  extraccion-output:
