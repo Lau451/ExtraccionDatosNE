@@ -9,6 +9,7 @@ export function ConfirmDialog({
   description,
   onConfirm,
   confirmLabel = 'Eliminar',
+  pendingLabel = 'Eliminando…',
   isPending = false,
 }: {
   open: boolean
@@ -17,6 +18,11 @@ export function ConfirmDialog({
   description: string
   onConfirm: () => void
   confirmLabel?: string
+  /** Texto del botón mientras `isPending`. Default retrocompatible con el único
+   * uso previo (eliminar usuario) — otros callers (validar-extraccion) lo
+   * parametrizan porque "Eliminando…" no tiene sentido para confirmar una
+   * validación. */
+  pendingLabel?: string
   isPending?: boolean
 }) {
   return (
@@ -40,7 +46,7 @@ export function ConfirmDialog({
               onClick={onConfirm}
               className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {isPending ? 'Eliminando…' : confirmLabel}
+              {isPending ? pendingLabel : confirmLabel}
             </button>
           </div>
         </Dialog.Content>

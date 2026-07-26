@@ -11,6 +11,7 @@ interface NavItem {
 // (SEjXiBEMxprppdgmlNHKO8), todavía sin validar por screenshot en esta sesión.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Carga de documentos', to: '/' },
+  { label: 'Validar extracción', to: '/validar-extraccion' },
   { label: 'Licitaciones', to: '/licitaciones', disabled: true },
   { label: 'Calendario', to: '/calendario', disabled: true },
   { label: 'Historial', to: '/historial', disabled: true },

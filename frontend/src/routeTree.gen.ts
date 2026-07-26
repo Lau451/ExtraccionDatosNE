@@ -15,6 +15,8 @@ import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
+import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
+import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 
@@ -47,6 +49,18 @@ const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   path: '/mi-cuenta',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedValidarExtraccionIndexRoute =
+  AuthenticatedValidarExtraccionIndexRouteImport.update({
+    id: '/validar-extraccion/',
+    path: '/validar-extraccion/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedValidarExtraccionExtractionIdRoute =
+  AuthenticatedValidarExtraccionExtractionIdRouteImport.update({
+    id: '/validar-extraccion/$extractionId',
+    path: '/validar-extraccion/$extractionId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSuperadminEmpresasRoute =
   AuthenticatedSuperadminEmpresasRouteImport.update({
     id: '/superadmin/empresas',
@@ -68,6 +82,8 @@ export interface FileRoutesByFullPath {
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
@@ -77,6 +93,8 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,6 +106,8 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/_authenticated/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,6 +119,8 @@ export interface FileRouteTypes {
     | '/mi-cuenta'
     | '/admin/usuarios'
     | '/superadmin/empresas'
+    | '/validar-extraccion/$extractionId'
+    | '/validar-extraccion/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invite'
@@ -108,6 +130,8 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/usuarios'
     | '/superadmin/empresas'
+    | '/validar-extraccion/$extractionId'
+    | '/validar-extraccion'
   id:
     | '__root__'
     | '/_authenticated'
@@ -118,6 +142,8 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/admin/usuarios'
     | '/_authenticated/superadmin/empresas'
+    | '/_authenticated/validar-extraccion/$extractionId'
+    | '/_authenticated/validar-extraccion/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +197,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/validar-extraccion/': {
+      id: '/_authenticated/validar-extraccion/'
+      path: '/validar-extraccion'
+      fullPath: '/validar-extraccion/'
+      preLoaderRoute: typeof AuthenticatedValidarExtraccionIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/validar-extraccion/$extractionId': {
+      id: '/_authenticated/validar-extraccion/$extractionId'
+      path: '/validar-extraccion/$extractionId'
+      fullPath: '/validar-extraccion/$extractionId'
+      preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/superadmin/empresas': {
       id: '/_authenticated/superadmin/empresas'
       path: '/superadmin/empresas'
@@ -193,6 +233,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminUsuariosRoute: typeof AuthenticatedAdminUsuariosRoute
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
+  AuthenticatedValidarExtraccionExtractionIdRoute: typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -200,6 +242,10 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminUsuariosRoute: AuthenticatedAdminUsuariosRoute,
   AuthenticatedSuperadminEmpresasRoute: AuthenticatedSuperadminEmpresasRoute,
+  AuthenticatedValidarExtraccionExtractionIdRoute:
+    AuthenticatedValidarExtraccionExtractionIdRoute,
+  AuthenticatedValidarExtraccionIndexRoute:
+    AuthenticatedValidarExtraccionIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
