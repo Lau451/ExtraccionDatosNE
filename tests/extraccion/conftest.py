@@ -89,6 +89,21 @@ def seed_extraction_result_factory(
         comparativas = comparativas_por_extraccion[extraction_id]
 
         for comparativa in comparativas:
+            # notificacion_entregas.notificacion_id (fk_ne_notif) SÍ tiene ON DELETE
+            # CASCADE, pero se borra explícito igual: el fix de D6 (5.2) hace que cada
+            # reemplazo de comparativa cree filas acá, y depender solo del cascade deja
+            # el orden de limpieza implícito en vez de documentado.
+            notificaciones = (
+                service_client.table("notificaciones")
+                .select("id")
+                .eq("comparativa_id", comparativa["id"])
+                .execute()
+                .data
+            )
+            for notificacion in notificaciones:
+                service_client.table("notificacion_entregas").delete().eq(
+                    "notificacion_id", notificacion["id"]
+                ).execute()
             service_client.table("notificaciones").delete().eq(
                 "comparativa_id", comparativa["id"]
             ).execute()

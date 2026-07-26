@@ -21,6 +21,28 @@ def buscar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> di
     return resultado.data[0] if resultado.data else None
 
 
+def listar_extracciones(
+    client: Client, *, validado: bool | None, limit: int, offset: int
+) -> list[dict[str, Any]]:
+    # Con validado=False el plan pega contra idx_er_sin_validar (drogueria_id,
+    # created_at DESC) WHERE validado = FALSE -- índice parcial ya materializado
+    # en ese orden, sin sort extra. RLS (er_sel / mismo_tenant) es la frontera de
+    # tenant; no hay filtro manual por drogueria_id acá (§8.1 -- superadmin tiene
+    # drogueria_id NULL y quedaría sin resultados si lo agregáramos).
+    query = (
+        client.table("extraction_results")
+        .select(
+            "id, document_type, source_filename, row_count, status, validado, "
+            "proceso_comercial_id, created_at, procesos_comerciales(nombre)"
+        )
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+    )
+    if validado is not None:
+        query = query.eq("validado", validado)
+    return query.execute().data
+
+
 def actualizar_extraction_result(
     client: Client, *, extraction_id: str, campos: dict[str, Any]
 ) -> dict[str, Any]:
@@ -86,17 +108,19 @@ def actualizar_oferta_item(
 
 
 def listar_usuarios_por_rol(
-    client: Client, *, drogueria_id: str, roles: tuple[str, ...]
+    client: Client,
+    *,
+    drogueria_id: str,
+    roles: tuple[str, ...],
+    excluir_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    return (
+    query = (
         client.table("usuarios")
         .select("id")
         .eq("drogueria_id", drogueria_id)
+        .eq("activo", True)  # no avisar a usuarios desactivados (D6, defecto #3)
         .in_("rol", roles)
-        .execute()
-        .data
     )
-
-
-def crear_notificacion(client: Client, fila: dict[str, Any]) -> None:
-    client.table("notificaciones").insert(fila).execute()
+    if excluir_id is not None:
+        query = query.neq("id", excluir_id)  # no auto-notificar al que validó
+    return query.execute().data
