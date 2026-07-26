@@ -3,6 +3,60 @@
 Auditoría técnica P1 (bloqueante/riesgo alto) / P2 (riesgo medio, corregir pronto) /
 P3 (mejora, sin urgencia).
 
+## P2 — `_ROLES_VALIDAR` no incluye `superadmin` (código muerto en `router.py`)
+
+Agregado por el change `validar-extraccion` (design.md §8.2/§14). `_ROLES_VALIDAR`
+(`router.py:23`, también usado por `GET /extracciones/{id}/filas` desde este change)
+es `("admin", "gerencia", "lider_comercial", "comercial")` — **no incluye
+`"superadmin"`**. `require_roles(*_ROLES_VALIDAR)` le devuelve 403 a un `superadmin`
+antes de que el handler corra, lo que vuelve **código muerto** la rama
+`if usuario.rol != "superadmin"` de `_verificar_pertenencia`
+(`router.py:48` — exime a `superadmin` del chequeo de `drogueria_id`, pero esa rama
+nunca se alcanza porque el `Depends(require_roles(...))` ya cortó antes).
+
+El patrón se replicó tal cual (mismo criterio que el resto del módulo) por
+consistencia con `POST .../validar`, que ya tenía este mismo gap antes de este
+change — no es una regresión introducida acá, es la misma brecha heredada,
+ahora también presente en los dos endpoints nuevos de lectura.
+
+**Pendiente de definición funcional**: decidir si `superadmin` debe poder
+validar/leer extracciones de cualquier droguería (en cuyo caso `_ROLES_VALIDAR`
+necesita agregar `"superadmin"` y la rama de `_verificar_pertenencia` deja de ser
+código muerto) o si es intencional que solo pueda operar vía otro camino
+(no identificado en esta sesión). Bugfix aparte, fuera del alcance de
+`validar-extraccion`.
+
+## P2 — Materialización de comparativa no es transaccional entre statements
+
+Agregado por el change `validar-extraccion` (design.md §4, aclaración honesta sobre
+lo que D3 garantiza y lo que no). PostgREST no da transacciones entre requests:
+"atómico" en este módulo significa **una sola request HTTP**, no una sola transacción
+de Postgres — eso ya era así antes de este change, no es una regresión.
+
+Desglose real por statement dentro de `_materializar_comparativa`
+(`service.py:310-407`):
+
+| Etapa | Statements | Atomicidad real |
+|---|---|---|
+| `comparativas` (INSERT) | 1 | atómico |
+| `ofertas_items` (INSERT multi-fila) | 1 | atómico: todas las filas entran o ninguna |
+| Posiciones (`UPDATE` por oferta, `_computar_posiciones`) | N (una por oferta) | **no atómico entre sí ni con el INSERT anterior** |
+| `validado = TRUE` (flip final) | 1 | último, siempre |
+
+Si el proceso cae entre el `INSERT` de `comparativas`/`ofertas_items` y el `UPDATE`
+final de `validado`, la comparativa queda creada con `validado=FALSE` en
+`extraction_results` — reintentable, pero un reintento genera una **v+1** en vez de
+reusar la fila ya creada (el versionado lo absorbe sin duplicar datos visibles, pero
+deja una versión "huérfana" nunca marcada vigente). Para licitación/cotización el
+riesgo es peor: un reintento tras una caída parcial **duplicaría** `items_proceso`
+(no hay versionado ahí, cada `INSERT` es un alta nueva).
+
+**Recomendación** [RECOMENDACIÓN], documentada explícitamente como fuera de alcance
+de `validar-extraccion`: mover la materialización a una RPC transaccional de
+Postgres (`BEGIN`/`COMMIT` server-side) es la solución correcta y merece su propio
+change — el módulo actual no tiene ningún mecanismo de compensación/rollback
+aplicativo para estos caminos.
+
 ## P2 — Bypass de `notificaciones/`: la notificación de reemplazo no genera entregas ni respeta preferencias
 
 `repository.py:101-102` (`crear_notificacion`) inserta directo contra la tabla

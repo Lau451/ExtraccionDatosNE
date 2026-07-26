@@ -47,21 +47,25 @@
 
 ## Quién consume este endpoint
 
-**Ningún frontend lo consume todavía.** No se encontró en esta sesión ningún cliente
-HTTP dentro del repositorio que llame a este endpoint (no hay tests de router, solo
-de `service.py` directamente — ver [`api.md`](./api.md)). Confirmado también por
-`openspec/changes/validar-extraccion/proposal.md:1-6`: la pantalla #3 del MVP del
-frontend ("Validar extracción") es, a la fecha de esta documentación, un **stub sin
-empezar** ("Estado: sin empezar... no hay `spec.md` ni `tasks.md` todavía",
-`proposal.md:3`) — el backend de este módulo existe y está probado por integración,
-pero no tiene consumidor de UI todavía. Ver también `frontend/PROGRESS.md:11`
-("⬜ Pendiente").
+**Corrección post-`validar-extraccion` (reemplaza el texto anterior de esta sección,
+que describía un stub sin frontend):** el change `validar-extraccion` implementó
+`frontend/src/features/validar-extraccion/` como consumidor real de este endpoint —
+`ValidarExtraccionDetalle.tsx` llama `POST /extracciones/{id}/validar` vía
+`frontend/src/lib/api/extracciones.ts:validarExtraccion`. Ver
+[`../../../openspec/changes/validar-extraccion/`](../../../openspec/changes/validar-extraccion/)
+para el spec/design completos.
 
-El flujo previsto (según el scope heredado documentado en ese stub,
-`proposal.md:20-46`) es: subida de archivo (`POST /procesar` en
-`services/extraccion/`) → vinculación opcional a un proceso comercial (mecanismo
-todavía sin definir entre este endpoint y `PATCH /api/extraction-results/{id}` de
-`services/extraccion/routers/extraction_results.py`, `proposal.md:41-46`) → esta
-pantalla, que dispararía `POST /extracciones/{id}/validar`. Nada de esto está
-confirmado en código — es intención de producto documentada, no comportamiento
-verificado.
+**No hay ninguna relación entre este endpoint y `PATCH /api/extraction-results/{id}`**
+(`services/extraccion/routers/extraction_results.py`) — ni funcional ni de código. El
+texto anterior de esta sección especulaba con un "mecanismo todavía sin definir" entre
+ambos; quedó resuelto (y esa relación descartada) al construir el flujo real:
+`ValidarExtraccionDetalle` resuelve `proceso_comercial_id` directamente contra
+`services/presupuestacion/procesos_comerciales/` (vía
+`ProcesoComercialSelector.tsx`/`NuevaLiciCotiDialog.tsx`, reusando
+`crearProcesoComercial`/`listarProcesosComerciales`) y lo manda en el body de
+`POST .../validar` — el `PATCH` de `services/extraccion` nunca se invoca desde este
+flujo. Además, ese `PATCH` está **deprecado y confirmado roto** contra el schema real
+(`extraction_results` no tiene columna `licitacion_id`) — ver
+[`extraccion_api/api.md`](../extraccion_api/api.md) y
+[`extraccion_api/pendientes.md`](../extraccion_api/pendientes.md), por lo que tampoco
+sería viable adoptarlo como mecanismo de vinculación aunque se hubiera querido.

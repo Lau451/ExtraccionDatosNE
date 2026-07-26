@@ -13,8 +13,8 @@ flujo.
 | `home`, `licitaciones_page`, `upload_page`, `calendario_page`, `historial_page`, `guia_usuario` | `GET` handlers | Rutas HTML Jinja2 (`:107-119,356-363,484-486`). |
 | `procesar` | `POST /procesar` | Pipeline completo, ver [`flujo.md`](./flujo.md) (`:152-353`). |
 | `listar_documentos` | `GET /api/documentos` | `:366-397`. |
-| `detalle_documento` | `GET /api/documentos/{doc_id}` | `:400-432`. |
-| `descargar_documento_supabase` | `GET /api/documentos/{doc_id}/descargar` | `:435-481`. |
+| `detalle_documento` | ⚠️ **DEPRECADO** — `GET /api/documentos/{doc_id}` | `:400-432`. Confirmado roto contra el schema real (`docs/schema/extractor_final.sql`, sesión `validar-extraccion`): consulta `comparativas_results`/`licitaciones_results` (`:417-424`), tablas que **no existen** en `extractor_final.sql` (sin `CREATE TABLE` para ninguna de las dos). Cualquier invocación con `document_type` resuelto falla en PostgREST con "relation does not exist" antes de poder devolver `rows`. Ver [`pendientes.md`](./pendientes.md) P2-3 (ya documentaba la ausencia de escritor; esta sesión confirma además la ausencia de la tabla misma) y [`base_de_datos.md`](./base_de_datos.md). El reemplazo funcional es `GET /extracciones/{id}/filas` de `services/presupuestacion/extraccion/router.py` (con auth real, a diferencia de este endpoint público — ver [`extraccion_validacion/api.md`](../extraccion_validacion/api.md)). |
+| `descargar_documento_supabase` | `GET /api/documentos/{doc_id}/descargar` | `:435-481`. Mismo defecto que `detalle_documento` — misma tabla inexistente (`:452-460`), no marcado deprecado en esta sesión solo por no estar explícitamente en el alcance de `validar-extraccion`, pero el hallazgo aplica igual. |
 | `descargar` | `GET /descargar/{nombre_archivo}?origen=&modulo=` | `:489-498`. |
 
 ## `routers/licitaciones.py`
@@ -34,7 +34,7 @@ flujo.
 
 | Símbolo | Firma | Rol |
 |---|---|---|
-| `actualizar` | `PATCH /api/extraction-results/{result_id}` | Vincula/desvincula `licitacion_id`, cambia `document_type` (`:32-60`). |
+| `actualizar` | ⚠️ **DEPRECADO** — `PATCH /api/extraction-results/{result_id}` | Vincula/desvincula `licitacion_id`, cambia `document_type` (`:32-60`). Confirmado roto contra el schema real (sesión `validar-extraccion`): `extraction_results` (`docs/schema/extractor_final.sql:387-408`) **no tiene columna `licitacion_id`** — solo `proceso_comercial_id`. El `.update({"licitacion_id": ...})` de `:40-45` falla en PostgREST con "column not found" en cualquier invocación que incluya ese campo. Esto cierra, con evidencia de schema, la pregunta que dejaba abierta [`base_de_datos.md`](./base_de_datos.md) ("no hay evidencia... de que sean la misma columna física"): no lo son, y `licitacion_id` directamente no existe. El reemplazo funcional es `POST /extracciones/{id}/validar` de `services/presupuestacion/extraccion/router.py`, que resuelve `proceso_comercial_id` (ver [`extraccion_validacion/api.md`](../extraccion_validacion/api.md)) — ver también la corrección en [`extraccion_validacion/casos_de_uso.md`](../extraccion_validacion/casos_de_uso.md): no hay relación funcional entre ambos endpoints, más allá de operar sobre la misma tabla. |
 
 ## `routers/clientes.py`
 
