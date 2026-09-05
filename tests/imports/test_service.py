@@ -833,28 +833,6 @@ def test_mismo_cuit_como_cliente_y_luego_proveedor_produce_un_tercero_con_dos_ro
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Defecto descubierto en Fase 9 (ver supabase/migrations/0009_fix_upsert_terceros_"
-        "legacy_ambiguous_column.sql y openspec/changes/terceros-modelo/tasks.md 9.13): "
-        "uq_terceros_codigo es UNIQUE(drogueria_id, codigo_interno) SIN componente de "
-        "entidad_legacy (0008_terceros_modelo.sql, sección 2). El RPC upsert_terceros_legacy "
-        "solo desambigua colisiones vía terceros_legacy_map (por entidad_legacy) o CUIT — "
-        "nunca por codigo_interno. Cuando dos empresas DISTINTAS (sin CUIT en común) "
-        "comparten el mismo codigo_legacy en el CSV de clientes y en el de proveedores, el "
-        "segundo INSERT en `terceros` viola uq_terceros_codigo y el RPC entero falla "
-        "(postgrest.exceptions.APIError, unique_violation), en lugar de crear dos terceros "
-        "distintos como exige D1 (design.md). Nota: hasta que se aplique la migración 0009 "
-        "(fix de un bug DISTINTO y previo — 'column reference codigo_legacy is ambiguous', "
-        "que hoy rompe TODA llamada al RPC) este test falla por esa causa anterior, no por "
-        "la colisión de uq_terceros_codigo en sí; de todos modos permanece xfail porque, aun "
-        "con 0009 aplicado, la colisión de uq_terceros_codigo seguiría reproduciéndose. "
-        "Requiere una migración de seguimiento (fuera del alcance de esta fase/PR) que "
-        "relaje uq_terceros_codigo, p.ej. condicionándolo a los terceros creados nativamente "
-        "(sin origen legado) o agregando una dimensión de entidad/origen al índice."
-    ),
-)
 def test_codigo_legacy_colisiona_entre_cliente_y_proveedor_produce_dos_terceros_distintos(
     service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo_import
 ):
@@ -876,12 +854,23 @@ def test_codigo_legacy_colisiona_entre_cliente_y_proveedor_produce_dos_terceros_
         usuario_id=seed_usuario_sistema["id"],
     )
 
+    # No se busca por codigo_interno: el fix de D-TERCEROS-001 (migración 0010) deja
+    # codigo_interno=NULL en el segundo alta para evitar violar uq_terceros_codigo, así que
+    # solo uno de los dos terceros conserva codigo_compartido como codigo_interno — eso es el
+    # comportamiento esperado, no un bug. Se identifican los dos por razon_social en su lugar.
     terceros = (
         service_client.table("terceros")
-        .select("id,razon_social")
+        .select("id,razon_social,codigo_interno")
         .eq("drogueria_id", seed_drogueria["id"])
-        .eq("codigo_interno", codigo_compartido)
+        .in_("razon_social", ["Empresa Cliente SA", "Empresa Proveedor SA"])
         .execute()
         .data
     )
     assert len(terceros) == 2, "codigo_legacy='...' en clientes y en proveedores no debe fusionar dos empresas (D1)"
+    ids = {fila["id"] for fila in terceros}
+    assert len(ids) == 2, "deben ser dos terceros distintos, no el mismo tercero devuelto dos veces"
+    codigos_internos = {fila["codigo_interno"] for fila in terceros}
+    assert codigos_internos == {codigo_compartido, None}, (
+        "uno de los dos terceros conserva codigo_compartido como codigo_interno; el otro queda "
+        "NULL para no violar uq_terceros_codigo (D-TERCEROS-001, migración 0010)"
+    )
