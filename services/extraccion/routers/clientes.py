@@ -5,6 +5,13 @@ pueda elegir el cliente real al subir un documento, en vez de depender del parse
 nombre de archivo (§8 del spec de presupuestación: inyectar formato-por-cliente al
 prompt de Gemini requiere un cliente_id real, no el texto libre que hoy deriva
 obtener_cliente() del nombre del archivo).
+
+Fase 8 (openspec/changes/terceros-modelo, design.md corrección a proposal.md):
+la migración 0008 elimina `clientes.nombre` -- la razón social ahora vive en
+`terceros.razon_social`. `services/extraccion/**` no está bajo la fachada D5
+(esa regla solo aplica a `services/presupuestacion/**`), así que el fix acá
+es el embedding de PostgREST habilitado por `fk_cli_tercero`, en vez de
+importar `services.terceros.api`.
 """
 from __future__ import annotations
 
@@ -42,13 +49,18 @@ async def listar_activos() -> list[ClienteActivo]:
     try:
         respuesta = await asyncio.to_thread(
             lambda: client.table("clientes")
-            .select("id, nombre")
+            .select("id, terceros(razon_social)")
             .eq("drogueria_id", drogueria_id)
             .eq("activo", True)
-            .order("nombre")
             .execute()
         )
-        return [ClienteActivo(**r) for r in (respuesta.data or [])]
+        activos = [
+            ClienteActivo(id=fila["id"], nombre=fila["terceros"]["razon_social"])
+            for fila in (respuesta.data or [])
+            if fila.get("terceros")
+        ]
+        activos.sort(key=lambda c: c.nombre)
+        return activos
     except Exception as exc:
         logger.warning("listar_activos (clientes): error consultando Supabase — %s", exc)
         return []

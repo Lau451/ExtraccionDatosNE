@@ -23,6 +23,7 @@ from services.presupuestacion.presupuestos.router import router as presupuestos_
 from services.presupuestacion.pricing.router import router as pricing_router
 from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
 from services.presupuestacion.usuarios.router import router as usuarios_router
+from services.terceros.router import router as terceros_router
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -58,3 +59,4 @@ app.include_router(eventos_router, tags=["eventos"])
 app.include_router(notificaciones_router, tags=["notificaciones"])
 app.include_router(automatizaciones_router, tags=["automatizaciones"])
 app.include_router(auditoria_router, tags=["auditoria"])
+app.include_router(terceros_router, tags=["terceros"])

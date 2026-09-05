@@ -11,69 +11,98 @@ TipoCliente = Literal["hospital", "obra_social", "municipio", "provincia", "naci
 
 
 class ClienteCreate(BaseModel):
+    """Identidad (-> terceros) + rol cliente (-> clientes) combinados: `POST
+    /clientes` sigue siendo una única llamada HTTP aunque internamente ahora
+    orquesta dos escrituras vía `services.terceros.api` (design.md D5) --
+    ver clientes/service.py::crear_cliente. `direccion`/`ciudad`/`provincia`/
+    `codigo_postal` ya no viven acá: se gestionan como `tercero_direcciones`
+    vía `/terceros/{id}/direcciones` (fuera del alcance de este módulo)."""
+
+    codigo_interno: str | None = None
     nombre: str
-    tipo: TipoCliente
-    direccion: str | None = None
-    ciudad: str | None = None
-    provincia: str | None = None
-    codigo_postal: str | None = None
-    plazo_pago_dias: int | None = None
-    condiciones_pago: str | None = None
+    cuit: str | None = None
+    email: str | None = None
+    telefono: str | None = None
+    tipo: TipoCliente = "otro"
+    condicion_pago_id: str | None = None
+    forma_pago_id: str | None = None
 
 
 class ClienteUpdate(BaseModel):
     nombre: str | None = None
+    cuit: str | None = None
+    email: str | None = None
+    telefono: str | None = None
     tipo: TipoCliente | None = None
-    direccion: str | None = None
-    ciudad: str | None = None
-    provincia: str | None = None
-    codigo_postal: str | None = None
-    plazo_pago_dias: int | None = None
-    condiciones_pago: str | None = None
+    condicion_pago_id: str | None = None
+    forma_pago_id: str | None = None
     activo: bool | None = None
 
 
 class ClienteOut(BaseModel):
+    """Forma combinada tercero+rol (decisión de Fase 8, design.md deja esto
+    abierto explícitamente): `GET /clientes` devuelve un único objeto plano
+    con la identidad heredada de `terceros` y los campos del rol cliente ya
+    fusionados, en vez de anidar `{"tercero": {...}, "rol": {...}}`. Se
+    prefiere el shape plano para minimizar el cambio de contrato hacia los
+    consumidores existentes de `ClienteOut` (mismo criterio que el shape
+    previo a esta migración), a costa de que actualizar un campo de
+    identidad y uno de rol en la misma llamada dispare dos escrituras
+    internas (ver clientes/service.py::actualizar_cliente)."""
+
     id: str
     drogueria_id: str
     codigo_interno: str | None
     nombre: str
+    cuit: str | None
+    email: str | None
+    telefono: str | None
     tipo: str
-    direccion: str | None
-    ciudad: str | None
-    provincia: str | None
-    codigo_postal: str | None
-    plazo_pago_dias: int | None
-    condiciones_pago: str | None
+    condicion_pago_id: str | None
+    forma_pago_id: str | None
     activo: bool
 
 
 class ClienteContactoCreate(BaseModel):
     nombre: str
+    apellido: str | None = None
+    sector_id: str | None = None
     cargo: str | None = None
     email: str | None = None
     telefono: str | None = None
+    celular: str | None = None
     es_principal: bool = False
     notas: str | None = None
 
 
 class ClienteContactoUpdate(BaseModel):
     nombre: str | None = None
+    apellido: str | None = None
+    sector_id: str | None = None
     cargo: str | None = None
     email: str | None = None
     telefono: str | None = None
+    celular: str | None = None
     es_principal: bool | None = None
     notas: str | None = None
     activo: bool | None = None
 
 
 class ClienteContactoOut(BaseModel):
+    """`cliente_id` acá es el `tercero_id` de `terceros_contactos` -- el
+    contacto vive en `services.terceros.contactos`, no en una tabla propia
+    de `clientes/` (`cliente_contactos` fue eliminada por la migración
+    0008)."""
+
     id: str
     cliente_id: str
     nombre: str
+    apellido: str | None
+    sector_id: str | None
     cargo: str | None
     email: str | None
     telefono: str | None
+    celular: str | None
     es_principal: bool
     notas: str | None
     activo: bool

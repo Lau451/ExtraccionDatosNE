@@ -24,7 +24,7 @@ from services.presupuestacion.clientes.service import (
     obtener_cliente,
     upsert_formato_documento,
 )
-from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
+from services.presupuestacion.core.exceptions import NotFoundError
 
 
 @pytest.mark.integration
@@ -123,6 +123,9 @@ def test_upsert_formato_documento_cliente_inexistente(
 def test_upsert_formato_documento_cliente_de_otra_drogueria_falla(
     service_client, seed_drogueria, seed_cliente_factory, seed_usuario_sistema
 ):
+    """Fase 8 (design.md D3): la deuda D-CLIENTES-004 (cross-tenant devolvía
+    `ValidationError` en vez de `NotFoundError`) no se replica -- ahora pasa
+    por `services.terceros.api`, que aplica el guard único D3."""
     cliente = seed_cliente_factory()
     otra_drogueria = service_client.table("droguerias").insert(
         {
@@ -137,7 +140,7 @@ def test_upsert_formato_documento_cliente_de_otra_drogueria_falla(
     ).execute().data[0]
 
     try:
-        with pytest.raises(ValidationError):
+        with pytest.raises(NotFoundError):
             upsert_formato_documento(
                 service_client,
                 cliente_id=cliente["id"],
@@ -186,22 +189,28 @@ def test_crear_observacion_cliente_inexistente(
 
 
 # ---------------------------------------------------------------------------
-# CRUD básico de clientes
+# CRUD básico de clientes (Fase 8: identidad -> terceros, rol -> clientes,
+# combinados vía services.terceros.api — design.md D5)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-def test_crear_cliente(service_client, seed_drogueria, seed_usuario_sistema):
+def test_crear_cliente(service_client, seed_drogueria, seed_usuario_sistema, limpiar_terceros_de_clientes):
     resultado = crear_cliente(
         service_client,
         drogueria_id=seed_drogueria["id"],
-        body=ClienteCreate(nombre="Hospital Nuevo", tipo="hospital", ciudad="Rosario"),
+        body=ClienteCreate(nombre="Hospital Nuevo", tipo="hospital"),
         usuario_id=seed_usuario_sistema["id"],
     )
 
     assert resultado["nombre"] == "Hospital Nuevo"
+    assert resultado["tipo"] == "hospital"
     assert resultado["activo"] is True
 
-    service_client.table("clientes").delete().eq("id", resultado["id"]).execute()
+    # el id del cliente ES el id del tercero (id compartido, design.md sección 5)
+    tercero = (
+        service_client.table("terceros").select("razon_social").eq("id", resultado["id"]).execute().data[0]
+    )
+    assert tercero["razon_social"] == "Hospital Nuevo"
 
 
 @pytest.mark.integration
@@ -231,24 +240,51 @@ def test_obtener_cliente_de_otra_drogueria_lanza_not_found(
 def test_actualizar_cliente_solo_pisa_campos_enviados(
     service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_factory
 ):
-    cliente = seed_cliente_factory(nombre="Original", ciudad="Rosario")
+    cliente = seed_cliente_factory(nombre="Original", email="original@test.com")
 
     resultado = actualizar_cliente(
         service_client,
         cliente_id=cliente["id"],
         drogueria_id=seed_drogueria["id"],
-        body=ClienteUpdate(ciudad="Santa Fe"),
+        body=ClienteUpdate(email="nuevo@test.com"),
         usuario_id=seed_usuario_sistema["id"],
     )
 
-    assert resultado["ciudad"] == "Santa Fe"
+    assert resultado["email"] == "nuevo@test.com"
     assert resultado["nombre"] == "Original"
 
 
 @pytest.mark.integration
-def test_eliminar_cliente_soft_delete(
+def test_actualizar_cliente_pisa_identidad_y_rol_en_la_misma_llamada(
     service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_factory
 ):
+    """`ClienteUpdate` mezcla campos de terceros (nombre) y de clientes
+    (tipo): actualizar_cliente debe escribir ambos, con una sola respuesta
+    combinada (design.md D5, decisión documentada en clientes/models.py)."""
+    cliente = seed_cliente_factory(nombre="Original", tipo="hospital")
+
+    resultado = actualizar_cliente(
+        service_client,
+        cliente_id=cliente["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ClienteUpdate(nombre="Renombrado", tipo="municipio"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    assert resultado["nombre"] == "Renombrado"
+    assert resultado["tipo"] == "municipio"
+
+
+@pytest.mark.integration
+def test_eliminar_cliente_desactiva_el_rol_pero_no_el_tercero(
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_factory
+):
+    """D1 (doble rol): un tercero puede seguir siendo proveedor aunque su
+    rol cliente se desactive, así que eliminar_cliente ya no marca
+    `deleted_at` en `terceros` -- solo desactiva la fila de rol (D4). A
+    diferencia del viejo soft-delete, `obtener_cliente` (lookup directo por
+    id) sigue encontrándolo -- lo que cambia es que desaparece del listado
+    activo por defecto, igual que cualquier otro D4-hidden-by-default."""
     cliente = seed_cliente_factory()
 
     eliminar_cliente(
@@ -258,20 +294,22 @@ def test_eliminar_cliente_soft_delete(
         usuario_id=seed_usuario_sistema["id"],
     )
 
-    with pytest.raises(NotFoundError):
-        obtener_cliente(service_client, cliente_id=cliente["id"], drogueria_id=seed_drogueria["id"])
-
-    fila = (
-        service_client.table("clientes").select("deleted_at,deleted_by,activo")
-        .eq("id", cliente["id"]).execute().data[0]
+    encontrado = obtener_cliente(
+        service_client, cliente_id=cliente["id"], drogueria_id=seed_drogueria["id"]
     )
-    assert fila["deleted_at"] is not None
-    assert fila["deleted_by"] == seed_usuario_sistema["id"]
-    assert fila["activo"] is False
+    assert encontrado["activo"] is False
+
+    activos = listar_clientes(service_client, drogueria_id=seed_drogueria["id"], activo=True)
+    assert cliente["id"] not in {c["id"] for c in activos}
+
+    fila_tercero = (
+        service_client.table("terceros").select("activo").eq("id", cliente["id"]).execute().data[0]
+    )
+    assert fila_tercero["activo"] is True
 
 
 # ---------------------------------------------------------------------------
-# contactos
+# contactos (terceros_contactos, vía services.terceros.api)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
@@ -287,8 +325,11 @@ def test_crear_y_listar_contactos(service_client, seed_drogueria, seed_cliente_f
 
     assert creado["nombre"] == "Juan Pérez"
     assert creado["es_principal"] is True
+    assert creado["cliente_id"] == cliente["id"]
 
-    contactos = listar_contactos(service_client, cliente_id=cliente["id"])
+    contactos = listar_contactos(
+        service_client, cliente_id=cliente["id"], drogueria_id=seed_drogueria["id"]
+    )
     assert len(contactos) == 1
     assert contactos[0]["id"] == creado["id"]
 
@@ -311,6 +352,7 @@ def test_actualizar_contacto_de_otro_cliente_lanza_not_found(
             service_client,
             cliente_id=cliente_b["id"],
             contacto_id=contacto["id"],
+            drogueria_id=seed_drogueria["id"],
             body=ClienteContactoUpdate(nombre="Hackeado"),
         )
 
@@ -331,6 +373,7 @@ def test_actualizar_contacto_solo_pisa_campos_enviados(
         service_client,
         cliente_id=cliente["id"],
         contacto_id=contacto["id"],
+        drogueria_id=seed_drogueria["id"],
         body=ClienteContactoUpdate(telefono="123456"),
     )
 

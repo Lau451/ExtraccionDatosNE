@@ -15,10 +15,10 @@ from services.presupuestacion.clientes.models import (
 )
 from services.presupuestacion.clientes.service import (
     actualizar_cliente_para_endpoint,
+    actualizar_contacto_para_endpoint,
     crear_cliente_para_endpoint,
     crear_contacto_para_endpoint,
     crear_observacion_para_endpoint,
-    actualizar_contacto_para_endpoint,
     eliminar_cliente_para_endpoint,
     listar_clientes,
     listar_contactos,
@@ -29,7 +29,7 @@ from services.presupuestacion.clientes.service import (
 )
 from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
 from services.presupuestacion.core.database import get_user_client
-from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
+from services.terceros import api
 
 router = APIRouter()
 
@@ -93,8 +93,8 @@ def listar_contactos_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteContactoOut]:
-    _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
-    return listar_contactos(user_client, cliente_id=cliente_id)
+    drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
+    return listar_contactos(user_client, cliente_id=cliente_id, drogueria_id=drogueria_id)
 
 
 @router.post("/clientes/{cliente_id}/contactos", response_model=ClienteContactoOut)
@@ -104,7 +104,7 @@ def crear_contacto_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteContactoOut:
-    drogueria_id = _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
+    drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
     return crear_contacto_para_endpoint(cliente_id=cliente_id, drogueria_id=drogueria_id, body=body)
 
 
@@ -116,27 +116,29 @@ def actualizar_contacto_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteContactoOut:
-    _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
-    return actualizar_contacto_para_endpoint(cliente_id=cliente_id, contacto_id=contacto_id, body=body)
+    drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
+    return actualizar_contacto_para_endpoint(
+        cliente_id=cliente_id, contacto_id=contacto_id, drogueria_id=drogueria_id, body=body
+    )
 
 
-def _validar_cliente_y_obtener_drogueria_id(
+def _obtener_drogueria_id_del_cliente(
     user_client: Client, usuario: UsuarioPerfil, cliente_id: str
 ) -> str:
-    resultado = (
-        user_client.table("clientes")
-        .select("id, drogueria_id")
-        .eq("id", cliente_id)
-        .limit(1)
-        .execute()
+    """Resuelve la droguería real del cliente vía services.terceros.api en
+    vez de leer `clientes`/`terceros` directamente (design.md D5). Fase 8
+    corrige acá la deuda D-CLIENTES-004 (design.md D3): el shape anterior
+    devolvía `ForbiddenError` para "existe pero es de otra droguería" y
+    `NotFoundError` para "no existe" -- dos excepciones para el mismo caso
+    indistinguible desde afuera. `api.obtener_tercero` ya aplica el guard
+    único D3 (siempre `NotFoundError`), incluyendo el bypass de superadmin."""
+    tercero = api.obtener_tercero(
+        user_client,
+        tercero_id=cliente_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=(usuario.rol == "superadmin"),
     )
-    if not resultado.data:
-        raise NotFoundError("No se encontró el cliente")
-
-    cliente_drogueria_id = resultado.data[0]["drogueria_id"]
-    if usuario.rol != "superadmin" and cliente_drogueria_id != usuario.drogueria_id:
-        raise ForbiddenError("El cliente no pertenece a tu droguería")
-    return cliente_drogueria_id
+    return tercero["drogueria_id"]
 
 
 @router.get(
@@ -148,7 +150,7 @@ def listar_formato_documentos_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteFormatoDocumentoOut]:
-    _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
+    _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
     return listar_formato_documentos(user_client, cliente_id=cliente_id)
 
 
@@ -162,7 +164,7 @@ def upsert_formato_documento_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteFormatoDocumentoOut:
-    drogueria_id = _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
+    drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
     return upsert_formato_documento_para_endpoint(
         cliente_id=cliente_id, drogueria_id=drogueria_id, body=body, usuario_id=usuario.id
     )
@@ -177,7 +179,7 @@ def listar_observaciones_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteObservacionOut]:
-    _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
+    _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
     return listar_observaciones(user_client, cliente_id=cliente_id)
 
 
@@ -191,7 +193,7 @@ def crear_observacion_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteObservacionOut:
-    drogueria_id = _validar_cliente_y_obtener_drogueria_id(user_client, usuario, cliente_id)
+    drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
     return crear_observacion_para_endpoint(
         cliente_id=cliente_id, drogueria_id=drogueria_id, body=body, usuario_id=usuario.id
     )
