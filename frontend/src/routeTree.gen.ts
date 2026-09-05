@@ -14,10 +14,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
+import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
+import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -44,6 +46,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedProductosRoute = AuthenticatedProductosRouteImport.update({
+  id: '/productos',
+  path: '/productos',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
@@ -67,6 +74,12 @@ const AuthenticatedSuperadminEmpresasRoute =
     path: '/superadmin/empresas',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedProductosProductoIdRoute =
+  AuthenticatedProductosProductoIdRouteImport.update({
+    id: '/$productoId',
+    path: '/$productoId',
+    getParentRoute: () => AuthenticatedProductosRoute,
+  } as any)
 const AuthenticatedAdminUsuariosRoute =
   AuthenticatedAdminUsuariosRouteImport.update({
     id: '/admin/usuarios',
@@ -80,7 +93,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/productos': typeof AuthenticatedProductosRouteWithChildren
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
@@ -90,8 +105,10 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/productos': typeof AuthenticatedProductosRouteWithChildren
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
@@ -103,8 +120,10 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/_authenticated/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
@@ -117,7 +136,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/mi-cuenta'
+    | '/productos'
     | '/admin/usuarios'
+    | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/validar-extraccion/$extractionId'
     | '/validar-extraccion/'
@@ -127,8 +148,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/mi-cuenta'
+    | '/productos'
     | '/'
     | '/admin/usuarios'
+    | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/validar-extraccion/$extractionId'
     | '/validar-extraccion'
@@ -139,8 +162,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/_authenticated/mi-cuenta'
+    | '/_authenticated/productos'
     | '/_authenticated/'
     | '/_authenticated/admin/usuarios'
+    | '/_authenticated/productos/$productoId'
     | '/_authenticated/superadmin/empresas'
     | '/_authenticated/validar-extraccion/$extractionId'
     | '/_authenticated/validar-extraccion/'
@@ -190,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/productos': {
+      id: '/_authenticated/productos'
+      path: '/productos'
+      fullPath: '/productos'
+      preLoaderRoute: typeof AuthenticatedProductosRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/mi-cuenta': {
       id: '/_authenticated/mi-cuenta'
       path: '/mi-cuenta'
@@ -218,6 +250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSuperadminEmpresasRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/productos/$productoId': {
+      id: '/_authenticated/productos/$productoId'
+      path: '/$productoId'
+      fullPath: '/productos/$productoId'
+      preLoaderRoute: typeof AuthenticatedProductosProductoIdRouteImport
+      parentRoute: typeof AuthenticatedProductosRoute
+    }
     '/_authenticated/admin/usuarios': {
       id: '/_authenticated/admin/usuarios'
       path: '/admin/usuarios'
@@ -228,8 +267,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedProductosRouteChildren {
+  AuthenticatedProductosProductoIdRoute: typeof AuthenticatedProductosProductoIdRoute
+}
+
+const AuthenticatedProductosRouteChildren: AuthenticatedProductosRouteChildren =
+  {
+    AuthenticatedProductosProductoIdRoute:
+      AuthenticatedProductosProductoIdRoute,
+  }
+
+const AuthenticatedProductosRouteWithChildren =
+  AuthenticatedProductosRoute._addFileChildren(
+    AuthenticatedProductosRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
+  AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminUsuariosRoute: typeof AuthenticatedAdminUsuariosRoute
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
@@ -239,6 +294,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
+  AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminUsuariosRoute: AuthenticatedAdminUsuariosRoute,
   AuthenticatedSuperadminEmpresasRoute: AuthenticatedSuperadminEmpresasRoute,

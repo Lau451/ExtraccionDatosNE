@@ -12,6 +12,9 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Carga de documentos', to: '/' },
   { label: 'Validar extracción', to: '/validar-extraccion' },
+  // Todos los roles de negocio tienen lectura de catálogo (ver
+  // features/productos/roles.ts), así que no hace falta gate por rol acá.
+  { label: 'Productos', to: '/productos' },
   { label: 'Licitaciones', to: '/licitaciones', disabled: true },
   { label: 'Calendario', to: '/calendario', disabled: true },
   { label: 'Historial', to: '/historial', disabled: true },
