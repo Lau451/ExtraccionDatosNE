@@ -1,7 +1,15 @@
-# Casos de uso — Catálogo
+# Casos de uso — Productos
 
-Los 12 endpoints montados en `services/presupuestacion/main.py:51`
-(`app.include_router(catalogo_router, tags=["catalogo"])`), sin prefijo adicional.
+> **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
+> movió a `services/productos/` (top-level) y los 5 endpoints `/proveedores*`
+> descritos abajo (`GET`/`POST /proveedores`, `GET`/`PATCH`/`DELETE
+> /proveedores/{id}`) se **eliminaron por completo** en este refactor — el módulo
+> pasó de 17 a 12 endpoints. No fueron reescritos línea por línea; ver
+> [`../terceros/casos_de_uso.md`](../terceros/casos_de_uso.md) para los casos de uso
+> vigentes de proveedor.
+
+Los 12 endpoints montados en `services/presupuestacion/main.py`
+(`app.include_router(productos_router, tags=["productos"])`), sin prefijo adicional.
 
 Roles (`router.py:43-46`):
 
@@ -14,7 +22,7 @@ _ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
 
 Los 2 endpoints `DELETE` (producto, proveedor) no usan ninguna de estas 4
 constantes: usan la tupla hardcodeada `("admin", "gerencia")` directo en el
-`Depends` — ver D-CATALOGO-... en [`decisiones.md`](./decisiones.md) y
+`Depends` — ver D-PRODUCTOS-... en [`decisiones.md`](./decisiones.md) y
 [`pendientes.md`](./pendientes.md) P3(1).
 
 ## `GET /productos`
@@ -37,7 +45,7 @@ constantes: usan la tupla hardcodeada `("admin", "gerencia")` directo en el
 ## `GET /productos/{producto_id}`
 
 - **Quién puede llamarlo**: `_ROLES_LECTURA_CATALOGO` (`router.py:74`).
-- **Función**: `obtener_producto_endpoint`. Aplica RN-CATALOGO-001.
+- **Función**: `obtener_producto_endpoint`. Aplica RN-PRODUCTOS-001.
 - **Cliente Supabase**: `user_client`.
 - **Archivo**: `router.py:71-77`.
 
@@ -45,8 +53,8 @@ constantes: usan la tupla hardcodeada `("admin", "gerencia")` directo en el
 
 - **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` — incluye `compras`
   (`router.py:84`).
-- **Función**: `actualizar_producto_endpoint`. Aplica RN-CATALOGO-001 (pertenencia) y
-  RN-CATALOGO-002 (actualización parcial).
+- **Función**: `actualizar_producto_endpoint`. Aplica RN-PRODUCTOS-001 (pertenencia) y
+  RN-PRODUCTOS-002 (actualización parcial).
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:80-88`.
 
@@ -55,8 +63,8 @@ constantes: usan la tupla hardcodeada `("admin", "gerencia")` directo en el
 - **Quién puede llamarlo**: `("admin", "gerencia")` **hardcodeado**, no
   `_ROLES_ESCRITURA_CATALOGO` — excluye explícitamente a `compras`, que sí puede
   crear y editar productos pero no eliminarlos (`router.py:94`).
-- **Función**: `eliminar_producto_endpoint`. Aplica RN-CATALOGO-001 y
-  RN-CATALOGO-003 (soft-delete).
+- **Función**: `eliminar_producto_endpoint`. Aplica RN-PRODUCTOS-001 y
+  RN-PRODUCTOS-003 (soft-delete).
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:91-98`.
 
@@ -79,11 +87,11 @@ constantes: usan la tupla hardcodeada `("admin", "gerencia")` directo en el
 
 - **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATEGORIAS` (`router.py:124`).
 - **Función**: `actualizar_categoria_endpoint`. Aplica pertenencia
-  (RN-CATALOGO-001, variante categoría) y RN-CATALOGO-002.
+  (RN-PRODUCTOS-001, variante categoría) y RN-PRODUCTOS-002.
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:120-128`.
 
-Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
+Sin `DELETE /categorias/{id}` — RN-PRODUCTOS-004.
 
 ## `GET /proveedores`
 
@@ -103,7 +111,7 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
 ## `GET /proveedores/{proveedor_id}`
 
 - **Quién puede llamarlo**: `_ROLES_LECTURA_CATALOGO` (`router.py:153`).
-- **Función**: `obtener_proveedor_endpoint`. Aplica RN-CATALOGO-001.
+- **Función**: `obtener_proveedor_endpoint`. Aplica RN-PRODUCTOS-001.
 - **Cliente Supabase**: `user_client`.
 - **Archivo**: `router.py:150-156`.
 
@@ -111,8 +119,8 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
 
 - **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` — incluye `compras`
   (`router.py:163`).
-- **Función**: `actualizar_proveedor_endpoint`. Aplica RN-CATALOGO-001 y
-  RN-CATALOGO-002.
+- **Función**: `actualizar_proveedor_endpoint`. Aplica RN-PRODUCTOS-001 y
+  RN-PRODUCTOS-002.
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:159-167`.
 
@@ -120,8 +128,8 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
 
 - **Quién puede llamarlo**: `("admin", "gerencia")` **hardcodeado**, mismo patrón
   que `DELETE /productos/{id}` — excluye `compras` (`router.py:173`).
-- **Función**: `eliminar_proveedor_endpoint`. Aplica RN-CATALOGO-001 y
-  RN-CATALOGO-003.
+- **Función**: `eliminar_proveedor_endpoint`. Aplica RN-PRODUCTOS-001 y
+  RN-PRODUCTOS-003.
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:170-177`.
 
@@ -131,7 +139,7 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
   `lider_comercial` ni `comercial`, a diferencia de `_ROLES_LECTURA_CATALOGO`
   (`router.py:185`).
 - **Función**: `listar_costos_endpoint`. Valida pertenencia del producto
-  (RN-CATALOGO-001) antes de listar.
+  (RN-PRODUCTOS-001) antes de listar.
 - **Cliente Supabase**: `service_client` (vía `listar_costos_para_endpoint`, no hay
   variante con `user_client` para este endpoint).
 - **Archivo**: `router.py:182-187`.
@@ -141,8 +149,8 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
 - **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` — incluye `compras`, más
   amplio que `_ROLES_LECTURA_COSTOS` para el `GET` del mismo sub-recurso
   (`router.py:194`).
-- **Función**: `crear_costo_endpoint`. Aplica RN-CATALOGO-001, RN-CATALOGO-005,
-  RN-CATALOGO-006 y RN-CATALOGO-007.
+- **Función**: `crear_costo_endpoint`. Aplica RN-PRODUCTOS-001, RN-PRODUCTOS-005,
+  RN-PRODUCTOS-006 y RN-PRODUCTOS-007.
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:190-196`.
 
@@ -158,14 +166,14 @@ Sin `DELETE /categorias/{id}` — RN-CATALOGO-004.
 ## `PATCH /productos/{producto_id}/stock`
 
 - **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` (`router.py:213`).
-- **Función**: `ajustar_stock_endpoint`. Aplica RN-CATALOGO-001, RN-CATALOGO-008,
-  RN-CATALOGO-009 y RN-CATALOGO-010.
+- **Función**: `ajustar_stock_endpoint`. Aplica RN-PRODUCTOS-001, RN-PRODUCTOS-008,
+  RN-PRODUCTOS-009 y RN-PRODUCTOS-010.
 - **Cliente Supabase**: `service_client`.
 - **Archivo**: `router.py:209-215`.
 
 ## Consumidores
 
-Ningún módulo de `presupuestacion/` **importa** código de `catalogo/` salvo
+Ningún módulo de `presupuestacion/` **importa** código de `productos/` salvo
 `main.py` (confirmado por grep en esta sesión: 0 resultados fuera del propio
 paquete). Fuera de ese Python, 5 módulos leen o escriben directo las mismas 5 tablas
 — más consumidores que cualquier otro módulo documentado hasta ahora en este
@@ -182,14 +190,14 @@ proyecto:
 - `services/presupuestacion/core/stock.py:17,27,35,48`: motor de compromiso y
   descuento sobre `stock_productos`, ya documentado en [`../core/`](../core/) — ver
   [`arquitectura.md`](./arquitectura.md) de este módulo para su interacción concreta
-  con `catalogo.ajustar_stock`.
+  con `productos.ajustar_stock`.
 - `services/presupuestacion/imports/repository.py`: CRUD masivo directo sobre las 4
   tablas con bloques propios (`-- productos --` líneas 5-61, `-- costos --`
   líneas 64-84, `-- stock --` líneas 87-91, `-- proveedores --` líneas 94-138),
   incluyendo un upsert masivo (`actualizar_productos_existentes`,
-  `repository.py:37-39`) que no pasa por ninguna validación de `catalogo.service`.
+  `repository.py:37-39`) que no pasa por ninguna validación de `productos.service`.
 - `services/presupuestacion/imports/service.py:87-138` (`importar_costos`):
   reimplementa el mismo algoritmo de versionado de costo que
-  `catalogo.service.crear_costo` (RN-CATALOGO-005/006), de forma completamente
+  `productos.service.crear_costo` (RN-PRODUCTOS-005/006), de forma completamente
   independiente — ver [`arquitectura.md`](./arquitectura.md) para el detalle, es el
   hallazgo de acoplamiento más relevante de este módulo.

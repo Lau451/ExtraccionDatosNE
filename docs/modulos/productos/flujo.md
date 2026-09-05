@@ -1,4 +1,11 @@
-# Flujos — Catálogo
+# Flujos — Productos
+
+> **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
+> movió a `services/productos/` (top-level). El "Flujo 4 — Gestión de proveedores"
+> de abajo describe un flujo que se **eliminó por completo** en este refactor (el
+> wrapper de compatibilidad de `proveedores` no se movió, se borró) — no fue
+> reescrito ni renumerado. Los otros 5 flujos (alta/edición de producto, categorías,
+> costo, stock) siguen vigentes.
 
 Los 6 flujos principales del módulo. Cada paso cita `archivo:línea` verificado en
 esta sesión.
@@ -37,10 +44,10 @@ verificable solo con este código Python) — ver [`pendientes.md`](./pendientes
 3. `actualizar_producto_para_endpoint` resuelve `get_service_client()` y delega en
    `actualizar_producto` (`service.py:76-81`).
 4. `actualizar_producto` valida existencia y pertenencia con `obtener_producto`
-   (RN-CATALOGO-001, `service.py:61`) — `NotFoundError` si el producto no existe o es
+   (RN-PRODUCTOS-001, `service.py:61`) — `NotFoundError` si el producto no existe o es
    de otra droguería.
 5. Arma `campos = body.model_dump(exclude_unset=True)` y agrega `updated_by`
-   (RN-CATALOGO-002, `service.py:62-63`).
+   (RN-PRODUCTOS-002, `service.py:62-63`).
 6. `repo.actualizar_producto` hace el `UPDATE` parcial (`repository.py:42-43`).
 7. El endpoint responde con `ProductoOut` (`router.py:80`).
 
@@ -70,11 +77,11 @@ verificable solo con este código Python) — ver [`pendientes.md`](./pendientes
    `actualizar_categoria` (`service.py:114-117`).
 4. `actualizar_categoria` valida pertenencia con `repo.obtener_categoria`
    (`service.py:103-105`) — `NotFoundError` si no existe o es de otra droguería — y
-   aplica actualización parcial (RN-CATALOGO-002, `service.py:106-107`).
+   aplica actualización parcial (RN-PRODUCTOS-002, `service.py:106-107`).
 5. El endpoint responde con `CategoriaOut` (`router.py:120`).
 
 No hay flujo de baja: `categorias` no tiene soft-delete ni endpoint `DELETE`
-(RN-CATALOGO-004).
+(RN-PRODUCTOS-004).
 
 ## Flujo 4 — Gestión de proveedores (`POST`/`PATCH`/`DELETE /proveedores[/{id}]`)
 
@@ -91,14 +98,14 @@ el `DELETE` usa una tupla de roles hardcodeada en vez de una constante nombrada 
 2. Edición: `router.py:163` (rol) → `actualizar_proveedor_endpoint`
    (`router.py:165-167`) → `actualizar_proveedor_para_endpoint`
    (`service.py:174-179`) → `actualizar_proveedor` valida pertenencia
-   (RN-CATALOGO-001, `service.py:159`) y aplica `exclude_unset`
-   (RN-CATALOGO-002, `service.py:160-161`) → `repo.actualizar_proveedor`
+   (RN-PRODUCTOS-001, `service.py:159`) y aplica `exclude_unset`
+   (RN-PRODUCTOS-002, `service.py:160-161`) → `repo.actualizar_proveedor`
    (`repository.py:110-111`).
 3. Baja: `router.py:173` — `require_roles("admin", "gerencia")` hardcodeado, no una
    constante — → `eliminar_proveedor_endpoint` (`router.py:175-177`) →
    `eliminar_proveedor_para_endpoint` (`service.py:182-185`) → `eliminar_proveedor`
    valida pertenencia (`service.py:166`) y hace soft-delete
-   (RN-CATALOGO-003, `service.py:167`, `repository.py:114-121`).
+   (RN-PRODUCTOS-003, `service.py:167`, `repository.py:114-121`).
 
 ## Flujo 5 — Actualización de costo con versionado (`POST /productos/{id}/costos`)
 
@@ -109,15 +116,15 @@ el `DELETE` usa una tupla de roles hardcodeada en vez de una constante nombrada 
 3. `crear_costo_para_endpoint` resuelve `get_service_client()` y delega en
    `crear_costo` (`service.py:225-226`).
 4. `crear_costo` valida producto y droguería con `obtener_producto`
-   (RN-CATALOGO-001, `service.py:198`).
+   (RN-PRODUCTOS-001, `service.py:198`).
 5. Trae el costo vigente: `vigente = repo.costo_vigente(client,
    producto_id=producto_id)` (`service.py:199`).
 6. Si `vigente` existe y su `costo_unitario` es igual al recibido, devuelve el
-   vigente sin escribir nada (RN-CATALOGO-005, `service.py:201-202`).
+   vigente sin escribir nada (RN-PRODUCTOS-005, `service.py:201-202`).
 7. Si `vigente` existe y el valor difiere, calcula `fecha_cierre = fecha_desde -
-   1 día` y cierra el vigente (RN-CATALOGO-006, `service.py:204-206`).
+   1 día` y cierra el vigente (RN-PRODUCTOS-006, `service.py:204-206`).
 8. Inserta la fila nueva con `origen="manual"` y `fecha_hasta=None`
-   (RN-CATALOGO-007, `service.py:208-218`).
+   (RN-PRODUCTOS-007, `service.py:208-218`).
 9. El endpoint responde con `CostoOut` (`router.py:190`).
 
 ## Flujo 6 — Ajuste manual de stock (`PATCH /productos/{id}/stock`)
@@ -129,14 +136,14 @@ el `DELETE` usa una tupla de roles hardcodeada en vez de una constante nombrada 
 3. `ajustar_stock_para_endpoint` resuelve `get_service_client()` y delega en
    `ajustar_stock` (`service.py:257-258`).
 4. `ajustar_stock` valida producto y droguería con `obtener_producto`
-   (RN-CATALOGO-001, `service.py:241`).
+   (RN-PRODUCTOS-001, `service.py:241`).
 5. Resuelve el depósito: el enviado en el body, o `DEPOSITO_SENTINEL` si no se
-   especificó (RN-CATALOGO-009, `service.py:247`).
+   especificó (RN-PRODUCTOS-009, `service.py:247`).
 6. Arma la fila del upsert **solo** con `producto_id`, `drogueria_id`, `deposito` y
-   `cantidad_disponible` — `cantidad_comprometida` no aparece (RN-CATALOGO-010,
+   `cantidad_disponible` — `cantidad_comprometida` no aparece (RN-PRODUCTOS-010,
    `service.py:239-240` comentario, `:244-249` dict).
 7. `repo.upsert_stock` hace el upsert idempotente por `(producto_id, deposito)`
-   (RN-CATALOGO-008, `repository.py:185-191`).
+   (RN-PRODUCTOS-008, `repository.py:185-191`).
 8. El endpoint responde con `StockOut` (`router.py:209`).
 
 Ver [`arquitectura.md`](./arquitectura.md) para cómo este flujo convive con el motor

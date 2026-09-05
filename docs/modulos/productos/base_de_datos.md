@@ -1,4 +1,13 @@
-# Base de datos — Catálogo
+# Base de datos — Productos
+
+> **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
+> extrajo de `services/presupuestacion/catalogo/` a `services/productos/`
+> (top-level). El wrapper de compatibilidad de `proveedores` descrito en la nota
+> siguiente se **eliminó por completo** en este refactor, no se movió — este módulo
+> ya no tiene ninguna función ni endpoint de `proveedores`. La sección `proveedores`
+> de la tabla de abajo queda solo como registro histórico de cuando la tabla era
+> propiedad de este módulo; el estado vigente de `proveedores` está en
+> [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md).
 
 > **Actualización (change `terceros-modelo`, Fase 8/10)**: `proveedores` perdió
 > `razon_social`/`nombre_comercial`/`cuit`/`plazo_pago_dias`/`condiciones_pago`/
@@ -7,16 +16,17 @@
 > **anterior**; el estado vigente está en
 > [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md).
 
-Catálogo es el módulo dueño de las 5 tablas siguientes. Ver
-[`arquitectura.md`](./arquitectura.md) para el detalle de los 5 módulos que además
-leen o escriben estas tablas por fuera de este código.
+Productos es el módulo dueño de 4 tablas activas —`productos`, `categorias`,
+`costos_productos`, `stock_productos`— más la sección histórica de `proveedores`
+documentada abajo. Ver [`arquitectura.md`](./arquitectura.md) para el detalle de los
+módulos que además leen o escriben estas tablas por fuera de este código.
 
 ## `productos`
 
 | Columna | Qué hace este módulo |
 |---|---|
 | `id` | PK. Generada por Postgres al insertar (`repository.py:10-11`). |
-| `drogueria_id` | FK a `droguerias`. Fijada al crear con la del solicitante (`service.py:29`); filtro de tenant en `listar_productos` (`repository.py:20`) y comparación de pertenencia en `obtener_producto` (`service.py:53`, RN-CATALOGO-001). |
+| `drogueria_id` | FK a `droguerias`. Fijada al crear con la del solicitante (`service.py:29`); filtro de tenant en `listar_productos` (`repository.py:20`) y comparación de pertenencia en `obtener_producto` (`service.py:53`, RN-PRODUCTOS-001). |
 | `codigo_interno` | NOT NULL en `ProductoCreate` (`models.py:14`). Escrita al crear (`service.py:30`). También la usa `imports/repository.py` para matching por lote y para el `UNIQUE(drogueria_id, codigo_interno)` de su upsert masivo (ver [`arquitectura.md`](./arquitectura.md)). |
 | `nombre` | NOT NULL. Escrita al crear, actualizable parcialmente. Usada para ordenar el listado (`repository.py:27`). |
 | `categoria_id` | Nullable. FK a `categorias`. Escrita al crear, actualizable parcialmente; filtro opcional de `listar_productos` (`repository.py:25-26`, query param `categoria_id`). |
@@ -38,7 +48,7 @@ leen o escriben estas tablas por fuera de este código.
 | `drogueria_id` | FK a `droguerias`. Escrita al crear (`service.py:92`); filtro de tenant en `listar_categorias` (`repository.py:63`) y comparación de pertenencia en `actualizar_categoria` (`service.py:104`). |
 | `nombre` | NOT NULL. Escrita al crear, actualizable parcialmente. Usada para ordenar el listado (`repository.py:66`). |
 | `descripcion` | Nullable. Escrita al crear, actualizable parcialmente. |
-| `activa` | BOOLEAN. Filtro opcional en `listar_categorias` (`repository.py:64-65`, query param `activa`). Reactivable/desactivable vía `PATCH` sin ninguna guarda (RN-CATALOGO-004) — no existe soft-delete ni `DELETE /categorias/{id}` en este módulo. |
+| `activa` | BOOLEAN. Filtro opcional en `listar_categorias` (`repository.py:64-65`, query param `activa`). Reactivable/desactivable vía `PATCH` sin ninguna guarda (RN-PRODUCTOS-004) — no existe soft-delete ni `DELETE /categorias/{id}` en este módulo. |
 
 **CRUD**: Create (`repository.py:58-59`), Read (`obtener_categoria`,
 `repository.py:69-71`; `listar_categorias`, `repository.py:62-66`), Update
@@ -49,7 +59,7 @@ leen o escriben estas tablas por fuera de este código.
 | Columna | Qué hace este módulo |
 |---|---|
 | `id` | PK. |
-| `drogueria_id` | FK a `droguerias`. Fijada al crear (`service.py:128`); filtro de tenant en `listar_proveedores` (`repository.py:90`) y comparación de pertenencia en `obtener_proveedor` (`service.py:151`, RN-CATALOGO-001). |
+| `drogueria_id` | FK a `droguerias`. Fijada al crear (`service.py:128`); filtro de tenant en `listar_proveedores` (`repository.py:90`) y comparación de pertenencia en `obtener_proveedor` (`service.py:151`, RN-PRODUCTOS-001). |
 | `codigo_interno` | Nullable. No escrita por `crear_proveedor` de este módulo (no aparece en el dict de `service.py:125-140`) — mismo patrón que `clientes.codigo_interno` (ver [`../clientes/pendientes.md`](../clientes/pendientes.md) P3(4)); sí la usa `imports/repository.py` para matching y upsert masivo por lote. |
 | `razon_social` | NOT NULL. Escrita al crear, actualizable parcialmente. Usada para ordenar el listado (`repository.py:95`). |
 | `nombre_comercial`, `cuit`, `condiciones_pago` | Nullable. Escritas al crear, actualizables parcialmente. |
@@ -72,10 +82,10 @@ leen o escriben estas tablas por fuera de este código.
 | `id` | PK. |
 | `producto_id` | FK a `productos`. Filtro de `listar_costos`/`costo_vigente` (`repository.py:130`, `:141`). |
 | `drogueria_id` | FK a `droguerias`. Escrita al crear (`service.py:212`), no leída por este módulo tras la escritura. |
-| `costo_unitario` | `Decimal`. Comparada contra el vigente para decidir si hay que versionar o no (`service.py:201`, RN-CATALOGO-005). |
-| `fecha_desde` | `date`. Usada para calcular la `fecha_hasta` del costo que se cierra (`service.py:205`, RN-CATALOGO-006). |
-| `fecha_hasta` | Nullable. `IS NULL` es la condición de "costo vigente" (`repository.py:142`, RN-CATALOGO-006) — no hay un enum de estado, es una columna de fecha usada como bandera de vigencia. |
-| `origen` | Hardcodeada a `"manual"` en todo alta hecha por este módulo (`service.py:216`, RN-CATALOGO-007). `imports/service.py` escribe `"import_sistema"` para la misma tabla, con el mismo algoritmo reimplementado (ver [`arquitectura.md`](./arquitectura.md)). |
+| `costo_unitario` | `Decimal`. Comparada contra el vigente para decidir si hay que versionar o no (`service.py:201`, RN-PRODUCTOS-005). |
+| `fecha_desde` | `date`. Usada para calcular la `fecha_hasta` del costo que se cierra (`service.py:205`, RN-PRODUCTOS-006). |
+| `fecha_hasta` | Nullable. `IS NULL` es la condición de "costo vigente" (`repository.py:142`, RN-PRODUCTOS-006) — no hay un enum de estado, es una columna de fecha usada como bandera de vigencia. |
+| `origen` | Hardcodeada a `"manual"` en todo alta hecha por este módulo (`service.py:216`, RN-PRODUCTOS-007). `imports/service.py` escribe `"import_sistema"` para la misma tabla, con el mismo algoritmo reimplementado (ver [`arquitectura.md`](./arquitectura.md)). |
 
 **CRUD**: Create/versionado (`crear_costo`, `service.py:195-218` →
 `repository.py:149-150`; cierre del vigente, `repository.py:153-154`), Read
@@ -87,11 +97,11 @@ Sin Update libre (solo `fecha_hasta` vía `cerrar_costo_vigente`) ni Delete.
 | Columna | Qué hace este módulo |
 |---|---|
 | `id` | PK. |
-| `producto_id` | FK a `productos`. Parte de la clave `UNIQUE(producto_id, deposito)` usada por el `upsert` (`repository.py:188`, RN-CATALOGO-008). |
+| `producto_id` | FK a `productos`. Parte de la clave `UNIQUE(producto_id, deposito)` usada por el `upsert` (`repository.py:188`, RN-PRODUCTOS-008). |
 | `drogueria_id` | FK a `droguerias`. Escrita en cada upsert (`service.py:246`), no leída por este módulo tras la escritura. |
-| `deposito` | Nullable en el modelo (`StockAjuste.deposito`, `models.py:124`), pero nunca `None` en la fila final: si no se especifica, se usa `DEPOSITO_SENTINEL` (`"unico"`, ver RN-CATALOGO-009). Segunda parte de la clave `UNIQUE(producto_id, deposito)`. |
-| `cantidad_disponible` | Único campo que este módulo escribe en `ajustar_stock` (`service.py:236-250`, RN-CATALOGO-010). También la descuenta `core/stock.py` al confirmar entregas de OC — ver [`arquitectura.md`](./arquitectura.md) para el detalle de este escritor concurrente. |
-| `cantidad_comprometida` | **Nunca escrita por este módulo.** Mantenida exclusivamente por `core/stock.py` (comentario explícito en el código, RN-CATALOGO-010). |
+| `deposito` | Nullable en el modelo (`StockAjuste.deposito`, `models.py:124`), pero nunca `None` en la fila final: si no se especifica, se usa `DEPOSITO_SENTINEL` (`"unico"`, ver RN-PRODUCTOS-009). Segunda parte de la clave `UNIQUE(producto_id, deposito)`. |
+| `cantidad_disponible` | Único campo que este módulo escribe en `ajustar_stock` (`service.py:236-250`, RN-PRODUCTOS-010). También la descuenta `core/stock.py` al confirmar entregas de OC — ver [`arquitectura.md`](./arquitectura.md) para el detalle de este escritor concurrente. |
+| `cantidad_comprometida` | **Nunca escrita por este módulo.** Mantenida exclusivamente por `core/stock.py` (comentario explícito en el código, RN-PRODUCTOS-010). |
 
 **CRUD**: Read (`listar_stock`, `repository.py:159-167`;
 `buscar_stock_por_deposito`, `repository.py:170-182`), upsert idempotente

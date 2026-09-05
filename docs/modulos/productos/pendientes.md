@@ -1,4 +1,11 @@
-# Pendientes — Auditoría técnica de Catálogo
+# Pendientes — Auditoría técnica de Productos
+
+> **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
+> movió a `services/productos/` (top-level) y el wrapper de compatibilidad de
+> `proveedores` se **eliminó por completo**. Los ítems de abajo que mencionan
+> `proveedor(es)` (P3(1) sobre roles hardcodeados en `DELETE`, P3(3) sobre
+> reactivación sin guarda) describen código que ya no existe en este módulo y no
+> fueron purgados en este refactor.
 
 Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica relevante)
 / P3 (menor), verificada contra el código y los tests reales en esta sesión.
@@ -15,7 +22,7 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
    [`../clientes/`](../clientes/) y [`../usuarios/`](../usuarios/). Particularmente
    relevante para `costos_productos`: un cambio de precio queda trazado solo en la
    fila cerrada del historial de costo (que sí preserva el valor anterior por
-   diseño, RN-CATALOGO-006), pero no hay registro de **quién** hizo el cambio más
+   diseño, RN-PRODUCTOS-006), pero no hay registro de **quién** hizo el cambio más
    allá de lo que ya guarda la propia tabla — no hay un evento explícito con
    `usuario_id` para esta acción, a diferencia de lo que hace `historial_cambios`
    para otros módulos. Ver `docs/modulos/core/` para el mecanismo de auditoría
@@ -23,10 +30,10 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
 
 2. **Acoplamiento unidireccional negocio→soporte vía `DEPOSITO_SENTINEL`.**
    `repository.py:6` importa una constante de `services/presupuestacion/imports/service.py`
-   — el único módulo de negocio o soporte no-Core que Catálogo importa. [IMPLEMENTADO].
+   — el único módulo de negocio o soporte no-Core que Productos importa. [IMPLEMENTADO].
    Si `imports/service.py` cambia el valor, renombra o elimina `DEPOSITO_SENTINEL`,
-   `catalogo/repository.py` falla en tiempo de import, con un mensaje de error que no
-   apunta a ningún problema evidente en `catalogo/` — ver D-CATALOGO-004 en
+   `productos/repository.py` falla en tiempo de import, con un mensaje de error que no
+   apunta a ningún problema evidente en `productos/` — ver D-PRODUCTOS-004 en
    [`decisiones.md`](./decisiones.md).
 
 ## P2 — Deuda técnica relevante
@@ -39,23 +46,23 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
    para el caso comparable, más chico, de `clientes`). [IMPLEMENTADO]. El caso más
    grave, verificado en esta sesión: `imports/service.py:87-138`
    (`importar_costos`) reimplementa **el mismo algoritmo** de versionado de costo
-   que `catalogo.service.crear_costo` (cerrar vigente + insertar nuevo, sin cambios
+   que `productos.service.crear_costo` (cerrar vigente + insertar nuevo, sin cambios
    si el valor es igual) de forma completamente independiente, con la única
    diferencia de `origen="import_sistema"` en vez de `"manual"`. Si la regla de
    negocio cambiara (por ejemplo, el criterio de cierre de `fecha_hasta`), habría
    que modificar dos archivos sin relación de código de forma consistente, sin que
    exista un punto único de verdad. Ejemplo adicional, menos grave: el upsert masivo
    de `imports/repository.py:37-39` (`actualizar_productos_existentes`) no pasa por
-   ninguna validación de `catalogo.service` (no aplica `exclude_unset`, no valida
+   ninguna validación de `productos.service` (no aplica `exclude_unset`, no valida
    `categoria_id`, etc.).
 
-2. **Riesgo de condición de carrera en `stock_productos` entre `catalogo.ajustar_stock`
+2. **Riesgo de condición de carrera en `stock_productos` entre `productos.ajustar_stock`
    y `core/stock.py`.** Verificado en esta sesión (no estaba en el descubrimiento
    previo con este nivel de detalle): `core/stock.py` no solo mantiene
    `cantidad_comprometida`, también descuenta `cantidad_disponible`
    (`_descontar_disponible_hasta`, `core/stock.py:242-270`, invocada desde
    `entregar_stock_producto` al confirmar una entrega de OC) usando optimistic
-   locking (`WHERE cantidad_disponible = valor_leído`). `catalogo.ajustar_stock` en
+   locking (`WHERE cantidad_disponible = valor_leído`). `productos.ajustar_stock` en
    cambio hace un `upsert` sobre la misma columna sin ninguna comparación de valor
    esperado (`repository.py:185-191`). [IMPLEMENTADO] el hecho de que ambos
    escritores existen y tocan la misma columna con técnicas distintas. Lo que no se
@@ -64,11 +71,11 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
    valor de forma silenciosa (depende del comportamiento exacto de `upsert` con
    `on_conflict` frente a un `UPDATE` concurrente en la misma fila, algo que no es
    verificable solo con el código Python de este repositorio) — hipótesis razonable,
-   no un bug reproducido. Ver D-CATALOGO-003 en [`decisiones.md`](./decisiones.md).
+   no un bug reproducido. Ver D-PRODUCTOS-003 en [`decisiones.md`](./decisiones.md).
 
 3. **Falta de endpoint `DELETE` para categorías.** [IMPLEMENTADO] la ausencia
-   (RN-CATALOGO-004). Posiblemente intencional para evitar productos huérfanos
-   (D-CATALOGO-005), pero sin ningún comentario en el código que lo confirme —
+   (RN-PRODUCTOS-004). Posiblemente intencional para evitar productos huérfanos
+   (D-PRODUCTOS-005), pero sin ningún comentario en el código que lo confirme —
    queda como hipótesis, no como motivo verificado.
 
 ## P3 — Menor
@@ -88,7 +95,7 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
 2. **Duplicación mecánica de 12 pares función pura / `_para_endpoint`.** Verificado
    por grep en esta sesión: 12 funciones `_para_endpoint`, cada una una línea de
    código que resuelve `get_service_client()` y delega — sin lógica nueva. Ver
-   D-CATALOGO-001 en [`decisiones.md`](./decisiones.md). [IMPLEMENTADO]. Este conteo
+   D-PRODUCTOS-001 en [`decisiones.md`](./decisiones.md). [IMPLEMENTADO]. Este conteo
    corrige el "8 pares" del descubrimiento previo del módulo.
 
 3. **`ProductoUpdate`/`ProveedorUpdate` permiten reactivar (`activo=True`) sin
@@ -98,9 +105,9 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
    `exclude_unset=True` sin ninguna regla adicional. [IMPLEMENTADO]. No se pudo
    confirmar si esto es intencional (permitir "deshacer" una baja) o un descuido —
    pendiente de definición funcional. No se encontró un test dedicado a este
-   escenario en `tests/catalogo/test_service.py`.
+   escenario en `tests/productos/test_service.py`.
 
 No se detectó código muerto: las 12 funciones puras y las 12 `_para_endpoint` tienen
 al menos un call site en `router.py` o son ejercitadas directo por
-`tests/catalogo/test_service.py` (confirmado leyendo ambos archivos completos en
+`tests/productos/test_service.py` (confirmado leyendo ambos archivos completos en
 esta sesión).

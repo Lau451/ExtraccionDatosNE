@@ -1,8 +1,19 @@
-# Decisiones de diseño — Catálogo
+# Decisiones de diseño — Productos
 
-Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
+Numeración D-PRODUCTOS-NNN, verificada contra el código en esta sesión.
 
-> **Actualización (change `terceros-modelo`, Fase 8/10)**: `catalogo/` dejó de ser
+> **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
+> extrajo de `services/presupuestacion/catalogo/` a un paquete top-level
+> `services/productos/`, sibling de `services/terceros/`. En el mismo refactor se
+> **eliminó por completo** el wrapper de compatibilidad de `proveedores` descrito en
+> la nota siguiente (no se movió a `services/productos/`): `crear_proveedor`,
+> `listar_proveedores`, `obtener_proveedor`, `actualizar_proveedor`,
+> `eliminar_proveedor`, `ProveedorCreate`/`Update`/`Out` y los endpoints
+> `/proveedores*` ya no existen en este módulo. Confirmado sin callers externos antes
+> de borrar. La nota de la Fase 8/10 de abajo queda como registro histórico de por qué
+> el wrapper existió.
+
+> **Actualización (change `terceros-modelo`, Fase 8/10)**: `productos/` dejó de ser
 > dueño de la identidad de `proveedores` (D2/D5, ver
 > [`../terceros/decisiones.md`](../terceros/decisiones.md)). `repository.py` eliminó
 > por completo la sección de proveedores; `service.py` mantiene un wrapper de
@@ -10,15 +21,15 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
 > `actualizar_proveedor`/`eliminar_proveedor`, mismos endpoints `/proveedores`) que
 > internamente orquesta `services.terceros.api` — decisión explícita tomada en esa
 > sesión en vez de repuntar a los llamadores directamente a la fachada, porque el grep
-> de esa sesión confirmó que ningún otro módulo importa `catalogo.service`/
-> `catalogo.repository` para proveedores (blast radius cero). `eliminar_proveedor`
+> de esa sesión confirmó que ningún otro módulo importa `productos.service`/
+> `productos.repository` para proveedores (blast radius cero). `eliminar_proveedor`
 > desactiva solo el rol (D1/D4), no borra al tercero — mismo patrón que
 > `eliminar_cliente` (ver [`../clientes/decisiones.md`](../clientes/decisiones.md)
 > D-CLIENTES-006). `ProveedorCreate`/`Update`/`Out` cambiaron
 > `plazo_pago_dias`/`condiciones_pago` (texto libre) por `condicion_pago_id`/
 > `forma_pago_id` (FK a `services.terceros.catalogos`).
 
-### D-CATALOGO-001 — Función pura + wrapper `_para_endpoint` en 12 pares
+### D-PRODUCTOS-001 — Función pura + wrapper `_para_endpoint` en 12 pares
 
 - **Decisión**: cada operación de escritura y cada lectura que depende de un
   `producto_id` tiene dos versiones: una función "pura" que recibe `client: Client`
@@ -33,14 +44,14 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
   y [`../usuarios/decisiones.md`](../usuarios/decisiones.md) para sus propios
   módulos, con la misma ausencia de justificación explícita.
 - **Ventajas**: las funciones puras son testeables sin pasar por FastAPI ni por la
-  resolución del token JWT — de hecho, `tests/catalogo/test_service.py` importa y
+  resolución del token JWT — de hecho, `tests/productos/test_service.py` importa y
   llama únicamente a las versiones puras (`crear_producto`, `actualizar_producto`,
   etc., líneas 17-35), nunca a los wrappers `_para_endpoint`.
 - **Desventajas**: duplica la superficie pública de `service.py` (24 funciones para
   cubrir 12 operaciones lógicas) sin agregar lógica nueva en el wrapper más allá de
   resolver el cliente — ver [`pendientes.md`](./pendientes.md) P3.
 
-### D-CATALOGO-002 — Versionado de costo por cierre + alta, en vez de `UPDATE` del `costo_unitario`
+### D-PRODUCTOS-002 — Versionado de costo por cierre + alta, en vez de `UPDATE` del `costo_unitario`
 
 - **Decisión**: cuando cambia el costo de un producto, `crear_costo` no actualiza la
   fila vigente: la cierra (`fecha_hasta`) y crea una fila nueva
@@ -60,7 +71,7 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
   y devolvería una de las dos de forma no determinística). No se pudo confirmar en
   esta sesión si existe una constraint de base de datos que lo prevenga.
 
-### D-CATALOGO-003 — Separación explícita entre ajuste manual de stock (Catálogo) y compromiso automático (`core/stock.py`)
+### D-PRODUCTOS-003 — Separación explícita entre ajuste manual de stock (Productos) y compromiso automático (`core/stock.py`)
 
 - **Decisión**: `ajustar_stock` escribe únicamente `cantidad_disponible`;
   `cantidad_comprometida` es responsabilidad exclusiva de `core/stock.py`.
@@ -78,7 +89,7 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
   (`core/stock.py:242-270`), invocada desde `entregar_stock_producto`
   (`core/stock.py:273-325`) al confirmar una entrega de orden de compra. Esa función
   usa optimistic locking (`WHERE cantidad_disponible = valor_leído`,
-  `core/stock.py:44-54`); `catalogo.ajustar_stock` en cambio hace un `upsert` sin
+  `core/stock.py:44-54`); `productos.ajustar_stock` en cambio hace un `upsert` sin
   ninguna comparación de valor esperado (`repository.py:185-191`). Dos módulos
   escriben la misma columna con dos técnicas distintas, y solo una de ellas se
   protege contra escrituras concurrentes — riesgo de que un ajuste manual
@@ -86,26 +97,26 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
   viceversa. Es una hipótesis razonable a partir de la lectura del código, no un bug
   reproducido en esta sesión — ver [`pendientes.md`](./pendientes.md) P2.
 
-### D-CATALOGO-004 — Reutilizar `DEPOSITO_SENTINEL` de `imports/service.py` en vez de definirlo en Catálogo
+### D-PRODUCTOS-004 — Reutilizar `DEPOSITO_SENTINEL` de `imports/service.py` en vez de definirlo en Productos
 
 - **Decisión**: `repository.py:6` importa la constante `DEPOSITO_SENTINEL = "unico"`
   desde `services.presupuestacion.imports.service` (definida en
   `imports/service.py:18`) en vez de declarar su propia constante.
 - **Motivo**: pendiente de definición funcional — no hay comentario en el código que
-  explique por qué el valor vive en `imports/` en vez de en `catalogo/`, siendo que
+  explique por qué el valor vive en `imports/` en vez de en `productos/`, siendo que
   ambos módulos lo consumen.
 - **Ventajas**: valor consistente entre la carga masiva de stock
   (`imports/repository.py:89-91`) y el ajuste manual de este módulo — un mismo
   producto sin depósito específico cae siempre en la misma fila de
   `stock_productos`, sin importar qué flujo lo escribió.
 - **Desventajas**: acoplamiento negocio→soporte en la dirección menos intuitiva —
-  `catalogo/` (que documentalmente aparenta ser el módulo "dueño" de `productos` y
+  `productos/` (que documentalmente aparenta ser el módulo "dueño" de `productos` y
   `stock_productos`) depende de un módulo de carga masiva para una constante de
   dominio propio. Si `imports/service.py` renombra o elimina
-  `DEPOSITO_SENTINEL`, `catalogo/repository.py` se rompe en tiempo de import, sin
+  `DEPOSITO_SENTINEL`, `productos/repository.py` se rompe en tiempo de import, sin
   que el nombre del módulo lo sugiera.
 
-### D-CATALOGO-005 — Categorías sin soft-delete ni endpoint de eliminación
+### D-PRODUCTOS-005 — Categorías sin soft-delete ni endpoint de eliminación
 
 - **Decisión**: `repository.py` no define ninguna función de borrado para
   `categorias`; `router.py` no expone `DELETE /categorias/{id}`.
@@ -115,7 +126,7 @@ Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
   forma de eliminar una categoría por esta API, no puede darse el caso de un
   producto apuntando a una categoría inexistente por esta vía.
 - **Desventajas**: no hay forma de archivar una categoría creada por error salvo
-  reutilizar `activa=False` (RN-CATALOGO-004) — que, a diferencia de
+  reutilizar `activa=False` (RN-PRODUCTOS-004) — que, a diferencia de
   `productos.activo`, sí es filtrable en `listar_categorias`
   (`repository.py:64-65`), por lo que al menos tiene efecto funcional real, a
   diferencia del caso ya documentado de `cliente_contactos.activo` en
