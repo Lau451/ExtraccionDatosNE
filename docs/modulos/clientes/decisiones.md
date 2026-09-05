@@ -2,6 +2,38 @@
 
 Numeración D-CLIENTES-NNN, verificada contra el código en esta sesión.
 
+> **Actualización (change `terceros-modelo`, Fase 8/10)**: `clientes/` dejó de ser
+> dueño de la identidad y de los contactos. `service.py` ahora orquesta
+> `services.terceros.api` (D5, ver [`../terceros/decisiones.md`](../terceros/decisiones.md)
+> D-TERCEROS-005) para todo lo que antes vivía en `clientes.nombre` y en
+> `cliente_contactos` (tabla eliminada, reemplazada por `terceros_contactos`). Las
+> notas de abajo describen el módulo **antes** de esa migración salvo que se indique lo
+> contrario — se conservan porque documentan decisiones de código que en varios casos
+> siguen vigentes tal cual (p. ej. D-CLIENTES-003, D-CLIENTES-005), y en un caso quedó
+> explícitamente resuelta (D-CLIENTES-004, ver nota en esa sección).
+
+### D-CLIENTES-006 — La identidad y los contactos se resuelven vía `services.terceros.api`, no contra `clientes`/`cliente_contactos`
+
+- **Decisión**: `crear_cliente`/`actualizar_cliente`/`obtener_cliente`/`listar_clientes`
+  orquestan `api.crear_tercero`+`api.asignar_rol_cliente` /
+  `api.actualizar_tercero`+`api.actualizar_rol_cliente` /
+  `api.obtener_cliente_con_tercero` / `api.listar_clientes_con_tercero`. Los contactos
+  (`crear_contacto`/`listar_contactos`/`actualizar_contacto`) proxyean a las funciones
+  homónimas de `services.terceros.api` con `tercero_id=cliente_id`.
+- **Motivo**: D1 (una empresa cliente-y-proveedor es un solo tercero, no dos
+  identidades) y D5 (frontera de consumo unidireccional) — ver
+  [`../terceros/decisiones.md`](../terceros/decisiones.md).
+- **Ventajas**: resuelve D-CLIENTES-004 (ver nota en esa sección) para todo lo que pasa
+  por la fachada — `NotFoundError` consistente en vez de tres excepciones distintas
+  para el mismo escenario de tenant.
+- **Desventajas**: `GET /clientes` cambia de forma. Se decidió (explícitamente pedido
+  en esa sesión) mantener un dict plano combinado tercero+rol en vez de un objeto
+  anidado `{"tercero":..., "rol":...}`, para minimizar el cambio de contrato en
+  `ClienteOut` — documentado también en el docstring de ese modelo.
+- **eliminar_cliente ya no borra al tercero**: desactiva solo la fila de rol
+  (`ClienteRolUpdate(activo=False)`) — el mismo tercero puede seguir activo como
+  proveedor (D1/D4).
+
 ### D-CLIENTES-001 — Escrituras de sub-recursos usan `service_client`, precedidas por validación con `user_client` en el router
 
 - **Decisión**: los 4 endpoints de escritura de sub-recursos (contactos,
@@ -54,7 +86,17 @@ Numeración D-CLIENTES-NNN, verificada contra el código en esta sesión.
   directo) o sin usar el campo `activo` de `cliente_contactos`, que en la práctica no
   tiene ningún efecto (ver [`pendientes.md`](./pendientes.md) P3).
 
-### D-CLIENTES-004 — Tres tipos de excepción distintos para el mismo problema de fondo (tenant isolation)
+### D-CLIENTES-004 — Tres tipos de excepción distintos para el mismo problema de fondo (tenant isolation) — **resuelta para los caminos que pasan por `services.terceros.api`**
+
+> **Resolución (Fase 8, `terceros-modelo`)**: `api.obtener_cliente_con_tercero` y el
+> resto de las funciones de `services.terceros.api` que usa `clientes/service.py`
+> siempre lanzan `NotFoundError` (D3, guard único
+> `asegurar_tercero_de_la_drogueria`). El `ValidationError` que describía el punto
+> original de esta decisión (`_validar_cliente_de_la_drogueria`) fue reemplazado; el
+> test correspondiente se actualizó a
+> `test_upsert_formato_documento_cliente_de_otra_drogueria_falla` esperando
+> `NotFoundError`. El resto de esta sección describe el estado **previo** a esa fase.
+
 
 - **Decisión**: la pertenencia de un cliente a una droguería se valida en tres lugares
   con tres resultados distintos ante el mismo escenario ("el cliente es de otra

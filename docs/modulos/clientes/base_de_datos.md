@@ -1,5 +1,17 @@
 # Base de datos — Clientes
 
+> **Actualización (change `terceros-modelo`, Fase 8/10)**: `clientes` perdió
+> `nombre`/`direccion`/`ciudad`/`provincia`/`codigo_postal`/`plazo_pago_dias`/
+> `condiciones_pago`/`codigo_interno` (movidos a `terceros`,
+> `tercero_direcciones`/`condiciones_pago`) y ganó `condicion_pago_id`/`forma_pago_id`
+> (FK). `cliente_contactos` **fue eliminada**; reemplazada por `terceros_contactos`
+> (compartida con `proveedores`). Ver [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md).
+> Las tablas de abajo describen el esquema **anterior** a esta migración; se conservan
+> como referencia histórica del módulo previo a `terceros-modelo`. El estado vigente de
+> `clientes` (angosta, tabla de ROL) está documentado en
+> [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md), sección
+> "`clientes` / `proveedores` (rol...)".
+
 Clientes es el módulo dueño de las 4 tablas siguientes.
 
 ## `clientes`
@@ -23,7 +35,7 @@ Clientes es el módulo dueño de las 4 tablas siguientes.
 `repository.py:30-41`), Update (`repository.py:48-49`), soft-Delete
 (`repository.py:52-59`).
 
-## `cliente_contactos`
+## `cliente_contactos` (tabla eliminada — reemplazada por `terceros_contactos`)
 
 | Columna | Qué hace este módulo |
 |---|---|
@@ -38,6 +50,9 @@ Clientes es el módulo dueño de las 4 tablas siguientes.
 **CRUD**: Create (`repository.py:62-63`), Read (`listar_contactos`,
 `repository.py:66-74`; `buscar_contacto` acotado a validar pertenencia,
 `repository.py:81-85`), Update (`repository.py:77-78`). Sin Delete.
+
+**Resuelto en `terceros-modelo`**: `terceros_contactos.activo` sí es filtrable por
+defecto (D4) — a diferencia de `cliente_contactos.activo` arriba.
 
 ## `cliente_formato_documentos`
 

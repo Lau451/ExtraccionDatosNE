@@ -1,5 +1,12 @@
 # Base de datos — Catálogo
 
+> **Actualización (change `terceros-modelo`, Fase 8/10)**: `proveedores` perdió
+> `razon_social`/`nombre_comercial`/`cuit`/`plazo_pago_dias`/`condiciones_pago`/
+> `codigo_interno` (movidos a `terceros`/`condiciones_pago`) y ganó
+> `condicion_pago_id`/`forma_pago_id` (FK). La tabla de abajo describe el esquema
+> **anterior**; el estado vigente está en
+> [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md).
+
 Catálogo es el módulo dueño de las 5 tablas siguientes. Ver
 [`arquitectura.md`](./arquitectura.md) para el detalle de los 5 módulos que además
 leen o escriben estas tablas por fuera de este código.
