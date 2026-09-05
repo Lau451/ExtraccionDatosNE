@@ -183,6 +183,59 @@ def importar_stock_para_endpoint(*, drogueria_id: str, stock: list[ImportStockRo
     )
 
 
+# -- terceros legacy (proveedores + clientes, PR5/Fase 9) ------------------------
+#
+# Un RPC por lote (`upsert_terceros_legacy`, design.md sección 7) en lugar de
+# insert/upsert directos contra `clientes`/`proveedores`: la identidad vive en
+# `terceros` y la idempotencia se ancla en `terceros_legacy_map`, no en
+# `codigo_interno` (design.md D1). `desactivar_*` queda deliberadamente fuera
+# del RPC y opera sobre `terceros_legacy_map` para resolver los códigos
+# ausentes, desactivando solo la fila de ROL — nunca el `tercero` completo,
+# porque una empresa que desaparece del CSV de clientes puede seguir activa
+# como proveedor.
+
+SISTEMA_ORIGEN_LEGACY = "legacy"
+
+
+def _importar_terceros_legacy(
+    client: Client,
+    *,
+    drogueria_id: str,
+    entidad_legacy: str,
+    p_filas: list[dict],
+    codigos_presentes: list[str],
+    usuario_id: str,
+) -> dict:
+    filas_resultado = repo.upsert_terceros_legacy(
+        client,
+        drogueria_id=drogueria_id,
+        sistema_origen=SISTEMA_ORIGEN_LEGACY,
+        entidad_legacy=entidad_legacy,
+        filas=p_filas,
+        usuario_id=usuario_id,
+    )
+    creados = sum(1 for fila in filas_resultado if fila["accion"] == "creado")
+    actualizados = len(filas_resultado) - creados
+
+    activos_previos = repo.codigos_legacy_activos(
+        client,
+        drogueria_id=drogueria_id,
+        sistema_origen=SISTEMA_ORIGEN_LEGACY,
+        entidad_legacy=entidad_legacy,
+    )
+    codigos_presentes_set = set(codigos_presentes)
+    faltantes = [cod for cod in activos_previos if cod not in codigos_presentes_set]
+    if faltantes:
+        repo.desactivar_rol_por_tercero_ids(
+            client,
+            entidad_legacy=entidad_legacy,
+            tercero_ids=[activos_previos[cod] for cod in faltantes],
+            usuario_id=usuario_id,
+        )
+
+    return {"creados": creados, "actualizados": actualizados, "desactivados": len(faltantes)}
+
+
 # -- proveedores -------------------------------------------------------------------
 
 def importar_proveedores(
@@ -191,56 +244,25 @@ def importar_proveedores(
     if not proveedores:
         raise ValidationError("La lista de proveedores no puede estar vacía")
 
-    con_codigo = [p for p in proveedores if p.codigo_interno]
-    sin_codigo = [p for p in proveedores if not p.codigo_interno]
-
-    codigos = [p.codigo_interno for p in con_codigo]
-    existentes = repo.codigos_existentes_proveedores(client, drogueria_id=drogueria_id, codigos=codigos)
-
-    def _base(p: ImportProveedorRow) -> dict:
-        return {
-            "drogueria_id": drogueria_id,
-            "codigo_interno": p.codigo_interno,
+    p_filas = [
+        {
+            "codigo_legacy": p.codigo_interno,
             "razon_social": p.razon_social,
-            "nombre_comercial": p.nombre_comercial,
             "cuit": p.cuit,
-            "tipo": p.tipo or "otro",
-            "es_competidor": p.es_competidor if p.es_competidor is not None else True,
-            "es_proveedor_compra": p.es_proveedor_compra if p.es_proveedor_compra is not None else False,
-            "plazo_pago_dias": p.plazo_pago_dias,
-            "condiciones_pago": p.condiciones_pago,
-            "activo": True,
-            "updated_by": usuario_id,
+            "tipo": p.tipo,
+            "es_competidor": p.es_competidor,
+            "es_proveedor_compra": p.es_proveedor_compra,
         }
-
-    nuevos_filas = []
-    actualizados_filas = []
-    for p in con_codigo:
-        base = _base(p)
-        if p.codigo_interno in existentes:
-            actualizados_filas.append(base)
-        else:
-            nuevos_filas.append({**base, "created_by": usuario_id})
-
-    for p in sin_codigo:
-        nuevos_filas.append({**_base(p), "created_by": usuario_id})
-
-    repo.insertar_proveedores(client, nuevos_filas)
-    repo.actualizar_proveedores_existentes(client, actualizados_filas)
-
-    activos = repo.codigos_activos_proveedores(client, drogueria_id=drogueria_id)
-    faltantes = activos - set(codigos)
-    if faltantes:
-        repo.desactivar_proveedores(
-            client, drogueria_id=drogueria_id, codigos=list(faltantes), usuario_id=usuario_id
-        )
-
-    return {
-        "creados": len(nuevos_filas),
-        "actualizados": len(actualizados_filas),
-        "desactivados": len(faltantes),
-        "sin_codigo_interno": len(sin_codigo),
-    }
+        for p in proveedores
+    ]
+    return _importar_terceros_legacy(
+        client,
+        drogueria_id=drogueria_id,
+        entidad_legacy="proveedor",
+        p_filas=p_filas,
+        codigos_presentes=[p.codigo_interno for p in proveedores],
+        usuario_id=usuario_id,
+    )
 
 
 def importar_proveedores_para_endpoint(
@@ -262,66 +284,23 @@ def importar_clientes(
     if not clientes:
         raise ValidationError("La lista de clientes no puede estar vacía")
 
-    codigos = [c.codigo_interno for c in clientes]
-    existentes = repo.mapear_clientes_por_codigo(client, drogueria_id=drogueria_id, codigos=codigos)
-
-    nuevos_filas = []
-    actualizados = 0
-    for c in clientes:
-        campos_opcionales = {
-            k: v
-            for k, v in {
-                "direccion": c.direccion,
-                "ciudad": c.ciudad,
-                "provincia": c.provincia,
-                "codigo_postal": c.codigo_postal,
-                "plazo_pago_dias": c.plazo_pago_dias,
-                "condiciones_pago": c.condiciones_pago,
-            }.items()
-            if v is not None
+    p_filas = [
+        {
+            "codigo_legacy": c.codigo_interno,
+            "razon_social": c.razon_social,
+            "cuit": c.cuit,
+            "tipo": c.tipo,
         }
-
-        if c.codigo_interno in existentes:
-            campos = dict(campos_opcionales)
-            if c.nombre is not None:
-                campos["nombre"] = c.nombre
-            if c.tipo is not None:
-                campos["tipo"] = c.tipo
-            campos["updated_by"] = usuario_id
-            repo.actualizar_cliente(client, cliente_id=existentes[c.codigo_interno], campos=campos)
-            actualizados += 1
-        else:
-            if c.nombre is None or c.tipo is None:
-                raise ValidationError(
-                    f"El cliente nuevo '{c.codigo_interno}' requiere nombre y tipo"
-                )
-            nuevos_filas.append(
-                {
-                    "drogueria_id": drogueria_id,
-                    "codigo_interno": c.codigo_interno,
-                    "nombre": c.nombre,
-                    "tipo": c.tipo,
-                    **campos_opcionales,
-                    "activo": True,
-                    "created_by": usuario_id,
-                    "updated_by": usuario_id,
-                }
-            )
-
-    repo.insertar_clientes(client, nuevos_filas)
-
-    activos = repo.codigos_activos_clientes(client, drogueria_id=drogueria_id)
-    faltantes = activos - set(codigos)
-    if faltantes:
-        repo.desactivar_clientes(
-            client, drogueria_id=drogueria_id, codigos=list(faltantes), usuario_id=usuario_id
-        )
-
-    return {
-        "creados": len(nuevos_filas),
-        "actualizados": actualizados,
-        "desactivados": len(faltantes),
-    }
+        for c in clientes
+    ]
+    return _importar_terceros_legacy(
+        client,
+        drogueria_id=drogueria_id,
+        entidad_legacy="cliente",
+        p_filas=p_filas,
+        codigos_presentes=[c.codigo_interno for c in clientes],
+        usuario_id=usuario_id,
+    )
 
 
 def importar_clientes_para_endpoint(*, drogueria_id: str, clientes: list[ImportClienteRow]) -> dict:

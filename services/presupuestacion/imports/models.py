@@ -66,16 +66,24 @@ class ImportStockResultado(BaseModel):
     no_encontrados: list[str]
 
 
+# codigo_interno es obligatorio para ambos (a diferencia del esquema plano
+# anterior, donde proveedores lo tenía opcional): terceros_legacy_map.codigo_legacy
+# es NOT NULL (migración 0008), así que el RPC upsert_terceros_legacy no admite
+# una fila sin código de origen legado (design.md sección 7).
+#
+# direccion/ciudad/provincia/codigo_postal/plazo_pago_dias/condiciones_pago se
+# eliminan de ambos modelos: esos campos ya no viven en `clientes`/`proveedores`
+# (se movieron a `tercero_direcciones` y a `condiciones_pago.plazos_dias`, FK-
+# based) y el RPC upsert_terceros_legacy no los recibe ni los resuelve — quedan
+# fuera del alcance del import legado en este change (design.md sección 7 no
+# extiende el contrato del RPC para direcciones/condiciones de pago).
 class ImportProveedorRow(BaseModel):
-    codigo_interno: str | None = None
+    codigo_interno: str
     razon_social: str
-    nombre_comercial: str | None = None
     cuit: str | None = None
     tipo: TipoProveedor | None = None
     es_competidor: bool | None = None
     es_proveedor_compra: bool | None = None
-    plazo_pago_dias: int | None = None
-    condiciones_pago: str | None = None
 
 
 class ImportProveedoresRequest(BaseModel):
@@ -86,19 +94,13 @@ class ImportProveedoresResultado(BaseModel):
     creados: int
     actualizados: int
     desactivados: int
-    sin_codigo_interno: int
 
 
 class ImportClienteRow(BaseModel):
     codigo_interno: str
-    nombre: str | None = None
+    razon_social: str
+    cuit: str | None = None
     tipo: TipoCliente | None = None
-    direccion: str | None = None
-    ciudad: str | None = None
-    provincia: str | None = None
-    codigo_postal: str | None = None
-    plazo_pago_dias: int | None = None
-    condiciones_pago: str | None = None
 
 
 class ImportClientesRequest(BaseModel):

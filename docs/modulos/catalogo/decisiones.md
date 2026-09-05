@@ -2,6 +2,22 @@
 
 Numeración D-CATALOGO-NNN, verificada contra el código en esta sesión.
 
+> **Actualización (change `terceros-modelo`, Fase 8/10)**: `catalogo/` dejó de ser
+> dueño de la identidad de `proveedores` (D2/D5, ver
+> [`../terceros/decisiones.md`](../terceros/decisiones.md)). `repository.py` eliminó
+> por completo la sección de proveedores; `service.py` mantiene un wrapper de
+> compatibilidad (`crear_proveedor`/`listar_proveedores`/`obtener_proveedor`/
+> `actualizar_proveedor`/`eliminar_proveedor`, mismos endpoints `/proveedores`) que
+> internamente orquesta `services.terceros.api` — decisión explícita tomada en esa
+> sesión en vez de repuntar a los llamadores directamente a la fachada, porque el grep
+> de esa sesión confirmó que ningún otro módulo importa `catalogo.service`/
+> `catalogo.repository` para proveedores (blast radius cero). `eliminar_proveedor`
+> desactiva solo el rol (D1/D4), no borra al tercero — mismo patrón que
+> `eliminar_cliente` (ver [`../clientes/decisiones.md`](../clientes/decisiones.md)
+> D-CLIENTES-006). `ProveedorCreate`/`Update`/`Out` cambiaron
+> `plazo_pago_dias`/`condiciones_pago` (texto libre) por `condicion_pago_id`/
+> `forma_pago_id` (FK a `services.terceros.catalogos`).
+
 ### D-CATALOGO-001 — Función pura + wrapper `_para_endpoint` en 12 pares
 
 - **Decisión**: cada operación de escritura y cada lectura que depende de un

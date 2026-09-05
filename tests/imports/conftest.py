@@ -28,11 +28,13 @@ def seed_usuario_sistema_2(service_client):
 
 @pytest.fixture
 def limpiar_catalogo_import(service_client, seed_drogueria):
-    """productos/proveedores/clientes no tienen ON DELETE CASCADE desde droguerias
-    (solo costos_productos/stock_productos cascadean desde producto_id) — hay que
-    limpiarlos a mano antes de que seed_drogueria borre la fila padre."""
+    """productos no tiene ON DELETE CASCADE desde droguerias (solo
+    costos_productos/stock_productos cascadean desde producto_id) — hay que
+    limpiarlo a mano antes de que seed_drogueria borre la fila padre. Borrar
+    `terceros` alcanza para limpiar clientes/proveedores/terceros_legacy_map:
+    todos cascadean desde terceros (fk_*_tercero ON DELETE CASCADE,
+    0008_terceros_modelo.sql — mismo criterio que tests/terceros/conftest.py)."""
     yield
     drog_id = seed_drogueria["id"]
     service_client.table("productos").delete().eq("drogueria_id", drog_id).execute()
-    service_client.table("proveedores").delete().eq("drogueria_id", drog_id).execute()
-    service_client.table("clientes").delete().eq("drogueria_id", drog_id).execute()
+    service_client.table("terceros").delete().eq("drogueria_id", drog_id).execute()
