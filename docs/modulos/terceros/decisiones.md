@@ -40,6 +40,24 @@ entre paréntesis para poder cruzar contra ese documento.
 - **Contrato cruzado**: el change `orden-compra` resolvía el cliente por
   `clientes.codigo_interno`; tras esta migración esa columna vive en `terceros`. Ver
   `openspec/changes/orden-compra/HANDOFF-terceros-modelo.md`.
+- **Fix del defecto de `uq_terceros_codigo`** (post-verify, Fase 12): corregido en
+  `supabase/migrations/0010_fix_terceros_codigo_interno_import_collision.sql`. El paso 3
+  (alta) de `upsert_terceros_legacy` ahora verifica, antes del `INSERT INTO terceros`, si
+  `codigo_interno = fila->>'codigo_legacy'` ya existe para OTRO tercero en esa
+  `drogueria_id`; si es así, inserta con `codigo_interno = NULL` en vez de fallar
+  `uq_terceros_codigo` (la constraint ya tolera NULL). El alta nativa vía `crear_tercero()`
+  puede setear `codigo_interno` a mano más adelante si hace falta desambiguar. Sin cambio
+  de DDL — `CREATE OR REPLACE FUNCTION`, mismo patrón que la migración 0009. **Resuelto**: el
+  orquestador aplicó la migración 0010 contra la base de test (`grnamollopxdlstcpxhc`) vía
+  `mcp__supabase__apply_migration`, la verificó con una llamada de prueba envuelta en
+  `BEGIN;...ROLLBACK;` (dos empresas sin CUIT compartido, mismo `codigo_legacy`, produjeron dos
+  `terceros` distintos — uno con `codigo_interno` seteado, el otro `NULL`), y quitó el
+  `xfail(strict=True)` de
+  `tests/imports/test_service.py::test_codigo_legacy_colisiona_entre_cliente_y_proveedor_produce_dos_terceros_distintos`
+  (cuya propia aserción también hubo que corregir: filtraba por `codigo_interno` compartido
+  esperando 2 filas, pero el fix deja `NULL` en la segunda a propósito — ahora identifica ambos
+  terceros por `razon_social` y verifica el par de `codigo_interno` como
+  `{codigo_compartido, None}`). `pytest tests/imports/ tests/terceros/` → 72 passed, 0 xfailed.
 
 ### D-TERCEROS-002 (D2) — Submódulos por subdominio, no paquete plano
 

@@ -201,6 +201,78 @@ imports), matching design.md's stated sequencing.
 
 - [x] 11.1 Create `openspec/changes/orden-compra/HANDOFF-terceros-modelo.md`: `codigo_interno`/`uq_cli_codigo` moved from `clientes` to `terceros`; `orden-compra`'s cliente lookup must resolve against `terceros` then verify the `clientes` role (D1 contract). Creado, incluye también la nota de `cliente_contactos`→`terceros_contactos`, el cambio de contrato de `imports/`, y el defecto D-TERCEROS-001 documentado para si `orden-compra` llega a crear terceros nuevos.
 
+## Phase 12: Post-verify follow-ups (non-blocking WARNINGs from verify-report.md)
+
+> **Correction to verify-report.md WARNING #1**: the report says the *proveedor* path for
+> "Reject a habitual condicion de pago from another drogueria" is untested and the *cliente*
+> path is covered. Reading the actual test
+> (`tests/terceros/identidad/test_service.py::test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation`,
+> line 304) shows the opposite: it calls `asignar_rol_proveedor(...)`, so the **proveedor** path
+> is the one covered, and the **cliente** path is the one missing. Task 12.1 below fixes the
+> actually-missing side.
+
+- [x] 12.1 RED→GREEN: add the missing **cliente**-path mirror of
+  `test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation` — same scenario via
+  `asignar_rol_cliente(...)` instead of `asignar_rol_proveedor(...)`. Confirms
+  `_validar_condicion_y_forma_pago` behaves identically on both role paths, not just by code
+  inspection. Added
+  `test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation_via_cliente`
+  (`tests/terceros/identidad/test_service.py`), mirroring the existing proveedor-path test.
+  Confirmed GREEN this session: `pytest tests/terceros/identidad/test_service.py::test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation_via_cliente`
+  → 1 passed.
+- [x] 12.2 RED→GREEN: `terceros-identidad` "Referential Compatibility" scenario — create a
+  tercero+cliente role, create a `procesos_comerciales` row referencing its `cliente_id`, assert
+  the FK still resolves via a join query (`procesos_comerciales.cliente_id -> clientes.id`)
+  unchanged after the migration. Lives in `tests/terceros/identidad/test_service.py` or a new
+  `tests/terceros/test_referential_compatibility.py`. Added
+  `test_procesos_comerciales_cliente_id_resuelve_sin_migracion_de_datos`
+  (`tests/terceros/identidad/test_service.py`), inserting a `procesos_comerciales` row with
+  `cliente_id` set to a tercero's shared id and asserting the `clientes(id)` PostgREST embed
+  resolves it unchanged. Confirmed GREEN this session: `pytest tests/terceros/identidad/test_service.py::test_procesos_comerciales_cliente_id_resuelve_sin_migracion_de_datos`
+  → 1 passed.
+- [x] 12.3 Follow-up migration for D-TERCEROS-001: `supabase/migrations/0010_fix_terceros_codigo_interno_import_collision.sql`.
+  Fix `upsert_terceros_legacy`'s step 3 (alta) so importing two genuinely different companies
+  that happen to share `codigo_legacy` across the cliente/proveedor legacy sources (no common
+  CUIT) no longer violates `uq_terceros_codigo UNIQUE(drogueria_id, codigo_interno)`. Approach:
+  before `INSERT INTO terceros (..., codigo_interno, ...)`, check whether `codigo_interno =
+  fila->>'codigo_legacy'` already exists for a *different* tercero in this `drogueria_id`; if so,
+  insert with `codigo_interno = NULL` instead of failing (native CRUD can still set it later
+  manually; `codigo_interno` uniqueness already tolerates NULL). No DDL change needed — this is a
+  `CREATE OR REPLACE FUNCTION` migration, same pattern as 0009. Include `.down.sql`. Written
+  (`0010_fix_terceros_codigo_interno_import_collision.sql` + `.down.sql`), same
+  `#variable_conflict use_column` pragma and structure as 0009, adding a
+  `v_codigo_colisiona BOOLEAN` check before the alta `INSERT`. **Blocked from applying**: this
+  session has no MCP access to Supabase (same blocker as Fase 9's task 9.1-9.14 note above) —
+  correct by reading, not yet applied or confirmed against the live test project. Requires the
+  orchestrator (or a session with Supabase MCP access) to apply it and re-run
+  `pytest tests/imports/`.
+- [x] 12.4 Remove the `xfail(strict=True)` marker from
+  `tests/imports/test_service.py::test_codigo_legacy_colisiona_entre_cliente_y_proveedor_produce_dos_terceros_distintos`
+  once 12.3 makes it pass for real; confirm GREEN against the live test project. Done by the
+  orchestrator. Also fixed the test's own assertion, which was querying `terceros` by
+  `codigo_interno = codigo_compartido` expecting 2 rows — but the migration 0010 fix
+  deliberately leaves `codigo_interno = NULL` on the second tercero to avoid the collision, so
+  only 1 row matched that filter. Rewrote the assertion to identify both terceros by
+  `razon_social IN (...)` instead, and to assert the pair of `codigo_interno` values is exactly
+  `{codigo_compartido, None}` (documents the fix's actual behavior instead of just checking a
+  count). `pytest tests/imports/test_service.py::test_codigo_legacy_colisiona_entre_cliente_y_proveedor_produce_dos_terceros_distintos`
+  → 1 passed.
+- [x] 12.5 Update `docs/modulos/terceros/decisiones.md` D-TERCEROS-001: mark the defect resolved,
+  reference migration 0010, and correct the WARNING #1 role mixup noted above if it's echoed
+  there too. Added a subsection under D-TERCEROS-001 documenting migration 0010's fix and its
+  pending-application status (not overclaiming full resolution until 12.6 applies it and 12.4
+  confirms it). Checked `decisiones.md` for an echo of the verify-report.md WARNING #1
+  proveedor/cliente mixup — none found; that mixup only existed in `verify-report.md` and was
+  already corrected in this file's Phase 12 header note, so no further correction was needed.
+- [x] 12.6 Apply migration 0010 to the test Supabase project (`grnamollopxdlstcpxhc`) and confirm
+  `pytest tests/imports/ tests/terceros/` green. Applied by the orchestrator via
+  `mcp__supabase__apply_migration`. Verified the fix directly first with a rollback-wrapped RPC
+  call (`BEGIN;...ROLLBACK;`): imported the same `codigo_legacy` as a cliente and a proveedor
+  with no shared CUIT — confirmed two distinct `terceros` rows, one keeping the `codigo_interno`
+  and the other `NULL`, no residual data after rollback. Then `pytest tests/imports/
+  tests/terceros/` → **72 passed, 0 failed, 0 xfailed** (the `xfail` from 9.13 is a real pass
+  now). D-TERCEROS-001 is fully resolved, not just documented.
+
 ## Key Learnings
 
 1. The design's five-PR cut (schema+shared, identidad+catálogos, direcciones+contactos, consumers, imports) maps directly onto stacked-to-main work units because each PR merges independently and in the design's stated order.
@@ -214,3 +286,5 @@ imports), matching design.md's stated sequencing.
 9. Querying `direccion_usos` with a PostgREST embed of `tercero_direcciones(*)` fails with `PGRST201` ("more than one relationship was found") because two FKs connect them (`fk_du_dir_drog`, `fk_du_dir_tercero`); the embed must disambiguate with `tercero_direcciones!fk_du_dir_tercero(*)`.
 10. design.md deliberately leaves the "principal" conflict rule open for `direccion_usos`/`terceros_contactos`, so this batch defines two different rules and documents the reasoning in each service.py docstring: addresses reject a second principal-per-use with `ConflictError` (a tercero can have several simultaneous uses, so there is no unambiguous "the one to demote"), while contacts auto-demote the previous principal (a tercero has exactly one principal contact, so demotion is unambiguous) — matching tasks.md 6.7's explicit "flips to false" wording.
 11. `tercero_direcciones` carries an `activo` column (per the M6 DDL) but Phase 5's task list has no D4 "hidden by default" test, unlike Phase 3/4 and unlike Phase 6 for contacts; `terceros-direcciones/spec.md`'s own "Address Edit and Removal" requirement instead demands physical removal ("no longer exist"). This batch treats direcciones as the one D4-table where physical delete (`eliminar_direccion`, cascading to `direccion_usos` via the existing `ON DELETE CASCADE` FKs) is the router-exposed retirement path, while `TerceroDireccionUpdate.activo` stays available for manual soft-deactivation without a dedicated default-hiding test.
+12. `procesos_comerciales.cliente_id` has no `ON DELETE CASCADE` from `clientes.id` (`fk_proc_cli` is plain `RESTRICT`/`NO ACTION`), so a Referential Compatibility regression test that inserts a `procesos_comerciales` row for a `seed_tercero_factory`-created cliente must delete that row itself in a `finally` block before `limpiar_terceros`'s teardown deletes the tercero, or the tercero delete would fail on the FK.
+13. A verify-report WARNING's stated direction can be backwards from the actual test coverage gap; always re-read the named test body (not just the WARNING text) before writing the "missing" mirror, or the fix targets the wrong role path entirely.

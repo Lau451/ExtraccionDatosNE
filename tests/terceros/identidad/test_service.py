@@ -336,6 +336,47 @@ def test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation(
 
 
 @pytest.mark.integration
+def test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation_via_cliente(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    """Mirror of test_asignar_condicion_pago_habitual_de_otra_drogueria_lanza_validation
+    (above) via asignar_rol_cliente instead of asignar_rol_proveedor. Post-verify follow-up
+    (tasks.md Phase 12, task 12.1): verify-report.md WARNING #1 named the wrong path as
+    missing — the proveedor path was already covered by the test above; this confirms
+    _validar_condicion_y_forma_pago behaves identically on the cliente path too, not just
+    by code inspection."""
+    tercero = seed_tercero_factory()
+    otra_drogueria = service_client.table("droguerias").insert(
+        {
+            "nombre": "Otra Droguería",
+            "razon_social": "Otra Droguería SA",
+            "cuit": f"20-{uuid.uuid4().int % 99_999_999:08d}-9",
+            "ciudad": "Rosario",
+            "provincia": "Santa Fe",
+            "contacto_email": f"otra-terceros-cliente-{uuid.uuid4()}@seed.local",
+            "contacto_telefono": "0000000000",
+        }
+    ).execute().data[0]
+    condicion_ajena = service_client.table("condiciones_pago").insert(
+        {"drogueria_id": otra_drogueria["id"], "nombre": f"Ajena {uuid.uuid4().hex[:8]}"}
+    ).execute().data[0]
+
+    try:
+        with pytest.raises(ValidationError):
+            asignar_rol_cliente(
+                service_client,
+                tercero_id=tercero["id"],
+                drogueria_id=seed_drogueria["id"],
+                body=ClienteRolCreate(
+                    tipo="hospital", condicion_pago_id=condicion_ajena["id"]
+                ),
+            )
+    finally:
+        service_client.table("condiciones_pago").delete().eq("id", condicion_ajena["id"]).execute()
+        service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
+
+
+@pytest.mark.integration
 def test_asignar_condicion_y_forma_pago_habitual_a_un_cliente(
     service_client, seed_drogueria, seed_tercero_factory, seed_condicion_pago_factory, seed_forma_pago_factory
 ):
@@ -504,3 +545,51 @@ def test_obtener_proveedor_con_tercero_de_otra_drogueria_lanza_not_found(
         obtener_proveedor_con_tercero(
             service_client, tercero_id=tercero["id"], drogueria_id="otra-drogueria"
         )
+
+
+# ---------------------------------------------------------------------------
+# 12.2 — Referential Compatibility (terceros-identidad spec.md, post-verify
+# follow-up): preexisting FKs to clientes.id keep resolving unchanged, because
+# clientes.id is the same shared primary key as terceros.id (D1) — no data
+# migration of procesos_comerciales was required by the terceros-modelo
+# migration.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_procesos_comerciales_cliente_id_resuelve_sin_migracion_de_datos(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    tercero = seed_tercero_factory(razon_social="Cliente con proceso comercial")
+    asignar_rol_cliente(
+        service_client,
+        tercero_id=tercero["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ClienteRolCreate(tipo="hospital"),
+    )
+
+    proceso = (
+        service_client.table("procesos_comerciales")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "cliente_id": tercero["id"],
+                "clase": "cotizacion",
+                "nombre": "Proceso referencial de test",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    try:
+        fila = (
+            service_client.table("procesos_comerciales")
+            .select("id, clientes(id)")
+            .eq("id", proceso["id"])
+            .execute()
+            .data[0]
+        )
+        assert fila["clientes"]["id"] == tercero["id"]
+    finally:
+        service_client.table("procesos_comerciales").delete().eq("id", proceso["id"]).execute()
