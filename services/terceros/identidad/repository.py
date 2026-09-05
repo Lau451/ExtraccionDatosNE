@@ -18,9 +18,14 @@ def buscar_tercero(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
 def listar_terceros(
     client: Client, *, drogueria_id: str, activo: bool | None = None
 ) -> list[dict[str, Any]]:
+    # Embeds default to LEFT JOIN semantics (unlike the `!inner` embeds below), which is
+    # exactly what a listing needs here: a tercero with no role assigned yet must still
+    # appear, just with an empty `clientes`/`proveedores` array. The service layer turns
+    # those arrays into `tiene_rol_cliente`/`tiene_rol_proveedor` booleans for the list's
+    # role badge, without a second round-trip per row.
     query = (
         client.table("terceros")
-        .select("*")
+        .select("*, clientes(id), proveedores(id)")
         .eq("drogueria_id", drogueria_id)
         .is_("deleted_at", None)
     )

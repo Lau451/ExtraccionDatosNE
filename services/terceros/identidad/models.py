@@ -45,6 +45,12 @@ class TerceroOut(BaseModel):
     sitio_web: str | None
     notas: str | None
     activo: bool
+    # Solo presentes en el listado (listar_terceros): evitan una consulta por fila
+    # para saber si mostrar el badge Cliente/Proveedor/Ambos. `obtener_tercero` no
+    # los completa — quien necesita el rol completo pide /terceros/{id}/clientes o
+    # /terceros/{id}/proveedores.
+    tiene_rol_cliente: bool = False
+    tiene_rol_proveedor: bool = False
 
 
 class ClienteRolCreate(BaseModel):

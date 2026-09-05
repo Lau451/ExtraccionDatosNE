@@ -80,6 +80,55 @@ def test_crear_tercero_codigo_interno_duplicado_lanza_conflict(
     assert len([t for t in todos if t["codigo_interno"] == codigo]) == 1
 
 
+@pytest.mark.integration
+def test_listar_terceros_incluye_flags_de_rol_sin_consulta_extra(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    solo_cliente = seed_tercero_factory(razon_social="Solo Cliente SA")
+    solo_proveedor = seed_tercero_factory(razon_social="Solo Proveedor SA")
+    ambos = seed_tercero_factory(razon_social="Ambos Roles SA")
+    sin_rol = seed_tercero_factory(razon_social="Sin Rol SA")
+
+    asignar_rol_cliente(
+        service_client,
+        tercero_id=solo_cliente["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ClienteRolCreate(),
+    )
+    asignar_rol_proveedor(
+        service_client,
+        tercero_id=solo_proveedor["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ProveedorRolCreate(),
+    )
+    asignar_rol_cliente(
+        service_client,
+        tercero_id=ambos["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ClienteRolCreate(),
+    )
+    asignar_rol_proveedor(
+        service_client,
+        tercero_id=ambos["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ProveedorRolCreate(),
+    )
+
+    listado = {
+        fila["id"]: fila
+        for fila in listar_terceros(service_client, drogueria_id=seed_drogueria["id"], activo=None)
+    }
+
+    assert listado[solo_cliente["id"]]["tiene_rol_cliente"] is True
+    assert listado[solo_cliente["id"]]["tiene_rol_proveedor"] is False
+    assert listado[solo_proveedor["id"]]["tiene_rol_cliente"] is False
+    assert listado[solo_proveedor["id"]]["tiene_rol_proveedor"] is True
+    assert listado[ambos["id"]]["tiene_rol_cliente"] is True
+    assert listado[ambos["id"]]["tiene_rol_proveedor"] is True
+    assert listado[sin_rol["id"]]["tiene_rol_cliente"] is False
+    assert listado[sin_rol["id"]]["tiene_rol_proveedor"] is False
+
+
 # ---------------------------------------------------------------------------
 # 3.6 / 3.7 / 3.8 — asignación de roles
 # ---------------------------------------------------------------------------

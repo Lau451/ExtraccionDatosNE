@@ -48,10 +48,22 @@ def crear_tercero(
         raise
 
 
+def _con_flags_de_rol(fila: dict[str, Any]) -> dict[str, Any]:
+    # El embed de la fila trae `clientes`/`proveedores` como arrays (0 o 1 elemento,
+    # nunca más porque comparten PK con `terceros`) — se resumen a booleanos para el
+    # badge de rol del listado y se sacan del dict, TerceroOut no los declara.
+    return {
+        **{k: v for k, v in fila.items() if k not in ("clientes", "proveedores")},
+        "tiene_rol_cliente": bool(fila.get("clientes")),
+        "tiene_rol_proveedor": bool(fila.get("proveedores")),
+    }
+
+
 def listar_terceros(
     client: Client, *, drogueria_id: str, activo: bool | None = True
 ) -> list[dict[str, Any]]:
-    return repo.listar_terceros(client, drogueria_id=drogueria_id, activo=activo)
+    filas = repo.listar_terceros(client, drogueria_id=drogueria_id, activo=activo)
+    return [_con_flags_de_rol(fila) for fila in filas]
 
 
 def obtener_tercero(
