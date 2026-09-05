@@ -70,3 +70,35 @@ def seed_sector_contacto_factory(service_client, seed_drogueria, limpiar_tercero
         return service_client.table("sectores_contacto").insert(fila).execute().data[0]
 
     return _seed
+
+
+@pytest.fixture
+def seed_direccion_factory(service_client, seed_drogueria, seed_tercero_factory):
+    def _seed(tercero_id: str | None = None, **overrides):
+        if tercero_id is None:
+            tercero_id = seed_tercero_factory()["id"]
+        fila = {
+            "tercero_id": tercero_id,
+            "drogueria_id": seed_drogueria["id"],
+            "calle": "Calle Falsa 123",
+            **overrides,
+        }
+        return service_client.table("tercero_direcciones").insert(fila).execute().data[0]
+
+    return _seed
+
+
+@pytest.fixture
+def seed_contacto_factory(service_client, seed_drogueria, seed_tercero_factory):
+    def _seed(tercero_id: str | None = None, **overrides):
+        if tercero_id is None:
+            tercero_id = seed_tercero_factory()["id"]
+        fila = {
+            "tercero_id": tercero_id,
+            "drogueria_id": seed_drogueria["id"],
+            "nombre": f"Contacto {uuid.uuid4().hex[:8]}",
+            **overrides,
+        }
+        return service_client.table("terceros_contactos").insert(fila).execute().data[0]
+
+    return _seed
