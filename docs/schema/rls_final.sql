@@ -131,11 +131,8 @@ CREATE POLICY clientes_ins ON clientes FOR INSERT WITH CHECK ((select get_rol())
 CREATE POLICY clientes_upd ON clientes FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY clientes_del ON clientes FOR DELETE USING ((select es_superadmin()));
 
-ALTER TABLE cliente_contactos ENABLE ROW LEVEL SECURITY;
-CREATE POLICY cc_sel ON cliente_contactos FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY cc_ins ON cliente_contactos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY cc_upd ON cliente_contactos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY cc_del ON cliente_contactos FOR DELETE USING ((select es_superadmin()));
+-- cliente_contactos fue reemplazada por terceros_contactos (migración 0008);
+-- su RLS se movió a la sección "terceros" más abajo.
 
 -- CRM: gerencia también agrega notas
 ALTER TABLE cliente_observaciones ENABLE ROW LEVEL SECURITY;
@@ -313,6 +310,71 @@ CREATE POLICY eoci_ins ON entregas_oc_items FOR INSERT WITH CHECK ((select get_r
 CREATE POLICY eoci_upd ON entregas_oc_items FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY eoci_del ON entregas_oc_items FOR DELETE USING ((select es_superadmin()));
 
+-- ---------- terceros (migración 0008, terceros-modelo) ----------
+-- terceros, tercero_direcciones, direccion_usos, terceros_contactos y
+-- terceros_legacy_map llevan el conjunto unión de roles de escritura de
+-- clientes y proveedores (D6 en openspec/changes/terceros-modelo/design.md):
+-- un tercero puede cumplir ambos roles, restringir a uno solo bloquearía al otro.
+ALTER TABLE terceros ENABLE ROW LEVEL SECURITY;
+CREATE POLICY terceros_sel ON terceros FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY terceros_ins ON terceros FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY terceros_upd ON terceros FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY terceros_del ON terceros FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE tercero_direcciones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tdir_sel ON tercero_direcciones FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY tdir_ins ON tercero_direcciones FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tdir_upd ON tercero_direcciones FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tdir_del ON tercero_direcciones FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE direccion_usos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY du_sel ON direccion_usos FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY du_ins ON direccion_usos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY du_upd ON direccion_usos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY du_del ON direccion_usos FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE terceros_contactos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tc_sel ON terceros_contactos FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY tc_ins ON terceros_contactos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tc_upd ON terceros_contactos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tc_del ON terceros_contactos FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE terceros_legacy_map ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tlm_sel ON terceros_legacy_map FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY tlm_ins ON terceros_legacy_map FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tlm_upd ON terceros_legacy_map FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tlm_del ON terceros_legacy_map FOR DELETE USING ((select es_superadmin()));
+
+-- Catálogos: lectura para el tenant, escritura acotada a admin/gerencia.
+ALTER TABLE sectores_contacto ENABLE ROW LEVEL SECURITY;
+CREATE POLICY sec_sel ON sectores_contacto FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY sec_ins ON sectores_contacto FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY sec_upd ON sectores_contacto FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY sec_del ON sectores_contacto FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE condiciones_pago ENABLE ROW LEVEL SECURITY;
+CREATE POLICY cp_sel ON condiciones_pago FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY cp_ins ON condiciones_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY cp_upd ON condiciones_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY cp_del ON condiciones_pago FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE formas_pago ENABLE ROW LEVEL SECURITY;
+CREATE POLICY fp_sel ON formas_pago FOR SELECT USING ((select mismo_tenant(drogueria_id)));
+CREATE POLICY fp_ins ON formas_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY fp_upd ON formas_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY fp_del ON formas_pago FOR DELETE USING ((select es_superadmin()));
+
+-- GRANTs explícitos (tablas nuevas no se auto-exponen al Data API). Sin DELETE
+-- para authenticated: la API nunca borra físicamente estas filas (D4).
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    terceros, tercero_direcciones, direccion_usos, terceros_contactos, terceros_legacy_map,
+    sectores_contacto, condiciones_pago, formas_pago
+  TO service_role;
+GRANT SELECT, INSERT, UPDATE ON
+    terceros, tercero_direcciones, direccion_usos, terceros_contactos, terceros_legacy_map,
+    sectores_contacto, condiciones_pago, formas_pago
+  TO authenticated;
+
 
 -- =============================================================================
 -- LÓGICA DE NEGOCIO: VIVE EN EL BACKEND, NO EN LA BD
@@ -463,13 +525,19 @@ ALTER VIEW v_calendario SET (security_invoker = on);
 
 -- Enriquecer v_presupuesto_revision (definida en extractor_final.sql) con el
 -- nombre de quien ajustó el precio, ahora que precio_ajustado_por es FK real.
-CREATE OR REPLACE VIEW v_presupuesto_revision AS
+--
+-- Migración 0008 (terceros-modelo) reemplaza esta vista otra vez: cliente/
+-- proveedor pasan a leerse desde terceros y el plazo desde
+-- condiciones_pago.plazos_dias (primer término como valor representativo, ver
+-- supabase/migrations/0008_terceros_modelo.sql). security_invoker se declara
+-- inline en el CREATE VIEW desde esa migración en adelante.
+CREATE OR REPLACE VIEW v_presupuesto_revision WITH (security_invoker = true) AS
 SELECT
     p.id                        AS presupuesto_id,
     p.proceso_comercial_id,
     proc.nombre                 AS proceso,
     proc.clase,
-    cl.nombre                   AS cliente,
+    t_cli.razon_social          AS cliente,
     p.estado,
     pi.id                       AS presupuesto_item_id,
     ip.numero_renglon,
@@ -490,25 +558,27 @@ SELECT
     pi.motivo_exclusion,
     (pi.precio_ajustado_por IS NOT NULL) AS ajustado_por_humano,
     uaj.nombre                  AS ajustado_por,
-    COALESCE(prov.nombre_comercial, prov.razon_social) AS proveedor_compra,
-    COALESCE(pp.plazo_pago_dias, prov.plazo_pago_dias) AS plazo_pago_proveedor,
-    cl.plazo_pago_dias          AS plazo_pago_cliente,
+    COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor_compra,
+    COALESCE(pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_proveedor,
+    (cp_cli.plazos_dias[1])::integer AS plazo_pago_cliente,
     pi.mantenimiento_hasta_usado,
     (pi.mantenimiento_hasta_usado IS NOT NULL
      AND proc.vencimiento IS NOT NULL
      AND pi.mantenimiento_hasta_usado < proc.vencimiento) AS alerta_mantenimiento
 FROM presupuestos p
-JOIN procesos_comerciales proc ON proc.id = p.proceso_comercial_id
-LEFT JOIN clientes cl          ON cl.id = proc.cliente_id
-JOIN presupuesto_items pi      ON pi.presupuesto_id = p.id
-JOIN items_proceso ip          ON ip.id = pi.item_proceso_id
-LEFT JOIN productos prod       ON prod.id = pi.producto_id
-LEFT JOIN precios_proveedor pp ON pp.id = pi.precio_proveedor_id
-LEFT JOIN proveedores prov     ON prov.id = pp.proveedor_id
-LEFT JOIN usuarios uaj         ON uaj.id = pi.precio_ajustado_por
+JOIN procesos_comerciales proc     ON proc.id = p.proceso_comercial_id
+LEFT JOIN clientes cl              ON cl.id = proc.cliente_id
+LEFT JOIN terceros t_cli           ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
+LEFT JOIN condiciones_pago cp_cli  ON cp_cli.id = cl.condicion_pago_id
+JOIN presupuesto_items pi          ON pi.presupuesto_id = p.id
+JOIN items_proceso ip              ON ip.id = pi.item_proceso_id
+LEFT JOIN productos prod           ON prod.id = pi.producto_id
+LEFT JOIN precios_proveedor pp     ON pp.id = pi.precio_proveedor_id
+LEFT JOIN proveedores prov         ON prov.id = pp.proveedor_id
+LEFT JOIN terceros t_prov          ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
+LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
+LEFT JOIN usuarios uaj             ON uaj.id = pi.precio_ajustado_por
 ORDER BY p.id, ip.numero_renglon;
-
-ALTER VIEW v_presupuesto_revision SET (security_invoker = on);
 
 
 -- =============================================================================

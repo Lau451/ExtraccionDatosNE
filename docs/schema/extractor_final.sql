@@ -11,6 +11,10 @@
 --   - droguerias: + provincia, codigo_postal
 --   - clientes: + ciudad, provincia, codigo_postal, plazo_pago_dias,
 --     condiciones_pago. Tabla nueva cliente_contactos (múltiples contactos).
+--   - Migración 0008 (terceros-modelo): clientes/proveedores pasan a ser
+--     tablas de ROL angostas; la identidad se muda a terceros (nueva),
+--     compartida con la clave primaria de ambas. cliente_contactos se
+--     reemplaza por terceros_contactos. Ver CAPA 1B — TERCEROS más abajo.
 --   - categorias: tabla normalizada (medicamentos, descartables, etc.)
 --     usada por productos, reglas_pricing y procesos.
 --   - productos: campos de medicamento opcionales (descartables no los usan)
@@ -63,49 +67,205 @@ CREATE TABLE planes (
     PRIMARY KEY (id)
 );
 
+-- =============================================================================
+-- CAPA 1B — TERCEROS (migración 0008, supabase/migrations/)
+-- Identidad única de cliente/proveedor. Ver
+-- openspec/changes/terceros-modelo/design.md (D1-D6) para las decisiones.
+-- =============================================================================
+
+CREATE TABLE sectores_contacto (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    nombre          TEXT        NOT NULL,
+    descripcion     TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_sec_id_drog  UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_sec_nombre   UNIQUE (drogueria_id, nombre),
+    CONSTRAINT fk_sec_drog     FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+
+CREATE TABLE condiciones_pago (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    nombre          TEXT        NOT NULL,
+    plazos_dias     SMALLINT[]  NOT NULL DEFAULT '{}'::smallint[],
+    descripcion     TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_cp_id_drog   UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_cp_nombre    UNIQUE (drogueria_id, nombre),
+    CONSTRAINT ck_cp_plazos    CHECK (0 <= ALL (plazos_dias)),
+    CONSTRAINT fk_cp_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+COMMENT ON COLUMN condiciones_pago.plazos_dias IS 'Reemplaza plazo_pago_dias (INTEGER) de clientes/proveedores: {30,60,90}.';
+
+CREATE TABLE formas_pago (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    nombre          TEXT        NOT NULL,
+    tipo            TEXT        NOT NULL DEFAULT 'otro',
+    descripcion     TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_fp_id_drog   UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_fp_nombre    UNIQUE (drogueria_id, nombre),
+    CONSTRAINT ck_fp_tipo      CHECK (tipo IN ('transferencia','cheque','echeq','efectivo','deposito','otro')),
+    CONSTRAINT fk_fp_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+
+CREATE TABLE terceros (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    codigo_interno  TEXT        NULL,
+    razon_social    TEXT        NOT NULL,
+    nombre_fantasia TEXT        NULL,
+    cuit            TEXT        NULL,
+    email           TEXT        NULL,
+    telefono        TEXT        NULL,
+    sitio_web       TEXT        NULL,
+    notas           TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_by      UUID        NULL,
+    updated_by      UUID        NULL,
+    deleted_at      TIMESTAMPTZ NULL,
+    deleted_by      UUID        NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_terceros_id_drog UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_terceros_codigo  UNIQUE (drogueria_id, codigo_interno),
+    CONSTRAINT ck_terceros_cuit    CHECK (cuit IS NULL OR cuit ~ '^[0-9]{11}$'),
+    CONSTRAINT fk_terceros_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_terceros_createdby FOREIGN KEY (created_by) REFERENCES usuarios (id),
+    CONSTRAINT fk_terceros_updatedby FOREIGN KEY (updated_by) REFERENCES usuarios (id),
+    CONSTRAINT fk_terceros_deletedby FOREIGN KEY (deleted_by) REFERENCES usuarios (id)
+);
+CREATE UNIQUE INDEX uq_terceros_cuit ON terceros (drogueria_id, cuit) WHERE cuit IS NOT NULL AND deleted_at IS NULL;
+CREATE INDEX idx_terceros_drog_activo ON terceros (drogueria_id) WHERE activo AND deleted_at IS NULL;
+
+CREATE TABLE terceros_legacy_map (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    tercero_id      UUID        NOT NULL,
+    drogueria_id    UUID        NOT NULL,
+    sistema_origen  TEXT        NOT NULL DEFAULT 'legacy',
+    entidad_legacy  TEXT        NOT NULL,
+    codigo_legacy   TEXT        NOT NULL,
+    datos_legacy    JSONB       NULL,
+    importado_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_tlm_id_drog  UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_tlm_codigo   UNIQUE (drogueria_id, sistema_origen, entidad_legacy, codigo_legacy),
+    CONSTRAINT ck_tlm_entidad  CHECK (entidad_legacy IN ('cliente','proveedor')),
+    CONSTRAINT fk_tlm_tercero  FOREIGN KEY (tercero_id, drogueria_id) REFERENCES terceros (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_tlm_drog     FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+
+CREATE TABLE tercero_direcciones (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    tercero_id      UUID        NOT NULL,
+    drogueria_id    UUID        NOT NULL,
+    etiqueta        TEXT        NULL,
+    calle           TEXT        NOT NULL,
+    numero          TEXT        NULL,
+    piso_depto      TEXT        NULL,
+    ciudad          TEXT        NULL,
+    provincia       TEXT        NULL,
+    codigo_postal   TEXT        NULL,
+    pais            TEXT        NOT NULL DEFAULT 'AR',
+    observaciones   TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_tdir_id_drog    UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_tdir_id_tercero UNIQUE (id, tercero_id),
+    CONSTRAINT fk_tdir_tercero    FOREIGN KEY (tercero_id, drogueria_id) REFERENCES terceros (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_tdir_drog       FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+CREATE INDEX idx_tdir_tercero ON tercero_direcciones (tercero_id) WHERE activo;
+
+CREATE TABLE direccion_usos (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    direccion_id    UUID        NOT NULL,
+    tercero_id      UUID        NOT NULL,
+    drogueria_id    UUID        NOT NULL,
+    uso             TEXT        NOT NULL,
+    es_principal    BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_du_id_drog      UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_du_dir_uso      UNIQUE (direccion_id, uso),
+    CONSTRAINT ck_du_uso          CHECK (uso IN ('facturacion','entrega','documentacion','otra')),
+    CONSTRAINT fk_du_dir_drog     FOREIGN KEY (direccion_id, drogueria_id) REFERENCES tercero_direcciones (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_du_dir_tercero  FOREIGN KEY (direccion_id, tercero_id) REFERENCES tercero_direcciones (id, tercero_id) ON DELETE CASCADE,
+    CONSTRAINT fk_du_drog         FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+CREATE UNIQUE INDEX uq_du_principal ON direccion_usos (tercero_id, uso) WHERE es_principal;
+CREATE INDEX idx_du_uso ON direccion_usos (tercero_id, uso);
+
+CREATE TABLE terceros_contactos (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    tercero_id      UUID        NOT NULL,
+    drogueria_id    UUID        NOT NULL,
+    nombre          TEXT        NOT NULL,
+    apellido        TEXT        NULL,
+    sector_id       UUID        NULL,
+    cargo           TEXT        NULL,
+    email           TEXT        NULL,
+    telefono        TEXT        NULL,
+    celular         TEXT        NULL,
+    es_principal    BOOLEAN     NOT NULL DEFAULT FALSE,
+    notas           TEXT        NULL,
+    activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_tc_id_drog   UNIQUE (id, drogueria_id),
+    CONSTRAINT fk_tc_tercero   FOREIGN KEY (tercero_id, drogueria_id) REFERENCES terceros (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_tc_sector    FOREIGN KEY (sector_id, drogueria_id) REFERENCES sectores_contacto (id, drogueria_id),
+    CONSTRAINT fk_tc_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+CREATE UNIQUE INDEX uq_tc_principal ON terceros_contactos (tercero_id) WHERE es_principal AND activo;
+CREATE INDEX idx_tc_tercero ON terceros_contactos (tercero_id) WHERE activo;
+
+-- Migración 0008 (supabase/migrations/): clientes pasa a ser tabla de ROL.
+-- La identidad (nombre → razon_social, direccion, ciudad, provincia,
+-- codigo_postal, codigo_interno) y los contactos se mudan a terceros/
+-- terceros_contactos; plazo_pago_dias/condiciones_pago (texto libre) se
+-- reemplazan por FKs a condiciones_pago/formas_pago. Ver
+-- openspec/changes/terceros-modelo/design.md sección "Interfaces / Contracts".
 CREATE TABLE clientes (
-    id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
+    id                  UUID            NOT NULL,
     drogueria_id        UUID            NOT NULL,
-    nombre              TEXT            NOT NULL,
     tipo                TEXT            NOT NULL,
-    direccion           TEXT            NULL,
-    ciudad              TEXT            NULL,
-    provincia           TEXT            NULL,
-    codigo_postal       TEXT            NULL,
-    -- condiciones comerciales del cliente (cómo NOS paga)
-    plazo_pago_dias     INTEGER         NULL,
-    condiciones_pago    TEXT            NULL,
+    condicion_pago_id   UUID            NULL,
+    forma_pago_id       UUID            NULL,
     activo              BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_by          UUID            NULL,
+    updated_by          UUID            NULL,
+    deleted_at          TIMESTAMPTZ     NULL,
+    deleted_by          UUID            NULL,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_cli_id_drog UNIQUE (id, drogueria_id),
     CONSTRAINT ck_clientes_tipo
         CHECK (tipo IN ('hospital', 'obra_social', 'municipio', 'provincia', 'nacional', 'otro')),
-    CONSTRAINT ck_clientes_plazo CHECK (plazo_pago_dias IS NULL OR plazo_pago_dias >= 0)
+    CONSTRAINT fk_cli_tercero   FOREIGN KEY (id, drogueria_id) REFERENCES terceros (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_cli_condpago  FOREIGN KEY (condicion_pago_id, drogueria_id) REFERENCES condiciones_pago (id, drogueria_id),
+    CONSTRAINT fk_cli_formapago FOREIGN KEY (forma_pago_id, drogueria_id) REFERENCES formas_pago (id, drogueria_id)
 );
 
-COMMENT ON COLUMN clientes.plazo_pago_dias  IS 'A cuántos días paga este cliente (30/60/90). Informativo para evaluar la conveniencia de una licitación.';
-COMMENT ON COLUMN clientes.condiciones_pago IS 'Notas libres: "50% contra entrega", "paga con demora habitual", etc.';
-
--- Múltiples contactos por organismo (compras, farmacia, tesorería…)
-CREATE TABLE cliente_contactos (
-    id              UUID            NOT NULL DEFAULT gen_random_uuid(),
-    cliente_id      UUID            NOT NULL,
-    drogueria_id    UUID            NOT NULL,
-    nombre          TEXT            NOT NULL,
-    cargo           TEXT            NULL,
-    email           TEXT            NULL,
-    telefono        TEXT            NULL,
-    es_principal    BOOLEAN         NOT NULL DEFAULT FALSE,
-    notas           TEXT            NULL,
-    activo          BOOLEAN         NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (id)
-);
-
-COMMENT ON COLUMN cliente_contactos.drogueria_id IS 'Denormalizado del cliente padre vía FK compuesta (cliente_id, drogueria_id) → clientes(id, drogueria_id). Evita JOIN en cada política RLS.';
+-- cliente_contactos fue reemplazada por terceros_contactos (0008); ver
+-- sección "CAPA — TERCEROS" más abajo.
 
 -- CRM: bitácora de notas. Se acumulan, no se editan.
 CREATE TABLE cliente_observaciones (
@@ -142,30 +302,32 @@ CREATE TABLE cliente_formato_documentos (
 );
 
 -- Proveedores: competidores en comparativas y/o proveedores de compra
+-- Migración 0008: proveedores pasa a ser tabla de ROL. La identidad
+-- (codigo_interno, razon_social, nombre_comercial → nombre_fantasia, cuit) se
+-- muda a terceros; plazo_pago_dias/condiciones_pago se reemplazan por FKs.
 CREATE TABLE proveedores (
-    id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
+    id                  UUID            NOT NULL,
     drogueria_id        UUID            NOT NULL,
-    codigo_interno      TEXT            NULL,
-    razon_social        TEXT            NOT NULL,
-    nombre_comercial    TEXT            NULL,
-    cuit                TEXT            NULL,
     tipo                TEXT            NOT NULL DEFAULT 'otro',
     es_competidor       BOOLEAN         NOT NULL DEFAULT TRUE,
     es_proveedor_compra BOOLEAN         NOT NULL DEFAULT FALSE,
-    plazo_pago_dias     INTEGER         NULL,
-    condiciones_pago    TEXT            NULL,
+    condicion_pago_id   UUID            NULL,
+    forma_pago_id       UUID            NULL,
     activo              BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_by          UUID            NULL,
+    updated_by          UUID            NULL,
+    deleted_at          TIMESTAMPTZ     NULL,
+    deleted_by          UUID            NULL,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_prov_id_drog UNIQUE (id, drogueria_id),
     CONSTRAINT ck_prov_tipo
         CHECK (tipo IN ('laboratorio', 'drogueria', 'distribuidor', 'cooperativa', 'otro')),
-    CONSTRAINT ck_prov_plazo CHECK (plazo_pago_dias IS NULL OR plazo_pago_dias >= 0)
+    CONSTRAINT fk_prov_tercero   FOREIGN KEY (id, drogueria_id) REFERENCES terceros (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_prov_condpago  FOREIGN KEY (condicion_pago_id, drogueria_id) REFERENCES condiciones_pago (id, drogueria_id),
+    CONSTRAINT fk_prov_formapago FOREIGN KEY (forma_pago_id, drogueria_id) REFERENCES formas_pago (id, drogueria_id)
 );
-
-COMMENT ON COLUMN proveedores.codigo_interno   IS 'Código del sistema externo de la droguería. Distinto del id (clave interna de esta BD): permite el import idempotente.';
-COMMENT ON COLUMN proveedores.plazo_pago_dias  IS 'A cuántos días LE PAGAMOS a este proveedor (30/60/90). Informativo para el aprobador.';
 
 
 -- =============================================================================
@@ -1071,7 +1233,6 @@ COMMENT ON TABLE notificacion_preferencias IS 'Qué notificaciones quiere recibi
 
 ALTER TABLE droguerias                  ADD CONSTRAINT fk_drog_plan   FOREIGN KEY (plan_id)      REFERENCES planes (id);
 ALTER TABLE clientes                    ADD CONSTRAINT fk_cli_drog    FOREIGN KEY (drogueria_id) REFERENCES droguerias (id);
-ALTER TABLE cliente_contactos           ADD CONSTRAINT fk_cc_cli      FOREIGN KEY (cliente_id, drogueria_id) REFERENCES clientes (id, drogueria_id) ON DELETE CASCADE;
 ALTER TABLE cliente_observaciones       ADD CONSTRAINT fk_cobs_cli    FOREIGN KEY (cliente_id)   REFERENCES clientes (id) ON DELETE CASCADE;
 ALTER TABLE cliente_observaciones       ADD CONSTRAINT fk_cobs_drog   FOREIGN KEY (drogueria_id) REFERENCES droguerias (id);
 ALTER TABLE cliente_formato_documentos  ADD CONSTRAINT fk_cfmt_cli    FOREIGN KEY (cliente_id)   REFERENCES clientes (id) ON DELETE CASCADE;
@@ -1206,7 +1367,6 @@ ALTER TABLE notificacion_preferencias   ADD CONSTRAINT fk_np_drog     FOREIGN KE
 -- =============================================================================
 
 CREATE INDEX idx_clientes_drog          ON clientes (drogueria_id);
-CREATE INDEX idx_cc_cliente             ON cliente_contactos (cliente_id) WHERE activo = TRUE;
 CREATE INDEX idx_cobs_cliente           ON cliente_observaciones (cliente_id, created_at DESC);
 CREATE INDEX idx_cfmt_cliente           ON cliente_formato_documentos (cliente_id, doc_type) WHERE activo = TRUE;
 CREATE INDEX idx_prov_drog              ON proveedores (drogueria_id);
@@ -1317,8 +1477,9 @@ CREATE INDEX idx_oci_drog  ON oc_items (drogueria_id);
 CREATE INDEX idx_eoc_drog  ON entregas_oc (drogueria_id);
 CREATE INDEX idx_eoci_drog ON entregas_oc_items (drogueria_id);
 CREATE INDEX idx_ch_drog   ON chunk_results (drogueria_id);
-CREATE INDEX idx_cc_drog   ON cliente_contactos (drogueria_id);
 CREATE INDEX idx_cpa_drog  ON cliente_producto_alias (drogueria_id);
+CREATE INDEX idx_tc_drog   ON terceros_contactos (drogueria_id);
+CREATE INDEX idx_tdir_drog ON tercero_direcciones (drogueria_id);
 
 -- eventos
 CREATE INDEX idx_ev_drog        ON eventos (drogueria_id) WHERE deleted_at IS NULL;
@@ -1455,8 +1616,13 @@ $$;
 
 CREATE TRIGGER t_u_drog   BEFORE UPDATE ON droguerias                 FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER t_u_cli    BEFORE UPDATE ON clientes                   FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
-CREATE TRIGGER t_u_cc     BEFORE UPDATE ON cliente_contactos          FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER t_u_cfmt   BEFORE UPDATE ON cliente_formato_documentos FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_sectores_contacto_updated_at   BEFORE UPDATE ON sectores_contacto   FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_condiciones_pago_updated_at    BEFORE UPDATE ON condiciones_pago    FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_formas_pago_updated_at         BEFORE UPDATE ON formas_pago         FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_terceros_updated_at            BEFORE UPDATE ON terceros            FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_tercero_direcciones_updated_at BEFORE UPDATE ON tercero_direcciones FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE TRIGGER trg_terceros_contactos_updated_at  BEFORE UPDATE ON terceros_contactos  FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER t_u_prov   BEFORE UPDATE ON proveedores                FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER t_u_prod   BEFORE UPDATE ON productos                  FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER t_u_stock  BEFORE UPDATE ON stock_productos            FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
@@ -1504,13 +1670,16 @@ WHERE ip.producto_id IS NOT NULL
 GROUP BY ip.producto_id, c.drogueria_id;
 
 -- Pantalla de aprobación del presupuesto
-CREATE VIEW v_presupuesto_revision AS
+-- Migración 0008: WITH (security_invoker = true) (antes evadía RLS); cliente/
+-- proveedor leen razon_social desde terceros y el plazo desde
+-- condiciones_pago.plazos_dias (primer término como valor representativo).
+CREATE VIEW v_presupuesto_revision WITH (security_invoker = true) AS
 SELECT
     p.id                        AS presupuesto_id,
     p.proceso_comercial_id,
     proc.nombre                 AS proceso,
     proc.clase,
-    cl.nombre                   AS cliente,
+    t_cli.razon_social          AS cliente,
     p.estado,
     pi.id                       AS presupuesto_item_id,
     ip.numero_renglon,
@@ -1530,32 +1699,36 @@ SELECT
     pi.excluido,
     pi.motivo_exclusion,
     (pi.precio_ajustado_por IS NOT NULL) AS ajustado_por_humano,
-    COALESCE(prov.nombre_comercial, prov.razon_social) AS proveedor_compra,
-    COALESCE(pp.plazo_pago_dias, prov.plazo_pago_dias) AS plazo_pago_proveedor,
-    cl.plazo_pago_dias          AS plazo_pago_cliente,
+    COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor_compra,
+    COALESCE(pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_proveedor,
+    (cp_cli.plazos_dias[1])::integer AS plazo_pago_cliente,
     pi.mantenimiento_hasta_usado,
     (pi.mantenimiento_hasta_usado IS NOT NULL
      AND proc.vencimiento IS NOT NULL
      AND pi.mantenimiento_hasta_usado < proc.vencimiento) AS alerta_mantenimiento
 FROM presupuestos p
-JOIN procesos_comerciales proc ON proc.id = p.proceso_comercial_id
-LEFT JOIN clientes cl          ON cl.id = proc.cliente_id
-JOIN presupuesto_items pi      ON pi.presupuesto_id = p.id
-JOIN items_proceso ip          ON ip.id = pi.item_proceso_id
-LEFT JOIN productos prod       ON prod.id = pi.producto_id
-LEFT JOIN precios_proveedor pp ON pp.id = pi.precio_proveedor_id
-LEFT JOIN proveedores prov     ON prov.id = pp.proveedor_id
+JOIN procesos_comerciales proc     ON proc.id = p.proceso_comercial_id
+LEFT JOIN clientes cl              ON cl.id = proc.cliente_id
+LEFT JOIN terceros t_cli           ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
+LEFT JOIN condiciones_pago cp_cli  ON cp_cli.id = cl.condicion_pago_id
+JOIN presupuesto_items pi          ON pi.presupuesto_id = p.id
+JOIN items_proceso ip              ON ip.id = pi.item_proceso_id
+LEFT JOIN productos prod           ON prod.id = pi.producto_id
+LEFT JOIN precios_proveedor pp     ON pp.id = pi.precio_proveedor_id
+LEFT JOIN proveedores prov         ON prov.id = pp.proveedor_id
+LEFT JOIN terceros t_prov          ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
+LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
 ORDER BY p.id, ip.numero_renglon;
 
 -- Cola de matching pendiente
-CREATE VIEW v_matching_pendiente AS
+CREATE VIEW v_matching_pendiente WITH (security_invoker = true) AS
 SELECT
     ip.id                       AS item_proceso_id,
     ip.proceso_comercial_id,
     proc.nombre                 AS proceso,
     proc.clase,
     proc.cliente_id,
-    cl.nombre                   AS cliente,
+    t_cli.razon_social          AS cliente,
     ip.numero_renglon,
     ip.descripcion,
     ip.estado_matching,
@@ -1564,12 +1737,13 @@ SELECT
 FROM items_proceso ip
 JOIN procesos_comerciales proc ON proc.id = ip.proceso_comercial_id
 LEFT JOIN clientes cl          ON cl.id = proc.cliente_id
+LEFT JOIN terceros t_cli       ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE ip.estado_matching IN ('pendiente', 'sugerido')
   AND proc.estado IN ('abierto', 'presupuestado')
 ORDER BY proc.vencimiento NULLS FIRST, ip.numero_renglon;
 
 -- Precios especiales vigentes (costo alternativo del motor)
-CREATE VIEW v_precios_especiales_vigentes AS
+CREATE VIEW v_precios_especiales_vigentes WITH (security_invoker = true) AS
 SELECT
     pp.id                       AS precio_proveedor_id,
     pp.drogueria_id,
@@ -1579,22 +1753,24 @@ SELECT
     pp.precio_unitario,
     pp.cantidad_minima,
     pp.cantidad_maxima,
-    COALESCE(prov.nombre_comercial, prov.razon_social) AS proveedor,
-    COALESCE(pp.plazo_pago_dias, prov.plazo_pago_dias) AS plazo_pago_dias,
+    COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor,
+    COALESCE(pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_dias,
     pp.mantenimiento_hasta,
     pp.mantenimiento_hasta - CURRENT_DATE AS dias_restantes
 FROM precios_proveedor pp
 JOIN proveedores prov ON prov.id = pp.proveedor_id
+JOIN terceros t_prov  ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
 JOIN productos prod   ON prod.id = pp.producto_id
+LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
 WHERE pp.activa = TRUE AND pp.mantenimiento_hasta >= CURRENT_DATE
 ORDER BY pp.producto_id, pp.precio_unitario;
 
 -- Renglones ganados (oficial o estimado) para anticipar compras
-CREATE VIEW v_renglones_ganados AS
+CREATE VIEW v_renglones_ganados WITH (security_invoker = true) AS
 SELECT
     c.proceso_comercial_id,
     proc.nombre                 AS proceso,
-    cl.nombre                   AS cliente,
+    t_cli.razon_social          AS cliente,
     oi.id                       AS oferta_item_id,
     oi.renglon_id,
     oi.descripcion,
@@ -1608,21 +1784,23 @@ FROM ofertas_items oi
 JOIN comparativas c            ON c.id = oi.comparativa_id AND c.es_vigente = TRUE
 JOIN procesos_comerciales proc ON proc.id = c.proceso_comercial_id
 LEFT JOIN clientes cl          ON cl.id = proc.cliente_id
+LEFT JOIN terceros t_cli       ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE oi.es_drogueria_propia = TRUE
   AND (oi.adjudicada OR oi.adjudicacion_estimada);
 
 -- Entregas pendientes con atraso
-CREATE VIEW v_entregas_pendientes AS
+CREATE VIEW v_entregas_pendientes WITH (security_invoker = true) AS
 SELECT
     oc.numero_oc,
-    cl.nombre AS cliente,
+    t_cli.razon_social AS cliente,
     e.numero_entrega,
     e.fecha_entrega_planificada,
     e.estado,
     CURRENT_DATE - e.fecha_entrega_planificada AS dias_atraso
 FROM entregas_oc e
-JOIN ordenes_compra oc ON oc.id = e.orden_compra_id
-LEFT JOIN clientes cl  ON cl.id = oc.cliente_id
+JOIN ordenes_compra oc  ON oc.id = e.orden_compra_id
+LEFT JOIN clientes cl   ON cl.id = oc.cliente_id
+LEFT JOIN terceros t_cli ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE e.estado NOT IN ('entregada', 'rechazada');
 
 -- Proveedores sin matchear
