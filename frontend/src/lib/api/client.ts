@@ -1,12 +1,12 @@
 const EXTRACCION_BASE_URL = import.meta.env.VITE_EXTRACCION_API_URL ?? 'http://localhost:8000'
 
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
+  status: number
+
+  constructor(message: string, status: number) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
   }
 }
 

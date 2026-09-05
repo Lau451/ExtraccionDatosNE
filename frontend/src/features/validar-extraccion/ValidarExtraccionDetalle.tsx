@@ -154,7 +154,9 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         documentType={filasQuery.data.document_type}
         isPending={mutation.isPending}
         onConfirm={() =>
-          mutation.mutate(hook.filasParaEnviar() as FilaLicitacionIn[] | FilaComparativaIn[])
+          mutation.mutate(
+            hook.filasParaEnviar() as unknown as FilaLicitacionIn[] | FilaComparativaIn[],
+          )
         }
       />
     </div>

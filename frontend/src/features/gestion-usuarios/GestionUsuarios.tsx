@@ -30,7 +30,7 @@ export function GestionUsuarios() {
 
   // Solo superadmin puede promover a admin (RN-USUARIOS-002/cambiar_rol
   // extendida) — no se muestra la opción si quien mira es un admin.
-  const rolesAsignables = perfil?.rol === 'superadmin' ? ['admin', ...ROLES_BASE] : ROLES_BASE
+  const rolesAsignables: Rol[] = perfil?.rol === 'superadmin' ? ['admin', ...ROLES_BASE] : ROLES_BASE
 
   const cambiarRolMutation = useMutation({
     mutationFn: ({ id, rol }: { id: string; rol: string }) => cambiarRolUsuario(id, rol),
@@ -128,7 +128,7 @@ function FilaUsuario({
   const noEditable = esProtegido || esUnoMismo
   // El rol actual siempre tiene que estar en las opciones, aunque quien mira
   // no pueda asignarlo (ej. un admin viendo la fila de otro admin).
-  const opciones = rolesAsignables.includes(usuario.rol)
+  const opciones: string[] = rolesAsignables.some((rol) => rol === usuario.rol)
     ? rolesAsignables
     : [usuario.rol, ...rolesAsignables]
 
