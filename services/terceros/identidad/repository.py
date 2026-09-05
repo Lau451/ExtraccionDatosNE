@@ -97,8 +97,8 @@ def actualizar_rol_proveedor(client: Client, *, tercero_id: str, campos: dict[st
     return client.table("proveedores").update(campos).eq("id", tercero_id).execute().data[0]
 
 
-# -- rol proveedor + tercero combinados (Fase 8: consumidos por
-# services/presupuestacion/catalogo/, mismo criterio que listar_clientes_con_tercero) --
+# -- rol proveedor + tercero combinados (consumidos por services.terceros.api,
+# mismo criterio que listar_clientes_con_tercero) --
 
 
 def listar_proveedores_con_tercero(

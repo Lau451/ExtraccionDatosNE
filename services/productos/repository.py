@@ -75,12 +75,6 @@ def actualizar_categoria(client: Client, *, categoria_id: str, campos: dict[str,
     return client.table("categorias").update(campos).eq("id", categoria_id).execute().data[0]
 
 
-# -- proveedores -----------------------------------------------------------------
-# Fase 8 (design.md D2/D5): `catalogo/` ya no posee la tabla `proveedores`.
-# El wrapper de compatibilidad en catalogo/service.py llama a
-# services.terceros.api en su lugar -- ver ese módulo.
-
-
 # -- costos ----------------------------------------------------------------------
 
 def listar_costos(client: Client, *, producto_id: str) -> list[dict[str, Any]]:

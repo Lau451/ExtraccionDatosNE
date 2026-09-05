@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from services.presupuestacion.auditoria.router import router as auditoria_router
 from services.presupuestacion.automatizaciones.router import router as automatizaciones_router
-from services.presupuestacion.catalogo.router import router as catalogo_router
 from services.presupuestacion.clientes.router import router as clientes_router
 from services.presupuestacion.comparativas.router import router as comparativas_router
 from services.presupuestacion.compras.router import router as compras_router
@@ -23,6 +22,7 @@ from services.presupuestacion.presupuestos.router import router as presupuestos_
 from services.presupuestacion.pricing.router import router as pricing_router
 from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
 from services.presupuestacion.usuarios.router import router as usuarios_router
+from services.productos.router import router as productos_router
 from services.terceros.router import router as terceros_router
 
 logging.basicConfig(
@@ -51,7 +51,7 @@ app.include_router(compras_router, tags=["compras"])
 app.include_router(clientes_router, tags=["clientes"])
 app.include_router(procesos_comerciales_router, tags=["procesos_comerciales"])
 app.include_router(imports_router, tags=["imports"])
-app.include_router(catalogo_router, tags=["catalogo"])
+app.include_router(productos_router, tags=["productos"])
 app.include_router(usuarios_router, tags=["usuarios"])
 app.include_router(droguerias_router, tags=["droguerias"])
 app.include_router(planes_router, tags=["planes"])

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.presupuestacion.catalogo.models import (
+from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.database import get_user_client
+from services.productos.models import (
     CategoriaCreate,
     CategoriaOut,
     CategoriaUpdate,
@@ -10,33 +12,23 @@ from services.presupuestacion.catalogo.models import (
     ProductoCreate,
     ProductoOut,
     ProductoUpdate,
-    ProveedorCreate,
-    ProveedorOut,
-    ProveedorUpdate,
     StockAjuste,
     StockOut,
 )
-from services.presupuestacion.catalogo.service import (
+from services.productos.service import (
     actualizar_categoria_para_endpoint,
     actualizar_producto_para_endpoint,
-    actualizar_proveedor_para_endpoint,
     ajustar_stock_para_endpoint,
     crear_categoria_para_endpoint,
     crear_costo_para_endpoint,
     crear_producto_para_endpoint,
-    crear_proveedor_para_endpoint,
     eliminar_producto_para_endpoint,
-    eliminar_proveedor_para_endpoint,
     listar_categorias,
     listar_costos_para_endpoint,
     listar_productos,
-    listar_proveedores,
     listar_stock_para_endpoint,
     obtener_producto,
-    obtener_proveedor,
 )
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
-from services.presupuestacion.core.database import get_user_client
 
 router = APIRouter()
 
@@ -125,55 +117,6 @@ def actualizar_categoria_endpoint(
 ) -> CategoriaOut:
     return actualizar_categoria_para_endpoint(
         categoria_id=categoria_id, drogueria_id=usuario.drogueria_id, body=body
-    )
-
-
-# -- proveedores -------------------------------------------------------------------
-
-@router.get("/proveedores", response_model=list[ProveedorOut])
-def listar_proveedores_endpoint(
-    activo: bool | None = None,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
-    user_client: Client = Depends(get_user_client),
-) -> list[ProveedorOut]:
-    return listar_proveedores(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
-
-
-@router.post("/proveedores", response_model=ProveedorOut)
-def crear_proveedor_endpoint(
-    body: ProveedorCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> ProveedorOut:
-    return crear_proveedor_para_endpoint(drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id)
-
-
-@router.get("/proveedores/{proveedor_id}", response_model=ProveedorOut)
-def obtener_proveedor_endpoint(
-    proveedor_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
-    user_client: Client = Depends(get_user_client),
-) -> ProveedorOut:
-    return obtener_proveedor(user_client, proveedor_id=proveedor_id, drogueria_id=usuario.drogueria_id)
-
-
-@router.patch("/proveedores/{proveedor_id}", response_model=ProveedorOut)
-def actualizar_proveedor_endpoint(
-    proveedor_id: str,
-    body: ProveedorUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> ProveedorOut:
-    return actualizar_proveedor_para_endpoint(
-        proveedor_id=proveedor_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
-    )
-
-
-@router.delete("/proveedores/{proveedor_id}", status_code=204)
-def eliminar_proveedor_endpoint(
-    proveedor_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles("admin", "gerencia")),
-) -> None:
-    eliminar_proveedor_para_endpoint(
-        proveedor_id=proveedor_id, drogueria_id=usuario.drogueria_id, usuario_id=usuario.id
     )
 
 

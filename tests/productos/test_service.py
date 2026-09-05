@@ -4,36 +4,29 @@ from decimal import Decimal
 
 import pytest
 
-from services.presupuestacion.catalogo.models import (
+from services.presupuestacion.core.exceptions import NotFoundError
+from services.productos.models import (
     CategoriaCreate,
     CategoriaUpdate,
     CostoCreate,
     ProductoCreate,
     ProductoUpdate,
-    ProveedorCreate,
-    ProveedorUpdate,
     StockAjuste,
 )
-from services.presupuestacion.catalogo.service import (
+from services.productos.service import (
     actualizar_categoria,
     actualizar_producto,
-    actualizar_proveedor,
     ajustar_stock,
     crear_categoria,
     crear_costo,
     crear_producto,
-    crear_proveedor,
     eliminar_producto,
-    eliminar_proveedor,
     listar_categorias,
     listar_costos,
     listar_productos,
-    listar_proveedores,
     listar_stock,
     obtener_producto,
-    obtener_proveedor,
 )
-from services.presupuestacion.core.exceptions import NotFoundError
 
 
 def _codigo() -> str:
@@ -168,60 +161,6 @@ def test_listar_categorias(service_client, seed_drogueria, limpiar_catalogo):
 
     todas = listar_categorias(service_client, drogueria_id=seed_drogueria["id"])
     assert {c["nombre"] for c in todas} == {"A", "B"}
-
-
-# ---------------------------------------------------------------------------
-# proveedores (Fase 8, design.md D2/D5: wrapper de compatibilidad sobre
-# services.terceros.api -- catalogo/ ya no posee la tabla `proveedores`, ver
-# catalogo/service.py y catalogo/models.py::ProveedorCreate)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.integration
-def test_crear_listar_actualizar_y_eliminar_proveedor(
-    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
-):
-    creado = crear_proveedor(
-        service_client,
-        drogueria_id=seed_drogueria["id"],
-        body=ProveedorCreate(razon_social="Droguería XYZ"),
-        usuario_id=seed_usuario_sistema["id"],
-    )
-    assert creado["activo"] is True
-
-    # el id del proveedor ES el id del tercero (id compartido, design.md sección 5)
-    tercero = (
-        service_client.table("terceros").select("razon_social").eq("id", creado["id"]).execute().data[0]
-    )
-    assert tercero["razon_social"] == "Droguería XYZ"
-
-    obtenido = obtener_proveedor(service_client, proveedor_id=creado["id"], drogueria_id=seed_drogueria["id"])
-    assert obtenido["razon_social"] == "Droguería XYZ"
-
-    actualizado = actualizar_proveedor(
-        service_client,
-        proveedor_id=creado["id"],
-        drogueria_id=seed_drogueria["id"],
-        body=ProveedorUpdate(es_competidor=False),
-        usuario_id=seed_usuario_sistema["id"],
-    )
-    assert actualizado["es_competidor"] is False
-    assert actualizado["razon_social"] == "Droguería XYZ"
-
-    todos = listar_proveedores(service_client, drogueria_id=seed_drogueria["id"])
-    assert len(todos) == 1
-
-    eliminar_proveedor(
-        service_client, proveedor_id=creado["id"], drogueria_id=seed_drogueria["id"],
-        usuario_id=seed_usuario_sistema["id"],
-    )
-    # D4/D1: eliminar_proveedor desactiva el rol, no el tercero -- obtener_proveedor
-    # (lookup directo por id) lo sigue encontrando, solo cambia `activo`.
-    encontrado = obtener_proveedor(
-        service_client, proveedor_id=creado["id"], drogueria_id=seed_drogueria["id"]
-    )
-    assert encontrado["activo"] is False
-    activos = listar_proveedores(service_client, drogueria_id=seed_drogueria["id"], activo=True)
-    assert creado["id"] not in {p["id"] for p in activos}
 
 
 # ---------------------------------------------------------------------------
