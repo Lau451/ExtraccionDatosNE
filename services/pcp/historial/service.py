@@ -4,12 +4,21 @@
 Append-only por diseño: este módulo expone únicamente `agregar_evento` y
 `listar_eventos`. Deliberadamente NO existe `actualizar_evento` ni
 `eliminar_evento` -- ni acá ni en ningún router futuro que consuma este
-módulo -- porque `pcp_historial` no tiene políticas RLS de UPDATE/DELETE ni
-esos GRANTs para `authenticated` (0012_pcp_extras.sql M7): la ausencia de esos
-métodos en la capa de servicio es la primera línea de defensa (provable por
-la propia forma del módulo, ver tests/pcp/historial/test_service.py), la BD
-es la segunda (defensa en profundidad; spec `pcp-historial`, "Append-Only
-Immutability").
+módulo -- porque `pcp_historial` no tiene políticas RLS de UPDATE/DELETE
+(0012_pcp_extras.sql M7): la ausencia de esos métodos en la capa de servicio
+es la primera línea de defensa (provable por la propia forma del módulo, ver
+tests/pcp/historial/test_service.py), RLS es la segunda y la única real a
+nivel de base (spec `pcp-historial`, "Append-Only Immutability").
+
+Corrección post-PR3, verificada en vivo (information_schema.role_table_grants
++ pg_default_acl): el `GRANT SELECT, INSERT ON pcp_historial TO authenticated`
+de 0012 M7 NO es lo que evita el UPDATE/DELETE -- Supabase ya le otorga
+`ALL` (incluido DELETE) a `anon`/`authenticated`/`service_role` en toda tabla
+nueva vía `ALTER DEFAULT PRIVILEGES` a nivel de proyecto, independiente de lo
+que declare el GRANT explícito de cada migración. RLS es la ÚNICA barrera
+real contra UPDATE/DELETE acá (y en toda tabla del proyecto, no solo esta) --
+no hay defensa en profundidad de GRANT+RLS como sugería el comentario
+original; el GRANT explícito es documentación de intención, no enforcement.
 
 D2: ningún campo de costo entra nunca en un payload de pcp_historial. Por eso
 `agregar_evento` no ofrece un parámetro de costo/precio dedicado -- solo un
