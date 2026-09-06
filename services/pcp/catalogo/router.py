@@ -10,6 +10,10 @@ from services.shared.database import get_user_client
 router = APIRouter()
 
 
+def _es_superadmin(usuario: UsuarioPerfil) -> bool:
+    return usuario.rol == "superadmin"
+
+
 @router.get(
     "/pcp/catalogo/productos/{producto_id}/proveedores",
     response_model=list[ProductoProveedorOut],
@@ -20,7 +24,10 @@ def listar_proveedores_producto_endpoint(
     user_client: Client = Depends(get_user_client),
 ) -> list[ProductoProveedorOut]:
     return listar_proveedores_producto(
-        user_client, producto_id=producto_id, drogueria_id=usuario.drogueria_id
+        user_client,
+        producto_id=producto_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=_es_superadmin(usuario),
     )
 
 

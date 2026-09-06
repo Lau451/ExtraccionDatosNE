@@ -15,6 +15,10 @@ from services.shared.database import get_user_client
 router = APIRouter()
 
 
+def _es_superadmin(usuario: UsuarioPerfil) -> bool:
+    return usuario.rol == "superadmin"
+
+
 @router.post("/pcp/{pcp_id}/renglones", response_model=PcpRenglonOut)
 def crear_renglon_endpoint(
     pcp_id: str,
@@ -32,7 +36,12 @@ def listar_renglones_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
     user_client: Client = Depends(get_user_client),
 ) -> list[PcpRenglonOut]:
-    return listar_renglones(user_client, pcp_id=pcp_id, drogueria_id=usuario.drogueria_id)
+    return listar_renglones(
+        user_client,
+        pcp_id=pcp_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=_es_superadmin(usuario),
+    )
 
 
 @router.get("/pcp/{pcp_id}/renglones/{renglon_id}")

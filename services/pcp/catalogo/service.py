@@ -42,10 +42,19 @@ from services.terceros.api import obtener_proveedor_con_tercero
 
 
 def listar_proveedores_producto(
-    client: Client, *, producto_id: str, drogueria_id: str, solo_activos: bool = True
+    client: Client,
+    *,
+    producto_id: str,
+    drogueria_id: str,
+    solo_activos: bool = True,
+    es_superadmin: bool = False,
 ) -> list[dict[str, Any]]:
     return repo.listar_asociaciones(
-        client, producto_id=producto_id, drogueria_id=drogueria_id, solo_activos=solo_activos
+        client,
+        producto_id=producto_id,
+        drogueria_id=drogueria_id,
+        solo_activos=solo_activos,
+        es_superadmin=es_superadmin,
     )
 
 
@@ -95,13 +104,14 @@ def agregar_proveedor(
 
 
 def listar_proveedores_producto_para_endpoint(
-    *, producto_id: str, drogueria_id: str, solo_activos: bool = True
+    *, producto_id: str, drogueria_id: str, solo_activos: bool = True, es_superadmin: bool = False
 ) -> list[dict[str, Any]]:
     return listar_proveedores_producto(
         get_service_client(),
         producto_id=producto_id,
         drogueria_id=drogueria_id,
         solo_activos=solo_activos,
+        es_superadmin=es_superadmin,
     )
 
 

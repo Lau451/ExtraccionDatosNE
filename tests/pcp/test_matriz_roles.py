@@ -350,45 +350,16 @@ def test_lectura_rol_no_autorizado_es_rechazada(nombre, path, rol, mundo, tokens
 
 
 # Defecto preexistente DESCUBIERTO por esta suite (no introducido por la
-# Fase 12 -- viene de PR4/PR5/PR6): `listar_pcp`/`listar_renglones`/
-# `listar_proveedores_producto` filtran incondicionalmente
+# Fase 12 -- viene de PR4/PR5/PR6), corregido por el orquestador durante la
+# revisión de esta misma fase: `listar_pcp`/`listar_renglones`/
+# `listar_proveedores_producto` filtraban incondicionalmente
 # `.eq("drogueria_id", usuario.drogueria_id)` sin el bypass `es_superadmin`
 # que sí tienen `obtener_pcp`/`cambiar_estado`/`cerrar_pcp` (D11:
 # "superadmin keeps read access as the standing cross-tenant support-role
-# convention"). Para "superadmin" (`drogueria_id` NULL en `usuarios`, exigido
-# por `ck_usuarios_superadmin`), postgrest-py serializa ese `None` de Python
-# como el literal `"None"` en el filtro `.eq(...)`, y Postgres lo rechaza con
-# `invalid input syntax for type uuid: "None"` (22P02) -- una excepción sin
-# traducir (`register_exception_handlers` no mapea `postgrest.exceptions.
-# APIError`), así que el `TestClient` la re-lanza en vez de devolver una
-# respuesta. `xfail(strict=True)` documenta el gap real -- mismo criterio que
-# `D-TERCEROS-001` (docs/modulos/terceros/decisiones.md) -- en vez de
-# silenciarlo u de ampliar el alcance de esta fase (docs + tests) a un fix de
-# producción no pedido. Ver docs/modulos/pcp/decisiones.md D11 (Fase 12) para
-# el seguimiento.
-_GAP_LISTADO_SUPERADMIN = frozenset({"listar_pcp", "listar_renglones", "catalogo_proveedores"})
-
-
-def _caso_lectura_autorizada(nombre: str, path: str, rol: str):
-    if rol == ROL_SOLO_LECTURA and nombre in _GAP_LISTADO_SUPERADMIN:
-        return pytest.param(
-            nombre,
-            path,
-            rol,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason=(
-                    f"{nombre} no aplica el bypass es_superadmin a su filtro de drogueria_id "
-                    "(defecto preexistente, ver docs/modulos/pcp/decisiones.md D11)"
-                ),
-            ),
-            id=f"{nombre}-{rol}",
-        )
-    return pytest.param(nombre, path, rol, id=f"{nombre}-{rol}")
-
-
+# convention"). Ver docs/modulos/pcp/decisiones.md D11 (Fase 12) para el
+# detalle del defecto y su corrección.
 LECTURA_AUTORIZADA_CASOS = [
-    _caso_lectura_autorizada(nombre, path, rol)
+    pytest.param(nombre, path, rol, id=f"{nombre}-{rol}")
     for rol in (ROL_SOLO_LECTURA, ROL_LECTURA_Y_ESCRITURA)
     for nombre, path in GET_ENDPOINTS
 ]

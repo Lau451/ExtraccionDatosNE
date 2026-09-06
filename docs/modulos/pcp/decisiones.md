@@ -198,16 +198,27 @@ borrador inicial de lectura tenant-wide.
 confirmando que un rol fuera de `ROLES_LECTURA_PCP` es rechazado en los 10
 endpoints GET y que un rol fuera de `ROLES_ESCRITURA_PCP` (incluido
 `superadmin`, que lee pero no escribe) es rechazado en los 9 endpoints
-POST/PATCH sin crear ni modificar ninguna fila. Esa misma suite encontró,
-como efecto colateral, un defecto preexistente (no introducido por esta
-fase): `listar_pcp`/`listar_renglones`/`listar_proveedores_producto` filtran
-incondicionalmente por `usuario.drogueria_id` sin el bypass `es_superadmin`
-que sí tienen `obtener_pcp`/`cambiar_estado`/`cerrar_pcp` — para
-`superadmin` (`drogueria_id` NULL por diseño), eso produce un error de
-Postgres (`invalid input syntax for type uuid: "None"`) en vez de una lista
-vacía o completa. Documentado con `xfail(strict=True)` en la suite en vez de
-corregido silenciosamente (fuera del alcance de esta fase de documentación);
-queda como seguimiento para un change posterior.
+POST/PATCH sin crear ni modificar ninguna fila.
+
+**Defecto encontrado y corregido durante esta misma fase** (no introducido
+por Fase 12, venía de PR4/PR5/PR6): `listar_pcp`/`listar_renglones`/
+`listar_proveedores_producto` filtraban incondicionalmente por
+`usuario.drogueria_id` sin el bypass `es_superadmin` que sí tienen
+`obtener_pcp`/`cambiar_estado`/`cerrar_pcp` — para `superadmin`
+(`drogueria_id` NULL por diseño), eso producía un error de Postgres
+(`invalid input syntax for type uuid: "None"`, 22P02) en vez de listar todo
+el tenant. La suite lo encontró primero como `xfail(strict=True)`
+(mismo criterio que `D-TERCEROS-001`); el orquestador corrigió las tres
+funciones (`gestion.listar_pcp`, `renglones.listar_renglones`,
+`catalogo.listar_proveedores_producto`, en `repository.py`/`service.py`/
+`router.py`) agregando el mismo bypass `es_superadmin` que salta el filtro
+`eq("drogueria_id", ...)` cuando es `True` — RLS (`mismo_tenant()`) ya
+permite el acceso cross-tenant a superadmin sin ese filtro de aplicación.
+Los `xfail` se retiraron y los 3 casos ahora pasan como lectura autorizada
+normal. Nota de alcance: `obtener_renglon`/`obtener_detalle_renglon`
+(rengión por id, no listado) tampoco aceptan `es_superadmin` todavía —
+mismo tipo de gap, no confirmado con un test propio en esta fase, queda
+para un seguimiento posterior.
 
 ### D-PCP-012 (D12) — Sugerencias como consultas, no tablas
 
