@@ -111,6 +111,14 @@ def test_backfill_crea_una_condicion_pago_por_plazo_distinto(
         )
         assert len(condiciones_segunda) == 2
     finally:
+        # Libera la FK antes de borrar: precios_30/45/30_bis (que borra el
+        # teardown de seed_precio_proveedor_factory, que corre DESPUES de este
+        # finally) siguen referenciando estas condiciones_pago via
+        # condicion_pago_id.
+        if condiciones_creadas:
+            service_client.table("precios_proveedor").update(
+                {"condicion_pago_id": None}
+            ).in_("condicion_pago_id", condiciones_creadas).execute()
         for condicion_id in condiciones_creadas:
             service_client.table("condiciones_pago").delete().eq("id", condicion_id).execute()
 
@@ -159,6 +167,13 @@ def test_backfill_ignora_otras_droguerias(
         )
         assert fila["condicion_pago_id"] is None
     finally:
+        # precio_otra sigue referenciando otra_drogueria via precios_proveedor.
+        # Borrarlo aca (en vez de esperar al teardown de
+        # seed_precio_proveedor_factory, que corre despues) deja el delete de
+        # esa fixture como no-op y libera la FK antes de borrar la drogueria.
+        service_client.table("precios_proveedor").delete().eq(
+            "drogueria_id", otra_drogueria["id"]
+        ).execute()
         service_client.table("condiciones_pago").delete().eq(
             "drogueria_id", otra_drogueria["id"]
         ).execute()
@@ -198,6 +213,12 @@ def test_v_precios_especiales_vigentes_resuelve_con_plazo_backfilleado(
         )
         assert fila_vista["plazo_pago_dias"] == 30
     finally:
+        # Mismo motivo que en test_backfill_crea_una_condicion_pago_por_plazo_distinto:
+        # libera la FK antes de borrar la condicion_pago.
+        if condiciones_creadas:
+            service_client.table("precios_proveedor").update(
+                {"condicion_pago_id": None}
+            ).eq("id", precio["id"]).execute()
         for condicion_id in condiciones_creadas:
             service_client.table("condiciones_pago").delete().eq("id", condicion_id).execute()
 
