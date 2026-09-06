@@ -18,6 +18,8 @@ import { Route as AuthenticatedTercerosRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
+import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authenticated.terceros.index'
+import { Route as AuthenticatedProductosIndexRouteImport } from './routes/_authenticated.productos.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
 import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
@@ -69,6 +71,18 @@ const AuthenticatedValidarExtraccionIndexRoute =
     path: '/validar-extraccion/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedTercerosIndexRoute =
+  AuthenticatedTercerosIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedTercerosRoute,
+  } as any)
+const AuthenticatedProductosIndexRoute =
+  AuthenticatedProductosIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedProductosRoute,
+  } as any)
 const AuthenticatedValidarExtraccionExtractionIdRoute =
   AuthenticatedValidarExtraccionExtractionIdRouteImport.update({
     id: '/validar-extraccion/$extractionId',
@@ -113,6 +127,8 @@ export interface FileRoutesByFullPath {
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/productos/': typeof AuthenticatedProductosIndexRoute
+  '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRoutesByTo {
@@ -120,14 +136,14 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
-  '/productos': typeof AuthenticatedProductosRouteWithChildren
-  '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/productos': typeof AuthenticatedProductosIndexRoute
+  '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRoutesById {
@@ -145,6 +161,8 @@ export interface FileRoutesById {
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/_authenticated/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/_authenticated/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
+  '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
 export interface FileRouteTypes {
@@ -162,6 +180,8 @@ export interface FileRouteTypes {
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
+    | '/productos/'
+    | '/terceros/'
     | '/validar-extraccion/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -169,14 +189,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/mi-cuenta'
-    | '/productos'
-    | '/terceros'
     | '/'
     | '/admin/usuarios'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
+    | '/productos'
+    | '/terceros'
     | '/validar-extraccion'
   id:
     | '__root__'
@@ -193,6 +213,8 @@ export interface FileRouteTypes {
     | '/_authenticated/superadmin/empresas'
     | '/_authenticated/terceros/$terceroId'
     | '/_authenticated/validar-extraccion/$extractionId'
+    | '/_authenticated/productos/'
+    | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
   fileRoutesById: FileRoutesById
 }
@@ -268,6 +290,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedValidarExtraccionIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/terceros/': {
+      id: '/_authenticated/terceros/'
+      path: '/'
+      fullPath: '/terceros/'
+      preLoaderRoute: typeof AuthenticatedTercerosIndexRouteImport
+      parentRoute: typeof AuthenticatedTercerosRoute
+    }
+    '/_authenticated/productos/': {
+      id: '/_authenticated/productos/'
+      path: '/'
+      fullPath: '/productos/'
+      preLoaderRoute: typeof AuthenticatedProductosIndexRouteImport
+      parentRoute: typeof AuthenticatedProductosRoute
+    }
     '/_authenticated/validar-extraccion/$extractionId': {
       id: '/_authenticated/validar-extraccion/$extractionId'
       path: '/validar-extraccion/$extractionId'
@@ -308,12 +344,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedProductosRouteChildren {
   AuthenticatedProductosProductoIdRoute: typeof AuthenticatedProductosProductoIdRoute
+  AuthenticatedProductosIndexRoute: typeof AuthenticatedProductosIndexRoute
 }
 
 const AuthenticatedProductosRouteChildren: AuthenticatedProductosRouteChildren =
   {
     AuthenticatedProductosProductoIdRoute:
       AuthenticatedProductosProductoIdRoute,
+    AuthenticatedProductosIndexRoute: AuthenticatedProductosIndexRoute,
   }
 
 const AuthenticatedProductosRouteWithChildren =
@@ -323,10 +361,12 @@ const AuthenticatedProductosRouteWithChildren =
 
 interface AuthenticatedTercerosRouteChildren {
   AuthenticatedTercerosTerceroIdRoute: typeof AuthenticatedTercerosTerceroIdRoute
+  AuthenticatedTercerosIndexRoute: typeof AuthenticatedTercerosIndexRoute
 }
 
 const AuthenticatedTercerosRouteChildren: AuthenticatedTercerosRouteChildren = {
   AuthenticatedTercerosTerceroIdRoute: AuthenticatedTercerosTerceroIdRoute,
+  AuthenticatedTercerosIndexRoute: AuthenticatedTercerosIndexRoute,
 }
 
 const AuthenticatedTercerosRouteWithChildren =
