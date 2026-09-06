@@ -81,15 +81,15 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 4: pcp-gestion (PR4)
 
-- [ ] 4.1 Create `services/pcp/gestion/models.py`, `repository.py` (Pcp CRUD/state).
-- [ ] 4.2 RED: create PCP for eligible presupuesto scopes to its `drogueria_id`.
-- [ ] 4.3 RED: second PCP creation for a presupuesto with an open PCP raises `ConflictError`.
-- [ ] 4.4 RED: valid `nueva`→`en_gestion` transition; reject skip (`nueva`→`cerrada`); reject backward (`esperando_respuesta`→`en_gestion`).
-- [ ] 4.5 RED: list filters by requested-delivery-date range and by `estado`.
-- [ ] 4.6 RED: cross-tenant PCP access raises `NotFoundError`.
-- [ ] 4.7 RED: a state change writes a `pcp_historial` entry via `services.pcp.historial.service.agregar_evento` with old/new state, user, timestamp (integration with 4.4; depends on Phase 3's `pcp-historial`).
-- [ ] 4.8 Create `services/pcp/gestion/service.py` implementing 4.2-4.4 and 4.7 (GREEN), calling `pcp-historial`'s `agregar_evento` on every state transition.
-- [ ] 4.9 Create `services/pcp/gestion/router.py` with `require_roles(_ROLES_ESCRITURA_PCP)` on write, `_ROLES_LECTURA_PCP` on read (D11); RED: unauthorized role rejected at router with no row created/modified.
+- [x] 4.1 Create `services/pcp/gestion/models.py`, `repository.py` (Pcp CRUD/state).
+- [x] 4.2 RED: create PCP for eligible presupuesto scopes to its `drogueria_id`.
+- [x] 4.3 RED: second PCP creation for a presupuesto with an open PCP raises `ConflictError`.
+- [x] 4.4 RED: valid `nueva`→`en_gestion` transition; reject skip (`nueva`→`cerrada`); reject backward (`esperando_respuesta`→`en_gestion`).
+- [x] 4.5 RED: list filters by requested-delivery-date range and by `estado`.
+- [x] 4.6 RED: cross-tenant PCP access raises `NotFoundError`.
+- [x] 4.7 RED: a state change writes a `pcp_historial` entry via `services.pcp.historial.service.agregar_evento` with old/new state, user, timestamp (integration with 4.4; depends on Phase 3's `pcp-historial`).
+- [x] 4.8 Create `services/pcp/gestion/service.py` implementing 4.2-4.4 and 4.7 (GREEN), calling `pcp-historial`'s `agregar_evento` on every state transition.
+- [x] 4.9 Create `services/pcp/gestion/router.py` with `require_roles(_ROLES_ESCRITURA_PCP)` on write, `_ROLES_LECTURA_PCP` on read (D11); RED: unauthorized role rejected at router with no row created/modified. **Deviation**: `_ROLES_LECTURA_PCP`/`_ROLES_ESCRITURA_PCP` were extracted to a new shared `services/pcp/roles.py` (public names `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP`, no leading underscore since they're meant to be imported by PR5/PR6/PR7) instead of being defined locally in `gestion/router.py` — per the launch prompt's explicit invitation to make this call, to avoid three future PRs redefining the same tuple. This is not `services/pcp/{router,api,errors}.py` (still PR5/5.7's job): the file only declares two constants, nothing is aggregated or mounted.
 
 ## Phase 5: pcp-renglones + Router Aggregation (PR5)
 
