@@ -10,6 +10,8 @@ from postgrest.exceptions import APIError
 from pydantic import ValidationError
 import pytest
 
+from services.pcp.catalogo.models import ProductoProveedorCreate
+from services.pcp.catalogo.service import agregar_proveedor
 from services.pcp.gestion.models import PcpCreate
 from services.pcp.gestion.service import crear_pcp
 from services.pcp.renglones import repository as repo
@@ -150,11 +152,62 @@ def test_detalle_renglon_muestra_datos_de_producto_y_proveedores_catalogados_vac
 
     assert detalle["producto"]["id"] == seed_producto["id"]
     assert detalle["producto"]["nombre"] == seed_producto["nombre"]
-    # PR6 (services/pcp/catalogo/) todavía no existe -- ver docstring de
-    # services/pcp/renglones/service.py. Placeholder deliberado, no un bug.
+    # Catálogo real (D3, PR6) sin ninguna asociación cargada para este
+    # producto todavía -- caso legítimo de "Empty Catalog on Day One"
+    # (spec pcp-catalogo-proveedores), no el placeholder de PR5.
     assert detalle["proveedores_catalogados"] == []
 
     service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
+# 6.5 (wiring PR6) -- un proveedor catalogado real aparece en el detalle del
+# renglón; el placeholder [] de PR5 quedó reemplazado por una lectura real.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_detalle_renglon_muestra_proveedor_catalogado_real(
+    service_client,
+    seed_drogueria,
+    seed_producto,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    asociacion = agregar_proveedor(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        producto_id=seed_producto["id"],
+        body=ProductoProveedorCreate(proveedor_id=seed_proveedor_pcp["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    presupuesto = seed_presupuesto_factory()
+    pcp = crear_pcp(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=PcpCreate(presupuesto_id=presupuesto["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    renglon = crear_renglon(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        pcp_id=pcp["id"],
+        body=PcpRenglonCreate(item_proceso_id=seed_item_proceso["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    try:
+        detalle = obtener_detalle_renglon(
+            service_client, renglon_id=renglon["id"], drogueria_id=seed_drogueria["id"]
+        )
+
+        assert len(detalle["proveedores_catalogados"]) == 1
+        assert detalle["proveedores_catalogados"][0]["proveedor_id"] == seed_proveedor_pcp["id"]
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+        service_client.table("producto_proveedores").delete().eq("id", asociacion["id"]).execute()
 
 
 @pytest.mark.integration

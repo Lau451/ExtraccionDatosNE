@@ -11,9 +11,16 @@ público para un consumidor futuro fuera de `services/presupuestacion/main.py`
 (otro módulo top-level, o un test de integración cross-módulo), en vez de
 que ese consumidor tenga que conocer la estructura interna de cada
 submódulo de PCP. No define lógica propia: reexporta modelos y funciones de
-servicio de `gestion`, `historial` y `renglones`.
+servicio de `gestion`, `historial`, `renglones` y (desde PR6) `catalogo`.
 """
 
+from services.pcp.catalogo.models import ProductoProveedorCreate, ProductoProveedorOut
+from services.pcp.catalogo.service import (
+    agregar_proveedor,
+    agregar_proveedor_para_endpoint,
+    listar_proveedores_producto,
+    listar_proveedores_producto_para_endpoint,
+)
 from services.pcp.gestion.models import PcpCreate, PcpOut, PcpTransicionEstado
 from services.pcp.gestion.service import (
     cambiar_estado,
@@ -44,6 +51,14 @@ from services.pcp.renglones.service import (
 )
 
 __all__ = [
+    # catalogo -- modelos
+    "ProductoProveedorCreate",
+    "ProductoProveedorOut",
+    # catalogo -- funciones
+    "listar_proveedores_producto",
+    "listar_proveedores_producto_para_endpoint",
+    "agregar_proveedor",
+    "agregar_proveedor_para_endpoint",
     # gestion -- modelos
     "PcpCreate",
     "PcpOut",
