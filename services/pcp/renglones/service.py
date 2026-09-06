@@ -66,6 +66,19 @@ def listar_renglones(client: Client, *, pcp_id: str, drogueria_id: str) -> list[
     return repo.listar_renglones(client, pcp_id=pcp_id, drogueria_id=drogueria_id)
 
 
+def listar_resultados_renglon(
+    client: Client, *, renglon_id: str, drogueria_id: str
+) -> list[dict[str, Any]]:
+    """PR11 (tasks.md 11.7) -- expone `pcp_renglon_resultados` (D4) de un
+    renglón ya validado por tenant, para que otros submódulos (p.ej.
+    `negociacion/service.py::cerrar_pcp`, armando el PDF de resultado de
+    cierre) puedan leer "con qué proveedores se negoció y qué resultado
+    tuvo cada uno" sin importar `repository` de este módulo (mismo criterio
+    ya usado por `negociacion/service.py` reusando `obtener_renglon`)."""
+    obtener_renglon(client, renglon_id=renglon_id, drogueria_id=drogueria_id)
+    return repo.listar_resultados(client, pcp_renglon_id=renglon_id)
+
+
 def listar_proveedores_disponibles_renglon(
     client: Client, *, renglon_id: str, drogueria_id: str
 ) -> list[dict[str, Any]]:

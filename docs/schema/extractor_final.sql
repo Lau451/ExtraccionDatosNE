@@ -1407,11 +1407,13 @@ CREATE TABLE notificaciones (
     metadata                JSONB           NULL,
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
+    -- 'pcp_cerrada' agregado por gestor-pcp PR11 (0013_pcp_notificacion_tipo.sql,
+    -- tasks.md 11.9, design.md D10) -- feedback loop Comercial, Fase B.
     CONSTRAINT ck_notif_tipo CHECK (tipo IN (
         'oc_creada', 'evento_vencido', 'evento_asignado', 'ia_completada',
         'error_automatizacion', 'comparativa_disponible', 'presupuesto_aprobado',
         'presupuesto_pendiente', 'proceso_por_vencer', 'entrega_atrasada',
-        'precio_por_vencer', 'sistema', 'otro'
+        'precio_por_vencer', 'sistema', 'otro', 'pcp_cerrada'
     )),
     CONSTRAINT ck_notif_prioridad CHECK (prioridad IN ('baja', 'media', 'alta', 'urgente')),
     CONSTRAINT ck_notif_origen CHECK (origen IN ('usuario', 'ia', 'automatizacion', 'webhook', 'api', 'sistema'))
