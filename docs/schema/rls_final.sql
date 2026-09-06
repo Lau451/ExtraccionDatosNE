@@ -468,6 +468,17 @@ ALTER TABLE presupuestos               ADD CONSTRAINT fk_pre_presentapor FOREIGN
 ALTER TABLE presupuesto_items          ADD CONSTRAINT fk_pi_ajustadopor  FOREIGN KEY (precio_ajustado_por) REFERENCES usuarios (id);
 ALTER TABLE compras_proveedor          ADD CONSTRAINT fk_cp_creadopor    FOREIGN KEY (creado_por)          REFERENCES usuarios (id);
 
+-- pcp / pcp_renglones / producto_proveedores / pcp_renglon_resultados (migración 0011, gestor-pcp PR1)
+ALTER TABLE pcp                  ADD CONSTRAINT fk_pcp_solicitante  FOREIGN KEY (solicitante_id) REFERENCES usuarios (id);
+ALTER TABLE pcp                  ADD CONSTRAINT fk_pcp_cerrada_por  FOREIGN KEY (cerrada_por)    REFERENCES usuarios (id);
+ALTER TABLE pcp                  ADD CONSTRAINT fk_pcp_createdby    FOREIGN KEY (created_by)     REFERENCES usuarios (id);
+ALTER TABLE pcp                  ADD CONSTRAINT fk_pcp_updatedby    FOREIGN KEY (updated_by)     REFERENCES usuarios (id);
+ALTER TABLE pcp_renglones        ADD CONSTRAINT fk_pcpr_createdby   FOREIGN KEY (created_by)     REFERENCES usuarios (id);
+ALTER TABLE pcp_renglones        ADD CONSTRAINT fk_pcpr_updatedby   FOREIGN KEY (updated_by)     REFERENCES usuarios (id);
+ALTER TABLE producto_proveedores ADD CONSTRAINT fk_ppv_createdby    FOREIGN KEY (created_by)     REFERENCES usuarios (id);
+ALTER TABLE producto_proveedores ADD CONSTRAINT fk_ppv_updatedby    FOREIGN KEY (updated_by)     REFERENCES usuarios (id);
+ALTER TABLE pcp_renglon_resultados ADD CONSTRAINT fk_ppr_registrado FOREIGN KEY (registrado_por) REFERENCES usuarios (id);
+
 -- eventos / eventos_recurrentes
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_resp       FOREIGN KEY (responsable_id) REFERENCES usuarios (id);
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_createdby  FOREIGN KEY (created_by)     REFERENCES usuarios (id);
@@ -662,6 +673,57 @@ WITH CHECK (usuario_id = (select auth.uid()) OR (select es_superadmin()));
 CREATE POLICY np_del ON notificacion_preferencias FOR DELETE USING (
     usuario_id = (select auth.uid()) OR (select es_superadmin())
 );
+
+
+-- =============================================================================
+-- RLS de las tablas nuevas: PCP (migración 0011, gestor-pcp PR1)
+-- Confirmado por el usuario (D11): lectura restringida a compras/gerencia/
+-- admin (+ superadmin, convención estándar de soporte cross-tenant) —
+-- comercial/lider_comercial NO ven pantallas de PCP. Escritura idéntica a la
+-- política de precios_proveedor: admin, gerencia, compras.
+-- =============================================================================
+
+DROP TRIGGER IF EXISTS trg_pcp_updated_at ON pcp;
+CREATE TRIGGER trg_pcp_updated_at BEFORE UPDATE ON pcp FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+DROP TRIGGER IF EXISTS trg_pcp_renglones_updated_at ON pcp_renglones;
+CREATE TRIGGER trg_pcp_renglones_updated_at BEFORE UPDATE ON pcp_renglones FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+DROP TRIGGER IF EXISTS trg_producto_proveedores_updated_at ON producto_proveedores;
+CREATE TRIGGER trg_producto_proveedores_updated_at BEFORE UPDATE ON producto_proveedores FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+DROP TRIGGER IF EXISTS trg_pcp_renglon_resultados_updated_at ON pcp_renglon_resultados;
+CREATE TRIGGER trg_pcp_renglon_resultados_updated_at BEFORE UPDATE ON pcp_renglon_resultados FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+
+ALTER TABLE pcp ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcp_sel ON pcp FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcp_ins ON pcp FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcp_upd ON pcp FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcp_del ON pcp FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE pcp_renglones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcpr_sel ON pcp_renglones FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpr_ins ON pcp_renglones FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpr_upd ON pcp_renglones FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpr_del ON pcp_renglones FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE producto_proveedores ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ppv_sel ON producto_proveedores FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppv_ins ON producto_proveedores FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppv_upd ON producto_proveedores FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppv_del ON producto_proveedores FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE pcp_renglon_resultados ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ppr_sel ON pcp_renglon_resultados FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppr_ins ON pcp_renglon_resultados FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppr_upd ON pcp_renglon_resultados FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY ppr_del ON pcp_renglon_resultados FOR DELETE USING ((select es_superadmin()));
+
+-- GRANTs explícitos (tablas nuevas no se auto-exponen al Data API). Sin DELETE
+-- para authenticated: la API nunca borra físicamente estas filas.
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    pcp, pcp_renglones, producto_proveedores, pcp_renglon_resultados
+  TO service_role;
+GRANT SELECT, INSERT, UPDATE ON
+    pcp, pcp_renglones, producto_proveedores, pcp_renglon_resultados
+  TO authenticated;
 
 
 -- =============================================================================
