@@ -176,6 +176,16 @@ def test_cerrar_pcp_sin_solicitante_lanza_validation_error(
                 mensajeria=mensajeria,
             )
         assert mensajeria.llamadas == []
+
+        # Regresión: la validación de solicitante/email debe correr ANTES de
+        # cambiar_estado. cambiar_estado persiste su UPDATE de inmediato y
+        # 'cerrada' no tiene transiciones salientes -- si la validación
+        # corriera después, este PCP quedaría cerrado para siempre sin haber
+        # completado nunca el feedback loop, sin ninguna forma de reabrirlo.
+        pcp_en_bd = (
+            service_client.table("pcp").select("estado").eq("id", pcp["id"]).execute().data[0]
+        )
+        assert pcp_en_bd["estado"] == "esperando_respuesta"
     finally:
         service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
 
@@ -239,6 +249,15 @@ def test_cerrar_pcp_con_flag_activo_y_presupuesto_abierto_notifica_y_repricea(
         service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
         service_client.table("notificaciones").delete().eq(
             "destinatario_id", seed_solicitante_pcp["id"]
+        ).execute()
+        # El repricing automático real (generar_presupuesto_para_endpoint) deja
+        # su propio rastro en historial_cambios (auditoría del motor de
+        # pricing). Hay que liberarlo antes de que el teardown de
+        # seed_presupuesto_factory (que corre después, LIFO) intente borrar el
+        # presupuesto -- mismo motivo que el fix de teardown en
+        # test_backfill_plazo_pago.py (PR2): fk_hc_pre bloquea el delete si no.
+        service_client.table("historial_cambios").delete().eq(
+            "presupuesto_id", presupuesto["id"]
         ).execute()
         service_client.table("presupuesto_items").delete().eq(
             "presupuesto_id", presupuesto["id"]

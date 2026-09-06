@@ -274,7 +274,32 @@ def cerrar_pcp(
     """11.7: cierra un PCP (delegando la transición real en
     `gestion_service.cambiar_estado`, D10) y ejecuta el feedback loop
     Comercial completo -- Fase A siempre, Fase B solo si
-    `PCP_REPRICING_AUTOMATICO` está prendido."""
+    `PCP_REPRICING_AUTOMATICO` está prendido.
+
+    Corrección post-implementación: todas las validaciones que pueden
+    lanzar `ValidationError` (solicitante_id presente, email resoluble) se
+    corren ANTES de tocar el estado -- `cambiar_estado` persiste su UPDATE
+    de inmediato (no hay transacción de aplicación que lo envuelva junto al
+    resto de esta función), y `'cerrada'` no tiene transiciones salientes
+    (`_TRANSICIONES_PERMITIDAS`, gestion/service.py). Si la validación
+    corriera después de la transición, un PCP sin solicitante quedaría
+    cerrado para siempre sin haber completado nunca el feedback loop, sin
+    ninguna forma de reabrirlo ni reintentar. Se lee el PCP (sin mutarlo)
+    con `gestion_service.obtener_pcp` para validar, y recién después se
+    invoca `cambiar_estado`."""
+    pcp_actual = gestion_service.obtener_pcp(
+        client, pcp_id=pcp_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
+    if pcp_actual.get("solicitante_id") is None:
+        raise ValidationError(
+            "El PCP no tiene un solicitante asociado; no se puede notificar el cierre"
+        )
+    email_solicitante = repo.obtener_email_usuario(client, usuario_id=pcp_actual["solicitante_id"])
+    if email_solicitante is None:
+        raise ValidationError(
+            f"No se pudo resolver el email del usuario solicitante '{pcp_actual['solicitante_id']}'"
+        )
+
     pcp = gestion_service.cambiar_estado(
         client,
         pcp_id=pcp_id,
@@ -283,16 +308,6 @@ def cerrar_pcp(
         usuario_id=usuario_id,
         es_superadmin=es_superadmin,
     )
-
-    if pcp.get("solicitante_id") is None:
-        raise ValidationError(
-            "El PCP no tiene un solicitante asociado; no se puede notificar el cierre"
-        )
-    email_solicitante = repo.obtener_email_usuario(client, usuario_id=pcp["solicitante_id"])
-    if email_solicitante is None:
-        raise ValidationError(
-            f"No se pudo resolver el email del usuario solicitante '{pcp['solicitante_id']}'"
-        )
 
     datos_pdf = _armar_datos_resultado_pdf(client, pcp=pcp, drogueria_id=drogueria_id)
     renderer = renderer or ReportlabPdfRenderer()
