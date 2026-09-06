@@ -47,6 +47,33 @@ def seed_pcp_factory(service_client, seed_drogueria, seed_proceso_comercial):
 
 
 @pytest.fixture
+def seed_presupuesto_factory(service_client, seed_drogueria, seed_proceso_comercial):
+    """Crea una fila mínima de `presupuestos` SIN un `pcp` asociado -- a
+    diferencia de `seed_pcp_factory`, que arma ambos. Lo necesitan los tests
+    de pcp-gestion (PR4, Fase 4) que ejercitan `crear_pcp` sobre un
+    presupuesto todavía sin PCP abierto (4.2/4.3)."""
+    creados: list[dict] = []
+
+    def _seed(**overrides):
+        fila = {
+            "proceso_comercial_id": seed_proceso_comercial["id"],
+            "drogueria_id": seed_drogueria["id"],
+            "estado": "generado",
+            "monto_total": "0",
+            "cantidad_items": 0,
+            "items_sin_precio": 0,
+            **overrides,
+        }
+        presupuesto = service_client.table("presupuestos").insert(fila).execute().data[0]
+        creados.append(presupuesto)
+        return presupuesto
+
+    yield _seed
+    for presupuesto in creados:
+        service_client.table("presupuestos").delete().eq("id", presupuesto["id"]).execute()
+
+
+@pytest.fixture
 def limpiar_pcp_terceros(service_client, seed_drogueria):
     """proveedores es una tabla de rol cuyo id comparte identidad con terceros
     (0008_terceros_modelo.sql, fk_prov_tercero ON DELETE CASCADE) -- borrar
