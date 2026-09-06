@@ -13,12 +13,15 @@ prompt de esta fase lo deja explícitamente como "una decisión separada".
 Cuando la necesite, se agrega acá con una línea nueva.
 
 PR6 (tasks.md 6.5) agrega `catalogo_router`. PR7 (tasks.md 7.7) agrega
-`negociacion_router`.
+`negociacion_router`. PR9 (tasks.md 9.7) agrega `consultas_router` --
+agrupamiento + PDF, sin envío todavía (ver docstring de
+`services/pcp/consultas/service.py`).
 """
 
 from fastapi import APIRouter
 
 from services.pcp.catalogo.router import router as catalogo_router
+from services.pcp.consultas.router import router as consultas_router
 from services.pcp.gestion.router import router as gestion_router
 from services.pcp.negociacion.router import router as negociacion_router
 from services.pcp.renglones.router import router as renglones_router
@@ -28,3 +31,4 @@ router.include_router(gestion_router)
 router.include_router(renglones_router)
 router.include_router(catalogo_router)
 router.include_router(negociacion_router)
+router.include_router(consultas_router)

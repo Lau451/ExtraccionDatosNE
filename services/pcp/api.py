@@ -21,6 +21,15 @@ from services.pcp.catalogo.service import (
     listar_proveedores_producto,
     listar_proveedores_producto_para_endpoint,
 )
+from services.pcp.consultas.models import AgruparConsultaCreate, ConsultaOut, ConsultaRenglonOut
+from services.pcp.consultas.service import (
+    agrupar_renglones,
+    agrupar_renglones_para_endpoint,
+    generar_pdf_consulta,
+    generar_pdf_consulta_para_endpoint,
+    obtener_consulta,
+    obtener_consulta_para_endpoint,
+)
 from services.pcp.gestion.models import PcpCreate, PcpOut, PcpTransicionEstado
 from services.pcp.gestion.service import (
     cambiar_estado,
@@ -66,6 +75,17 @@ __all__ = [
     "listar_proveedores_producto_para_endpoint",
     "agregar_proveedor",
     "agregar_proveedor_para_endpoint",
+    # consultas -- modelos
+    "AgruparConsultaCreate",
+    "ConsultaOut",
+    "ConsultaRenglonOut",
+    # consultas -- funciones
+    "agrupar_renglones",
+    "agrupar_renglones_para_endpoint",
+    "obtener_consulta",
+    "obtener_consulta_para_endpoint",
+    "generar_pdf_consulta",
+    "generar_pdf_consulta_para_endpoint",
     # gestion -- modelos
     "PcpCreate",
     "PcpOut",

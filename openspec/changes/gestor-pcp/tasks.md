@@ -136,13 +136,20 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 9: pcp-consultas-agrupadas — grouping + PDF, no send (PR9)
 
-- [ ] 9.1 Pin an exact `reportlab` version in `pyproject.toml`/`requirements`; confirm its BSD license classifier before adding the dependency (D9).
-- [ ] 9.2 Create `services/pcp/consultas/models.py`, `repository.py` (`pcp_consultas` + `pcp_consulta_renglones`).
-- [ ] 9.3 RED: grouping renglones from a single PCP creates one consulta with all of them.
-- [ ] 9.4 RED: grouping renglones across two open PCPs creates one consulta; each renglón still traces to its own PCP.
-- [ ] 9.5 Create `services/pcp/documentos/` — `PdfRenderer` port + `reportlab` renderer driven from Jinja2 templates.
-- [ ] 9.6 RED: generated PDF lists every grouped renglón and identifies proveedor P as recipient (assert via `pypdf` text extraction).
-- [ ] 9.7 Create `services/pcp/consultas/service.py` implementing 9.3-9.4 (GREEN) + `router.py`; no send call yet.
+- [x] 9.1 Pin an exact `reportlab` version in `pyproject.toml`/`requirements`; confirm its BSD license classifier before adding the dependency (D9). **Already-resolved decision, per launch prompt**: `reportlab==4.5.0` was already installed as a transitive dependency; pinned it as an explicit direct dependency in `requirements.txt` (grouped next to `pypdf`/`pdfplumber`/`pymupdf`). BSD license reconfirmed live via `pip show reportlab` (`License: BSD license (see license.txt for details), Copyright (c) 2000-2025, ReportLab Inc.`) — also documented as a code comment at the top of `services/pcp/documentos/renderer_reportlab.py`, the renderer's definition site, per the launch prompt's explicit instruction.
+- [x] 9.2 Create `services/pcp/consultas/models.py`, `repository.py` (`pcp_consultas` + `pcp_consulta_renglones`).
+- [x] 9.3 RED: grouping renglones from a single PCP creates one consulta with all of them.
+- [x] 9.4 RED: grouping renglones across two open PCPs creates one consulta; each renglón still traces to its own PCP.
+- [x] 9.5 Create `services/pcp/documentos/` — `PdfRenderer` port + `reportlab` renderer driven from Jinja2 templates.
+- [x] 9.6 RED: generated PDF lists every grouped renglón and identifies proveedor P as recipient (assert via `pypdf` text extraction).
+- [x] 9.7 Create `services/pcp/consultas/service.py` implementing 9.3-9.4 (GREEN) + `router.py`; no send call yet.
+
+**Design decisions made this run** (documented per the launch prompt's explicit invitation):
+1. **"Renglón assigned to proveedor P" is proven by a `pcp_renglon_resultados` row** (D4, created by PR5's `seleccionar_proveedores`) — the only place in the whole schema linking a renglón to the proveedores it is being negotiated with. `agrupar_renglones`'s input (`AgruparConsultaCreate.selecciones`) is a list of `(pcp_renglon_id, proveedor_id)` pairs, validated via `negociacion_service.obtener_resultado` (raises `NotFoundError` if the renglón was never selected for that proveedor) — reused rather than duplicated, same criterion as `renglones` reusing `gestion`/`catalogo`.
+2. **Two different proveedores in one request are never rejected nor silently narrowed to one** — per the launch prompt's suggested safer default, `agrupar_renglones` groups `selecciones` by `proveedor_id` internally and creates one consulta per distinct proveedor present, returning the full list. Documented in `services/pcp/consultas/models.py` and `service.py` docstrings.
+3. **`pcp_renglon_resultados.consulta_id` (nullable column from 0011, FK added in 0012 M4b) is wired**: once a renglón-proveedor pair is grouped, `repository.py::marcar_resultado_en_consulta` sets it — direct table access (not a cross-module Python import), same criterion already documented in `renglones/repository.py::buscar_item_proceso` for why D1 doesn't restrict this.
+4. **PDF renderer**: `services/pcp/documentos/port.py` defines `PdfRenderer` as a `Protocol`; `renderer_reportlab.py::ReportlabPdfRenderer` is the only file importing `reportlab`. Jinja2 (already a project dependency, no prior usage in the repo) renders a plain-text header template (`templates/consulta.txt.j2`); `reportlab.platypus` (`SimpleDocTemplate`, `Paragraph`, `Table`) builds the actual PDF layout — no intermediate HTML, Jinja2 only resolves text which reportlab then escapes/lays out.
+5. **No historial event for consulta creation**: `pcp_historial`'s `tipo_evento` CHECK (D6, 0012 M1) has no value matching "consulta created" (only `consulta_enviada`, for PR11's send path) — writing a mismatched event type would violate the CHECK. Left out of scope, consistent with 9.3/9.4/9.7 not requiring it.
 
 ## Phase 10: pcp-sugerencias — suggestion queries only (PR10)
 
