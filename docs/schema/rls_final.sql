@@ -479,6 +479,19 @@ ALTER TABLE producto_proveedores ADD CONSTRAINT fk_ppv_createdby    FOREIGN KEY 
 ALTER TABLE producto_proveedores ADD CONSTRAINT fk_ppv_updatedby    FOREIGN KEY (updated_by)     REFERENCES usuarios (id);
 ALTER TABLE pcp_renglon_resultados ADD CONSTRAINT fk_ppr_registrado FOREIGN KEY (registrado_por) REFERENCES usuarios (id);
 
+-- pcp_historial / reglas_pcp / pcp_legacy_map / pcp_consultas / pcp_consulta_renglones
+-- (migración 0012, gestor-pcp PR2) + FKs diferidas de PR1 (regla_pcp_id/consulta_id
+-- solo podían apuntar a sus tablas referentes una vez que existen aquí).
+ALTER TABLE pcp_historial ADD CONSTRAINT fk_pcph_usuario  FOREIGN KEY (usuario_id) REFERENCES usuarios (id);
+ALTER TABLE reglas_pcp    ADD CONSTRAINT fk_rpcp_createdby FOREIGN KEY (created_by) REFERENCES usuarios (id);
+ALTER TABLE reglas_pcp    ADD CONSTRAINT fk_rpcp_updatedby FOREIGN KEY (updated_by) REFERENCES usuarios (id);
+ALTER TABLE pcp_consultas ADD CONSTRAINT fk_pcpc_createdby FOREIGN KEY (created_by) REFERENCES usuarios (id);
+ALTER TABLE pcp_consultas ADD CONSTRAINT fk_pcpc_updatedby FOREIGN KEY (updated_by) REFERENCES usuarios (id);
+
+ALTER TABLE pcp                    ADD CONSTRAINT fk_pcp_regla    FOREIGN KEY (regla_pcp_id, drogueria_id) REFERENCES reglas_pcp (id, drogueria_id);
+ALTER TABLE pcp_renglones          ADD CONSTRAINT fk_pcpr_regla   FOREIGN KEY (regla_pcp_id, drogueria_id) REFERENCES reglas_pcp (id, drogueria_id);
+ALTER TABLE pcp_renglon_resultados ADD CONSTRAINT fk_ppr_consulta FOREIGN KEY (consulta_id, drogueria_id)  REFERENCES pcp_consultas (id, drogueria_id);
+
 -- eventos / eventos_recurrentes
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_resp       FOREIGN KEY (responsable_id) REFERENCES usuarios (id);
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_createdby  FOREIGN KEY (created_by)     REFERENCES usuarios (id);
@@ -724,6 +737,80 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 GRANT SELECT, INSERT, UPDATE ON
     pcp, pcp_renglones, producto_proveedores, pcp_renglon_resultados
   TO authenticated;
+
+
+-- =============================================================================
+-- RLS de las tablas nuevas: PCP extras (migración 0012, gestor-pcp PR2)
+-- Mismo patrón de roles que PR1: lectura compras/gerencia/admin (+superadmin),
+-- escritura admin/gerencia/compras, DELETE solo superadmin. Excepción:
+-- pcp_historial es SELECT+INSERT únicamente (D6, append-only) -- sin
+-- políticas UPDATE/DELETE y sin esos GRANTs.
+-- =============================================================================
+
+DROP TRIGGER IF EXISTS trg_reglas_pcp_updated_at ON reglas_pcp;
+CREATE TRIGGER trg_reglas_pcp_updated_at BEFORE UPDATE ON reglas_pcp FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+DROP TRIGGER IF EXISTS trg_pcp_consultas_updated_at ON pcp_consultas;
+CREATE TRIGGER trg_pcp_consultas_updated_at BEFORE UPDATE ON pcp_consultas FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+
+ALTER TABLE pcp_historial ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcph_sel ON pcp_historial FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcph_ins ON pcp_historial FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+-- Sin políticas UPDATE/DELETE: RLS habilitado sin política = deny by default.
+
+ALTER TABLE reglas_pcp ENABLE ROW LEVEL SECURITY;
+CREATE POLICY rpcp_sel ON reglas_pcp FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY rpcp_ins ON reglas_pcp FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY rpcp_upd ON reglas_pcp FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY rpcp_del ON reglas_pcp FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE pcp_legacy_map ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcplm_sel ON pcp_legacy_map FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcplm_ins ON pcp_legacy_map FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcplm_upd ON pcp_legacy_map FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcplm_del ON pcp_legacy_map FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE pcp_consultas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcpc_sel ON pcp_consultas FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpc_ins ON pcp_consultas FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpc_upd ON pcp_consultas FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpc_del ON pcp_consultas FOR DELETE USING ((select es_superadmin()));
+
+ALTER TABLE pcp_consulta_renglones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pcpcr_sel ON pcp_consulta_renglones FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpcr_ins ON pcp_consulta_renglones FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpcr_upd ON pcp_consulta_renglones FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY pcpcr_del ON pcp_consulta_renglones FOR DELETE USING ((select es_superadmin()));
+
+-- GRANTs explícitos
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    reglas_pcp, pcp_legacy_map, pcp_consultas, pcp_consulta_renglones
+  TO service_role;
+GRANT SELECT, INSERT, UPDATE ON
+    reglas_pcp, pcp_legacy_map, pcp_consultas, pcp_consulta_renglones
+  TO authenticated;
+-- pcp_historial: SELECT+INSERT únicamente, ambos lados (D6).
+GRANT SELECT, INSERT, DELETE ON pcp_historial TO service_role;
+GRANT SELECT, INSERT ON pcp_historial TO authenticated;
+
+-- precios_proveedor.condicion_pago_id / forma_pago_id (migración 0012, D5)
+-- RLS de precios_proveedor no cambia (columnas aditivas sobre una tabla ya
+-- protegida); estas líneas documentan únicamente los GRANTs de columna
+-- implícitos (heredan la política de tabla existente, sin cambios).
+
+-- upsert_pcp_legacy: RPC de import legado de PCP (migración 0012, D8).
+-- Sin SECURITY DEFINER (invocada por get_service_client(), que ya bypasea
+-- RLS). Mismo criterio que upsert_terceros_legacy.
+REVOKE EXECUTE ON FUNCTION upsert_pcp_legacy(UUID,TEXT,JSONB,UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION upsert_pcp_legacy(UUID,TEXT,JSONB,UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION upsert_pcp_legacy(UUID,TEXT,JSONB,UUID) FROM authenticated;
+GRANT  EXECUTE ON FUNCTION upsert_pcp_legacy(UUID,TEXT,JSONB,UUID) TO service_role;
+
+-- backfill_condicion_pago_desde_plazo: backfill idempotente de D5, invocable
+-- de nuevo (p.ej. desde tests) además de la pasada única de esta migración.
+REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM authenticated;
+GRANT  EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) TO service_role;
 
 
 -- =============================================================================
