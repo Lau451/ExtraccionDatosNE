@@ -14,10 +14,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
+import { Route as AuthenticatedTercerosRouteImport } from './routes/_authenticated.terceros'
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
+import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
 import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
@@ -46,6 +48,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedTercerosRoute = AuthenticatedTercerosRouteImport.update({
+  id: '/terceros',
+  path: '/terceros',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedProductosRoute = AuthenticatedProductosRouteImport.update({
   id: '/productos',
   path: '/productos',
@@ -67,6 +74,12 @@ const AuthenticatedValidarExtraccionExtractionIdRoute =
     id: '/validar-extraccion/$extractionId',
     path: '/validar-extraccion/$extractionId',
     getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedTercerosTerceroIdRoute =
+  AuthenticatedTercerosTerceroIdRouteImport.update({
+    id: '/$terceroId',
+    path: '/$terceroId',
+    getParentRoute: () => AuthenticatedTercerosRoute,
   } as any)
 const AuthenticatedSuperadminEmpresasRoute =
   AuthenticatedSuperadminEmpresasRouteImport.update({
@@ -94,9 +107,11 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/productos': typeof AuthenticatedProductosRouteWithChildren
+  '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
@@ -106,10 +121,12 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/productos': typeof AuthenticatedProductosRouteWithChildren
+  '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
 }
@@ -121,10 +138,12 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
+  '/_authenticated/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
+  '/_authenticated/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/_authenticated/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
 }
@@ -137,9 +156,11 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/mi-cuenta'
     | '/productos'
+    | '/terceros'
     | '/admin/usuarios'
     | '/productos/$productoId'
     | '/superadmin/empresas'
+    | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
     | '/validar-extraccion/'
   fileRoutesByTo: FileRoutesByTo
@@ -149,10 +170,12 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/mi-cuenta'
     | '/productos'
+    | '/terceros'
     | '/'
     | '/admin/usuarios'
     | '/productos/$productoId'
     | '/superadmin/empresas'
+    | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
     | '/validar-extraccion'
   id:
@@ -163,10 +186,12 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/productos'
+    | '/_authenticated/terceros'
     | '/_authenticated/'
     | '/_authenticated/admin/usuarios'
     | '/_authenticated/productos/$productoId'
     | '/_authenticated/superadmin/empresas'
+    | '/_authenticated/terceros/$terceroId'
     | '/_authenticated/validar-extraccion/$extractionId'
     | '/_authenticated/validar-extraccion/'
   fileRoutesById: FileRoutesById
@@ -215,6 +240,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/terceros': {
+      id: '/_authenticated/terceros'
+      path: '/terceros'
+      fullPath: '/terceros'
+      preLoaderRoute: typeof AuthenticatedTercerosRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/productos': {
       id: '/_authenticated/productos'
       path: '/productos'
@@ -242,6 +274,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/validar-extraccion/$extractionId'
       preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/terceros/$terceroId': {
+      id: '/_authenticated/terceros/$terceroId'
+      path: '/$terceroId'
+      fullPath: '/terceros/$terceroId'
+      preLoaderRoute: typeof AuthenticatedTercerosTerceroIdRouteImport
+      parentRoute: typeof AuthenticatedTercerosRoute
     }
     '/_authenticated/superadmin/empresas': {
       id: '/_authenticated/superadmin/empresas'
@@ -282,9 +321,23 @@ const AuthenticatedProductosRouteWithChildren =
     AuthenticatedProductosRouteChildren,
   )
 
+interface AuthenticatedTercerosRouteChildren {
+  AuthenticatedTercerosTerceroIdRoute: typeof AuthenticatedTercerosTerceroIdRoute
+}
+
+const AuthenticatedTercerosRouteChildren: AuthenticatedTercerosRouteChildren = {
+  AuthenticatedTercerosTerceroIdRoute: AuthenticatedTercerosTerceroIdRoute,
+}
+
+const AuthenticatedTercerosRouteWithChildren =
+  AuthenticatedTercerosRoute._addFileChildren(
+    AuthenticatedTercerosRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
   AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
+  AuthenticatedTercerosRoute: typeof AuthenticatedTercerosRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminUsuariosRoute: typeof AuthenticatedAdminUsuariosRoute
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
@@ -295,6 +348,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
   AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,
+  AuthenticatedTercerosRoute: AuthenticatedTercerosRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminUsuariosRoute: AuthenticatedAdminUsuariosRoute,
   AuthenticatedSuperadminEmpresasRoute: AuthenticatedSuperadminEmpresasRoute,

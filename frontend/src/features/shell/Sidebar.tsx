@@ -15,6 +15,9 @@ const NAV_ITEMS: NavItem[] = [
   // Todos los roles de negocio tienen lectura de catálogo (ver
   // features/productos/roles.ts), así que no hace falta gate por rol acá.
   { label: 'Productos', to: '/productos' },
+  // Idem — TERCEROS_READ_ROLES en features/terceros/roles.ts cubre los 6
+  // roles de negocio.
+  { label: 'Terceros', to: '/terceros' },
   { label: 'Licitaciones', to: '/licitaciones', disabled: true },
   { label: 'Calendario', to: '/calendario', disabled: true },
   { label: 'Historial', to: '/historial', disabled: true },
