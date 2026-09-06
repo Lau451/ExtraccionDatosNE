@@ -466,13 +466,19 @@ CREATE TABLE precios_proveedor (
     creado_por          UUID            NULL,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    condicion_pago_id   UUID            NULL,
+    forma_pago_id       UUID            NULL,
     PRIMARY KEY (id),
     CONSTRAINT ck_pp_precio CHECK (precio_unitario >= 0),
-    CONSTRAINT ck_pp_mant CHECK (mantenimiento_hasta >= fecha_oferta)
+    CONSTRAINT ck_pp_mant CHECK (mantenimiento_hasta >= fecha_oferta),
+    CONSTRAINT fk_pp_condpago  FOREIGN KEY (condicion_pago_id, drogueria_id) REFERENCES condiciones_pago (id, drogueria_id),
+    CONSTRAINT fk_pp_formapago FOREIGN KEY (forma_pago_id, drogueria_id) REFERENCES formas_pago (id, drogueria_id)
 );
 
 COMMENT ON TABLE precios_proveedor IS 'Precios especiales cotizados por proveedores. Vigente = activa AND mantenimiento_hasta >= hoy. item_proceso_id NOT NULL = precio puntual para ese renglón; NULL = precio general del producto. El motor lo usa como costo si es más barato que el estándar.';
 COMMENT ON COLUMN precios_proveedor.mantenimiento_hasta IS 'Hasta cuándo el proveedor mantiene el precio. Si vence antes que el vencimiento del proceso, el aprobador ve la alerta.';
+COMMENT ON COLUMN precios_proveedor.condicion_pago_id IS 'Migración 0012 (D5): reemplaza plazo_pago_dias. plazo_pago_dias sobrevive nullable y sin uso por un release para permitir rollback code-only.';
+COMMENT ON COLUMN precios_proveedor.plazo_pago_dias IS 'DEPRECADO desde 0012 (D5): reemplazado por condicion_pago_id. Nullable, sin escritura de código nuevo; se retira en un release posterior.';
 
 
 -- =============================================================================
@@ -731,13 +737,13 @@ COMMENT ON COLUMN presupuesto_items.stock_verificado IS 'TRUE solo en procesos c
 
 
 -- =============================================================================
--- CAPA 6B — PCP: gestor de mejora de precios de compra (migración 0011,
--- gestor-pcp PR1). Ver openspec/changes/gestor-pcp/design.md D1-D4. Cuatro de
--- las nueve tablas del módulo; las cinco restantes (pcp_historial, reglas_pcp,
--- pcp_legacy_map, pcp_consultas, pcp_consulta_renglones) y la migración de
--- precios_proveedor.plazo_pago_dias llegan en 0012_pcp_extras.sql (PR2). RLS
--- y GRANTs de estas cuatro tablas viven en rls_final.sql (mismo criterio que
--- terceros/proveedores/precios_proveedor).
+-- CAPA 6B — PCP: gestor de mejora de precios de compra (migraciones 0011 +
+-- 0012, gestor-pcp PR1+PR2). Ver openspec/changes/gestor-pcp/design.md D1-D9.
+-- Las nueve tablas del módulo completas: pcp, pcp_renglones,
+-- producto_proveedores, pcp_renglon_resultados (0011/PR1) + pcp_historial,
+-- reglas_pcp, pcp_legacy_map, pcp_consultas, pcp_consulta_renglones
+-- (0012/PR2). RLS y GRANTs de las nueve viven en rls_final.sql (mismo
+-- criterio que terceros/proveedores/precios_proveedor).
 -- =============================================================================
 
 CREATE TABLE pcp (
@@ -750,7 +756,7 @@ CREATE TABLE pcp (
     solicitante_id              UUID            NULL,
     sector_id                   UUID            NULL,
     origen                      TEXT            NULL,
-    regla_pcp_id                UUID            NULL,       -- FK llega en 0012 (reglas_pcp, PR2)
+    regla_pcp_id                UUID            NULL,
     notas                       TEXT            NULL,
     cerrada_at                  TIMESTAMPTZ     NULL,
     cerrada_por                 UUID            NULL,
@@ -781,7 +787,7 @@ CREATE TABLE pcp_renglones (
     cantidad            NUMERIC(12, 2)  NULL,                -- snapshot al momento de la selección
     precio_referencia   NUMERIC(15, 2)  NULL,                -- snapshot al momento de la selección
     origen              TEXT            NOT NULL,
-    regla_pcp_id        UUID            NULL,                -- FK llega en 0012 (reglas_pcp, PR2)
+    regla_pcp_id        UUID            NULL,
     estado              TEXT            NOT NULL DEFAULT 'pendiente',
     created_by          UUID            NULL,
     updated_by          UUID            NULL,
@@ -831,7 +837,7 @@ CREATE TABLE pcp_renglon_resultados (
     drogueria_id            UUID        NOT NULL,
     pcp_renglon_id          UUID        NOT NULL,
     proveedor_id            UUID        NOT NULL,
-    consulta_id             UUID        NULL,       -- FK llega en 0012 (pcp_consultas, PR2)
+    consulta_id             UUID        NULL,
     resultado               TEXT        NOT NULL,
     precio_proveedor_id     UUID        NULL,
     motivo                  TEXT        NULL,
@@ -849,6 +855,110 @@ CREATE TABLE pcp_renglon_resultados (
     CONSTRAINT fk_ppr_precio_prov   FOREIGN KEY (precio_proveedor_id) REFERENCES precios_proveedor (id)
 );
 COMMENT ON TABLE pcp_renglon_resultados IS 'Resultado de negociación por renglón-proveedor. Solo precio_obtenido escribe una fila en precios_proveedor; no_cotiza/sin_respuesta son outcome puro. Ver design.md D4.';
+
+-- ---- Tablas de 0012_pcp_extras.sql (PR2) ----
+
+CREATE TABLE pcp_historial (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    pcp_id          UUID        NOT NULL,
+    pcp_renglon_id  UUID        NULL,
+    tipo_evento     TEXT        NOT NULL,
+    payload         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    origen          TEXT        NULL,
+    usuario_id      UUID        NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcph_id_drog     UNIQUE (id, drogueria_id),
+    CONSTRAINT ck_pcph_tipo_evento CHECK (tipo_evento IN ('creada', 'estado_cambiado', 'renglon_agregado', 'renglon_quitado', 'consulta_enviada', 'resultado_registrado', 'sugerencia_aplicada', 'notificacion_enviada', 'importada')),
+    CONSTRAINT fk_pcph_drog        FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_pcph_pcp         FOREIGN KEY (pcp_id, drogueria_id) REFERENCES pcp (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_pcph_renglon     FOREIGN KEY (pcp_renglon_id, drogueria_id) REFERENCES pcp_renglones (id, drogueria_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE pcp_historial IS 'Auditoría dedicada y append-only de PCP: nunca escribe en historial_cambios ni extiende EntidadAuditable. Ver design.md D6. Sin UPDATE/DELETE via API (RLS + GRANTs).';
+
+CREATE INDEX idx_pcph_pcp ON pcp_historial (drogueria_id, pcp_id, created_at DESC);
+
+CREATE TABLE reglas_pcp (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    nombre          TEXT        NOT NULL,
+    cliente_id      UUID        NULL,
+    categoria_id    UUID        NULL,
+    producto_id     UUID        NULL,
+    clase_proceso   TEXT        NULL,
+    condicion       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    prioridad       INTEGER     NOT NULL DEFAULT 0,
+    activa          BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_by      UUID        NULL,
+    updated_by      UUID        NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_rpcp_id_drog   UNIQUE (id, drogueria_id),
+    CONSTRAINT ck_rpcp_clase     CHECK (clase_proceso IS NULL OR clase_proceso IN ('cotizacion', 'licitacion')),
+    CONSTRAINT fk_rpcp_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_rpcp_cliente   FOREIGN KEY (cliente_id, drogueria_id) REFERENCES clientes (id, drogueria_id),
+    CONSTRAINT fk_rpcp_categoria FOREIGN KEY (categoria_id) REFERENCES categorias (id),
+    CONSTRAINT fk_rpcp_producto  FOREIGN KEY (producto_id) REFERENCES productos (id)
+);
+COMMENT ON TABLE reglas_pcp IS 'Seam de reglas automáticas de PCP: solo forma de tabla, sin motor ni filas. NULL en cliente_id/categoria_id/producto_id/clase_proceso = alcance por defecto; prioridad desempata. Ver design.md D7.';
+
+CREATE TABLE pcp_legacy_map (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    pcp_id          UUID        NOT NULL,
+    drogueria_id    UUID        NOT NULL,
+    sistema_origen  TEXT        NOT NULL DEFAULT 'legacy',
+    codigo_legacy   TEXT        NOT NULL,
+    datos_legacy    JSONB       NULL,
+    importado_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcplm_id_drog UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_pcplm_codigo  UNIQUE (drogueria_id, sistema_origen, codigo_legacy),
+    CONSTRAINT fk_pcplm_pcp     FOREIGN KEY (pcp_id, drogueria_id) REFERENCES pcp (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_pcplm_drog    FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+COMMENT ON TABLE pcp_legacy_map IS 'Clave de idempotencia del import legado de PCP (ver design.md D8). uq_pcplm_codigo es la que usa upsert_pcp_legacy vía ON CONFLICT.';
+
+CREATE TABLE pcp_consultas (
+    id                          UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id                UUID        NOT NULL,
+    proveedor_id                UUID        NOT NULL,
+    contacto_id                 UUID        NULL,
+    estado                      TEXT        NOT NULL DEFAULT 'borrador',
+    canal                       TEXT        NULL,
+    fecha_envio                 TIMESTAMPTZ NULL,
+    fecha_respuesta_esperada    DATE        NULL,
+    documento_path              TEXT        NULL,
+    created_by                  UUID        NULL,
+    updated_by                  UUID        NULL,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcpc_id_drog   UNIQUE (id, drogueria_id),
+    CONSTRAINT ck_pcpc_estado    CHECK (estado IN ('borrador', 'enviada', 'respondida', 'cancelada')),
+    CONSTRAINT fk_pcpc_drog      FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_pcpc_proveedor FOREIGN KEY (proveedor_id, drogueria_id) REFERENCES proveedores (id, drogueria_id),
+    CONSTRAINT fk_pcpc_contacto  FOREIGN KEY (contacto_id, drogueria_id) REFERENCES terceros_contactos (id, drogueria_id)
+);
+COMMENT ON TABLE pcp_consultas IS 'Consulta agrupada a un proveedor. Sin pcp_id a propósito: el agrupamiento many-to-many vive en pcp_consulta_renglones. Ver design.md D9.';
+
+CREATE TABLE pcp_consulta_renglones (
+    id                      UUID            NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id            UUID            NOT NULL,
+    consulta_id             UUID            NOT NULL,
+    pcp_renglon_id          UUID            NOT NULL,
+    cantidad_consultada     NUMERIC(12, 2)  NULL,
+    created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcpcr_id_drog  UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_pcpcr_consulta_renglon UNIQUE (consulta_id, pcp_renglon_id),
+    CONSTRAINT fk_pcpcr_drog     FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_pcpcr_consulta FOREIGN KEY (consulta_id, drogueria_id) REFERENCES pcp_consultas (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_pcpcr_renglon  FOREIGN KEY (pcp_renglon_id, drogueria_id) REFERENCES pcp_renglones (id, drogueria_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE pcp_consulta_renglones IS 'Fila de asociación N:M entre pcp_consultas y pcp_renglones (de PCPs potencialmente distintos). Ver design.md D9.';
 
 
 -- =============================================================================
@@ -1794,6 +1904,9 @@ GROUP BY ip.producto_id, c.drogueria_id;
 -- Migración 0008: WITH (security_invoker = true) (antes evadía RLS); cliente/
 -- proveedor leen razon_social desde terceros y el plazo desde
 -- condiciones_pago.plazos_dias (primer término como valor representativo).
+-- Migración 0012 (D5): plazo_pago_proveedor ahora prioriza la condición
+-- puntual del precio (cp_pp, vía precios_proveedor.condicion_pago_id) sobre
+-- el entero legado y la condición general del proveedor.
 CREATE VIEW v_presupuesto_revision WITH (security_invoker = true) AS
 SELECT
     p.id                        AS presupuesto_id,
@@ -1821,7 +1934,7 @@ SELECT
     pi.motivo_exclusion,
     (pi.precio_ajustado_por IS NOT NULL) AS ajustado_por_humano,
     COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor_compra,
-    COALESCE(pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_proveedor,
+    COALESCE((cp_pp.plazos_dias[1])::integer, pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_proveedor,
     (cp_cli.plazos_dias[1])::integer AS plazo_pago_cliente,
     pi.mantenimiento_hasta_usado,
     (pi.mantenimiento_hasta_usado IS NOT NULL
@@ -1839,6 +1952,7 @@ LEFT JOIN precios_proveedor pp     ON pp.id = pi.precio_proveedor_id
 LEFT JOIN proveedores prov         ON prov.id = pp.proveedor_id
 LEFT JOIN terceros t_prov          ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
 LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
+LEFT JOIN condiciones_pago cp_pp   ON cp_pp.id = pp.condicion_pago_id
 ORDER BY p.id, ip.numero_renglon;
 
 -- Cola de matching pendiente
@@ -1864,6 +1978,9 @@ WHERE ip.estado_matching IN ('pendiente', 'sugerido')
 ORDER BY proc.vencimiento NULLS FIRST, ip.numero_renglon;
 
 -- Precios especiales vigentes (costo alternativo del motor)
+-- Migración 0012 (D5): plazo_pago_dias ahora prioriza la condición puntual
+-- del precio (cp_pp, vía precios_proveedor.condicion_pago_id) sobre el
+-- entero legado y la condición general del proveedor.
 CREATE VIEW v_precios_especiales_vigentes WITH (security_invoker = true) AS
 SELECT
     pp.id                       AS precio_proveedor_id,
@@ -1875,7 +1992,7 @@ SELECT
     pp.cantidad_minima,
     pp.cantidad_maxima,
     COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor,
-    COALESCE(pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_dias,
+    COALESCE((cp_pp.plazos_dias[1])::integer, pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_dias,
     pp.mantenimiento_hasta,
     pp.mantenimiento_hasta - CURRENT_DATE AS dias_restantes
 FROM precios_proveedor pp
@@ -1883,6 +2000,7 @@ JOIN proveedores prov ON prov.id = pp.proveedor_id
 JOIN terceros t_prov  ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
 JOIN productos prod   ON prod.id = pp.producto_id
 LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
+LEFT JOIN condiciones_pago cp_pp   ON cp_pp.id = pp.condicion_pago_id
 WHERE pp.activa = TRUE AND pp.mantenimiento_hasta >= CURRENT_DATE
 ORDER BY pp.producto_id, pp.precio_unitario;
 
