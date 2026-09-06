@@ -1,3 +1,17 @@
+"""Repositorio de solo lectura de Pricing.
+
+Nota (openspec/changes/gestor-pcp/design.md D4, tasks.md 7.9): este archivo
+solo hace `SELECT` sobre `precios_proveedor` -- pero, desde
+`services/pcp/negociacion` (PR7), la tabla ya no es de solo lectura a nivel
+de módulo/proyecto: `services/pcp/negociacion/repository.py::crear_precio_proveedor`
+es su primer escritor real (un resultado de negociación `precio_obtenido`
+inserta una fila puntual, scoped al `item_proceso_id` del renglón, que
+`buscar_precio_especial_puntual` recoge acá sin ningún cambio de código).
+`pricing/repository.py` en sí sigue siendo puramente de lectura; lo que ya
+no es preciso es la premisa histórica de que ningún módulo del backend
+escribe `precios_proveedor` (ver `docs/modulos/pricing/pendientes.md` P1(4)).
+"""
+
 from datetime import date
 from decimal import Decimal
 from typing import Any

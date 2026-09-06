@@ -102,18 +102,34 @@ sesión.
    un ajuste manual".
 
 4. **Ninguna operación de escritura sobre `reglas_pricing` ni `precios_proveedor`
-   existe en el backend.** [IMPLEMENTADO] la ausencia, confirmado por grep
-   exhaustivo en esta sesión sobre todo `services/presupuestacion/`: las únicas
-   referencias a ambas tablas fuera de `pricing/repository.py` (que solo hace
-   `SELECT`) están en fixtures de test, que insertan directo con `service_client`
-   (`tests/pricing/conftest.py:34-46`, `tests/pricing/test_service.py:71-85`). Esto
-   significa que toda la cascada de cálculo de precio de este módulo depende de
-   datos que, en producción, solo pueden mantenerse escribiendo directo en la base
-   (Supabase Studio o equivalente) — sin ningún endpoint, validación de negocio ni
-   registro de auditoría para altas/bajas/cambios de reglas de margen o precios
-   especiales por proveedor. Cualquier error de carga (por ejemplo, una regla con
+   existe en el backend.** [PARCIALMENTE CERRADO — `precios_proveedor`, ver nota].
+   Confirmado por grep exhaustivo en la sesión original sobre todo
+   `services/presupuestacion/`: las únicas referencias a ambas tablas fuera de
+   `pricing/repository.py` (que solo hace `SELECT`) estaban en fixtures de test,
+   que insertan directo con `service_client` (`tests/pricing/conftest.py:34-46`,
+   `tests/pricing/test_service.py:71-85`). Esto significaba que toda la cascada de
+   cálculo de precio de este módulo dependía de datos que, en producción, solo
+   podían mantenerse escribiendo directo en la base (Supabase Studio o
+   equivalente) — sin ningún endpoint, validación de negocio ni registro de
+   auditoría para altas/bajas/cambios de reglas de margen o precios especiales
+   por proveedor. Cualquier error de carga (por ejemplo, una regla con
    `margen_minimo_pct` negativo, o dos reglas con la misma prioridad y alcance
    superpuesto) no tiene ninguna validación de aplicación que lo prevenga.
+
+   **Nota (openspec/changes/gestor-pcp, PR7 `pcp-negociacion`, tasks.md 7.10)**:
+   la mitad de este gap (`precios_proveedor`) queda cerrada por
+   `services/pcp/negociacion/service.py::registrar_resultado`. Registrar un
+   resultado de negociación `precio_obtenido` para un renglón de PCP escribe una
+   fila real en `precios_proveedor` (scoped al `item_proceso_id` del renglón, D4),
+   con `condicion_pago_id`/`forma_pago_id` validados contra el tenant (D5) y un
+   evento en `pcp_historial` (D6) — con endpoint HTTP (`POST
+   /pcp/{pcp_id}/renglones/{renglon_id}/proveedores/{proveedor_id}/resultado`,
+   gateado por `require_roles`), validación de negocio (invariante `no_cotiza`
+   nunca fabrica una fila de precio) y trazabilidad (el evento de historial).
+   `reglas_pricing` sigue sin ningún escritor: ese lado del gap permanece abierto,
+   fuera del alcance de `gestor-pcp` (ver design.md D7: `reglas_pcp`, la seam
+   equivalente del lado de PCP, tampoco tiene motor ni código de servicio en este
+   cambio).
 
 ## P2 — Deuda técnica relevante
 
