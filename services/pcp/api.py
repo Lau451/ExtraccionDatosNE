@@ -32,6 +32,13 @@ from services.pcp.gestion.service import (
 )
 from services.pcp.historial.models import EventoHistorialCreate, EventoHistorialOut, TipoEvento
 from services.pcp.historial.service import agregar_evento, listar_eventos
+from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
+from services.pcp.negociacion.service import (
+    obtener_resultado,
+    obtener_resultado_para_endpoint,
+    registrar_resultado,
+    registrar_resultado_para_endpoint,
+)
 from services.pcp.renglones.models import (
     PcpRenglonCreate,
     PcpRenglonOut,
@@ -77,6 +84,14 @@ __all__ = [
     # historial -- funciones
     "agregar_evento",
     "listar_eventos",
+    # negociacion -- modelos
+    "RegistrarResultadoNegociacion",
+    "ResultadoNegociacionOut",
+    # negociacion -- funciones
+    "registrar_resultado",
+    "registrar_resultado_para_endpoint",
+    "obtener_resultado",
+    "obtener_resultado_para_endpoint",
     # renglones -- modelos
     "PcpRenglonCreate",
     "PcpRenglonOut",

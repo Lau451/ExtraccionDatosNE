@@ -12,16 +12,19 @@ fuerza una superficie HTTP dedicada para historial en este PR -- el launch
 prompt de esta fase lo deja explícitamente como "una decisión separada".
 Cuando la necesite, se agrega acá con una línea nueva.
 
-PR6 (tasks.md 6.5) agrega `catalogo_router`.
+PR6 (tasks.md 6.5) agrega `catalogo_router`. PR7 (tasks.md 7.7) agrega
+`negociacion_router`.
 """
 
 from fastapi import APIRouter
 
 from services.pcp.catalogo.router import router as catalogo_router
 from services.pcp.gestion.router import router as gestion_router
+from services.pcp.negociacion.router import router as negociacion_router
 from services.pcp.renglones.router import router as renglones_router
 
 router = APIRouter()
 router.include_router(gestion_router)
 router.include_router(renglones_router)
 router.include_router(catalogo_router)
+router.include_router(negociacion_router)
