@@ -139,6 +139,31 @@ def seed_proveedores_pcp_factory(service_client, seed_drogueria, limpiar_pcp_ter
 
 
 @pytest.fixture
+def seed_solicitante_pcp(service_client, seed_drogueria):
+    """PR11 (tasks.md 11.7/11.8) -- usuario "solicitante" de un PCP, con un
+    email real capturado (a diferencia de `crear_usuario_con_token`, que solo
+    devuelve `(usuario_id, token)`). `usuarios` no tiene columna `email`
+    (vive en `auth.users`, rls_final.sql) -- `negociacion/repository.py::
+    obtener_email_usuario` la resuelve vía la Admin API, así que el test
+    necesita conocer de antemano qué email espera ver como destinatario."""
+    email = f"pcp-solicitante-{uuid.uuid4()}@seed.local"
+    auth_response = service_client.auth.admin.create_user(
+        {"email": email, "password": secrets.token_urlsafe(24), "email_confirm": True}
+    )
+    usuario_id = auth_response.user.id
+    service_client.table("usuarios").insert(
+        {
+            "id": usuario_id,
+            "drogueria_id": seed_drogueria["id"],
+            "rol": "comercial",
+            "nombre": "Solicitante PCP Test",
+        }
+    ).execute()
+    yield {"id": usuario_id, "email": email}
+    service_client.auth.admin.delete_user(usuario_id)
+
+
+@pytest.fixture
 def seed_condicion_pago_pcp_factory(service_client, seed_drogueria):
     """Copia local del patrón de tests/terceros/conftest.py::seed_condicion_pago_factory
     -- mismo motivo de árbol hermano no visible. Sin cleanup por FK propio

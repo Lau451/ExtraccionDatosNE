@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
+from services.pcp.gestion.models import PcpOut
 from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
 from services.pcp.negociacion.service import (
+    cerrar_pcp_para_endpoint,
     obtener_resultado,
     registrar_resultado_para_endpoint,
 )
@@ -11,6 +13,10 @@ from services.shared.auth import UsuarioPerfil, require_roles
 from services.shared.database import get_user_client
 
 router = APIRouter()
+
+
+def _es_superadmin(usuario: UsuarioPerfil) -> bool:
+    return usuario.rol == "superadmin"
 
 
 @router.post(
@@ -49,4 +55,17 @@ def obtener_resultado_endpoint(
         drogueria_id=usuario.drogueria_id,
         pcp_renglon_id=renglon_id,
         proveedor_id=proveedor_id,
+    )
+
+
+@router.post("/pcp/{pcp_id}/cerrar", response_model=PcpOut)
+def cerrar_pcp_endpoint(
+    pcp_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+) -> PcpOut:
+    return cerrar_pcp_para_endpoint(
+        pcp_id=pcp_id,
+        drogueria_id=usuario.drogueria_id,
+        usuario_id=usuario.id,
+        es_superadmin=_es_superadmin(usuario),
     )

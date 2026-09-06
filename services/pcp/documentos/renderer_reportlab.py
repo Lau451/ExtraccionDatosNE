@@ -109,3 +109,65 @@ class ReportlabPdfRenderer:
 
         documento.build(elementos)
         return buffer.getvalue()
+
+    def render_resultado_pcp(self, datos: dict[str, Any]) -> bytes:
+        """PR11 -- PDF de "resumen de cierre" de un PCP completo (design.md
+        D10), adjuntado al email a `pcp.solicitante_id`. Mismo mecanismo que
+        `render_consulta` (Jinja2 solo resuelve texto plano, reportlab arma
+        el layout real); ver docstring de `PdfRenderer.render_resultado_pcp`
+        para la forma exacta de `datos`."""
+        pcp = datos["pcp"]
+        renglones = datos["renglones"]
+
+        plantilla = _env.get_template("resultado_pcp.txt.j2")
+        encabezado_texto = plantilla.render(
+            pcp_id=pcp["id"],
+            estado=pcp.get("estado", ""),
+            fecha_entrega_solicitada=pcp.get("fecha_entrega_solicitada") or "",
+        )
+
+        buffer = io.BytesIO()
+        documento = SimpleDocTemplate(buffer, pagesize=A4)
+        estilos = getSampleStyleSheet()
+
+        elementos: list[Any] = [
+            Paragraph("Resultado de PCP", estilos["Title"]),
+            Spacer(1, 0.5 * cm),
+            Paragraph(encabezado_texto.strip().replace("\n", "<br/>"), estilos["Normal"]),
+            Spacer(1, 0.5 * cm),
+        ]
+
+        filas: list[list[str]] = [["Producto", "Proveedor", "Resultado", "Precio"]]
+        for item in renglones:
+            renglon = item["renglon"]
+            producto = item.get("producto")
+            resultados = item.get("resultados") or []
+            nombre_item = _nombre_item(renglon, producto)
+            if not resultados:
+                filas.append([nombre_item, "-", "sin negociar", ""])
+                continue
+            for resultado in resultados:
+                precio = resultado.get("precio_proveedor_id")
+                filas.append(
+                    [
+                        nombre_item,
+                        str(resultado.get("proveedor_id", "")),
+                        str(resultado.get("resultado", "")),
+                        str(precio) if precio is not None else "",
+                    ]
+                )
+
+        tabla = Table(filas, hAlign="LEFT")
+        tabla.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ]
+            )
+        )
+        elementos.append(tabla)
+
+        documento.build(elementos)
+        return buffer.getvalue()

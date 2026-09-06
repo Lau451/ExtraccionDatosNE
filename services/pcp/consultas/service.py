@@ -38,12 +38,15 @@ from services.pcp.consultas import repository as repo
 from services.pcp.consultas.models import AgruparConsultaCreate
 from services.pcp.documentos.port import PdfRenderer
 from services.pcp.documentos.renderer_reportlab import ReportlabPdfRenderer
+from services.pcp.historial import service as historial_service
+from services.pcp.mensajeria.adapters import get_mensajeria
+from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort, ResultadoEnvio
 from services.pcp.negociacion import service as negociacion_service
 from services.pcp.renglones import service as renglones_service
 from services.productos import service as productos_service
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError, ValidationError
-from services.terceros.api import obtener_proveedor_con_tercero
+from services.terceros.api import listar_contactos, obtener_proveedor_con_tercero
 
 
 def agrupar_renglones(
@@ -175,6 +178,123 @@ def generar_pdf_consulta(
     return renderer.render_consulta(datos)
 
 
+# -- 11.4-11.6 (tasks.md Fase 11): envío saliente ----------------------------
+#
+# El destinatario SIEMPRE se resuelve server-side desde `terceros_contactos`
+# -- nunca de un valor provisto por el cliente (design.md D9/Interfaces,
+# requisito de seguridad explícito, no opcional). `PCP_MENSAJERIA_ADAPTER`
+# (D9) selecciona UN adaptador que implementa los dos métodos del puerto;
+# "cada canal habilitado configurado" (spec) se decide acá, por los datos
+# reales del contacto -- email si tiene `email`, whatsapp si tiene
+# `celular`/`telefono` -- nunca por una lista de adaptadores distintos.
+
+
+def _canales_disponibles(contacto: dict[str, Any]) -> list[str]:
+    canales: list[str] = []
+    if contacto.get("email"):
+        canales.append("email")
+    if contacto.get("celular") or contacto.get("telefono"):
+        canales.append("whatsapp")
+    return canales
+
+
+def _elegir_contacto_con_datos_de_entrega(contactos: list[dict[str, Any]]) -> dict[str, Any] | None:
+    utilizables = [c for c in contactos if _canales_disponibles(c)]
+    if not utilizables:
+        return None
+    principales = [c for c in utilizables if c.get("es_principal")]
+    return principales[0] if principales else utilizables[0]
+
+
+def enviar_consulta(
+    client: Client,
+    *,
+    consulta_id: str,
+    drogueria_id: str,
+    usuario_id: str,
+    mensajeria: MensajeriaPort | None = None,
+) -> dict[str, Any]:
+    """11.4-11.6: entrega el PDF de una consulta ya agrupada al contacto real
+    del proveedor. Spec `pcp-consultas-agrupadas`:
+    - "Deliver a consulta through a configured channel": entrega por cada
+      canal habilitado que el contacto realmente tenga.
+    - "Reject sending without a usable contact": sin ningún contacto con
+      datos de entrega, se rechaza ANTES de llamar al `MensajeriaPort` (cero
+      intentos).
+    - "Delivery failure does not corrupt grouping": si todos los canales
+      intentados fallan, la consulta queda en `'borrador'` (nunca se
+      transiciona a `'enviada'`) y `pcp_consulta_renglones` no se toca --
+      reintentable con la misma consulta.
+    """
+    consulta = obtener_consulta(client, consulta_id=consulta_id, drogueria_id=drogueria_id)
+
+    contactos = listar_contactos(
+        client, tercero_id=consulta["proveedor_id"], drogueria_id=drogueria_id, activo=True
+    )
+    contacto = _elegir_contacto_con_datos_de_entrega(contactos)
+    if contacto is None:
+        raise ValidationError(
+            f"El proveedor '{consulta['proveedor_id']}' no tiene un contacto con datos de "
+            "entrega (email o teléfono) -- no se puede enviar la consulta"
+        )
+
+    pdf_bytes = generar_pdf_consulta(client, consulta_id=consulta_id, drogueria_id=drogueria_id)
+    adjunto = MensajeAdjunto(nombre=f"consulta-{consulta_id}.pdf", contenido=pdf_bytes)
+
+    mensajeria = mensajeria or get_mensajeria()
+    canales = _canales_disponibles(contacto)
+    resultados: list[ResultadoEnvio] = []
+    if "email" in canales:
+        resultados.append(
+            mensajeria.enviar_email(
+                destinatario=contacto["email"],
+                asunto="Consulta de cotización",
+                cuerpo="Le solicitamos cotización para los productos adjuntos.",
+                adjuntos=[adjunto],
+            )
+        )
+    if "whatsapp" in canales:
+        resultados.append(
+            mensajeria.enviar_whatsapp(
+                destinatario=contacto.get("celular") or contacto["telefono"],
+                plantilla="consulta_pcp",
+                variables={"consulta_id": consulta_id},
+                adjuntos=[adjunto],
+            )
+        )
+
+    if all(r.error is not None for r in resultados):
+        errores = [r.error for r in resultados]
+        raise ValidationError(
+            f"No se pudo entregar la consulta '{consulta_id}' por ningún canal configurado: {errores}"
+        )
+
+    consulta_actualizada = repo.marcar_enviada(client, consulta_id=consulta_id)
+
+    # D6: un evento por cada PCP de origen involucrado -- pcp_historial.pcp_id
+    # es NOT NULL (0012_pcp_extras.sql M1) y una consulta agrupa renglones de
+    # varios PCPs (D9, sin pcp_id propio), así que no hay un único pcp_id al
+    # que asociar el evento.
+    filas_renglones = repo.listar_renglones_consulta(client, consulta_id=consulta_id)
+    pcp_ids = {
+        renglones_service.obtener_renglon(
+            client, renglon_id=fila["pcp_renglon_id"], drogueria_id=drogueria_id
+        )["pcp_id"]
+        for fila in filas_renglones
+    }
+    for pcp_id in pcp_ids:
+        historial_service.agregar_evento(
+            client,
+            drogueria_id=drogueria_id,
+            pcp_id=pcp_id,
+            tipo_evento="consulta_enviada",
+            payload={"consulta_id": consulta_id, "proveedor_id": consulta["proveedor_id"], "canales": canales},
+            usuario_id=usuario_id,
+        )
+
+    return consulta_actualizada
+
+
 # -- wrappers de endpoint (service_role, mismo criterio que
 # services/pcp/negociacion/service.py::*_para_endpoint) -----------------------
 
@@ -193,3 +313,11 @@ def obtener_consulta_para_endpoint(*, consulta_id: str, drogueria_id: str) -> di
 
 def generar_pdf_consulta_para_endpoint(*, consulta_id: str, drogueria_id: str) -> bytes:
     return generar_pdf_consulta(get_service_client(), consulta_id=consulta_id, drogueria_id=drogueria_id)
+
+
+def enviar_consulta_para_endpoint(
+    *, consulta_id: str, drogueria_id: str, usuario_id: str
+) -> dict[str, Any]:
+    return enviar_consulta(
+        get_service_client(), consulta_id=consulta_id, drogueria_id=drogueria_id, usuario_id=usuario_id
+    )
