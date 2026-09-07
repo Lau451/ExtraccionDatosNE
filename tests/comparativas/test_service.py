@@ -85,8 +85,13 @@ def test_asignar_proveedor_de_otra_drogueria_falla(
             "contacto_telefono": "0000000000",
         }
     ).execute().data[0]
-    otro_proveedor = service_client.table("proveedores").insert(
+    # razon_social vive en terceros desde 0008_terceros_modelo.sql -- ver
+    # tests/conftest.py::seed_proveedor (alta en dos pasos, mismo motivo).
+    otro_tercero = service_client.table("terceros").insert(
         {"drogueria_id": otra_drogueria["id"], "razon_social": "Proveedor de otra droguería"}
+    ).execute().data[0]
+    otro_proveedor = service_client.table("proveedores").insert(
+        {"id": otro_tercero["id"], "drogueria_id": otra_drogueria["id"]}
     ).execute().data[0]
 
     try:
@@ -96,6 +101,7 @@ def test_asignar_proveedor_de_otra_drogueria_falla(
             )
     finally:
         service_client.table("proveedores").delete().eq("id", otro_proveedor["id"]).execute()
+        service_client.table("terceros").delete().eq("id", otro_tercero["id"]).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
 
 
