@@ -8,21 +8,19 @@ presupuesto (`pricing.service.generar_presupuesto`, RN-PRICING-008);
 `pcp_renglones` no tiene ninguna FK hacia `presupuesto_items`
 (`PcpRenglonCreate` ni siquiera ofrece ese campo -- ver models.py).
 
-D3 (catálogo producto<->proveedor) todavía no existe como servicio -- llega
-en PR6 (`services/pcp/catalogo/`, tasks.md 6.1-6.5). Aunque la tabla
-`producto_proveedores` ya existe desde 0011 (M3), `listar_proveedores_disponibles_renglon`
-degrada deliberadamente a `[]` en este PR en vez de leerla directamente: la
-tarea 6.5 es explícitamente la que "wire[a] into
-services/pcp/renglones/service.py for the 'available suppliers' list" --
-adelantar esa lectura ahora anticiparía decisiones de PR6 (p.ej. filtros por
-`activo`/`preferido`) que todavía no están tomadas, y crearía una dependencia
-implícita sobre una forma de esa función que PR6 podría necesitar cambiar.
+D3 (catálogo producto<->proveedor): `listar_proveedores_disponibles_renglon`
+lee `services/pcp/catalogo/service.py::listar_proveedores_producto` (PR6,
+tasks.md 6.5) -- ya no un placeholder `[]`. Usa el default
+`solo_activos=True` de esa función: una asociación `activo=false` no debe
+reaparecer como objetivo de negociación (mismo criterio documentado en
+`catalogo/service.py`).
 """
 
 from typing import Any
 
 from supabase import Client
 
+from services.pcp.catalogo import service as catalogo_service
 from services.pcp.gestion import service as gestion_service
 from services.pcp.renglones import repository as repo
 from services.pcp.renglones.models import PcpRenglonCreate
@@ -71,11 +69,26 @@ def listar_renglones(client: Client, *, pcp_id: str, drogueria_id: str) -> list[
 def listar_proveedores_disponibles_renglon(
     client: Client, *, renglon_id: str, drogueria_id: str
 ) -> list[dict[str, Any]]:
-    """Placeholder deliberado -- ver docstring del módulo. PR6 (tasks.md 6.5)
-    reemplaza esta implementación para leer `producto_proveedores` a través
-    de `services/pcp/catalogo/`, sin cambiar la firma."""
-    obtener_renglon(client, renglon_id=renglon_id, drogueria_id=drogueria_id)
-    return []
+    """PR6 (tasks.md 6.5) -- reemplaza el placeholder `[]` de PR5 por una
+    lectura real del catálogo (D3). Firma sin cambios respecto al
+    placeholder: eso era un compromiso explícito del docstring anterior y
+    del lanzamiento de esta tarea.
+
+    Repite el mismo `SELECT ... WHERE id = renglon_id` que
+    `obtener_detalle_renglon` ya ejecutó una vez -- considerado y
+    descartado cambiar la firma para recibir el renglón ya resuelto (p.ej.
+    un parámetro opcional), porque el costo real es un único lookup extra
+    por PK indexado (`buscar_renglon`), y evitarlo hubiera significado
+    tocar la firma pública que esta misma tarea pide no tocar. Un renglón
+    sin `producto_id` (matching todavía pendiente) no tiene nada que
+    catalogar: se corta antes de llamar al catálogo.
+    """
+    renglon = obtener_renglon(client, renglon_id=renglon_id, drogueria_id=drogueria_id)
+    if renglon.get("producto_id") is None:
+        return []
+    return catalogo_service.listar_proveedores_producto(
+        client, producto_id=renglon["producto_id"], drogueria_id=drogueria_id
+    )
 
 
 def obtener_detalle_renglon(client: Client, *, renglon_id: str, drogueria_id: str) -> dict[str, Any]:

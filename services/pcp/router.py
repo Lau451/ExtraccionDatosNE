@@ -11,13 +11,17 @@ Ningún requisito de esta fase (tasks.md 5.7) ni de `specs/pcp-historial/spec.md
 fuerza una superficie HTTP dedicada para historial en este PR -- el launch
 prompt de esta fase lo deja explícitamente como "una decisión separada".
 Cuando la necesite, se agrega acá con una línea nueva.
+
+PR6 (tasks.md 6.5) agrega `catalogo_router`.
 """
 
 from fastapi import APIRouter
 
+from services.pcp.catalogo.router import router as catalogo_router
 from services.pcp.gestion.router import router as gestion_router
 from services.pcp.renglones.router import router as renglones_router
 
 router = APIRouter()
 router.include_router(gestion_router)
 router.include_router(renglones_router)
+router.include_router(catalogo_router)

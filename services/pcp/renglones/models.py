@@ -51,7 +51,8 @@ class PcpRenglonOut(BaseModel):
 
 class RenglonDetalleOut(BaseModel):
     """5.3 (spec "Product and Supplier Context Display"). `proveedores_catalogados`
-    es siempre `[]` en este PR -- ver docstring de `services/pcp/renglones/service.py`."""
+    lee el catálogo real desde PR6 -- ver docstring de
+    `services/pcp/renglones/service.py::listar_proveedores_disponibles_renglon`."""
 
     renglon: PcpRenglonOut
     producto: ProductoOut | None
