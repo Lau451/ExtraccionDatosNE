@@ -25,6 +25,42 @@ def buscar_resultado(
     return resultado.data[0] if resultado.data else None
 
 
+def obtener_email_usuario(client: Client, *, usuario_id: str) -> str | None:
+    """PR11 (tasks.md 11.7) -- `usuarios` (rls_final.sql) NO tiene columna
+    `email`: vive en `auth.users`, accesible únicamente vía la Admin API de
+    Supabase Auth (`client.auth.admin.get_user_by_id`, mismo mecanismo que
+    `services/presupuestacion/usuarios/repository.py::invitar_usuario_auth`
+    usa para crear el usuario). Requiere que `client` esté inicializado con
+    la service_role key -- `cerrar_pcp` solo se expone vía su wrapper
+    `*_para_endpoint` (service_role), igual que el resto de operaciones de
+    escritura cross-tabla de este módulo. Devuelve `None` si el usuario no
+    existe en Auth (nunca levanta: el caller decide qué error de dominio
+    corresponde)."""
+    try:
+        respuesta = client.auth.admin.get_user_by_id(usuario_id)
+    except Exception:
+        return None
+    return respuesta.user.email if respuesta and respuesta.user else None
+
+
+def buscar_estado_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
+    """Lectura directa de `presupuestos.estado` -- mismo criterio que
+    `services/pcp/gestion/repository.py::buscar_presupuesto` (D1: el acceso a
+    la tabla en sí, fuera de un import Python de otro `repository`, no está
+    restringido por ese guard). Copia local intencional en vez de reusar
+    `gestion.repository` (D1 no lo prohíbe, pero cada submódulo de PCP ya
+    sigue este mismo patrón -- ver docstring de
+    `gestion/service.py::_UNIQUE_VIOLATION`)."""
+    resultado = (
+        client.table("presupuestos")
+        .select("id, estado")
+        .eq("id", presupuesto_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
 def upsert_resultado(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     """Upsert por `uq_ppr_renglon_prov (pcp_renglon_id, proveedor_id)`
     (0011_pcp_modelo.sql M4): actualiza la fila que

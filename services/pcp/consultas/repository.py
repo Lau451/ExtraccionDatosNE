@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 
 from supabase import Client
@@ -5,6 +6,22 @@ from supabase import Client
 
 def crear_consulta(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("pcp_consultas").insert(fila).execute().data[0]
+
+
+def marcar_enviada(client: Client, *, consulta_id: str) -> dict[str, Any]:
+    """PR11 (tasks.md 11.6) -- transiciona `pcp_consultas.estado` a
+    `'enviada'` (ck_pcpc_estado, 0012_pcp_extras.sql M4) y setea
+    `fecha_envio`. Solo se llama tras una entrega exitosa por al menos un
+    canal -- `service.py::enviar_consulta` nunca la invoca si todos los
+    canales intentados fallan (spec "Delivery failure does not corrupt
+    grouping": la consulta debe quedar reintentable en `'borrador'`)."""
+    return (
+        client.table("pcp_consultas")
+        .update({"estado": "enviada", "fecha_envio": datetime.now(timezone.utc).isoformat()})
+        .eq("id", consulta_id)
+        .execute()
+        .data[0]
+    )
 
 
 def buscar_consulta(client: Client, *, consulta_id: str) -> dict[str, Any] | None:

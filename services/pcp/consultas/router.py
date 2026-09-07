@@ -11,6 +11,7 @@ from supabase import Client
 from services.pcp.consultas.models import AgruparConsultaCreate, ConsultaOut
 from services.pcp.consultas.service import (
     agrupar_renglones_para_endpoint,
+    enviar_consulta_para_endpoint,
     generar_pdf_consulta_para_endpoint,
     obtener_consulta,
 )
@@ -49,3 +50,13 @@ def descargar_pdf_consulta_endpoint(
         consulta_id=consulta_id, drogueria_id=usuario.drogueria_id
     )
     return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+@router.post("/pcp/consultas/{consulta_id}/enviar", response_model=ConsultaOut)
+def enviar_consulta_endpoint(
+    consulta_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+) -> ConsultaOut:
+    return enviar_consulta_para_endpoint(
+        consulta_id=consulta_id, drogueria_id=usuario.drogueria_id, usuario_id=usuario.id
+    )

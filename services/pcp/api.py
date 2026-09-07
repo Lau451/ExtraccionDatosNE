@@ -25,6 +25,8 @@ from services.pcp.consultas.models import AgruparConsultaCreate, ConsultaOut, Co
 from services.pcp.consultas.service import (
     agrupar_renglones,
     agrupar_renglones_para_endpoint,
+    enviar_consulta,
+    enviar_consulta_para_endpoint,
     generar_pdf_consulta,
     generar_pdf_consulta_para_endpoint,
     obtener_consulta,
@@ -41,8 +43,11 @@ from services.pcp.gestion.service import (
 )
 from services.pcp.historial.models import EventoHistorialCreate, EventoHistorialOut, TipoEvento
 from services.pcp.historial.service import agregar_evento, listar_eventos
+from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort, ResultadoEnvio
 from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
 from services.pcp.negociacion.service import (
+    cerrar_pcp,
+    cerrar_pcp_para_endpoint,
     obtener_resultado,
     obtener_resultado_para_endpoint,
     registrar_resultado,
@@ -91,6 +96,8 @@ __all__ = [
     "obtener_consulta_para_endpoint",
     "generar_pdf_consulta",
     "generar_pdf_consulta_para_endpoint",
+    "enviar_consulta",
+    "enviar_consulta_para_endpoint",
     # gestion -- modelos
     "PcpCreate",
     "PcpOut",
@@ -109,6 +116,10 @@ __all__ = [
     # historial -- funciones
     "agregar_evento",
     "listar_eventos",
+    # mensajeria -- modelos (D9)
+    "MensajeAdjunto",
+    "MensajeriaPort",
+    "ResultadoEnvio",
     # negociacion -- modelos
     "RegistrarResultadoNegociacion",
     "ResultadoNegociacionOut",
@@ -117,6 +128,8 @@ __all__ = [
     "registrar_resultado_para_endpoint",
     "obtener_resultado",
     "obtener_resultado_para_endpoint",
+    "cerrar_pcp",
+    "cerrar_pcp_para_endpoint",
     # renglones -- modelos
     "PcpRenglonCreate",
     "PcpRenglonOut",
