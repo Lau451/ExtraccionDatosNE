@@ -74,10 +74,10 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 3: pcp-historial (PR3)
 
-- [ ] 3.1 Create `services/pcp/historial/models.py`, `repository.py`.
-- [ ] 3.2 RED: PCP event lands in `pcp_historial`, never `historial_cambios`.
-- [ ] 3.3 RED: edit/delete of a history entry is rejected at the service layer (no method mutates or removes an existing entry).
-- [ ] 3.4 Create `services/pcp/historial/service.py` implementing 3.2-3.3 (GREEN) — append-only writer (`agregar_evento`), no update/delete methods exposed.
+- [x] 3.1 Create `services/pcp/historial/models.py`, `repository.py`.
+- [x] 3.2 RED: PCP event lands in `pcp_historial`, never `historial_cambios`.
+- [x] 3.3 RED: edit/delete of a history entry is rejected at the service layer (no method mutates or removes an existing entry). **Deviation**: the DB-level defense-in-depth assertions expect empirically-confirmed RLS behavior (0 rows affected, HTTP 200, no exception) rather than a raised `APIError` — `authenticated` holds Supabase's default schema-level UPDATE/DELETE table privilege on newly created tables (Supabase platform default, not something `0012_pcp_extras.sql` grants explicitly), so the sole enforcement mechanism is the missing RLS policy (deny-by-default: 0 matching rows), not a permission-denied error. Verified against the live test project before writing the final assertion.
+- [x] 3.4 Create `services/pcp/historial/service.py` implementing 3.2-3.3 (GREEN) — append-only writer (`agregar_evento`), no update/delete methods exposed.
 
 ## Phase 4: pcp-gestion (PR4)
 
