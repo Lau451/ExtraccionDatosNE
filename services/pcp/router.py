@@ -17,6 +17,8 @@ PR6 (tasks.md 6.5) agrega `catalogo_router`. PR7 (tasks.md 7.7) agrega
 agrupamiento + PDF, sin envío todavía (ver docstring de
 `services/pcp/consultas/service.py`). PR10 (tasks.md 10.4) agrega
 `sugerencias_router` -- ambos endpoints son puramente de lectura (D12).
+PR8 (tasks.md Fase 8) agrega `imports_router` -- import legado idempotente
+por `codigo_legacy` (D8).
 """
 
 from fastapi import APIRouter
@@ -24,6 +26,7 @@ from fastapi import APIRouter
 from services.pcp.catalogo.router import router as catalogo_router
 from services.pcp.consultas.router import router as consultas_router
 from services.pcp.gestion.router import router as gestion_router
+from services.pcp.imports.router import router as imports_router
 from services.pcp.negociacion.router import router as negociacion_router
 from services.pcp.renglones.router import router as renglones_router
 from services.pcp.sugerencias.router import router as sugerencias_router
@@ -35,3 +38,4 @@ router.include_router(catalogo_router)
 router.include_router(negociacion_router)
 router.include_router(consultas_router)
 router.include_router(sugerencias_router)
+router.include_router(imports_router)

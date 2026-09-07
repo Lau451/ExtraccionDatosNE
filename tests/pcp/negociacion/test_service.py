@@ -133,6 +133,60 @@ def test_registrar_resultado_precio_obtenido_escribe_precios_proveedor_y_actuali
         ).execute()
 
 
+# ---------------------------------------------------------------------------
+# D6 -- registrar_resultado escribe un evento resultado_registrado en
+# pcp_historial (append-only, nunca precio/costo crudo en el payload)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_registrar_resultado_escribe_evento_resultado_registrado_en_pcp_historial(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[seed_proveedor_pcp["id"]],
+    )
+
+    try:
+        registrar_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            body=RegistrarResultadoNegociacion(resultado="no_cotiza", motivo="sin stock"),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+
+        eventos = (
+            service_client.table("pcp_historial")
+            .select("*")
+            .eq("pcp_id", pcp["id"])
+            .eq("tipo_evento", "resultado_registrado")
+            .execute()
+            .data
+        )
+        assert len(eventos) == 1
+        evento = eventos[0]
+        assert evento["pcp_renglon_id"] == renglon["id"]
+        assert evento["payload"]["proveedor_id"] == seed_proveedor_pcp["id"]
+        assert evento["payload"]["resultado"] == "no_cotiza"
+        assert evento["usuario_id"] == seed_usuario_sistema["id"]
+        assert evento["created_at"] is not None
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
 @pytest.mark.integration
 def test_registrar_resultado_precio_obtenido_sin_producto_matcheado_lanza_validation_error(
     service_client,

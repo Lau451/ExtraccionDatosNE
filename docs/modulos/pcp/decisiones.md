@@ -121,13 +121,16 @@ adelante — Compras-owned, no el motor genérico de `automatizaciones`).
 primer intento, para no repetir el bug de columna ambigua que
 `terceros-modelo` corrigió después en su `0009`.
 
-**Estado real**: la RPC y la tabla ya viven en el schema
-(`0012_pcp_extras.sql`), pero **`services/pcp/imports/` no existe** — Fase 8
-de `tasks.md` (tareas 8.1-8.8) quedó deliberadamente sin implementar. Bloqueo
-real, no negligencia: se necesita el nombre exacto del campo de renglón en
-el export legado y su regla de matching contra `item_proceso_id`, y ese
-archivo real todavía no fue provisto. Nada del resto del módulo asume que el
-import existe.
+**Estado real**: implementado (Fase 8 de `tasks.md`, tareas 8.1-8.8,
+completa). El contrato del export legado se confirmó con el usuario:
+13 columnas, fila por renglón, con "número de presupuesto"/"proceso
+comercial" como columnas nuevas para anclar `procesos_comerciales`/
+`presupuestos` — ambas tablas se crean como placeholder en el primer
+import de cada "número de PCP" (find-or-create, sin tabla de mapeo
+adicional; `pcp_legacy_map` ya alcanza como ancla de idempotencia) y nunca
+se vuelven a tocar en un reimport. `services/pcp/imports/` implementa este
+flujo en Python; la RPC `upsert_pcp_legacy` (`0012_pcp_extras.sql`) predata
+esta expansión de alcance y quedó sin usar.
 
 ### D-PCP-009 (D9) — Consulta agrupada, PDF sin dependencia AGPL, puerto de envío
 

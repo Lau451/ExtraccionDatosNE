@@ -43,6 +43,12 @@ from services.pcp.gestion.service import (
 )
 from services.pcp.historial.models import EventoHistorialCreate, EventoHistorialOut, TipoEvento
 from services.pcp.historial.service import agregar_evento, listar_eventos
+from services.pcp.imports.models import (
+    FilaImportPcpLegacy,
+    ImportPcpLegacyRequest,
+    ImportPcpLegacyResultado,
+)
+from services.pcp.imports.service import importar_pcp_legacy, importar_pcp_legacy_para_endpoint
 from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort, ResultadoEnvio
 from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
 from services.pcp.negociacion.service import (
@@ -116,6 +122,13 @@ __all__ = [
     # historial -- funciones
     "agregar_evento",
     "listar_eventos",
+    # imports -- modelos (D8)
+    "FilaImportPcpLegacy",
+    "ImportPcpLegacyRequest",
+    "ImportPcpLegacyResultado",
+    # imports -- funciones
+    "importar_pcp_legacy",
+    "importar_pcp_legacy_para_endpoint",
     # mensajeria -- modelos (D9)
     "MensajeAdjunto",
     "MensajeriaPort",

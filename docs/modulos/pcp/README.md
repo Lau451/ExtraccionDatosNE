@@ -45,18 +45,18 @@ abajo). Los 6 subdirectorios restantes sí lo tienen, agregados en
 `services/presupuestacion/main.py` (`app.include_router(pcp_router,
 tags=["pcp"])`).
 
-## Estado real de la implementación (PR1-PR11, PR8 pendiente)
+## Estado real de la implementación (PR1-PR12, completo)
 
-Implementado y probado en producción de test: **PR1-PR7, PR9-PR11**. El
-proposal original numeraba las capacidades 1-8; `pcp-legacy-import` (Fase 8
-de `tasks.md`, tareas 8.1-8.8) queda **deliberadamente sin implementar**: el
-import legado depende de conocer el nombre exacto del campo de renglón en el
-export legado real y su regla de matching contra `item_proceso_id` (D8), y
-ese archivo real todavía no fue provisto. Nada del resto del módulo asume que
-existe — `pcp_legacy_map` y la RPC `upsert_pcp_legacy` ya viven en el schema
-(0012_pcp_extras.sql) como un seam listo para cuando el import se construya,
-pero no hay código Python en `services/pcp/imports/` todavía (ese
-subdirectorio no existe).
+Implementado y probado en producción de test: **PR1-PR12** (97/97 tareas del
+`tasks.md`). `pcp-legacy-import` (Fase 8, tareas 8.1-8.8) fue el último en
+cerrarse: el contrato del export legado (13 columnas, fila por renglón) se
+confirmó con el usuario (D8), y `services/pcp/imports/` implementa el
+find-or-create de `procesos_comerciales`/`presupuestos`/`items_proceso` para
+los PCP legados que todavía no tienen contraparte en el presupuestador nuevo
+— reutilizando `pcp_legacy_map` como única ancla de idempotencia (sin tabla
+de mapeo adicional). La RPC `upsert_pcp_legacy` (0012_pcp_extras.sql)
+predata esa expansión de alcance y quedó sin usar; el flujo real vive en
+Python, igual que el resto de los submódulos de `services/pcp/`.
 
 ## La máquina de estados del PCP
 

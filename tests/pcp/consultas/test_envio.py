@@ -142,6 +142,79 @@ def test_enviar_consulta_entrega_por_cada_canal_habilitado(
 
 
 # ---------------------------------------------------------------------------
+# D6 -- enviar_consulta escribe un evento consulta_enviada en pcp_historial
+# por cada PCP de origen involucrado (pcp_historial.pcp_id es NOT NULL,
+# design.md D9: una consulta agrupa renglones de varios PCPs, sin pcp_id
+# propio)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_enviar_consulta_escribe_evento_consulta_enviada_en_pcp_historial(
+    service_client,
+    seed_drogueria,
+    seed_producto,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    presupuesto = seed_presupuesto_factory()
+    contacto = (
+        service_client.table("terceros_contactos")
+        .insert(
+            {
+                "tercero_id": seed_proveedor_pcp["id"],
+                "drogueria_id": seed_drogueria["id"],
+                "nombre": "Contacto Proveedor",
+                "email": "compras@proveedor-test.local",
+                "es_principal": True,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    pcp, consulta = _crear_consulta(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_id=seed_proveedor_pcp["id"],
+    )
+
+    try:
+        mensajeria = _MensajeriaFalsa(entregado=True)
+        enviar_consulta(
+            service_client,
+            consulta_id=consulta["id"],
+            drogueria_id=seed_drogueria["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            mensajeria=mensajeria,
+        )
+
+        eventos = (
+            service_client.table("pcp_historial")
+            .select("*")
+            .eq("pcp_id", pcp["id"])
+            .eq("tipo_evento", "consulta_enviada")
+            .execute()
+            .data
+        )
+        assert len(eventos) == 1
+        evento = eventos[0]
+        assert evento["payload"]["consulta_id"] == consulta["id"]
+        assert evento["payload"]["proveedor_id"] == seed_proveedor_pcp["id"]
+        assert "email" in evento["payload"]["canales"]
+        assert evento["usuario_id"] == seed_usuario_sistema["id"]
+        assert evento["created_at"] is not None
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+        service_client.table("pcp_consultas").delete().eq("id", consulta["id"]).execute()
+        service_client.table("terceros_contactos").delete().eq("id", contacto["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
 # 11.5 -- sin contacto con datos de entrega: rechazo, cero intentos
 # ---------------------------------------------------------------------------
 
