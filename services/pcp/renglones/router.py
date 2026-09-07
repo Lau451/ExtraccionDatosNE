@@ -51,7 +51,12 @@ def obtener_detalle_renglon_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
     user_client: Client = Depends(get_user_client),
 ) -> dict:
-    return obtener_detalle_renglon(user_client, renglon_id=renglon_id, drogueria_id=usuario.drogueria_id)
+    return obtener_detalle_renglon(
+        user_client,
+        renglon_id=renglon_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=_es_superadmin(usuario),
+    )
 
 
 @router.post("/pcp/{pcp_id}/renglones/{renglon_id}/proveedores", response_model=list[dict])

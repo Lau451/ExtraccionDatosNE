@@ -22,6 +22,7 @@ from services.pcp.renglones.service import (
     obtener_renglon,
     seleccionar_proveedores,
 )
+from services.shared.exceptions import NotFoundError
 from services.shared.exceptions import ValidationError as ServiceValidationError
 
 # ---------------------------------------------------------------------------
@@ -158,6 +159,68 @@ def test_detalle_renglon_muestra_datos_de_producto_y_proveedores_catalogados_vac
     assert detalle["proveedores_catalogados"] == []
 
     service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
+# Fase 12 follow-up (D-PCP-011) -- obtener_renglon/obtener_detalle_renglon
+# carecian del bypass es_superadmin que listar_pcp/listar_renglones ya tienen:
+# con drogueria_id=None (superadmin), toda comparacion "!= drogueria_id" daba
+# True para cualquier fila real, asi que un 404 se disparaba incluso para el
+# propio tenant del renglon. Mismo criterio que gestion/service.py::obtener_pcp.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_obtener_renglon_con_es_superadmin_ignora_mismatch_de_drogueria(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso_sin_producto,
+    seed_presupuesto_factory,
+):
+    # Sin producto_id (seed_item_proceso_sin_producto) a propósito: con
+    # producto asociado, obtener_detalle_renglon delega en
+    # productos.service.obtener_producto, que tiene el mismo bug pero es un
+    # módulo ajeno a gestor-pcp (D1) -- fuera del alcance de este fix puntual.
+    presupuesto = seed_presupuesto_factory()
+    pcp = crear_pcp(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=PcpCreate(presupuesto_id=presupuesto["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    renglon = crear_renglon(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        pcp_id=pcp["id"],
+        body=PcpRenglonCreate(item_proceso_id=seed_item_proceso_sin_producto["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    otra_drogueria_id = "00000000-0000-0000-0000-000000000000"
+
+    try:
+        # Sin es_superadmin, una droguería distinta a la del renglón sigue
+        # rechazada (guarda de regresión de la aislación por tenant).
+        with pytest.raises(NotFoundError):
+            obtener_renglon(service_client, renglon_id=renglon["id"], drogueria_id=otra_drogueria_id)
+
+        resuelto = obtener_renglon(
+            service_client,
+            renglon_id=renglon["id"],
+            drogueria_id=otra_drogueria_id,
+            es_superadmin=True,
+        )
+        assert resuelto["id"] == renglon["id"]
+
+        detalle = obtener_detalle_renglon(
+            service_client,
+            renglon_id=renglon["id"],
+            drogueria_id=otra_drogueria_id,
+            es_superadmin=True,
+        )
+        assert detalle["renglon"]["id"] == renglon["id"]
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
 
 
 # ---------------------------------------------------------------------------
@@ -473,5 +536,46 @@ def test_origen_invalido_es_rechazado_por_el_check_de_la_base(
 
     en_bd = service_client.table("pcp_renglones").select("id").eq("pcp_id", pcp["id"]).execute().data
     assert len(en_bd) == 0
+
+    service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+@pytest.mark.integration
+def test_origen_regla_es_aceptado_por_el_check_de_la_base(
+    service_client,
+    seed_drogueria,
+    seed_producto,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+):
+    """Fase 12 follow-up: 'manual' e 'import_legado' ya se prueban en otros
+    tests de este archivo (crear_renglon_manual_sin_origen_explicito_se_etiqueta_manual,
+    crear_renglon_con_origen_import_legado_explicito_se_acepta); 'regla' no
+    tenía cobertura porque `reglas_pcp` (D7) es un seam sin motor todavía --
+    ningún código de servicio genera este valor hoy. Prueba directo contra
+    el repository, igual que el test de rechazo de arriba, que `ck_pcpr_origen`
+    ya admite 'regla' aunque nada lo use en producción."""
+    presupuesto = seed_presupuesto_factory()
+    pcp = crear_pcp(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=PcpCreate(presupuesto_id=presupuesto["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    creado = repo.crear_renglon(
+        service_client,
+        {
+            "drogueria_id": seed_drogueria["id"],
+            "pcp_id": pcp["id"],
+            "item_proceso_id": seed_item_proceso["id"],
+            "origen": "regla",
+        },
+    )
+    assert creado["origen"] == "regla"
+
+    en_bd = service_client.table("pcp_renglones").select("origen").eq("id", creado["id"]).execute().data
+    assert en_bd[0]["origen"] == "regla"
 
     service_client.table("pcp").delete().eq("id", pcp["id"]).execute()

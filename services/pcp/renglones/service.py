@@ -55,9 +55,11 @@ def crear_renglon(
     return repo.crear_renglon(client, fila)
 
 
-def obtener_renglon(client: Client, *, renglon_id: str, drogueria_id: str) -> dict[str, Any]:
+def obtener_renglon(
+    client: Client, *, renglon_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> dict[str, Any]:
     fila = repo.buscar_renglon(client, renglon_id=renglon_id)
-    if fila is None or fila["drogueria_id"] != drogueria_id:
+    if fila is None or (fila["drogueria_id"] != drogueria_id and not es_superadmin):
         raise NotFoundError(f"No se encontró el renglón '{renglon_id}'")
     return fila
 
@@ -84,7 +86,7 @@ def listar_resultados_renglon(
 
 
 def listar_proveedores_disponibles_renglon(
-    client: Client, *, renglon_id: str, drogueria_id: str
+    client: Client, *, renglon_id: str, drogueria_id: str, es_superadmin: bool = False
 ) -> list[dict[str, Any]]:
     """PR6 (tasks.md 6.5) -- reemplaza el placeholder `[]` de PR5 por una
     lectura real del catálogo (D3). Firma sin cambios respecto al
@@ -100,7 +102,9 @@ def listar_proveedores_disponibles_renglon(
     sin `producto_id` (matching todavía pendiente) no tiene nada que
     catalogar: se corta antes de llamar al catálogo.
     """
-    renglon = obtener_renglon(client, renglon_id=renglon_id, drogueria_id=drogueria_id)
+    renglon = obtener_renglon(
+        client, renglon_id=renglon_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
     if renglon.get("producto_id") is None:
         return []
     return catalogo_service.listar_proveedores_producto(
@@ -108,15 +112,19 @@ def listar_proveedores_disponibles_renglon(
     )
 
 
-def obtener_detalle_renglon(client: Client, *, renglon_id: str, drogueria_id: str) -> dict[str, Any]:
-    renglon = obtener_renglon(client, renglon_id=renglon_id, drogueria_id=drogueria_id)
+def obtener_detalle_renglon(
+    client: Client, *, renglon_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> dict[str, Any]:
+    renglon = obtener_renglon(
+        client, renglon_id=renglon_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
     producto = None
     if renglon.get("producto_id"):
         producto = productos_service.obtener_producto(
             client, producto_id=renglon["producto_id"], drogueria_id=drogueria_id
         )
     proveedores = listar_proveedores_disponibles_renglon(
-        client, renglon_id=renglon_id, drogueria_id=drogueria_id
+        client, renglon_id=renglon_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
     )
     return {"renglon": renglon, "producto": producto, "proveedores_catalogados": proveedores}
 
@@ -175,8 +183,12 @@ def listar_renglones_para_endpoint(
     )
 
 
-def obtener_detalle_renglon_para_endpoint(*, renglon_id: str, drogueria_id: str) -> dict[str, Any]:
-    return obtener_detalle_renglon(get_service_client(), renglon_id=renglon_id, drogueria_id=drogueria_id)
+def obtener_detalle_renglon_para_endpoint(
+    *, renglon_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> dict[str, Any]:
+    return obtener_detalle_renglon(
+        get_service_client(), renglon_id=renglon_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
 
 
 def seleccionar_proveedores_para_endpoint(

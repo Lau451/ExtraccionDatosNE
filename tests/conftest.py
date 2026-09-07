@@ -77,10 +77,28 @@ def seed_producto(service_client, seed_drogueria):
 
 @pytest.fixture
 def seed_proveedor(service_client, seed_drogueria):
-    fila = {"drogueria_id": seed_drogueria["id"], "razon_social": "Proveedor de test"}
-    proveedor = service_client.table("proveedores").insert(fila).execute().data[0]
+    # razon_social vive en terceros desde 0008_terceros_modelo.sql -- proveedores
+    # quedó como tabla de rol angosta que comparte id con terceros (fk_prov_tercero).
+    # Antes insertaba razon_social directo en proveedores, columna que ya no
+    # existe ahí (PGRST204 "Could not find the 'razon_social' column of
+    # 'proveedores'"); bug preexistente documentado y repetido en varias PRs
+    # de gestor-pcp (ver tests/pcp/conftest.py::seed_proveedor_pcp, que ya
+    # usaba este mismo patrón de dos pasos como workaround local).
+    tercero = (
+        service_client.table("terceros")
+        .insert({"drogueria_id": seed_drogueria["id"], "razon_social": "Proveedor de test"})
+        .execute()
+        .data[0]
+    )
+    proveedor = (
+        service_client.table("proveedores")
+        .insert({"id": tercero["id"], "drogueria_id": seed_drogueria["id"]})
+        .execute()
+        .data[0]
+    )
     yield proveedor
     service_client.table("proveedores").delete().eq("id", proveedor["id"]).execute()
+    service_client.table("terceros").delete().eq("id", tercero["id"]).execute()
 
 
 @pytest.fixture

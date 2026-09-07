@@ -5,14 +5,27 @@ import pytest
 
 @pytest.fixture
 def seed_cliente(service_client, seed_drogueria):
-    fila = {
-        "drogueria_id": seed_drogueria["id"],
-        "nombre": "Hospital de test",
-        "tipo": "hospital",
-    }
-    cliente = service_client.table("clientes").insert(fila).execute().data[0]
+    # razon_social vive en terceros desde 0008_terceros_modelo.sql -- clientes
+    # quedó como tabla de rol angosta (sobreviven id/drogueria_id/tipo/activo)
+    # que comparte id con terceros (fk_cli_tercero). Insertar "nombre" directo
+    # acá rompía con PGRST204 ("Could not find the 'nombre' column of
+    # 'clientes'"); mismo bug preexistente que tests/conftest.py::seed_proveedor,
+    # mismo fix de alta en dos pasos.
+    tercero = (
+        service_client.table("terceros")
+        .insert({"drogueria_id": seed_drogueria["id"], "razon_social": "Hospital de test"})
+        .execute()
+        .data[0]
+    )
+    cliente = (
+        service_client.table("clientes")
+        .insert({"id": tercero["id"], "drogueria_id": seed_drogueria["id"], "tipo": "hospital"})
+        .execute()
+        .data[0]
+    )
     yield cliente
     service_client.table("clientes").delete().eq("id", cliente["id"]).execute()
+    service_client.table("terceros").delete().eq("id", tercero["id"]).execute()
 
 
 @pytest.fixture
