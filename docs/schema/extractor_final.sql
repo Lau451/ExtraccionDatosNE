@@ -731,6 +731,127 @@ COMMENT ON COLUMN presupuesto_items.stock_verificado IS 'TRUE solo en procesos c
 
 
 -- =============================================================================
+-- CAPA 6B — PCP: gestor de mejora de precios de compra (migración 0011,
+-- gestor-pcp PR1). Ver openspec/changes/gestor-pcp/design.md D1-D4. Cuatro de
+-- las nueve tablas del módulo; las cinco restantes (pcp_historial, reglas_pcp,
+-- pcp_legacy_map, pcp_consultas, pcp_consulta_renglones) y la migración de
+-- precios_proveedor.plazo_pago_dias llegan en 0012_pcp_extras.sql (PR2). RLS
+-- y GRANTs de estas cuatro tablas viven en rls_final.sql (mismo criterio que
+-- terceros/proveedores/precios_proveedor).
+-- =============================================================================
+
+CREATE TABLE pcp (
+    id                          UUID            NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id                UUID            NOT NULL,
+    presupuesto_id              UUID            NOT NULL,
+    proceso_comercial_id        UUID            NOT NULL,   -- denormalizado: filtro de listado sin JOIN
+    estado                      TEXT            NOT NULL DEFAULT 'nueva',
+    fecha_entrega_solicitada    DATE            NULL,
+    solicitante_id              UUID            NULL,
+    sector_id                   UUID            NULL,
+    origen                      TEXT            NULL,
+    regla_pcp_id                UUID            NULL,       -- FK llega en 0012 (reglas_pcp, PR2)
+    notas                       TEXT            NULL,
+    cerrada_at                  TIMESTAMPTZ     NULL,
+    cerrada_por                 UUID            NULL,
+    created_by                  UUID            NULL,
+    updated_by                  UUID            NULL,
+    created_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcp_id_drog      UNIQUE (id, drogueria_id),
+    CONSTRAINT ck_pcp_estado       CHECK (estado IN ('nueva', 'en_gestion', 'esperando_respuesta', 'cerrada')),
+    CONSTRAINT ck_pcp_origen       CHECK (origen IS NULL OR origen IN ('manual', 'regla', 'import_legado')),
+    CONSTRAINT fk_pcp_drog         FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_pcp_presupuesto  FOREIGN KEY (presupuesto_id, drogueria_id) REFERENCES presupuestos (id, drogueria_id),
+    CONSTRAINT fk_pcp_proceso      FOREIGN KEY (proceso_comercial_id) REFERENCES procesos_comerciales (id),
+    CONSTRAINT fk_pcp_sector       FOREIGN KEY (sector_id, drogueria_id) REFERENCES sectores_contacto (id, drogueria_id)
+);
+COMMENT ON TABLE pcp IS 'PCP: pedido de mejora de precio elevado a Compras a partir de un presupuesto. Un solo PCP abierto por presupuesto (índice único parcial uq_pcp_presupuesto_abierto). Ver design.md D2.';
+
+CREATE UNIQUE INDEX uq_pcp_presupuesto_abierto ON pcp (presupuesto_id) WHERE estado <> 'cerrada';
+CREATE INDEX idx_pcp_listado ON pcp (drogueria_id, estado, fecha_entrega_solicitada) WHERE estado <> 'cerrada';
+
+CREATE TABLE pcp_renglones (
+    id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id        UUID            NOT NULL,
+    pcp_id              UUID            NOT NULL,
+    item_proceso_id     UUID            NOT NULL,           -- ancla estable; NUNCA presupuesto_items.id (RN-PRICING-008)
+    producto_id         UUID            NULL,
+    cantidad            NUMERIC(12, 2)  NULL,                -- snapshot al momento de la selección
+    precio_referencia   NUMERIC(15, 2)  NULL,                -- snapshot al momento de la selección
+    origen              TEXT            NOT NULL,
+    regla_pcp_id        UUID            NULL,                -- FK llega en 0012 (reglas_pcp, PR2)
+    estado              TEXT            NOT NULL DEFAULT 'pendiente',
+    created_by          UUID            NULL,
+    updated_by          UUID            NULL,
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pcpr_id_drog  UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_pcpr_pcp_item UNIQUE (pcp_id, item_proceso_id),
+    CONSTRAINT ck_pcpr_origen   CHECK (origen IN ('manual', 'regla', 'import_legado')),
+    CONSTRAINT ck_pcpr_estado   CHECK (estado IN ('pendiente', 'resuelto', 'descartado')),
+    CONSTRAINT fk_pcpr_drog     FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_pcpr_pcp      FOREIGN KEY (pcp_id, drogueria_id) REFERENCES pcp (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_pcpr_item     FOREIGN KEY (item_proceso_id, drogueria_id) REFERENCES items_proceso (id, drogueria_id),
+    CONSTRAINT fk_pcpr_producto FOREIGN KEY (producto_id) REFERENCES productos (id)
+);
+COMMENT ON TABLE pcp_renglones IS 'Renglón de un PCP, anclado en item_proceso_id (nunca presupuesto_items.id). cantidad/precio_referencia son snapshots al momento de la selección. Ver design.md D2.';
+
+CREATE INDEX idx_pcpr_producto ON pcp_renglones (drogueria_id, producto_id);
+
+CREATE TABLE producto_proveedores (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id        UUID        NOT NULL,
+    producto_id         UUID        NOT NULL,
+    proveedor_id        UUID        NOT NULL,
+    codigo_proveedor    TEXT        NULL,
+    preferido           BOOLEAN     NOT NULL DEFAULT FALSE,
+    activo              BOOLEAN     NOT NULL DEFAULT TRUE,
+    notas               TEXT        NULL,
+    created_by          UUID        NULL,
+    updated_by          UUID        NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_ppv_id_drog       UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_ppv_producto_prov UNIQUE (drogueria_id, producto_id, proveedor_id),
+    CONSTRAINT fk_ppv_drog          FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_ppv_producto      FOREIGN KEY (producto_id) REFERENCES productos (id),
+    CONSTRAINT fk_ppv_proveedor     FOREIGN KEY (proveedor_id, drogueria_id) REFERENCES proveedores (id, drogueria_id)
+);
+COMMENT ON TABLE producto_proveedores IS 'Asociación producto↔proveedor: catálogo real de "proveedores disponibles" para un producto. Arranca vacío (D3); NO se deriva de precios_proveedor.';
+
+CREATE UNIQUE INDEX uq_ppv_preferido ON producto_proveedores (drogueria_id, producto_id) WHERE preferido AND activo;
+CREATE INDEX idx_ppv_producto_activo ON producto_proveedores (drogueria_id, producto_id) WHERE activo;
+
+CREATE TABLE pcp_renglon_resultados (
+    id                      UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id            UUID        NOT NULL,
+    pcp_renglon_id          UUID        NOT NULL,
+    proveedor_id            UUID        NOT NULL,
+    consulta_id             UUID        NULL,       -- FK llega en 0012 (pcp_consultas, PR2)
+    resultado               TEXT        NOT NULL,
+    precio_proveedor_id     UUID        NULL,
+    motivo                  TEXT        NULL,
+    registrado_por          UUID        NULL,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_ppr_id_drog       UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_ppr_renglon_prov  UNIQUE (pcp_renglon_id, proveedor_id),
+    CONSTRAINT ck_ppr_resultado_val CHECK (resultado IN ('precio_obtenido', 'no_cotiza', 'sin_respuesta')),
+    CONSTRAINT ck_ppr_resultado     CHECK ((resultado = 'precio_obtenido') = (precio_proveedor_id IS NOT NULL)),
+    CONSTRAINT fk_ppr_drog          FOREIGN KEY (drogueria_id) REFERENCES droguerias (id),
+    CONSTRAINT fk_ppr_renglon       FOREIGN KEY (pcp_renglon_id, drogueria_id) REFERENCES pcp_renglones (id, drogueria_id) ON DELETE CASCADE,
+    CONSTRAINT fk_ppr_proveedor     FOREIGN KEY (proveedor_id, drogueria_id) REFERENCES proveedores (id, drogueria_id),
+    CONSTRAINT fk_ppr_precio_prov   FOREIGN KEY (precio_proveedor_id) REFERENCES precios_proveedor (id)
+);
+COMMENT ON TABLE pcp_renglon_resultados IS 'Resultado de negociación por renglón-proveedor. Solo precio_obtenido escribe una fila en precios_proveedor; no_cotiza/sin_respuesta son outcome puro. Ver design.md D4.';
+
+
+-- =============================================================================
 -- CAPA 7 — COMPARATIVAS (negocio, se crean al validar la extracción)
 -- =============================================================================
 
