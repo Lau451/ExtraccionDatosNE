@@ -153,10 +153,38 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 10: pcp-sugerencias — suggestion queries only (PR10)
 
-- [ ] 10.1 Create `services/pcp/sugerencias/repository.py`, `service.py` (D12, no schema — pure queries).
-- [ ] 10.2 RED: same article across two open PCPs nearing the requested delivery date surfaces a joint-quote suggestion; ignoring it never merges or modifies the underlying PCPs.
-- [ ] 10.3 RED: a `precios_proveedor` row with `activa=true` and unexpired `mantenimiento_hasta` for article A surfaces as a reference (supplier, date, `mantenimiento_hasta`, quantity band) when a renglón for A opens; an expired row is not surfaced.
-- [ ] 10.4 Create `services/pcp/sugerencias/router.py` exposing both suggestions read-only.
+- [x] 10.1 Create `services/pcp/sugerencias/repository.py`, `service.py` (D12, no schema — pure queries). Both anchor on `renglon_id` (never a bare `producto_id`), reusing `renglones/service.py::obtener_renglon` to resolve the renglón's product first — same pattern already used by `renglones/service.py::listar_proveedores_disponibles_renglon`, and matching the spec's framing ("when a PCP renglón for that article is opened"). No `_para_endpoint` service-role wrappers were added: both functions are pure GET reads, and this codebase's established convention (`gestion/service.py::listar_pcp`/`obtener_pcp`) only adds that wrapper for writes — the router uses `user_client` directly, same as `gestion/router.py`'s GET endpoints.
+- [x] 10.2 RED→GREEN: `test_mismo_articulo_en_dos_pcp_por_vencer_sugiere_agrupacion_con_cantidad_agregada` (`tests/pcp/sugerencias/test_service.py`) — same product across two open PCPs both nearing `fecha_entrega_solicitada` surfaces one suggestion with the aggregated quantity (10+15=25) and both `pcp_id`s, seen identically from either renglón; asserts both PCP rows are byte-for-byte unchanged after computing the suggestion (spec "Suggestion Never Auto-merges PCPs" — there is no write path to have modified them). Two negative triangulations added (not separate task-numbered RED gates, same criterion as 5.6/6.5/7.7's un-numbered router tests): a single qualifying PCP yields no suggestion (`< 2 pcp_id`s), and two PCPs on the same product both *outside* the `dias` window yield no suggestion (D12's "cercanos a su fecha de entrega" is a real filter, not just an aggregation floor).
+- [x] 10.3 RED→GREEN: `test_precio_reciente_vigente_se_sugiere_como_referencia` + `test_precio_vencido_no_se_sugiere_como_referencia` + `test_precio_inactivo_no_se_sugiere_como_referencia` — a live, unexpired `precios_proveedor` row surfaces supplier/`mantenimiento_hasta`/`dias_restantes`/quantity band via `v_precios_especiales_vigentes` (reused unmodified, per D12 — no Python reimplementation of its `activa`/`mantenimiento_hasta` filter); an expired row (simulated with a direct insert satisfying `ck_pp_mant`, same technique as `tests/pcp/negociacion/test_service.py::test_precio_con_mantenimiento_hasta_vencido_no_es_considerado_valido`) and an `activa=false` row are both excluded.
+- [x] 10.4 Create `services/pcp/sugerencias/router.py` exposing both suggestions as read-only `GET` endpoints (`/pcp/sugerencias/renglones/{renglon_id}/agrupacion`, `/pcp/sugerencias/renglones/{renglon_id}/precios-recientes`), gated by `require_roles(*ROLES_LECTURA_PCP)` only (`services/pcp/roles.py`, PR4) — no write role required to view a suggestion, per this phase's explicit scope. Router tests added (not separate numbered RED tasks, same criterion as 5.6/6.5/7.7): unauthorized role (`comercial`) rejected with 403 on both endpoints; authorized roles (`compras`, `gerencia`) get 200 with the expected empty/null shape when no suggestion applies. Wired into `services/pcp/router.py` (aggregator) and `services/pcp/api.py` (facade), mirroring PR5/PR6/PR7/PR9's wiring.
+
+**Scope boundary confirmed, no discrepancy found**: this phase's checkbox list (10.1-10.4) covers only the two pure-query suggestions (D12) — the Comercial feedback loop requirements in `specs/pcp-sugerencias/spec.md` ("Comercial Feedback Loop — Email Phase" / "...Internal Notification and Auto-Repricing Phase") are NOT listed under this phase; they remain under Phase 11 (`tasks.md` 11.7-11.11, outbound delivery adapter), which depends on `MensajeriaPort` (not built yet). This run implemented only 10.1-10.4, per that confirmed split — no feedback-loop code was added or referenced.
+
+**D1 dependency guard**: `tests/pcp/test_dependencias.py` re-confirmed GREEN with `services/pcp/sugerencias/` present (2/2 passed) — its only internal import is `services.pcp.renglones.service` (an internal PCP submodule, outside the guard's watched prefixes), no `services.presupuestacion`/`services.terceros`/`services.productos` import at all in this phase.
+
+#### TDD Cycle Evidence (Phase 10)
+
+| Task | Test File | Layer | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|-----|-------|-------------|----------|
+| 10.1-10.3 | `tests/pcp/sugerencias/test_service.py` | Integration (live Supabase test project) | Confirmed genuinely RED: ran `pytest tests/pcp/sugerencias -v` before any `services/pcp/sugerencias/` file existed → 2 collection `ModuleNotFoundError`s for the real reason (`No module named 'services.pcp.sugerencias'`) | 6/6 passed on first run after creating `repository.py`/`service.py`/`models.py` — no bugs surfaced needing a second GREEN pass | joint suggestion (2 PCPs, aggregated qty), single-PCP negative, out-of-window-days negative, valid recent price, expired recent price, inactive recent price (6 distinct behaviors) | None needed — first implementation matched all 6 assertions |
+| 10.4 (router) | `tests/pcp/sugerencias/test_router.py` | Integration (live Supabase, real JWT, real HTTP via `TestClient`) | Same RED run as above (module didn't exist) | 3/3 passed on first run | unauthorized-role rejection (403) + authorized-role counterpart for both endpoints (200, correct empty/null shape) | — |
+
+#### Test Summary (Phase 10)
+- Total tests written: 9 (6 service-layer + 3 router)
+- Total tests passing: 9/9, first run, no fixes needed
+- Full `tests/pcp tests/terceros tests/productos tests/pricing` regression: **141 passed, 1 pre-existing unrelated error** (`tests/pricing/test_service.py::test_precio_especial_gana_al_costo_estandar`, same `tests/conftest.py::seed_proveedor` `PGRST204 razon_social` bug flagged since Phase 2/PR7/PR9 — not introduced by this PR).
+
+### Work Unit Evidence (Phase 10)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `pytest tests/pcp/sugerencias -v` → 9 passed. `pytest tests/pcp/test_dependencias.py -v` → 2 passed. `pytest tests/pcp tests/terceros tests/productos tests/pricing -q` → 141 passed, 1 pre-existing unrelated error. |
+| Runtime harness command/scenario and exact result | FastAPI `TestClient` against the live Supabase test project (`grnamollopxdlstcpxhc`) — throwaway `FastAPI()` app including only `services.pcp.sugerencias.router.router`, driven with real Supabase-issued JWTs (`comercial`/`compras`/`gerencia` roles). 3/3 router tests pass end-to-end (403 for unauthorized, 200 for authorized on both endpoints). |
+| Rollback boundary | Revert PR10 (`services/pcp/sugerencias/`, `tests/pcp/sugerencias/`, the `sugerencias_router` include line in `services/pcp/router.py`, the sugerencias exports in `services/pcp/api.py`). Pure read queries — no schema, no migration, no other module's write path touches this PR's code. Independent of PR8 (legacy import, still skipped) and PR11 (delivery adapter, not started). |
+
+### Branch / Commit (Phase 10)
+- Branch: `feat/gestor-pcp-pr10-sugerencias` (off `feat/gestor-pcp-pr9-consultas`, already checked out per launch instructions; PR8 remains deliberately skipped/blocked)
+- `mcp__supabase__*` tools: NOT available in this apply run's tool list (consistent with PR1-PR9). Not needed for PR10 — no new migrations (D12: no schema at all).
 
 ## Phase 11: Outbound Delivery Adapter + Comercial Feedback Loop (PR11, droppable)
 

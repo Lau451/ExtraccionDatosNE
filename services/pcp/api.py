@@ -65,6 +65,11 @@ from services.pcp.renglones.service import (
     seleccionar_proveedores,
     seleccionar_proveedores_para_endpoint,
 )
+from services.pcp.sugerencias.models import SugerenciaAgrupacionOut, SugerenciaPrecioRecienteOut
+from services.pcp.sugerencias.service import (
+    sugerir_agrupacion_por_renglon,
+    sugerir_precios_recientes_por_renglon,
+)
 
 __all__ = [
     # catalogo -- modelos
@@ -127,4 +132,10 @@ __all__ = [
     "obtener_detalle_renglon_para_endpoint",
     "seleccionar_proveedores",
     "seleccionar_proveedores_para_endpoint",
+    # sugerencias -- modelos
+    "SugerenciaAgrupacionOut",
+    "SugerenciaPrecioRecienteOut",
+    # sugerencias -- funciones
+    "sugerir_agrupacion_por_renglon",
+    "sugerir_precios_recientes_por_renglon",
 ]
