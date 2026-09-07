@@ -41,6 +41,7 @@ def listar_pcp_endpoint(
         estado=estado,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        es_superadmin=_es_superadmin(usuario),
     )
 
 

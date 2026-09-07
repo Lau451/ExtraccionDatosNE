@@ -27,16 +27,16 @@ def buscar_renglon(client: Client, *, renglon_id: str) -> dict[str, Any] | None:
     return resultado.data[0] if resultado.data else None
 
 
-def listar_renglones(client: Client, *, pcp_id: str, drogueria_id: str) -> list[dict[str, Any]]:
-    return (
-        client.table("pcp_renglones")
-        .select("*")
-        .eq("pcp_id", pcp_id)
-        .eq("drogueria_id", drogueria_id)
-        .order("created_at")
-        .execute()
-        .data
-    )
+def listar_renglones(
+    client: Client, *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> list[dict[str, Any]]:
+    # Mismo motivo que gestion/repository.py::listar_pcp (D-PCP-011):
+    # superadmin no tiene drogueria_id, eq("drogueria_id", None) rompe con
+    # 22P02. RLS ya deja pasar a superadmin sin este filtro de aplicación.
+    query = client.table("pcp_renglones").select("*").eq("pcp_id", pcp_id)
+    if not es_superadmin:
+        query = query.eq("drogueria_id", drogueria_id)
+    return query.order("created_at").execute().data
 
 
 # -- pcp_renglon_resultados (D4) ----------------------------------------------

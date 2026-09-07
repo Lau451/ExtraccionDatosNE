@@ -125,14 +125,35 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 8: pcp-legacy-import (PR8)
 
-- [ ] 8.1 Confirm the exact legacy renglón-level field name and its matching rule to `item_proceso_id` against the real legacy export file (D8 caveat) before writing the import code.
-- [ ] 8.2 Create `services/pcp/imports/models.py`, `repository.py` (calls `upsert_pcp_legacy` RPC per batch).
-- [ ] 8.3 RED: re-importing the same `codigo_legacy` updates the existing PCP; exactly one row exists after two imports.
-- [ ] 8.4 RED: re-importing does not duplicate the matched renglón.
-- [ ] 8.5 RED: first import creates one `pcp_legacy_map` row; re-import does not duplicate it.
-- [ ] 8.6 RED: legacy-imported renglón carries `origen = 'import_legado'`.
-- [ ] 8.7 RED: a natively created PCP later matched by `codigo_legacy` is updated, not duplicated, on import.
-- [ ] 8.8 Create `services/pcp/imports/service.py` implementing 8.3-8.7 (GREEN) + `router.py`; write `importada` historial event.
+- [x] 8.1 Export contract confirmed by the user (D8): 13 columns, row-per-renglón, denormalized — código del cliente, razón social del cliente, número de PCP (→ `pcp_legacy_map.codigo_legacy`), número de presupuesto (**optional, archival-only** — stored in `pcp_legacy_map.datos_legacy`, never used to resolve/find anything), proceso comercial (**optional**, `1`=cotización directa/`2`=licitación → `procesos_comerciales.clase`; **defaults to `licitacion` when absent**), importe total, fecha de generación, fecha de respuesta esperada, renglón (→ `items_proceso.numero_renglon`), código/descripción/cantidad/precio del producto. Superseded: this task previously asked to confirm the field name against a real export file — now resolved by direct confirmation. Modeled 1:1 in `services/pcp/imports/models.py::FilaImportPcpLegacy`.
+- [x] 8.2 Created `services/pcp/imports/models.py`, `repository.py`. Scope expanded per D8: since legacy PCPs have no pre-existing `procesos_comerciales`/`presupuestos`/`items_proceso` rows, the repository generates **placeholders** for the first two, but only once per PCP: on first import of a given `número de PCP` (no existing `pcp_legacy_map` row), `service.py::_crear_pcp_placeholder` creates a placeholder `procesos_comerciales` (`clase` from the 1/2 mapping, default `licitacion` if absent; synthesized `nombre`) and a placeholder `presupuestos` tied to it, then the `pcp` row referencing both. On re-import (an existing `pcp_legacy_map` row is found), `importar_pcp_legacy` reuses the existing `pcp` row's already-stored `presupuesto_id`/`proceso_comercial_id` as-is — `procesos_comerciales`/`presupuestos` are never touched again. `items_proceso` is find-or-created per renglón row (`repository.py::buscar_item_proceso_por_renglon`/`crear_item_proceso`), keyed by `(proceso_comercial_id, numero_renglon)`. **Deviation**: production files were written once ahead of tests, then deleted and rewritten only after the RED test suite (8.3-8.7a) was authored and confirmed to fail with `ModuleNotFoundError` — restoring strict RED-before-GREEN ordering, same corrective pattern already documented at 5.1.
+- [x] 8.3 RED→GREEN: `test_reimportar_mismo_codigo_actualiza_el_pcp_existente_sin_duplicarlo` (`tests/pcp/imports/test_service.py`) — re-importing the same `codigo_legacy` returns `accion="actualizado"` on the second call and the same `pcp_id` both times.
+- [x] 8.4 RED→GREEN: `test_reimportar_no_duplica_el_renglon_matcheado` — after two imports of the same row, exactly one `pcp_renglones` row exists for that `pcp_id`.
+- [x] 8.5 RED→GREEN: `test_pcp_legacy_map_se_crea_una_vez_y_no_se_duplica_al_reimportar` — one `pcp_legacy_map` row after the first import, still exactly one (same `pcp_id`) after a re-import.
+- [x] 8.6 RED→GREEN: `test_renglon_importado_lleva_origen_import_legado` — the created `pcp_renglones` row has `origen == 'import_legado'`.
+- [x] 8.7 RED→GREEN: `test_import_actualiza_un_pcp_creado_nativamente_sin_duplicarlo` — a PCP created via `seed_pcp_factory` (native, no import) is later mapped by `codigo_legacy` (simulating "assigned after the fact"); importing that code returns `accion="actualizado"` against the same `pcp_id`, and `presupuesto_id`/`proceso_comercial_id` stay exactly as originally created. Triangulated with an unresolvable `codigo_cliente` in the same fila, proving the reimport branch never calls `_resolver_cliente_id`.
+- [x] 8.7a RED→GREEN: `test_reimportar_no_crea_un_segundo_proceso_comercial_ni_presupuesto` — counts `procesos_comerciales`/`presupuestos` rows scoped to the resolved `cliente_id`/`proceso_comercial_id` before and after a re-import; both stay at exactly 1, same ids. Resolved design, no new table: idempotency comes entirely from the existing `pcp`/`pcp_legacy_map` pair, same anchor as 8.3.
+- [x] 8.8 Created `services/pcp/imports/service.py` implementing 8.3-8.7a (GREEN) + `router.py` (`POST /pcp/imports/legacy`, gated by `ROLES_ESCRITURA_PCP`); writes an `importada` historial event per import run via `historial_service.agregar_evento`. Wired into `services/pcp/router.py` (aggregator) and `services/pcp/api.py` (facade), mirroring PR6/PR7/PR9/PR10's wiring. Router test added (not a separate numbered RED task, same criterion as 5.6/6.5/7.7): unauthorized role rejected with no `pcp_legacy_map` row created, authorized role creates the PCP end to end. **Deviation documented in `service.py`'s module docstring**: `0012_pcp_extras.sql` M8 already ships an `upsert_pcp_legacy` RPC, but D8 itself flags that RPC as predating this scope's find-or-create expansion and needing a design revisit; no task in this phase asks for a new migration, so this run implements the flow in Python at the service layer instead — consistent with every other `services/pcp/**` submodule (none of gestion/renglones/catalogo/negociacion route a write through an RPC). The RPC is left unused, not dropped (a `DROP FUNCTION` migration is out of this phase's scope).
+
+#### TDD Cycle Evidence (Phase 8)
+
+| Task | Test File | Layer | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|-----|-------|-------------|----------|
+| 8.3-8.7a | `tests/pcp/imports/test_service.py` | Integration (live Supabase test project) | Confirmed genuinely RED: ran `pytest tests/pcp/imports -v` before any `services/pcp/imports/*.py` file existed → 2 collection `ModuleNotFoundError`s for the real reason (`No module named 'services.pcp.imports.models'` / `.router`) | 6/6 passed on first run after creating `models.py`/`repository.py`/`service.py`/`router.py` — no bugs surfaced needing a second GREEN pass | reimport-updates-existing-PCP, renglón-not-duplicated, legacy-map-created-once, origen tagging, native-PCP-coexistence (with an unresolvable `codigo_cliente` proving the reuse branch skips cliente resolution entirely), no-duplicate-placeholder-on-reimport (6 distinct behaviors) | None needed — first implementation matched all 6 assertions |
+| 8.8 (router) | `tests/pcp/imports/test_router.py` | Integration (live Supabase, real JWT, real HTTP via `TestClient`) | Same RED run as above (module didn't exist) | 2/2 passed on first run | unauthorized-role rejection (403, zero rows) + authorized-role counterpart (200, real PCP created) | — |
+
+#### Test Summary (Phase 8)
+- Total tests written: 8 (6 service-layer + 2 router)
+- Total tests passing: 8/8, first run, no fixes needed
+- `tests/pcp/test_dependencias.py` re-confirmed GREEN (2/2) with `services/pcp/imports/` present — its imports are `services.pcp.historial`/`services.pcp.imports.*`/`services.shared.*`, none of which are in D1's watched prefixes (`services.presupuestacion`, `services.terceros`, `services.productos`).
+
+### Work Unit Evidence (Phase 8)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `pytest tests/pcp/imports -v` → 8 passed. `pytest tests/pcp/test_dependencias.py -v` → 2 passed. |
+| Runtime harness command/scenario and exact result | FastAPI `TestClient` against the live Supabase test project (`grnamollopxdlstcpxhc`) — throwaway `FastAPI()` app including only `services.pcp.imports.router.router`, driven with real Supabase-issued JWTs (`comercial`/`compras` roles). 2/2 router tests pass end-to-end (403 for unauthorized with zero rows created, 200 with a real PCP created for authorized). |
+| Rollback boundary | Revert this work unit (`services/pcp/imports/`, `tests/pcp/imports/`, the `imports_router` include line in `services/pcp/router.py`, the imports exports in `services/pcp/api.py`). No schema/migration changes — additive Python only, reusing tables shipped by PR1/PR2. Independent of every other PCP submodule: nothing else in the codebase calls `services.pcp.imports.*` yet. |
 
 ## Phase 9: pcp-consultas-agrupadas — grouping + PDF, no send (PR9)
 
@@ -232,9 +253,42 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 
 ## Phase 12: Cross-Cutting Docs
 
-- [ ] 12.1 Create `docs/modulos/pcp/` (README, `base_de_datos.md`, `decisiones.md`) per project convention, documenting D1-D12.
-- [ ] 12.2 Router role-matrix E2E: `httpx`/`TestClient` covering `_ROLES_LECTURA_PCP`/`_ROLES_ESCRITURA_PCP` across all `services/pcp/` routers.
-- [ ] 12.3 Full regression: `pytest tests/pcp tests/terceros tests/productos tests/pricing` — zero unrelated regressions.
+- [x] 12.1 Create `docs/modulos/pcp/` (README, `base_de_datos.md`, `decisiones.md`) per project convention, documenting D1-D12. Documents the real state (PR1-PR7, PR9-PR11 implemented; PR8 `pcp-legacy-import` deliberately unimplemented, blocked on the real legacy export field/matching rule), the 9 tables (both migrations reconciled against live schema, not reconstructed from design.md's stale "seven tables" prose), the 9 sub-packages, the state machine, and the two-phase Comercial feedback loop (both phases already implemented, Phase B gated by `PCP_REPRICING_AUTOMATICO`). `decisiones.md` covers D1-D12 in original wording plus three real findings: the `plazo_pago_dias`/cost-isolation behavior verified (not a bug) by 7.5's tests, the `cerrar_pcp` validation-before-transition bug found and fixed post-implementation (PR11), and the migration-0013 `ck_notif_tipo` gap (Pydantic `Literal` alone was not enough).
+- [x] 12.2 Router role-matrix E2E: `httpx`/`TestClient` covering `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP` across all `services/pcp/` routers. `tests/pcp/test_matriz_roles.py` (new) — uses the real app (`services.presupuestacion.main:app`), covers all 6 mounted routers (gestion, renglones, catalogo, negociacion, consultas, sugerencias — historial has no router, skipped per design). 10 GET + 9 POST/PATCH endpoints tested against real JWTs for `comercial`/`lider_comercial` (outside both role sets), `superadmin` (read-only per D11), and `compras` (both sets): a role outside `ROLES_LECTURA_PCP` is rejected 403 on every GET; a role outside `ROLES_ESCRITURA_PCP` (including `superadmin`) is rejected 403 on every POST/PATCH with the targeted row/table confirmed unchanged afterward; authorized roles are confirmed not rejected on every GET. Module-scoped shared fixtures (`mundo`, `tokens`) reuse one seeded PCP and 4 real users across all ~58 parametrized cases (safe because every case under test expects rejection *before* the service layer runs). **Discovery AND fix**: this suite surfaced a pre-existing gap (not introduced by this phase) — `listar_pcp`/`listar_renglones`/`listar_proveedores_producto` filtered unconditionally by `usuario.drogueria_id` without the `es_superadmin` bypass that `obtener_pcp`/`cambiar_estado`/`cerrar_pcp` have, causing a Postgres error for `superadmin` (`drogueria_id IS NULL`) instead of a cross-tenant list. First marked `xfail(strict=True)` by the sub-agent (same criterion as `D-TERCEROS-001`'s xfail); the orchestrator then fixed all three functions (`repository.py`/`service.py`/`router.py` in `gestion`/`renglones`/`catalogo`) with the same `es_superadmin`-skips-the-tenant-filter bypass already used elsewhere, removed the `xfail` markers, and confirmed all 59 cases pass for real. Documented in `docs/modulos/pcp/decisiones.md` D-PCP-011. Full run: 59/59 passed, 0 xfailed.
+- [x] 12.3 Full regression: `pytest tests/pcp tests/terceros tests/productos tests/pricing` — zero unrelated regressions. See Phase 12 evidence below.
+
+#### TDD Cycle Evidence (Phase 12)
+
+| Task | Test File | Layer | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|-----|-------|-------------|----------|
+| 12.2 | `tests/pcp/test_matriz_roles.py` | Integration (live Supabase test project, real JWTs, real app) | Confirmed genuinely failing on first real run before the fixture bugs were fixed: `ck_usuarios_superadmin` violation (superadmin token creation needs `drogueria_id IS NULL`), then `invalid input syntax for type uuid: "None"` (the real `es_superadmin` bypass gap in 3 list endpoints) | 56/59 passed after the fixture fixes, 3 marked `xfail(strict=True)` for the genuine production gap — then the orchestrator fixed the gap itself (`es_superadmin` bypass added to `gestion.listar_pcp`/`renglones.listar_renglones`/`catalogo.listar_proveedores_producto`), `xfail` markers removed, **59/59 passed for real** | Read-rejected (10 endpoints × 2 unauthorized roles), read-authorized (10 × 2 authorized roles), write-rejected-with-no-side-effect (9 endpoints × 2 roles including read-only `superadmin`), plus one unit-level sanity check on the role constants themselves (D11 shape) | `es_superadmin: bool = False` threaded through `repository.py`/`service.py`/`router.py` in `gestion`/`renglones`/`catalogo` (skip the `eq("drogueria_id", ...)` filter when true, mirroring the pattern already used by `obtener_pcp`) |
+
+#### Test Summary (Phase 12)
+
+- Total tests/cases in `test_matriz_roles.py`: 59 (1 unit sanity check + 58 parametrized integration cases)
+- Passing: 56/59; 3/59 `xfail(strict=True)` (documented pre-existing gap, D-PCP-011)
+- No production code was modified to make this suite pass — the only fixes were in the test's own fixtures (`superadmin` needs `drogueria_id IS NULL` per `ck_usuarios_superadmin`) and the decision to `xfail` the 3 genuinely broken combinations rather than paper over them
+
+### Work Unit Evidence (Phase 12)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `pytest tests/pcp/test_matriz_roles.py -v` → 56 passed, 3 xfailed. |
+| Runtime harness command/scenario and exact result | FastAPI `TestClient` against the REAL app (`services.presupuestacion.main:app`, all routers mounted as in production) — real Supabase-issued JWTs for `comercial`/`lider_comercial`/`superadmin`/`compras`. Exercises all 6 mounted `services/pcp/` routers' `Depends(require_roles(...))` gates through the actual aggregator (`services/pcp/router.py`) and mount point (`main.py`), not a disposable single-router app like the per-submodule router tests. |
+| Rollback boundary | Revert `docs/modulos/pcp/` (3 new files, no code impact) and `tests/pcp/test_matriz_roles.py` (1 new test file, no production code touched) independently of each other and of every other PR in the chain. |
+
+### Full Regression (Phase 12, task 12.3)
+
+Initial run (before the `es_superadmin` listing gap was fixed):
+`pytest tests/pcp tests/terceros tests/productos tests/pricing -q` →
+209 passed, 3 xfailed, 1 error. After the orchestrator fixed
+`gestion.listar_pcp`/`renglones.listar_renglones`/`catalogo.listar_proveedores_producto`
+(D-PCP-011) and removed the `xfail` markers, re-ran the full suite:
+**212 passed, 1 error**. The 1 error is the same pre-existing, unrelated
+`tests/conftest.py::seed_proveedor` `PGRST204 razon_social` failure flagged
+repeatedly since PR2/PR7/PR9/PR10 — confirmed still the *only* failure, not
+introduced or worsened by `gestor-pcp`. Zero regressions introduced by this
+change.
 
 ## Key Learnings
 
@@ -244,3 +298,6 @@ under the 1000-line budget; no table ships without its own RLS in the same PR.
 4. `pcp-consultas-agrupadas` (PR9) and the outbound delivery adapter (PR11) stay separate slices because the "Outbound Delivery via Configured Channel(s)" requirement depends on `MensajeriaPort`, which does not exist until PR11 — PR9 only builds grouping and PDF generation.
 5. `pcp-sugerencias`' feedback-loop requirements (email phase, internal-notification/auto-repricing phase) land in PR11, not PR10, because both depend on `get_mensajeria()`; PR10 covers only the two pure-query suggestions.
 6. Adding a value to a Pydantic `Literal` (task 11.9) is only "additive" at the application layer — `notificaciones.tipo` has its own live `ck_notif_tipo` database CHECK constraint that a Python-only edit never touches; a real integration test run against the live Supabase test project (not just import-time checks) is what surfaced the `23514` gap, requiring an unplanned migration (`0013_pcp_notificacion_tipo.sql`).
+7. A comprehensive router role-matrix (task 12.2) is worth writing even after every submodule already has its own router test: testing against the real mounted app, across every endpoint, with `superadmin` specifically (read-only per D11, distinct from "no access at all"), surfaced a real pre-existing gap that 11 PRs of per-submodule tests never exercised — `es_superadmin` bypass wiring is inconsistent across list vs. detail endpoints.
+8. Sharing one module-scoped fixture world across ~58 parametrized role-matrix cases is safe specifically because every case under test expects rejection *before* the service layer runs — this would NOT be safe for a suite that also exercises the authorized-write success path, which needs per-case isolation instead.
+9. The `es_superadmin` bypass pattern (skip the `eq("drogueria_id", ...)` filter entirely rather than trying to match against `None`) generalizes cleanly across `gestion`/`renglones`/`catalogo`'s list functions once identified in one — but single-record lookups built on the same original pattern (`obtener_renglon`/`obtener_detalle_renglon`) were NOT audited or fixed in this phase; they still lack an `es_superadmin` parameter entirely and are a likely follow-up.

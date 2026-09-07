@@ -38,8 +38,15 @@ def listar_pcp(
     estado: str | None = None,
     fecha_desde: str | None = None,
     fecha_hasta: str | None = None,
+    es_superadmin: bool = False,
 ) -> list[dict[str, Any]]:
-    query = client.table("pcp").select("*").eq("drogueria_id", drogueria_id)
+    # superadmin no tiene drogueria_id (None) -- filtrar por
+    # eq("drogueria_id", None) lo serializa como el literal "None" y Postgres
+    # lo rechaza (22P02, D-PCP-011). RLS (mismo_tenant()) ya deja pasar a
+    # superadmin sin este filtro de aplicación, igual que obtener_pcp.
+    query = client.table("pcp").select("*")
+    if not es_superadmin:
+        query = query.eq("drogueria_id", drogueria_id)
     if estado is not None:
         query = query.eq("estado", estado)
     if fecha_desde is not None:

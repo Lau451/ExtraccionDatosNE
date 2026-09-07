@@ -62,8 +62,12 @@ def obtener_renglon(client: Client, *, renglon_id: str, drogueria_id: str) -> di
     return fila
 
 
-def listar_renglones(client: Client, *, pcp_id: str, drogueria_id: str) -> list[dict[str, Any]]:
-    return repo.listar_renglones(client, pcp_id=pcp_id, drogueria_id=drogueria_id)
+def listar_renglones(
+    client: Client, *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> list[dict[str, Any]]:
+    return repo.listar_renglones(
+        client, pcp_id=pcp_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
 
 
 def listar_resultados_renglon(
@@ -163,8 +167,12 @@ def crear_renglon_para_endpoint(
     )
 
 
-def listar_renglones_para_endpoint(*, pcp_id: str, drogueria_id: str) -> list[dict[str, Any]]:
-    return listar_renglones(get_service_client(), pcp_id=pcp_id, drogueria_id=drogueria_id)
+def listar_renglones_para_endpoint(
+    *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> list[dict[str, Any]]:
+    return listar_renglones(
+        get_service_client(), pcp_id=pcp_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
+    )
 
 
 def obtener_detalle_renglon_para_endpoint(*, renglon_id: str, drogueria_id: str) -> dict[str, Any]:

@@ -82,6 +82,7 @@ def listar_pcp(
     estado: str | None = None,
     fecha_desde: str | None = None,
     fecha_hasta: str | None = None,
+    es_superadmin: bool = False,
 ) -> list[dict[str, Any]]:
     return repo.listar_pcp(
         client,
@@ -89,6 +90,7 @@ def listar_pcp(
         estado=estado,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        es_superadmin=es_superadmin,
     )
 
 
