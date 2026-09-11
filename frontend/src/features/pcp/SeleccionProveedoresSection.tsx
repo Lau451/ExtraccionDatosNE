@@ -20,6 +20,15 @@ export function SeleccionProveedoresSection({
     mutationFn: () => seleccionarProveedores(pcpId, renglonId, proveedorIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pcpQueryKeys.renglon(pcpId, renglonId), exact: true })
+      // exact:true arriba deliberadamente NO cascadea a descendientes (ver
+      // "Corrective Rerun — Exact renglón invalidation" en
+      // apply-progress.md) -- pero eso incluía sin querer a
+      // resultadosRenglon(...), que ComparacionProveedoresTable sí necesita
+      // refrescar acá: nuevos proveedores confirmados quedan con "Sin
+      // resultado aún" hasta que su fila (sin_respuesta) exista y se lea.
+      // Se invalida explícitamente en vez de confiar en un prefix-match
+      // implícito de renglon(...).
+      queryClient.invalidateQueries({ queryKey: pcpQueryKeys.resultadosRenglon(pcpId, renglonId) })
       setProveedorIds([])
     },
   })

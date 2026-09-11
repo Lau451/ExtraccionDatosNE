@@ -5,6 +5,7 @@ import {
   registrarResultado,
   type ProductoProveedor,
   type RegistrarResultadoPayload,
+  type ResultadoNegociacion,
   type ResultadoNegociacionTipo,
 } from '@/lib/api/pcp'
 import { pcpQueryKeys } from './queryKeys'
@@ -45,7 +46,20 @@ export function RegistrarResultadoDialog({
       return registrarResultado(pcpId, renglonId, proveedor.proveedor_id, payload)
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(pcpQueryKeys.resultado(pcpId, renglonId, proveedor.proveedor_id), data)
+      // ComparacionProveedoresTable lee de la clave batched
+      // (resultadosRenglon), no de la clave por-proveedor -- se reemplaza el
+      // elemento correspondiente ahí para reflejar el resultado recién
+      // registrado sin un refetch completo.
+      queryClient.setQueryData<ResultadoNegociacion[] | undefined>(
+        pcpQueryKeys.resultadosRenglon(pcpId, renglonId),
+        (actuales) => {
+          if (!actuales) return actuales
+          const yaExiste = actuales.some((resultado) => resultado.proveedor_id === proveedor.proveedor_id)
+          return yaExiste
+            ? actuales.map((resultado) => (resultado.proveedor_id === proveedor.proveedor_id ? data : resultado))
+            : [...actuales, data]
+        },
+      )
       setOpen(false)
     },
   })

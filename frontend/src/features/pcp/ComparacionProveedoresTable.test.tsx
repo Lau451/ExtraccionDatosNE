@@ -3,22 +3,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProductoProveedor } from '@/lib/api/pcp'
 
-const { MockApiError } = vi.hoisted(() => ({
-  MockApiError: class extends Error {
-    status: number
-
-    constructor(message: string, status: number) {
-      super(message)
-      this.status = status
-    }
-  },
-}))
-
-vi.mock('@/lib/api/presupuestacion', () => ({ ApiError: MockApiError }))
-vi.mock('@/lib/api/pcp', () => ({ obtenerResultado: vi.fn(), actualizarSeleccion: vi.fn() }))
+vi.mock('@/lib/api/pcp', () => ({ listarResultadosRenglon: vi.fn(), actualizarSeleccion: vi.fn() }))
 
 import { ComparacionProveedoresTable } from './ComparacionProveedoresTable'
-import { obtenerResultado, actualizarSeleccion } from '@/lib/api/pcp'
+import { listarResultadosRenglon, actualizarSeleccion } from '@/lib/api/pcp'
 import { pcpQueryKeys } from './queryKeys'
 
 const PROVEEDORES: ProductoProveedor[] = [
@@ -59,13 +47,13 @@ function renderTabla(overrides: { proveedores?: ProductoProveedor[], puedeEscrib
 }
 
 beforeEach(() => {
-  vi.mocked(obtenerResultado).mockReset()
+  vi.mocked(listarResultadosRenglon).mockReset()
   vi.mocked(actualizarSeleccion).mockReset()
 })
 
 describe('ComparacionProveedoresTable', () => {
-  it('muestra un estado de carga mientras se obtienen los resultados de negociación', () => {
-    vi.mocked(obtenerResultado).mockReturnValue(new Promise(() => {}))
+  it('muestra un estado de carga mientras se obtiene la comparación', () => {
+    vi.mocked(listarResultadosRenglon).mockReturnValue(new Promise(() => {}))
 
     renderTabla()
 
@@ -78,39 +66,40 @@ describe('ComparacionProveedoresTable', () => {
 
     expect(screen.getByText('No hay proveedores catalogados para este renglón.')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    expect(obtenerResultado).not.toHaveBeenCalled()
+    expect(listarResultadosRenglon).not.toHaveBeenCalled()
   })
 
-  it('trata una respuesta 404 por proveedor como "sin resultado aún", no como un error, en un fan-out acotado', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') throw new MockApiError('No encontrado', 404)
-      return resultadoDe(proveedorId) as never
-    })
+  it('llama a la lectura batched una sola vez por su ruta exacta, en vez de un fan-out por proveedor', async () => {
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1'), resultadoDe('prov-2')] as never)
+
+    renderTabla()
+
+    await screen.findAllByText('Precio obtenido')
+    expect(listarResultadosRenglon).toHaveBeenCalledTimes(1)
+    expect(listarResultadosRenglon).toHaveBeenCalledWith('pcp-1', 'reng-1')
+  })
+
+  it('trata a un proveedor ausente de la lista batched como "sin resultado aún", no como un error', async () => {
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-2')] as never)
 
     renderTabla()
 
     expect(await screen.findByText('Sin resultado aún')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(obtenerResultado).toHaveBeenCalledTimes(2)
-    expect(obtenerResultado).toHaveBeenCalledWith('pcp-1', 'reng-1', 'prov-1')
-    expect(obtenerResultado).toHaveBeenCalledWith('pcp-1', 'reng-1', 'prov-2')
   })
 
-  it('distingue un error real de carga de "sin resultado aún" y no lo oculta como si no hubiera dato', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') throw new MockApiError('Error del servidor', 500)
-      return resultadoDe(proveedorId) as never
-    })
+  it('distingue un fallo real de carga de "sin resultado aún" con un mensaje a nivel de tabla', async () => {
+    vi.mocked(listarResultadosRenglon).mockRejectedValue(new Error('Error del servidor'))
 
     renderTabla()
 
-    expect(await screen.findByText('Error al cargar el resultado')).toBeInTheDocument()
+    expect(await screen.findByText('Error al cargar la comparación de proveedores.')).toBeInTheDocument()
     expect(screen.queryByText('Sin resultado aún')).not.toBeInTheDocument()
-    expect(screen.getByText('Precio obtenido')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('muestra el resultado precio_obtenido de un proveedor', async () => {
-    vi.mocked(obtenerResultado).mockResolvedValue(resultadoDe('prov-1') as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1')] as never)
 
     renderTabla({ proveedores: [PROVEEDORES[0]] })
 
@@ -119,9 +108,9 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('muestra el resultado no_cotiza junto al motivo, sin ningún precio', async () => {
-    vi.mocked(obtenerResultado).mockResolvedValue(resultadoDe('prov-1', {
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1', {
       resultado: 'no_cotiza', precio_proveedor_id: null, motivo: 'Sin stock disponible',
-    }) as never)
+    })] as never)
 
     renderTabla({ proveedores: [PROVEEDORES[0]] })
 
@@ -131,7 +120,7 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('renderiza columnas de escritorio, una por proveedor catalogado', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => resultadoDe(proveedorId) as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1'), resultadoDe('prov-2')] as never)
 
     renderTabla()
 
@@ -142,7 +131,7 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('renderiza tarjetas móviles con los mismos datos que la tabla de escritorio', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => resultadoDe(proveedorId) as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1'), resultadoDe('prov-2')] as never)
 
     renderTabla()
 
@@ -155,7 +144,7 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('no muestra ningún control de mutación para un rol de solo lectura', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => resultadoDe(proveedorId) as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1'), resultadoDe('prov-2')] as never)
 
     renderTabla({ puedeEscribir: false })
 
@@ -165,7 +154,7 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('nunca renderiza un control para cerrar el PCP, ni siquiera con permisos de escritura', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => resultadoDe(proveedorId) as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoDe('prov-1'), resultadoDe('prov-2')] as never)
 
     renderTabla({ puedeEscribir: true })
 
@@ -175,7 +164,10 @@ describe('ComparacionProveedoresTable', () => {
   })
 
   it('permite dos proveedores marcados como seleccionado de forma simultánea y no exclusiva', async () => {
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => resultadoDe(proveedorId, { seleccionado: true }) as never)
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([
+      resultadoDe('prov-1', { seleccionado: true }),
+      resultadoDe('prov-2', { seleccionado: true }),
+    ] as never)
 
     renderTabla({ puedeEscribir: true })
 
@@ -184,12 +176,9 @@ describe('ComparacionProveedoresTable', () => {
     expect(screen.getAllByRole('button', { name: 'Quitar selección' })).toHaveLength(2)
   })
 
-  it('escribe la fila devuelta en la clave de resultado existente y solo invalida la clave de selección al marcar', async () => {
+  it('escribe la fila devuelta en la clave batched existente y solo invalida selección/agrupables al marcar', async () => {
     const resultadoInicial = resultadoDe('prov-1', { precio_unitario: 100, cantidad_minima: 5 })
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') return resultadoInicial as never
-      throw new MockApiError('No encontrado', 404)
-    })
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoInicial] as never)
     vi.mocked(actualizarSeleccion).mockResolvedValue({ ...resultadoInicial, seleccionado: true } as never)
 
     const { client } = renderTabla({ proveedores: [PROVEEDORES[0]], puedeEscribir: true })
@@ -200,23 +189,22 @@ describe('ComparacionProveedoresTable', () => {
 
     await waitFor(() => expect(actualizarSeleccion).toHaveBeenCalledWith('pcp-1', 'reng-1', 'prov-1', true))
 
-    const claveResultado = pcpQueryKeys.resultado('pcp-1', 'reng-1', 'prov-1')
-    await waitFor(() => expect(setQueryData).toHaveBeenCalledWith(claveResultado, expect.any(Function)))
-    expect(client.getQueryData(claveResultado)).toMatchObject({ seleccionado: true, precio_unitario: 100, cantidad_minima: 5 })
+    const claveResultados = pcpQueryKeys.resultadosRenglon('pcp-1', 'reng-1')
+    await waitFor(() => expect(setQueryData).toHaveBeenCalledWith(claveResultados, expect.any(Function)))
+    const actual = client.getQueryData<typeof resultadoInicial[]>(claveResultados)
+    expect(actual).toMatchObject([{ seleccionado: true, precio_unitario: 100, cantidad_minima: 5 }])
 
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pcpQueryKeys.seleccion('pcp-1') })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pcpQueryKeys.seleccionesAgrupables('pcp-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: pcpQueryKeys.detalle('pcp-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: pcpQueryKeys.renglones('pcp-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: pcpQueryKeys.renglon('pcp-1', 'reng-1') })
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: claveResultado })
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: claveResultados })
   })
 
   it('muestra un mensaje de error si falla la actualización de selección, sin dejar al usuario sin feedback', async () => {
     const resultadoInicial = resultadoDe('prov-1', { precio_unitario: 100 })
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') return resultadoInicial as never
-      throw new MockApiError('No encontrado', 404)
-    })
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoInicial] as never)
     vi.mocked(actualizarSeleccion).mockRejectedValue(new Error('network error'))
 
     renderTabla({ proveedores: [PROVEEDORES[0]], puedeEscribir: true })
@@ -228,10 +216,7 @@ describe('ComparacionProveedoresTable', () => {
 
   it('repite el mismo contrato de caché al desmarcar una selección ya persistida', async () => {
     const resultadoSeleccionado = resultadoDe('prov-1', { seleccionado: true, precio_unitario: 250 })
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') return resultadoSeleccionado as never
-      throw new MockApiError('No encontrado', 404)
-    })
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoSeleccionado] as never)
     vi.mocked(actualizarSeleccion).mockResolvedValue({ ...resultadoSeleccionado, seleccionado: false } as never)
 
     const { client } = renderTabla({ proveedores: [PROVEEDORES[0]], puedeEscribir: true })
@@ -241,10 +226,14 @@ describe('ComparacionProveedoresTable', () => {
 
     await waitFor(() => expect(actualizarSeleccion).toHaveBeenCalledWith('pcp-1', 'reng-1', 'prov-1', false))
 
-    const claveResultado = pcpQueryKeys.resultado('pcp-1', 'reng-1', 'prov-1')
-    await waitFor(() => expect(client.getQueryData(claveResultado)).toMatchObject({ seleccionado: false, precio_unitario: 250 }))
+    const claveResultados = pcpQueryKeys.resultadosRenglon('pcp-1', 'reng-1')
+    await waitFor(() => {
+      const actual = client.getQueryData<typeof resultadoSeleccionado[]>(claveResultados)
+      expect(actual).toMatchObject([{ seleccionado: false, precio_unitario: 250 }])
+    })
 
-    expect(invalidateQueries).toHaveBeenCalledTimes(1)
+    expect(invalidateQueries).toHaveBeenCalledTimes(2)
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pcpQueryKeys.seleccion('pcp-1') })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pcpQueryKeys.seleccionesAgrupables('pcp-1') })
   })
 })

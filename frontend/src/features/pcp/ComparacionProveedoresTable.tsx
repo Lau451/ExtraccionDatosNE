@@ -1,15 +1,12 @@
 import { type ReactNode, useState } from 'react'
-import { useQueries, useQueryClient } from '@tanstack/react-query'
-import { ApiError } from '@/lib/api/presupuestacion'
-import { obtenerResultado, actualizarSeleccion, type ProductoProveedor, type ResultadoNegociacion } from '@/lib/api/pcp'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { actualizarSeleccion, listarResultadosRenglon, type ProductoProveedor, type ResultadoNegociacion } from '@/lib/api/pcp'
 import { pcpQueryKeys } from './queryKeys'
 import { RegistrarResultadoDialog } from './RegistrarResultadoDialog'
 
 interface Columna {
   proveedor: ProductoProveedor
   resultado: ResultadoNegociacion | null
-  /** Fetch fallido con un error distinto de 404 (no confundir con "sin resultado aún"). */
-  error: boolean
 }
 
 function codigoDe(proveedor: ProductoProveedor): string {
@@ -47,19 +44,6 @@ const CRITERIOS_COMPARACION: CriterioComparacion[] = [
   },
 ]
 
-async function obtenerResultadoOSinDato(
-  pcpId: string,
-  renglonId: string,
-  proveedorId: string,
-): Promise<ResultadoNegociacion | null> {
-  try {
-    return await obtenerResultado(pcpId, renglonId, proveedorId)
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return null
-    throw error
-  }
-}
-
 export function ComparacionProveedoresTable({
   pcpId,
   renglonId,
@@ -75,25 +59,33 @@ export function ComparacionProveedoresTable({
   const [proveedorPendiente, setProveedorPendiente] = useState<string | null>(null)
   const [proveedorConError, setProveedorConError] = useState<string | null>(null)
 
-  const consultas = useQueries({
-    queries: proveedores.map((proveedor) => ({
-      queryKey: pcpQueryKeys.resultado(pcpId, renglonId, proveedor.proveedor_id),
-      queryFn: () => obtenerResultadoOSinDato(pcpId, renglonId, proveedor.proveedor_id),
-    })),
+  // Lectura batched -- un único round trip para todos los proveedores del
+  // renglón (GET /pcp/{pcp_id}/renglones/{renglon_id}/resultados), en vez
+  // del fan-out de N useQueries (uno por proveedor) que había antes. Un
+  // fallo real de red/servidor ahora afecta a la consulta entera -- honesto
+  // con la realidad de que es UN solo request, no N independientes.
+  const resultadosQuery = useQuery({
+    queryKey: pcpQueryKeys.resultadosRenglon(pcpId, renglonId),
+    queryFn: () => listarResultadosRenglon(pcpId, renglonId),
+    enabled: proveedores.length > 0,
   })
 
   if (proveedores.length === 0) {
     return <p className="mt-8 text-sm text-slate-500">No hay proveedores catalogados para este renglón.</p>
   }
 
-  if (consultas.some((consulta) => consulta.isPending)) {
+  if (resultadosQuery.isPending) {
     return <p className="mt-8 text-sm text-slate-500">Cargando comparación…</p>
   }
 
-  const columnas: Columna[] = proveedores.map((proveedor, index) => ({
+  if (resultadosQuery.isError) {
+    return <p role="alert" className="mt-8 text-sm text-red-600">Error al cargar la comparación de proveedores.</p>
+  }
+
+  const porProveedor = new Map(resultadosQuery.data.map((resultado) => [resultado.proveedor_id, resultado]))
+  const columnas: Columna[] = proveedores.map((proveedor) => ({
     proveedor,
-    resultado: consultas[index].data ?? null,
-    error: consultas[index].isError,
+    resultado: porProveedor.get(proveedor.proveedor_id) ?? null,
   }))
 
   async function alternarSeleccion(columna: Columna) {
@@ -103,11 +95,18 @@ export function ComparacionProveedoresTable({
     setProveedorConError(null)
     try {
       const actualizado = await actualizarSeleccion(pcpId, renglonId, proveedorId, !columna.resultado.seleccionado)
-      queryClient.setQueryData<ResultadoNegociacion | null>(
-        pcpQueryKeys.resultado(pcpId, renglonId, proveedorId),
-        (actual) => (actual ? { ...actual, seleccionado: actualizado.seleccionado } : actual),
+      queryClient.setQueryData<ResultadoNegociacion[] | undefined>(
+        pcpQueryKeys.resultadosRenglon(pcpId, renglonId),
+        (actuales) =>
+          actuales?.map((resultado) =>
+            resultado.proveedor_id === proveedorId ? { ...resultado, seleccionado: actualizado.seleccionado } : resultado,
+          ),
       )
       queryClient.invalidateQueries({ queryKey: pcpQueryKeys.seleccion(pcpId) })
+      // La selección cambió qué pares renglón×proveedor son agrupables en
+      // una consulta -- sin esto, AgruparConsultaDialog (montado en
+      // PcpDetalle) seguía ofreciendo/omitiendo el mismo listado desactualizado.
+      queryClient.invalidateQueries({ queryKey: pcpQueryKeys.seleccionesAgrupables(pcpId) })
     } catch {
       setProveedorConError(proveedorId)
     } finally {
@@ -132,13 +131,13 @@ export function ComparacionProveedoresTable({
         <tbody>
           <tr className="border-b border-slate-100">
             <th scope="row" className="p-2 text-left font-medium text-slate-600">Resultado</th>
-            {columnas.map(({ proveedor, resultado, error }) => (
+            {columnas.map(({ proveedor, resultado }) => (
               <td
                 key={proveedor.id}
-                className={`p-2 ${resultado?.seleccionado ? 'bg-emerald-50' : ''} ${error ? 'text-red-600' : ''}`}
-                title={resultado ? etiquetaResultado(resultado) : error ? 'Error al cargar el resultado' : 'Sin resultado aún'}
+                className={`p-2 ${resultado?.seleccionado ? 'bg-emerald-50' : ''}`}
+                title={resultado ? etiquetaResultado(resultado) : 'Sin resultado aún'}
               >
-                {resultado ? (resultado.resultado === 'no_cotiza' ? '✕' : '✓') : error ? '⚠' : '—'}
+                {resultado ? (resultado.resultado === 'no_cotiza' ? '✕' : '✓') : '—'}
               </td>
             ))}
           </tr>
@@ -186,7 +185,7 @@ export function ComparacionProveedoresTable({
 
       {/* Móvil: una tarjeta por proveedor, apiladas debajo del breakpoint md. */}
       <ul aria-label="Comparación de proveedores en tarjetas" className="space-y-4 md:hidden">
-        {columnas.map(({ proveedor, resultado, error }) => (
+        {columnas.map(({ proveedor, resultado }) => (
           <li
             key={proveedor.id}
             className={`rounded-lg border border-slate-200 p-4 text-sm ${resultado?.seleccionado ? 'bg-emerald-50' : 'bg-white'}`}
@@ -209,8 +208,6 @@ export function ComparacionProveedoresTable({
                 )}
                 {resultado.seleccionado ? <p className="mt-2 font-semibold text-emerald-700">Seleccionado</p> : null}
               </>
-            ) : error ? (
-              <p className="mt-1 text-red-600" role="alert">Error al cargar el resultado</p>
             ) : (
               <p className="mt-1 text-slate-500">Sin resultado aún</p>
             )}
@@ -221,7 +218,7 @@ export function ComparacionProveedoresTable({
                   <button
                     type="button"
                     disabled={proveedorPendiente === proveedor.proveedor_id}
-                    onClick={() => alternarSeleccion({ proveedor, resultado, error: false })}
+                    onClick={() => alternarSeleccion({ proveedor, resultado })}
                     className="min-h-9 rounded-md border border-slate-300 px-3 text-sm font-medium text-navy disabled:opacity-50"
                   >
                     {resultado.seleccionado ? 'Quitar selección' : 'Seleccionar proveedor'}

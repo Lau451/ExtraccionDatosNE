@@ -16,8 +16,11 @@ export const pcpQueryKeys = {
   seleccionesAgrupables: (pcpId: string) => ['pcp', pcpId, 'selecciones-agrupables'] as const,
   renglones: (pcpId: string) => ['pcp', pcpId, 'renglones'] as const,
   renglon: (pcpId: string, renglonId: string) => ['pcp', pcpId, 'renglones', renglonId] as const,
-  resultado: (pcpId: string, renglonId: string, proveedorId: string) =>
-    ['pcp', pcpId, 'renglones', renglonId, 'resultado', proveedorId] as const,
+  /** Lectura batched -- reemplaza el fan-out de N claves por-proveedor
+   * (una por proveedor) que ComparacionProveedoresTable/RegistrarResultadoDialog
+   * usaban antes. */
+  resultadosRenglon: (pcpId: string, renglonId: string) =>
+    ['pcp', pcpId, 'renglones', renglonId, 'resultados'] as const,
   agrupacion: (renglonId: string) => ['pcp', 'sugerencias', renglonId, 'agrupacion'] as const,
   preciosRecientes: (renglonId: string) =>
     ['pcp', 'sugerencias', renglonId, 'precios-recientes'] as const,

@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from '@/lib/api/presupuestacion'
 import { RenglonDetalle } from './RenglonDetalle'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
@@ -10,14 +9,14 @@ vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfil
 vi.mock('@/lib/api/pcp', () => ({
   obtenerDetalleRenglon: vi.fn(),
   seleccionarProveedores: vi.fn(),
-  obtenerResultado: vi.fn(),
+  listarResultadosRenglon: vi.fn(),
   actualizarSeleccion: vi.fn(),
   obtenerSugerenciaAgrupacion: vi.fn(),
   listarSugerenciasPreciosRecientes: vi.fn(),
 }))
 
 import {
-  obtenerDetalleRenglon, seleccionarProveedores, obtenerResultado, actualizarSeleccion,
+  obtenerDetalleRenglon, seleccionarProveedores, listarResultadosRenglon, actualizarSeleccion,
   obtenerSugerenciaAgrupacion, listarSugerenciasPreciosRecientes,
 } from '@/lib/api/pcp'
 
@@ -47,7 +46,7 @@ beforeEach(() => {
   perfilMock.rol = 'admin'
   vi.mocked(obtenerDetalleRenglon).mockReset().mockResolvedValue(DETALLE_RENGLON as never)
   vi.mocked(seleccionarProveedores).mockReset().mockResolvedValue([])
-  vi.mocked(obtenerResultado).mockReset().mockRejectedValue(new ApiError('No encontrado', 404))
+  vi.mocked(listarResultadosRenglon).mockReset().mockResolvedValue([])
   vi.mocked(obtenerSugerenciaAgrupacion).mockReset().mockResolvedValue(null)
   vi.mocked(listarSugerenciasPreciosRecientes).mockReset().mockResolvedValue([])
 })
@@ -145,10 +144,7 @@ describe('RenglonDetalle', () => {
       precio_unitario: 100, cantidad_minima: null, cantidad_maxima: null, mantenimiento_hasta: null,
       condicion_pago_id: null, forma_pago_id: null, motivo: null, registrado_por: null,
     }
-    vi.mocked(obtenerResultado).mockImplementation(async (_pcpId, _renglonId, proveedorId) => {
-      if (proveedorId === 'prov-1') return resultadoNorte as never
-      throw new ApiError('No encontrado', 404)
-    })
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoNorte] as never)
     vi.mocked(actualizarSeleccion).mockResolvedValue({ ...resultadoNorte, seleccionado: true } as never)
 
     renderDetalle()
