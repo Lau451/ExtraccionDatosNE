@@ -13,7 +13,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 ResultadoNegociacion = Literal["precio_obtenido", "no_cotiza"]
 
@@ -75,12 +75,43 @@ class RegistrarResultadoNegociacion(BaseModel):
         return self
 
 
+class ActualizarSeleccionNegociacion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seleccionado: bool
+
+
+class SeleccionAgrupable(BaseModel):
+    """Un par renglón×proveedor con selección persistida, listo para agrupar
+    en `agruparConsultas` (Corrective Rerun -- Consultas grouping scope,
+    apply-progress.md). Devuelto por `GET /pcp/{pcp_id}/selecciones-agrupables`,
+    un endpoint adicional que no reemplaza ni modifica
+    `GET /pcp/{pcp_id}/seleccion` (badge "Negociado", `list[str]`)."""
+
+    pcp_renglon_id: str
+    proveedor_id: str
+
+
 class ResultadoNegociacionOut(BaseModel):
+    """`precio_unitario`..`forma_pago_id` son un JOIN de lectura sobre
+    `precios_proveedor` a través de `precio_proveedor_id` (design.md
+    "Comparison Table" / `ResultadoNegociacionOut` extension) -- la fila de
+    `pcp_renglon_resultados` en sí nunca guarda esos valores, solo el FK.
+    Quedan en `None` cuando `precio_proveedor_id` es `None` (`no_cotiza` o el
+    `sin_respuesta` inicial de `seleccionar_proveedores`)."""
+
     id: str
     drogueria_id: str
     pcp_renglon_id: str
     proveedor_id: str
     resultado: str
+    seleccionado: bool
     precio_proveedor_id: str | None
+    precio_unitario: Decimal | None = None
+    cantidad_minima: Decimal | None = None
+    cantidad_maxima: Decimal | None = None
+    mantenimiento_hasta: date | None = None
+    condicion_pago_id: str | None = None
+    forma_pago_id: str | None = None
     motivo: str | None
     registrado_por: str | None

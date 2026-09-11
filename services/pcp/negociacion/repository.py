@@ -11,6 +11,21 @@ def crear_precio_proveedor(client: Client, fila: dict[str, Any]) -> dict[str, An
     return client.table("precios_proveedor").insert(fila).execute().data[0]
 
 
+def obtener_precio_proveedor(client: Client, *, precio_proveedor_id: str) -> dict[str, Any] | None:
+    """Lectura del JOIN que alimenta `ResultadoNegociacionOut` (design.md
+    "Comparison Table"): `pcp_renglon_resultados` solo guarda
+    `precio_proveedor_id`, los valores de precio/condiciones viven en
+    `precios_proveedor` (`crear_precio_proveedor` es quien la escribe)."""
+    resultado = (
+        client.table("precios_proveedor")
+        .select("*")
+        .eq("id", precio_proveedor_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
 def buscar_resultado(
     client: Client, *, pcp_renglon_id: str, proveedor_id: str
 ) -> dict[str, Any] | None:
@@ -75,4 +90,57 @@ def upsert_resultado(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
         .upsert(fila, on_conflict="pcp_renglon_id,proveedor_id")
         .execute()
         .data[0]
+    )
+
+
+def actualizar_seleccion(
+    client: Client, *, pcp_renglon_id: str, proveedor_id: str, seleccionado: bool
+) -> dict[str, Any] | None:
+    resultado = (
+        client.table("pcp_renglon_resultados")
+        .update({"seleccionado": seleccionado})
+        .eq("pcp_renglon_id", pcp_renglon_id)
+        .eq("proveedor_id", proveedor_id)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def listar_pcp_renglon_ids_seleccionados(
+    client: Client, *, pcp_renglon_ids: list[str]
+) -> list[str]:
+    if not pcp_renglon_ids:
+        return []
+    return [
+        fila["pcp_renglon_id"]
+        for fila in (
+            client.table("pcp_renglon_resultados")
+            .select("pcp_renglon_id")
+            .in_("pcp_renglon_id", pcp_renglon_ids)
+            .eq("seleccionado", True)
+            .execute()
+            .data
+        )
+    ]
+
+
+def listar_pcp_renglon_proveedor_seleccionados(
+    client: Client, *, pcp_renglon_ids: list[str]
+) -> list[dict[str, Any]]:
+    """Misma tabla/filtro que `listar_pcp_renglon_ids_seleccionados` (arriba),
+    pero devuelve el par `(pcp_renglon_id, proveedor_id)` completo en vez de
+    solo el id de renglón. Alimenta `agrupar_renglones` (`consultas/service.py`),
+    que necesita ambos ids para construir cada `SeleccionParaAgrupar` (Corrective
+    Rerun -- Consultas grouping scope, apply-progress.md): un renglón puede
+    tener más de un proveedor `seleccionado` (Work Unit 5), así que las filas
+    no se deduplican por renglón acá."""
+    if not pcp_renglon_ids:
+        return []
+    return (
+        client.table("pcp_renglon_resultados")
+        .select("pcp_renglon_id, proveedor_id")
+        .in_("pcp_renglon_id", pcp_renglon_ids)
+        .eq("seleccionado", True)
+        .execute()
+        .data
     )

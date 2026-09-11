@@ -17,12 +17,21 @@ import pytest
 
 from services.pcp.gestion.models import PcpCreate
 from services.pcp.gestion.service import crear_pcp
-from services.pcp.negociacion.models import RegistrarResultadoNegociacion
-from services.pcp.negociacion.service import obtener_resultado, registrar_resultado
+from services.pcp.negociacion.models import (
+    ActualizarSeleccionNegociacion,
+    RegistrarResultadoNegociacion,
+)
+from services.pcp.negociacion.service import (
+    actualizar_seleccion,
+    listar_renglones_seleccionados,
+    listar_selecciones_agrupables,
+    obtener_resultado,
+    registrar_resultado,
+)
 from services.pcp.renglones.models import PcpRenglonCreate
 from services.pcp.renglones.service import crear_renglon, seleccionar_proveedores
 from services.presupuestacion.pricing.repository import buscar_precio_especial_puntual
-from services.shared.exceptions import ValidationError as ServiceValidationError
+from services.shared.exceptions import NotFoundError, ValidationError as ServiceValidationError
 
 
 def _crear_pcp_renglon_seleccionado(
@@ -667,3 +676,312 @@ def test_precio_con_mantenimiento_hasta_vencido_no_es_considerado_valido(
         assert resultado is None
     finally:
         service_client.table("precios_proveedor").delete().eq("id", vencido["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
+# PCP frontend backend prerequisite -- persisted, non-exclusive selection
+# ---------------------------------------------------------------------------
+
+
+def test_actualizar_seleccion_rechaza_campos_adicionales():
+    assert ActualizarSeleccionNegociacion(seleccionado=True).seleccionado is True
+    with pytest.raises(PydanticValidationError):
+        ActualizarSeleccionNegociacion(seleccionado=False, resultado="no_cotiza")
+
+
+@pytest.mark.integration
+def test_actualizar_seleccion_persiste_default_toggle_y_no_cotiza(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[seed_proveedor_pcp["id"]],
+    )
+    try:
+        assert obtener_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+        )["seleccionado"] is False
+        with pytest.raises(NotFoundError):
+            actualizar_seleccion(
+                service_client,
+                drogueria_id=seed_drogueria["id"],
+                pcp_renglon_id=renglon["id"],
+                proveedor_id="00000000-0000-0000-0000-000000000000",
+                seleccionado=True,
+                usuario_id=seed_usuario_sistema["id"],
+            )
+        registrar_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            body=RegistrarResultadoNegociacion(resultado="no_cotiza", motivo="Sin stock"),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+        assert actualizar_seleccion(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            seleccionado=True,
+            usuario_id=seed_usuario_sistema["id"],
+        )["seleccionado"] is True
+        assert actualizar_seleccion(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            seleccionado=False,
+            usuario_id=seed_usuario_sistema["id"],
+        )["seleccionado"] is False
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
+# PCP frontend backend gap -- ResultadoNegociacionOut read model must join
+# precios_proveedor (precio_unitario, cantidad_minima/maxima,
+# mantenimiento_hasta, condicion_pago_id, forma_pago_id) instead of exposing
+# only the precio_proveedor_id FK, per design.md "Comparison Table".
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_obtener_resultado_precio_obtenido_incluye_precio_y_condiciones_joined(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+    seed_condicion_pago_pcp_factory,
+    seed_forma_pago_pcp_factory,
+):
+    condicion = seed_condicion_pago_pcp_factory()
+    forma = seed_forma_pago_pcp_factory()
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[seed_proveedor_pcp["id"]],
+    )
+    vencimiento = date.today() + timedelta(days=30)
+
+    try:
+        registrar_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            body=RegistrarResultadoNegociacion(
+                resultado="precio_obtenido",
+                precio_unitario=Decimal("123.45"),
+                cantidad_minima=Decimal("1"),
+                cantidad_maxima=Decimal("100"),
+                mantenimiento_hasta=vencimiento,
+                condicion_pago_id=condicion["id"],
+                forma_pago_id=forma["id"],
+            ),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+
+        resultado = obtener_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+        )
+
+        assert Decimal(str(resultado["precio_unitario"])) == Decimal("123.45")
+        assert Decimal(str(resultado["cantidad_minima"])) == Decimal("1")
+        assert Decimal(str(resultado["cantidad_maxima"])) == Decimal("100")
+        assert resultado["mantenimiento_hasta"] == vencimiento.isoformat()
+        assert resultado["condicion_pago_id"] == condicion["id"]
+        assert resultado["forma_pago_id"] == forma["id"]
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+        service_client.table("precios_proveedor").delete().eq(
+            "item_proceso_id", seed_item_proceso["id"]
+        ).execute()
+        service_client.table("condiciones_pago").delete().eq("id", condicion["id"]).execute()
+        service_client.table("formas_pago").delete().eq("id", forma["id"]).execute()
+
+
+@pytest.mark.integration
+def test_obtener_resultado_no_cotiza_no_incluye_precio_ni_condiciones(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[seed_proveedor_pcp["id"]],
+    )
+
+    try:
+        registrar_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+            body=RegistrarResultadoNegociacion(resultado="no_cotiza", motivo="Sin stock"),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+
+        resultado = obtener_resultado(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            pcp_renglon_id=renglon["id"],
+            proveedor_id=seed_proveedor_pcp["id"],
+        )
+
+        assert resultado["precio_unitario"] is None
+        assert resultado["cantidad_minima"] is None
+        assert resultado["cantidad_maxima"] is None
+        assert resultado["mantenimiento_hasta"] is None
+        assert resultado["condicion_pago_id"] is None
+        assert resultado["forma_pago_id"] is None
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+@pytest.mark.integration
+def test_seleccion_es_no_exclusiva_y_el_agregado_deduplica_renglones(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedores_pcp_factory,
+):
+    proveedor_a, proveedor_b = seed_proveedores_pcp_factory(2)
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[proveedor_a["id"], proveedor_b["id"]],
+    )
+    try:
+        for proveedor in (proveedor_a, proveedor_b):
+            actualizar_seleccion(
+                service_client,
+                drogueria_id=seed_drogueria["id"],
+                pcp_renglon_id=renglon["id"],
+                proveedor_id=proveedor["id"],
+                seleccionado=True,
+                usuario_id=seed_usuario_sistema["id"],
+            )
+        assert listar_renglones_seleccionados(
+            service_client,
+            pcp_id=pcp["id"],
+            drogueria_id=seed_drogueria["id"],
+        ) == [renglon["id"]]
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+# ---------------------------------------------------------------------------
+# Corrective Rerun -- listar_selecciones_agrupables (renglón×proveedor pairs
+# for grouping into consultations; see openspec/changes/pcp-frontend
+# apply-progress.md "Corrective Rerun -- Consultas grouping scope")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_listar_selecciones_agrupables_devuelve_un_par_por_proveedor_seleccionado(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedores_pcp_factory,
+):
+    proveedor_a, proveedor_b = seed_proveedores_pcp_factory(2)
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[proveedor_a["id"], proveedor_b["id"]],
+    )
+    try:
+        for proveedor in (proveedor_a, proveedor_b):
+            actualizar_seleccion(
+                service_client,
+                drogueria_id=seed_drogueria["id"],
+                pcp_renglon_id=renglon["id"],
+                proveedor_id=proveedor["id"],
+                seleccionado=True,
+                usuario_id=seed_usuario_sistema["id"],
+            )
+        pares = listar_selecciones_agrupables(
+            service_client,
+            pcp_id=pcp["id"],
+            drogueria_id=seed_drogueria["id"],
+        )
+        assert sorted(pares, key=lambda par: par["proveedor_id"]) == sorted(
+            [
+                {"pcp_renglon_id": renglon["id"], "proveedor_id": proveedor_a["id"]},
+                {"pcp_renglon_id": renglon["id"], "proveedor_id": proveedor_b["id"]},
+            ],
+            key=lambda par: par["proveedor_id"],
+        )
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+@pytest.mark.integration
+def test_listar_selecciones_agrupables_omite_renglon_sin_seleccion(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+):
+    presupuesto = seed_presupuesto_factory()
+    pcp, renglon = _crear_pcp_renglon_seleccionado(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proveedor_ids=[seed_proveedor_pcp["id"]],
+    )
+    try:
+        assert listar_selecciones_agrupables(
+            service_client,
+            pcp_id=pcp["id"],
+            drogueria_id=seed_drogueria["id"],
+        ) == []
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()

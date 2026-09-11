@@ -26,8 +26,17 @@ def crear_usuario_con_token(service_client):
         )
         usuario_id = auth_response.user.id
         creados.append(usuario_id)
+        # ck_usuarios_superadmin requires superadmin users to be global
+        # support accounts, not tenant-bound users. The PCP role gate only
+        # needs the role claim for this fixture, so keep the database row valid
+        # while still exercising the read-only superadmin path.
         service_client.table("usuarios").insert(
-            {"id": usuario_id, "drogueria_id": drogueria_id, "rol": rol, "nombre": "Router test"}
+            {
+                "id": usuario_id,
+                "drogueria_id": None if rol == "superadmin" else drogueria_id,
+                "rol": rol,
+                "nombre": "Router test",
+            }
         ).execute()
 
         cliente_temporal = create_client(settings.supabase_url, settings.supabase_anon_key)

@@ -78,6 +78,32 @@ def _validar_condicion_y_forma_pago(
             raise ValidationError("La forma de pago no pertenece a esta droguería") from exc
 
 
+_CAMPOS_PRECIO_PROVEEDOR = (
+    "precio_unitario",
+    "cantidad_minima",
+    "cantidad_maxima",
+    "mantenimiento_hasta",
+    "condicion_pago_id",
+    "forma_pago_id",
+)
+
+
+def _con_datos_precio_proveedor(client: Client, resultado: dict[str, Any]) -> dict[str, Any]:
+    """Enriquece un resultado con el JOIN de lectura sobre `precios_proveedor`
+    que `ResultadoNegociacionOut` expone (design.md "Comparison Table") --
+    `pcp_renglon_resultados` solo guarda `precio_proveedor_id`, nunca los
+    valores en sí. Sin `precio_proveedor_id` (no_cotiza, o el
+    `sin_respuesta` inicial de `seleccionar_proveedores`) las 6 claves
+    quedan en `None`, nunca inventadas."""
+    datos_precio: dict[str, Any] = dict.fromkeys(_CAMPOS_PRECIO_PROVEEDOR)
+    precio_proveedor_id = resultado.get("precio_proveedor_id")
+    if precio_proveedor_id is not None:
+        precio = repo.obtener_precio_proveedor(client, precio_proveedor_id=precio_proveedor_id)
+        if precio is not None:
+            datos_precio = {campo: precio.get(campo) for campo in _CAMPOS_PRECIO_PROVEEDOR}
+    return {**resultado, **datos_precio}
+
+
 def registrar_resultado(
     client: Client,
     *,
@@ -161,7 +187,7 @@ def registrar_resultado(
         usuario_id=usuario_id,
     )
 
-    return resultado
+    return _con_datos_precio_proveedor(client, resultado)
 
 
 def obtener_resultado(
@@ -176,7 +202,79 @@ def obtener_resultado(
             f"No hay un resultado de negociación registrado para el proveedor "
             f"'{proveedor_id}' en el renglón '{pcp_renglon_id}'"
         )
+    return _con_datos_precio_proveedor(client, resultado)
+
+
+def actualizar_seleccion(
+    client: Client,
+    *,
+    drogueria_id: str,
+    pcp_renglon_id: str,
+    proveedor_id: str,
+    seleccionado: bool,
+    usuario_id: str,
+) -> dict[str, Any]:
+    renglon = renglones_service.obtener_renglon(
+        client, renglon_id=pcp_renglon_id, drogueria_id=drogueria_id
+    )
+    resultado = repo.actualizar_seleccion(
+        client,
+        pcp_renglon_id=renglon["id"],
+        proveedor_id=proveedor_id,
+        seleccionado=seleccionado,
+    )
+    if resultado is None:
+        raise NotFoundError(
+            f"No hay un resultado de negociación registrado para el proveedor "
+            f"'{proveedor_id}' en el renglón '{pcp_renglon_id}'"
+        )
+    historial_service.agregar_evento(
+        client,
+        drogueria_id=drogueria_id,
+        pcp_id=renglon["pcp_id"],
+        pcp_renglon_id=renglon["id"],
+        tipo_evento="resultado_registrado",
+        payload={"proveedor_id": proveedor_id, "seleccionado": seleccionado},
+        usuario_id=usuario_id,
+    )
     return resultado
+
+
+def listar_renglones_seleccionados(
+    client: Client, *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> list[str]:
+    renglones = renglones_service.listar_renglones(
+        client,
+        pcp_id=pcp_id,
+        drogueria_id=drogueria_id,
+        es_superadmin=es_superadmin,
+    )
+    seleccionados = repo.listar_pcp_renglon_ids_seleccionados(
+        client, pcp_renglon_ids=[renglon["id"] for renglon in renglones]
+    )
+    return list(dict.fromkeys(seleccionados))
+
+
+def listar_selecciones_agrupables(
+    client: Client, *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
+) -> list[dict[str, Any]]:
+    """Corrective Rerun -- Consultas grouping scope (apply-progress.md): a
+    diferencia de `listar_renglones_seleccionados` (que colapsa a un id de
+    renglón por badge "Negociado"), esta función devuelve un par
+    `{pcp_renglon_id, proveedor_id}` por cada selección persistida en el PCP,
+    sin colapsar por renglón -- un renglón puede tener más de un proveedor
+    `seleccionado` (Work Unit 5). El frontend usa esta lista completa para
+    armar el `selecciones` de `AgruparConsultaDialog`/`agruparConsultas` a
+    nivel de PCP, no de un único renglón."""
+    renglones = renglones_service.listar_renglones(
+        client,
+        pcp_id=pcp_id,
+        drogueria_id=drogueria_id,
+        es_superadmin=es_superadmin,
+    )
+    return repo.listar_pcp_renglon_proveedor_seleccionados(
+        client, pcp_renglon_ids=[renglon["id"] for renglon in renglones]
+    )
 
 
 # -- 11.7-11.11 (tasks.md Fase 11, design.md D10): cierre de PCP + feedback
@@ -371,6 +469,46 @@ def obtener_resultado_para_endpoint(
         drogueria_id=drogueria_id,
         pcp_renglon_id=pcp_renglon_id,
         proveedor_id=proveedor_id,
+    )
+
+
+def actualizar_seleccion_para_endpoint(
+    *,
+    drogueria_id: str,
+    pcp_renglon_id: str,
+    proveedor_id: str,
+    seleccionado: bool,
+    usuario_id: str,
+) -> dict[str, Any]:
+    return actualizar_seleccion(
+        get_service_client(),
+        drogueria_id=drogueria_id,
+        pcp_renglon_id=pcp_renglon_id,
+        proveedor_id=proveedor_id,
+        seleccionado=seleccionado,
+        usuario_id=usuario_id,
+    )
+
+
+def listar_renglones_seleccionados_para_endpoint(
+    *, drogueria_id: str, pcp_id: str, es_superadmin: bool = False
+) -> list[str]:
+    return listar_renglones_seleccionados(
+        get_service_client(),
+        pcp_id=pcp_id,
+        drogueria_id=drogueria_id,
+        es_superadmin=es_superadmin,
+    )
+
+
+def listar_selecciones_agrupables_para_endpoint(
+    *, drogueria_id: str, pcp_id: str, es_superadmin: bool = False
+) -> list[dict[str, Any]]:
+    return listar_selecciones_agrupables(
+        get_service_client(),
+        pcp_id=pcp_id,
+        drogueria_id=drogueria_id,
+        es_superadmin=es_superadmin,
     )
 
 

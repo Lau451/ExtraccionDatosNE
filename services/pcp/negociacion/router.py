@@ -2,9 +2,17 @@ from fastapi import APIRouter, Depends
 from supabase import Client
 
 from services.pcp.gestion.models import PcpOut
-from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
+from services.pcp.negociacion.models import (
+    ActualizarSeleccionNegociacion,
+    RegistrarResultadoNegociacion,
+    ResultadoNegociacionOut,
+    SeleccionAgrupable,
+)
 from services.pcp.negociacion.service import (
+    actualizar_seleccion_para_endpoint,
     cerrar_pcp_para_endpoint,
+    listar_renglones_seleccionados_para_endpoint,
+    listar_selecciones_agrupables_para_endpoint,
     obtener_resultado,
     registrar_resultado_para_endpoint,
 )
@@ -55,6 +63,50 @@ def obtener_resultado_endpoint(
         drogueria_id=usuario.drogueria_id,
         pcp_renglon_id=renglon_id,
         proveedor_id=proveedor_id,
+    )
+
+
+@router.patch(
+    "/pcp/{pcp_id}/renglones/{renglon_id}/proveedores/{proveedor_id}/seleccion",
+    response_model=ResultadoNegociacionOut,
+)
+def actualizar_seleccion_endpoint(
+    pcp_id: str,
+    renglon_id: str,
+    proveedor_id: str,
+    body: ActualizarSeleccionNegociacion,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+) -> ResultadoNegociacionOut:
+    return actualizar_seleccion_para_endpoint(
+        drogueria_id=usuario.drogueria_id,
+        pcp_renglon_id=renglon_id,
+        proveedor_id=proveedor_id,
+        seleccionado=body.seleccionado,
+        usuario_id=usuario.id,
+    )
+
+
+@router.get("/pcp/{pcp_id}/seleccion", response_model=list[str])
+def listar_renglones_seleccionados_endpoint(
+    pcp_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+) -> list[str]:
+    return listar_renglones_seleccionados_para_endpoint(
+        pcp_id=pcp_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=_es_superadmin(usuario),
+    )
+
+
+@router.get("/pcp/{pcp_id}/selecciones-agrupables", response_model=list[SeleccionAgrupable])
+def listar_selecciones_agrupables_endpoint(
+    pcp_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+) -> list[SeleccionAgrupable]:
+    return listar_selecciones_agrupables_para_endpoint(
+        pcp_id=pcp_id,
+        drogueria_id=usuario.drogueria_id,
+        es_superadmin=_es_superadmin(usuario),
     )
 
 
