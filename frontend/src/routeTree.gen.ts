@@ -26,6 +26,7 @@ import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from '
 import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
 import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
+import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
 import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 
@@ -120,6 +121,12 @@ const AuthenticatedProductosProductoIdRoute =
     path: '/$productoId',
     getParentRoute: () => AuthenticatedProductosRoute,
   } as any)
+const AuthenticatedPcpCatalogoRoute =
+  AuthenticatedPcpCatalogoRouteImport.update({
+    id: '/catalogo',
+    path: '/catalogo',
+    getParentRoute: () => AuthenticatedPcpRoute,
+  } as any)
 const AuthenticatedPcpPcpIdRoute = AuthenticatedPcpPcpIdRouteImport.update({
   id: '/$pcpId',
   path: '/$pcpId',
@@ -143,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -160,6 +168,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -182,6 +191,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/_authenticated/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/_authenticated/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/_authenticated/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/terceros'
     | '/admin/usuarios'
     | '/pcp/$pcpId'
+    | '/pcp/catalogo'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
@@ -221,6 +232,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/usuarios'
     | '/pcp/$pcpId'
+    | '/pcp/catalogo'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
@@ -242,6 +254,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/admin/usuarios'
     | '/_authenticated/pcp/$pcpId'
+    | '/_authenticated/pcp/catalogo'
     | '/_authenticated/productos/$productoId'
     | '/_authenticated/superadmin/empresas'
     | '/_authenticated/terceros/$terceroId'
@@ -380,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProductosProductoIdRouteImport
       parentRoute: typeof AuthenticatedProductosRoute
     }
+    '/_authenticated/pcp/catalogo': {
+      id: '/_authenticated/pcp/catalogo'
+      path: '/catalogo'
+      fullPath: '/pcp/catalogo'
+      preLoaderRoute: typeof AuthenticatedPcpCatalogoRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
     '/_authenticated/pcp/$pcpId': {
       id: '/_authenticated/pcp/$pcpId'
       path: '/$pcpId'
@@ -399,11 +419,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedPcpRouteChildren {
   AuthenticatedPcpPcpIdRoute: typeof AuthenticatedPcpPcpIdRoute
+  AuthenticatedPcpCatalogoRoute: typeof AuthenticatedPcpCatalogoRoute
   AuthenticatedPcpIndexRoute: typeof AuthenticatedPcpIndexRoute
 }
 
 const AuthenticatedPcpRouteChildren: AuthenticatedPcpRouteChildren = {
   AuthenticatedPcpPcpIdRoute: AuthenticatedPcpPcpIdRoute,
+  AuthenticatedPcpCatalogoRoute: AuthenticatedPcpCatalogoRoute,
   AuthenticatedPcpIndexRoute: AuthenticatedPcpIndexRoute,
 }
 
