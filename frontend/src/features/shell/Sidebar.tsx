@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useAuth } from '@/features/auth/AuthContext'
+import { useAuth, type Rol } from '@/features/auth/AuthContext'
+import { PCP_READ_ROLES, puedeRol } from '@/features/pcp/roles'
 
 interface NavItem {
   label: string
@@ -25,6 +26,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Comparativas', to: '/comparativas', disabled: true },
 ]
 
+export function muestraNavegacionPcp(rol: Rol | undefined): boolean {
+  return puedeRol(rol, PCP_READ_ROLES)
+}
+
 export function Sidebar() {
   const { perfil, signOut } = useAuth()
   const navigate = useNavigate()
@@ -36,6 +41,7 @@ export function Sidebar() {
 
   const navItems: NavItem[] = [
     ...NAV_ITEMS,
+    ...(muestraNavegacionPcp(perfil?.rol) ? [{ label: 'PCP', to: '/pcp' }] : []),
     ...(perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
       ? [{ label: 'Usuarios', to: '/admin/usuarios' }]
       : []),

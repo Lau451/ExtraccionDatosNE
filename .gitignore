@@ -23,3 +23,5 @@ __pycache__/
 
 # Windows
 Thumbs.db
+# Local Pi runtime state
+.atl/
