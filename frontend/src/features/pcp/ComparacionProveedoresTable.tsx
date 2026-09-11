@@ -56,8 +56,12 @@ export function ComparacionProveedoresTable({
   puedeEscribir: boolean
 }) {
   const queryClient = useQueryClient()
-  const [proveedorPendiente, setProveedorPendiente] = useState<string | null>(null)
-  const [proveedorConError, setProveedorConError] = useState<string | null>(null)
+  // Estado por-proveedor (no un string compartido): dos alternancias
+  // concurrentes en filas distintas son independientes -- resolver la de un
+  // proveedor no debe reactivar ni limpiar el error del botón de otro que
+  // sigue en vuelo.
+  const [proveedoresPendientes, setProveedoresPendientes] = useState<Set<string>>(new Set())
+  const [proveedoresConError, setProveedoresConError] = useState<Set<string>>(new Set())
 
   // Lectura batched -- un único round trip para todos los proveedores del
   // renglón (GET /pcp/{pcp_id}/renglones/{renglon_id}/resultados), en vez
@@ -91,8 +95,13 @@ export function ComparacionProveedoresTable({
   async function alternarSeleccion(columna: Columna) {
     if (!columna.resultado) return
     const proveedorId = columna.proveedor.proveedor_id
-    setProveedorPendiente(proveedorId)
-    setProveedorConError(null)
+    setProveedoresPendientes((actuales) => new Set(actuales).add(proveedorId))
+    setProveedoresConError((actuales) => {
+      if (!actuales.has(proveedorId)) return actuales
+      const siguiente = new Set(actuales)
+      siguiente.delete(proveedorId)
+      return siguiente
+    })
     try {
       const actualizado = await actualizarSeleccion(pcpId, renglonId, proveedorId, !columna.resultado.seleccionado)
       queryClient.setQueryData<ResultadoNegociacion[] | undefined>(
@@ -108,9 +117,13 @@ export function ComparacionProveedoresTable({
       // PcpDetalle) seguía ofreciendo/omitiendo el mismo listado desactualizado.
       queryClient.invalidateQueries({ queryKey: pcpQueryKeys.seleccionesAgrupables(pcpId) })
     } catch {
-      setProveedorConError(proveedorId)
+      setProveedoresConError((actuales) => new Set(actuales).add(proveedorId))
     } finally {
-      setProveedorPendiente(null)
+      setProveedoresPendientes((actuales) => {
+        const siguiente = new Set(actuales)
+        siguiente.delete(proveedorId)
+        return siguiente
+      })
     }
   }
 
@@ -164,7 +177,7 @@ export function ComparacionProveedoresTable({
                   {columna.resultado ? (
                     <button
                       type="button"
-                      disabled={proveedorPendiente === columna.proveedor.proveedor_id}
+                      disabled={proveedoresPendientes.has(columna.proveedor.proveedor_id)}
                       onClick={() => alternarSeleccion(columna)}
                       className="min-h-9 rounded-md border border-slate-300 px-3 text-sm font-medium text-navy disabled:opacity-50"
                     >
@@ -173,7 +186,7 @@ export function ComparacionProveedoresTable({
                         : `Seleccionar proveedor ${codigoDe(columna.proveedor)}`}
                     </button>
                   ) : null}
-                  {proveedorConError === columna.proveedor.proveedor_id ? (
+                  {proveedoresConError.has(columna.proveedor.proveedor_id) ? (
                     <p role="alert" className="mt-1 text-xs text-red-600">No se pudo actualizar la selección.</p>
                   ) : null}
                 </td>
@@ -217,14 +230,14 @@ export function ComparacionProveedoresTable({
                 {resultado ? (
                   <button
                     type="button"
-                    disabled={proveedorPendiente === proveedor.proveedor_id}
+                    disabled={proveedoresPendientes.has(proveedor.proveedor_id)}
                     onClick={() => alternarSeleccion({ proveedor, resultado })}
                     className="min-h-9 rounded-md border border-slate-300 px-3 text-sm font-medium text-navy disabled:opacity-50"
                   >
                     {resultado.seleccionado ? 'Quitar selección' : 'Seleccionar proveedor'}
                   </button>
                 ) : null}
-                {proveedorConError === proveedor.proveedor_id ? (
+                {proveedoresConError.has(proveedor.proveedor_id) ? (
                   <p role="alert" className="mt-1 w-full text-xs text-red-600">No se pudo actualizar la selección.</p>
                 ) : null}
               </div>
