@@ -29,6 +29,7 @@ import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_
 import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
 import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
+import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -138,6 +139,12 @@ const AuthenticatedAdminUsuariosRoute =
     path: '/admin/usuarios',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport.update({
+    id: '/renglones/$renglonId',
+    path: '/renglones/$renglonId',
+    getParentRoute: () => AuthenticatedPcpPcpIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -149,7 +156,7 @@ export interface FileRoutesByFullPath {
   '/productos': typeof AuthenticatedProductosRouteWithChildren
   '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
-  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/productos/': typeof AuthenticatedProductosIndexRoute
   '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
@@ -167,7 +175,7 @@ export interface FileRoutesByTo {
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
-  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
@@ -177,6 +185,7 @@ export interface FileRoutesByTo {
   '/productos': typeof AuthenticatedProductosIndexRoute
   '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -190,7 +199,7 @@ export interface FileRoutesById {
   '/_authenticated/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
-  '/_authenticated/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRoute
+  '/_authenticated/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/_authenticated/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
@@ -200,6 +209,7 @@ export interface FileRoutesById {
   '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
   '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -223,6 +233,7 @@ export interface FileRouteTypes {
     | '/productos/'
     | '/terceros/'
     | '/validar-extraccion/'
+    | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invite'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/terceros'
     | '/validar-extraccion'
+    | '/pcp/$pcpId/renglones/$renglonId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -263,6 +275,7 @@ export interface FileRouteTypes {
     | '/_authenticated/productos/'
     | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
+    | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -414,17 +427,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/pcp/$pcpId/renglones/$renglonId': {
+      id: '/_authenticated/pcp/$pcpId/renglones/$renglonId'
+      path: '/renglones/$renglonId'
+      fullPath: '/pcp/$pcpId/renglones/$renglonId'
+      preLoaderRoute: typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport
+      parentRoute: typeof AuthenticatedPcpPcpIdRoute
+    }
   }
 }
 
+interface AuthenticatedPcpPcpIdRouteChildren {
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRoute: typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
+}
+
+const AuthenticatedPcpPcpIdRouteChildren: AuthenticatedPcpPcpIdRouteChildren = {
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRoute:
+    AuthenticatedPcpPcpIdRenglonesRenglonIdRoute,
+}
+
+const AuthenticatedPcpPcpIdRouteWithChildren =
+  AuthenticatedPcpPcpIdRoute._addFileChildren(
+    AuthenticatedPcpPcpIdRouteChildren,
+  )
+
 interface AuthenticatedPcpRouteChildren {
-  AuthenticatedPcpPcpIdRoute: typeof AuthenticatedPcpPcpIdRoute
+  AuthenticatedPcpPcpIdRoute: typeof AuthenticatedPcpPcpIdRouteWithChildren
   AuthenticatedPcpCatalogoRoute: typeof AuthenticatedPcpCatalogoRoute
   AuthenticatedPcpIndexRoute: typeof AuthenticatedPcpIndexRoute
 }
 
 const AuthenticatedPcpRouteChildren: AuthenticatedPcpRouteChildren = {
-  AuthenticatedPcpPcpIdRoute: AuthenticatedPcpPcpIdRoute,
+  AuthenticatedPcpPcpIdRoute: AuthenticatedPcpPcpIdRouteWithChildren,
   AuthenticatedPcpCatalogoRoute: AuthenticatedPcpCatalogoRoute,
   AuthenticatedPcpIndexRoute: AuthenticatedPcpIndexRoute,
 }
