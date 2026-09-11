@@ -29,6 +29,7 @@ import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_
 import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
 import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
+import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
 import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -139,6 +140,12 @@ const AuthenticatedAdminUsuariosRoute =
     path: '/admin/usuarios',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedPcpConsultasConsultaIdRoute =
+  AuthenticatedPcpConsultasConsultaIdRouteImport.update({
+    id: '/consultas/$consultaId',
+    path: '/consultas/$consultaId',
+    getParentRoute: () => AuthenticatedPcpRoute,
+  } as any)
 const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
   AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport.update({
     id: '/renglones/$renglonId',
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/productos/': typeof AuthenticatedProductosIndexRoute
   '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesByTo {
@@ -185,6 +193,7 @@ export interface FileRoutesByTo {
   '/productos': typeof AuthenticatedProductosIndexRoute
   '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesById {
@@ -209,6 +218,7 @@ export interface FileRoutesById {
   '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
   '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRouteTypes {
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/productos/'
     | '/terceros/'
     | '/validar-extraccion/'
+    | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/terceros'
     | '/validar-extraccion'
+    | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
   id:
     | '__root__'
@@ -275,6 +287,7 @@ export interface FileRouteTypes {
     | '/_authenticated/productos/'
     | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
+    | '/_authenticated/pcp/consultas/$consultaId'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
 }
@@ -427,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/pcp/consultas/$consultaId': {
+      id: '/_authenticated/pcp/consultas/$consultaId'
+      path: '/consultas/$consultaId'
+      fullPath: '/pcp/consultas/$consultaId'
+      preLoaderRoute: typeof AuthenticatedPcpConsultasConsultaIdRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
     '/_authenticated/pcp/$pcpId/renglones/$renglonId': {
       id: '/_authenticated/pcp/$pcpId/renglones/$renglonId'
       path: '/renglones/$renglonId'
@@ -455,12 +475,15 @@ interface AuthenticatedPcpRouteChildren {
   AuthenticatedPcpPcpIdRoute: typeof AuthenticatedPcpPcpIdRouteWithChildren
   AuthenticatedPcpCatalogoRoute: typeof AuthenticatedPcpCatalogoRoute
   AuthenticatedPcpIndexRoute: typeof AuthenticatedPcpIndexRoute
+  AuthenticatedPcpConsultasConsultaIdRoute: typeof AuthenticatedPcpConsultasConsultaIdRoute
 }
 
 const AuthenticatedPcpRouteChildren: AuthenticatedPcpRouteChildren = {
   AuthenticatedPcpPcpIdRoute: AuthenticatedPcpPcpIdRouteWithChildren,
   AuthenticatedPcpCatalogoRoute: AuthenticatedPcpCatalogoRoute,
   AuthenticatedPcpIndexRoute: AuthenticatedPcpIndexRoute,
+  AuthenticatedPcpConsultasConsultaIdRoute:
+    AuthenticatedPcpConsultasConsultaIdRoute,
 }
 
 const AuthenticatedPcpRouteWithChildren =
