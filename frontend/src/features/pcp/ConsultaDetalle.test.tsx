@@ -46,6 +46,7 @@ function renderAgruparConsultaDialog(props: { selecciones?: typeof SELECCIONES, 
     ...render(
       <QueryClientProvider client={client}>
         <AgruparConsultaDialog
+          pcpId="pcp-1"
           selecciones={props.selecciones ?? SELECCIONES}
           puedeEscribir={props.puedeEscribir ?? true}
         />
