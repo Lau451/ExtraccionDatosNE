@@ -283,6 +283,19 @@ export function obtenerResultado(
   return presupuestacionFetch<ResultadoNegociacion>(pathResultado(pcpId, renglonId, proveedorId))
 }
 
+/** Lectura batched -- el resultado de negociación de TODOS los proveedores
+ * catalogados de un renglón en un solo llamado, en vez del fan-out de N
+ * llamados a `obtenerResultado` (uno por proveedor) que
+ * `ComparacionProveedoresTable` hacía antes. Un proveedor sin resultado
+ * propio simplemente no aparece en la lista -- equivalente al 404-por-
+ * proveedor que el fan-out anterior interpretaba como "sin resultado aún". */
+export function listarResultadosRenglon(
+  pcpId: string,
+  renglonId: string,
+): Promise<ResultadoNegociacion[]> {
+  return presupuestacionFetch<ResultadoNegociacion[]>(`/pcp/${pcpId}/renglones/${renglonId}/resultados`)
+}
+
 export async function registrarResultado(
   pcpId: string,
   renglonId: string,

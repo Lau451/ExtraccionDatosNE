@@ -18,8 +18,8 @@ vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: getSessionMoc
 
 import { presupuestacionFetch } from './presupuestacion'
 import {
-  actualizarSeleccion, cambiarEstadoPcp, cerrarPcp, crearPcp, listarPcp, listarSeleccionesAgrupables, obtenerPcp,
-  obtenerResultado, registrarResultado, seleccionarProveedores,
+  actualizarSeleccion, cambiarEstadoPcp, cerrarPcp, crearPcp, listarPcp, listarResultadosRenglon,
+  listarSeleccionesAgrupables, obtenerPcp, obtenerResultado, registrarResultado, seleccionarProveedores,
 } from './pcp'
 import * as pcpClient from './pcp'
 import { pcpQueryKeys } from '@/features/pcp/queryKeys'
@@ -215,6 +215,21 @@ describe('cliente PCP', () => {
     vi.mocked(presupuestacionFetch).mockRejectedValueOnce(noEncontrado)
 
     await expect(obtenerResultado('pcp-1', 'reng-1', 'prov-1')).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('obtiene los resultados de todos los proveedores de un renglón por su ruta exacta, en un solo llamado', async () => {
+    vi.mocked(presupuestacionFetch).mockResolvedValueOnce([
+      { proveedor_id: 'prov-1', resultado: 'precio_obtenido' },
+      { proveedor_id: 'prov-2', resultado: 'sin_respuesta' },
+    ])
+
+    const resultado = await listarResultadosRenglon('pcp-1', 'reng-1')
+
+    expect(presupuestacionFetch).toHaveBeenCalledWith('/pcp/pcp-1/renglones/reng-1/resultados')
+    expect(resultado).toEqual([
+      { proveedor_id: 'prov-1', resultado: 'precio_obtenido' },
+      { proveedor_id: 'prov-2', resultado: 'sin_respuesta' },
+    ])
   })
 
   it('registra un resultado precio_obtenido con los campos opcionales relevantes', async () => {

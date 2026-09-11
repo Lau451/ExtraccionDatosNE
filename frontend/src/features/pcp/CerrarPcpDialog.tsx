@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { cerrarPcp, type Pcp } from '@/lib/api/pcp'
 import { pcpQueryKeys } from './queryKeys'
 
@@ -21,22 +21,25 @@ export function CerrarPcpDialog({ pcpId }: { pcpId: string }) {
   })
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild><button type="button" className="min-h-10 rounded-md bg-red-700 px-3 text-sm font-medium text-white active:scale-[0.96]">Cerrar PCP</button></Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
-          <Dialog.Title className="text-base font-semibold text-navy">Cerrar PCP</Dialog.Title>
-          <Dialog.Description className="mt-2 text-sm text-slate-600">Esta acción finaliza el PCP y sus recursos relacionados.</Dialog.Description>
-          {mutation.isError ? <p role="alert" className="mt-3 text-sm text-red-600">No se pudo cerrar el PCP.</p> : null}
-          <div className="mt-5 flex justify-end gap-2">
-            <Dialog.Close asChild><button type="button" className="min-h-10 px-3 text-sm text-slate-600">Cancelar</button></Dialog.Close>
-            <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending} className="min-h-10 rounded-md bg-red-700 px-3 text-sm font-medium text-white disabled:opacity-50">
-              {mutation.isPending ? 'Cerrando…' : 'Confirmar cierre'}
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="min-h-10 rounded-md bg-red-700 px-3 text-sm font-medium text-white active:scale-[0.96]"
+      >
+        Cerrar PCP
+      </button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Cerrar PCP"
+        description="Esta acción finaliza el PCP y sus recursos relacionados."
+        onConfirm={() => mutation.mutate()}
+        confirmLabel="Confirmar cierre"
+        pendingLabel="Cerrando…"
+        isPending={mutation.isPending}
+        error={mutation.isError ? 'No se pudo cerrar el PCP.' : null}
+      />
+    </>
   )
 }

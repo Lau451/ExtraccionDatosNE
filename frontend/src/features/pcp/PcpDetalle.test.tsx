@@ -177,6 +177,25 @@ describe('PcpDetalle', () => {
     }))
   })
 
+  it('invalidates the agrupable-selections cache after grouping succeeds, so an already-grouped pair is not offered again', async () => {
+    vi.mocked(listarSeleccionesAgrupables).mockResolvedValue([
+      { pcp_renglon_id: 'reng-1', proveedor_id: 'prov-1' },
+    ])
+    vi.mocked(agruparConsultas).mockResolvedValue([
+      { id: 'consulta-1', drogueria_id: 'drog-1', proveedor_id: 'prov-1', contacto_id: null, estado: 'borrador', canal: null, fecha_envio: null, fecha_respuesta_esperada: null, documento_path: null },
+    ])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    renderDetalle(queryClient)
+    await screen.findByText('Negociado')
+
+    fireEvent.click(await screen.findByRole('button', { name: /agrupar consulta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /confirmar/i }))
+
+    await waitFor(() => expect(agruparConsultas).toHaveBeenCalled())
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pcpQueryKeys.seleccionesAgrupables('pcp-1') })
+  })
+
   it('hides the grouping trigger when the PCP has no agrupable selections', async () => {
     renderDetalle()
     await screen.findByText('Negociado')

@@ -11,6 +11,7 @@ export function ConfirmDialog({
   confirmLabel = 'Eliminar',
   pendingLabel = 'Eliminando…',
   isPending = false,
+  error = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -24,6 +25,10 @@ export function ConfirmDialog({
    * validación. */
   pendingLabel?: string
   isPending?: boolean
+  /** Mensaje de error opcional (ej. una mutación fallida), renderizado como
+   * `role="alert"` entre la descripción y los botones. `null`/omitido no
+   * cambia el render existente -- retrocompatible con los 6 usos previos. */
+  error?: string | null
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -34,6 +39,7 @@ export function ConfirmDialog({
           <Dialog.Description className="mt-2 text-sm text-slate-600">
             {description}
           </Dialog.Description>
+          {error ? <p role="alert" className="mt-3 text-sm text-red-600">{error}</p> : null}
           <div className="mt-6 flex justify-end gap-2">
             <Dialog.Close asChild>
               <button type="button" className="rounded-md px-3 py-2 text-sm text-slate-600">

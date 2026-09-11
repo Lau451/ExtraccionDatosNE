@@ -38,7 +38,7 @@ export function PcpDetalle({ pcpId }: { pcpId: string }) {
           <h2 id="renglones-title" className="text-base font-semibold text-navy">Renglones</h2>
           <div className="flex items-center gap-2">
             {puedeEscribir && (seleccionesAgrupablesQuery.data?.length ?? 0) > 0 ? (
-              <AgruparConsultaDialog selecciones={seleccionesAgrupablesQuery.data ?? []} puedeEscribir={puedeEscribir} />
+              <AgruparConsultaDialog pcpId={pcpId} selecciones={seleccionesAgrupablesQuery.data ?? []} puedeEscribir={puedeEscribir} />
             ) : null}
             {puedeEscribir ? <CrearRenglonDialog pcpId={pcpId} /> : null}
           </div>

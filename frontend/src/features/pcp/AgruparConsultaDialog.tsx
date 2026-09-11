@@ -13,9 +13,11 @@ import { pcpQueryKeys } from './queryKeys'
  * (design.md, decisión documentada en apply-progress.md Work Unit 6.1).
  */
 export function AgruparConsultaDialog({
+  pcpId,
   selecciones,
   puedeEscribir,
 }: {
+  pcpId: string
   selecciones: SeleccionParaAgrupar[]
   puedeEscribir: boolean
 }) {
@@ -27,6 +29,11 @@ export function AgruparConsultaDialog({
       consultas.forEach((consulta) => {
         queryClient.setQueryData(pcpQueryKeys.consulta(consulta.id), consulta)
       })
+      // Las selecciones recién agrupadas ya no deberían seguir ofreciéndose
+      // para un nuevo agrupamiento -- sin esto, seleccionesAgrupablesQuery
+      // (cacheada en PcpDetalle) sigue mostrando el mismo listado y permite
+      // enviar un duplicado sin recargar la página.
+      queryClient.invalidateQueries({ queryKey: pcpQueryKeys.seleccionesAgrupables(pcpId) })
     },
   })
 
