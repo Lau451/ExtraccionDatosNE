@@ -12,6 +12,7 @@ from services.pcp.negociacion.service import (
     actualizar_seleccion_para_endpoint,
     cerrar_pcp_para_endpoint,
     listar_renglones_seleccionados_para_endpoint,
+    listar_resultados_renglon_para_endpoint,
     listar_selecciones_agrupables_para_endpoint,
     obtener_resultado,
     registrar_resultado_para_endpoint,
@@ -40,6 +41,7 @@ def registrar_resultado_endpoint(
 ) -> ResultadoNegociacionOut:
     return registrar_resultado_para_endpoint(
         drogueria_id=usuario.drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=renglon_id,
         proveedor_id=proveedor_id,
         body=body,
@@ -61,6 +63,7 @@ def obtener_resultado_endpoint(
     return obtener_resultado(
         user_client,
         drogueria_id=usuario.drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=renglon_id,
         proveedor_id=proveedor_id,
     )
@@ -79,10 +82,27 @@ def actualizar_seleccion_endpoint(
 ) -> ResultadoNegociacionOut:
     return actualizar_seleccion_para_endpoint(
         drogueria_id=usuario.drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=renglon_id,
         proveedor_id=proveedor_id,
         seleccionado=body.seleccionado,
         usuario_id=usuario.id,
+    )
+
+
+@router.get(
+    "/pcp/{pcp_id}/renglones/{renglon_id}/resultados",
+    response_model=list[ResultadoNegociacionOut],
+)
+def listar_resultados_renglon_endpoint(
+    pcp_id: str,
+    renglon_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+) -> list[ResultadoNegociacionOut]:
+    return listar_resultados_renglon_para_endpoint(
+        drogueria_id=usuario.drogueria_id,
+        pcp_id=pcp_id,
+        pcp_renglon_id=renglon_id,
     )
 
 

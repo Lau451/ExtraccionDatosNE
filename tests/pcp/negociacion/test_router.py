@@ -308,3 +308,92 @@ def test_selecciones_agrupables_endpoint_permite_rol_lectura(
         ]
     finally:
         service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+
+
+# Code review finding -- registrar_resultado/obtener_resultado/
+# actualizar_seleccion aceptaban pcp_id en la URL pero nunca lo comparaban
+# contra el pcp_id real del renglón (solo drogueria_id/tenant se validaba).
+@pytest.mark.integration
+def test_actualizar_seleccion_endpoint_rechaza_pcp_id_que_no_es_dueno_del_renglon(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedor_pcp,
+    crear_usuario_con_token,
+):
+    presupuesto_a = seed_presupuesto_factory()
+    presupuesto_b = seed_presupuesto_factory()
+    pcp_a = crear_pcp(service_client, drogueria_id=seed_drogueria["id"], body=PcpCreate(presupuesto_id=presupuesto_a["id"]), usuario_id=seed_usuario_sistema["id"])
+    renglon_a = crear_renglon(service_client, drogueria_id=seed_drogueria["id"], pcp_id=pcp_a["id"], body=PcpRenglonCreate(item_proceso_id=seed_item_proceso["id"]), usuario_id=seed_usuario_sistema["id"])
+    seleccionar_proveedores(service_client, renglon_id=renglon_a["id"], drogueria_id=seed_drogueria["id"], proveedor_ids=[seed_proveedor_pcp["id"]])
+    pcp_b = crear_pcp(service_client, drogueria_id=seed_drogueria["id"], body=PcpCreate(presupuesto_id=presupuesto_b["id"]), usuario_id=seed_usuario_sistema["id"])
+    try:
+        _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+        # pcp_b en la URL, pero renglon_a pertenece a pcp_a -- debe rechazarse.
+        respuesta = _cliente_de_prueba().patch(
+            f"/pcp/{pcp_b['id']}/renglones/{renglon_a['id']}/proveedores/{seed_proveedor_pcp['id']}/seleccion",
+            json={"seleccionado": True},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert respuesta.status_code == 404
+        fila = service_client.table("pcp_renglon_resultados").select("seleccionado").eq("pcp_renglon_id", renglon_a["id"]).execute().data[0]
+        assert fila["seleccionado"] is False
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp_a["id"]).execute()
+        service_client.table("pcp").delete().eq("id", pcp_b["id"]).execute()
+
+
+# Code review finding -- GET /pcp/{pcp_id}/renglones/{renglon_id}/resultados:
+# lectura batched de todos los proveedores de un renglón en un solo llamado,
+# reemplazando el fan-out de N llamados que hacía el frontend antes.
+@pytest.mark.integration
+def test_listar_resultados_renglon_endpoint_devuelve_todos_los_proveedores(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    seed_proveedores_pcp_factory,
+    crear_usuario_con_token,
+):
+    proveedor_a, proveedor_b = seed_proveedores_pcp_factory(2)
+    presupuesto = seed_presupuesto_factory()
+    pcp = crear_pcp(service_client, drogueria_id=seed_drogueria["id"], body=PcpCreate(presupuesto_id=presupuesto["id"]), usuario_id=seed_usuario_sistema["id"])
+    renglon = crear_renglon(service_client, drogueria_id=seed_drogueria["id"], pcp_id=pcp["id"], body=PcpRenglonCreate(item_proceso_id=seed_item_proceso["id"]), usuario_id=seed_usuario_sistema["id"])
+    seleccionar_proveedores(service_client, renglon_id=renglon["id"], drogueria_id=seed_drogueria["id"], proveedor_ids=[proveedor_a["id"], proveedor_b["id"]])
+    try:
+        _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+        client = _cliente_de_prueba()
+
+        registro = client.post(
+            f"/pcp/{pcp['id']}/renglones/{renglon['id']}/proveedores/{proveedor_a['id']}/resultado",
+            json={
+                "resultado": "precio_obtenido",
+                "precio_unitario": "10.00",
+                "mantenimiento_hasta": (date.today() + timedelta(days=10)).isoformat(),
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert registro.status_code < 300
+
+        respuesta = client.get(
+            f"/pcp/{pcp['id']}/renglones/{renglon['id']}/resultados",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert respuesta.status_code < 300
+        cuerpo = respuesta.json()
+        # seleccionar_proveedores ya deja una fila sin_respuesta por cada
+        # proveedor catalogado (PR5); solo proveedor_a fue registrado acá,
+        # así que proveedor_b sigue presente en la lista con ese estado
+        # inicial -- la lectura batched devuelve TODAS las filas del renglón.
+        por_proveedor = {fila["proveedor_id"]: fila for fila in cuerpo}
+        assert len(cuerpo) == 2
+        assert por_proveedor[proveedor_a["id"]]["resultado"] == "precio_obtenido"
+        assert por_proveedor[proveedor_b["id"]]["resultado"] == "sin_respuesta"
+    finally:
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+        service_client.table("precios_proveedor").delete().eq(
+            "item_proceso_id", seed_item_proceso["id"]
+        ).execute()

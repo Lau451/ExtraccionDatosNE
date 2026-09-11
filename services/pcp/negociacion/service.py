@@ -88,26 +88,50 @@ _CAMPOS_PRECIO_PROVEEDOR = (
 )
 
 
-def _con_datos_precio_proveedor(client: Client, resultado: dict[str, Any]) -> dict[str, Any]:
-    """Enriquece un resultado con el JOIN de lectura sobre `precios_proveedor`
-    que `ResultadoNegociacionOut` expone (design.md "Comparison Table") --
-    `pcp_renglon_resultados` solo guarda `precio_proveedor_id`, nunca los
-    valores en sí. Sin `precio_proveedor_id` (no_cotiza, o el
-    `sin_respuesta` inicial de `seleccionar_proveedores`) las 6 claves
+def _con_precio_conocido(resultado: dict[str, Any], precio: dict[str, Any] | None) -> dict[str, Any]:
+    """Enriquece un resultado con un precio YA disponible en memoria (por
+    ejemplo, recién insertado por `crear_precio_proveedor` en esta misma
+    función) -- cero round trips extra. Sin precio (no_cotiza, o
+    `sin_respuesta`) las 6 claves quedan en `None`, nunca inventadas."""
+    datos_precio: dict[str, Any] = dict.fromkeys(_CAMPOS_PRECIO_PROVEEDOR)
+    if precio is not None:
+        datos_precio = {campo: precio.get(campo) for campo in _CAMPOS_PRECIO_PROVEEDOR}
+    return {**resultado, **datos_precio}
+
+
+def _aplanar_precio_proveedor(resultado: dict[str, Any]) -> dict[str, Any]:
+    """Aplana el JOIN embebido de `precios_proveedor` que `buscar_resultado`/
+    `listar_resultados_renglon` ya traen en la misma consulta PostgREST (FK
+    `fk_ppr_precio_prov`) al shape plano que expone `ResultadoNegociacionOut`
+    -- reemplaza el segundo round trip que hacía la versión anterior de este
+    helper. Sin precio embebido (no_cotiza, o `sin_respuesta`) las 6 claves
     quedan en `None`, nunca inventadas."""
     datos_precio: dict[str, Any] = dict.fromkeys(_CAMPOS_PRECIO_PROVEEDOR)
-    precio_proveedor_id = resultado.get("precio_proveedor_id")
-    if precio_proveedor_id is not None:
-        precio = repo.obtener_precio_proveedor(client, precio_proveedor_id=precio_proveedor_id)
-        if precio is not None:
-            datos_precio = {campo: precio.get(campo) for campo in _CAMPOS_PRECIO_PROVEEDOR}
-    return {**resultado, **datos_precio}
+    precio = resultado.get("precios_proveedor")
+    if precio is not None:
+        datos_precio = {campo: precio.get(campo) for campo in _CAMPOS_PRECIO_PROVEEDOR}
+    resto = {clave: valor for clave, valor in resultado.items() if clave != "precios_proveedor"}
+    return {**resto, **datos_precio}
+
+
+def _validar_renglon_de_la_pcp(renglon: dict[str, Any], *, pcp_id: str, pcp_renglon_id: str) -> None:
+    """El `pcp_id` de la URL es parte del contrato del endpoint (todas las
+    rutas de este router lo nombran), pero antes de este fix nunca se
+    verificaba contra el `pcp_id` real del renglón -- solo `drogueria_id`
+    (tenant) lo hacía. Sin este chequeo, un caller con acceso de escritura en
+    la misma droguería podía operar sobre un renglón de OTRA PCP con solo
+    conocer su `renglon_id`, pese a que la URL nombra una PCP distinta."""
+    if renglon["pcp_id"] != pcp_id:
+        raise NotFoundError(
+            f"El renglón '{pcp_renglon_id}' no pertenece a la PCP '{pcp_id}'"
+        )
 
 
 def registrar_resultado(
     client: Client,
     *,
     drogueria_id: str,
+    pcp_id: str,
     pcp_renglon_id: str,
     proveedor_id: str,
     body: RegistrarResultadoNegociacion,
@@ -120,8 +144,10 @@ def registrar_resultado(
     renglon = renglones_service.obtener_renglon(
         client, renglon_id=pcp_renglon_id, drogueria_id=drogueria_id
     )
+    _validar_renglon_de_la_pcp(renglon, pcp_id=pcp_id, pcp_renglon_id=pcp_renglon_id)
 
     precio_proveedor_id: str | None = None
+    precio: dict[str, Any] | None = None
     if body.resultado == "precio_obtenido":
         # precios_proveedor.producto_id es NOT NULL (docs/schema/extractor_final.sql):
         # un renglón cuyo matching de producto todavía está pendiente (D2,
@@ -187,28 +213,34 @@ def registrar_resultado(
         usuario_id=usuario_id,
     )
 
-    return _con_datos_precio_proveedor(client, resultado)
+    # El precio ya está en memoria (recién insertado arriba, o None para
+    # no_cotiza) -- enriquecer no cuesta un segundo round trip acá, a
+    # diferencia de la lectura (obtener_resultado/actualizar_seleccion), que
+    # sí necesita volver a pedirlo.
+    return _con_precio_conocido(resultado, precio)
 
 
 def obtener_resultado(
-    client: Client, *, drogueria_id: str, pcp_renglon_id: str, proveedor_id: str
+    client: Client, *, drogueria_id: str, pcp_id: str, pcp_renglon_id: str, proveedor_id: str
 ) -> dict[str, Any]:
     renglon = renglones_service.obtener_renglon(
         client, renglon_id=pcp_renglon_id, drogueria_id=drogueria_id
     )
+    _validar_renglon_de_la_pcp(renglon, pcp_id=pcp_id, pcp_renglon_id=pcp_renglon_id)
     resultado = repo.buscar_resultado(client, pcp_renglon_id=renglon["id"], proveedor_id=proveedor_id)
     if resultado is None:
         raise NotFoundError(
             f"No hay un resultado de negociación registrado para el proveedor "
             f"'{proveedor_id}' en el renglón '{pcp_renglon_id}'"
         )
-    return _con_datos_precio_proveedor(client, resultado)
+    return _aplanar_precio_proveedor(resultado)
 
 
 def actualizar_seleccion(
     client: Client,
     *,
     drogueria_id: str,
+    pcp_id: str,
     pcp_renglon_id: str,
     proveedor_id: str,
     seleccionado: bool,
@@ -217,6 +249,7 @@ def actualizar_seleccion(
     renglon = renglones_service.obtener_renglon(
         client, renglon_id=pcp_renglon_id, drogueria_id=drogueria_id
     )
+    _validar_renglon_de_la_pcp(renglon, pcp_id=pcp_id, pcp_renglon_id=pcp_renglon_id)
     resultado = repo.actualizar_seleccion(
         client,
         pcp_renglon_id=renglon["id"],
@@ -237,22 +270,29 @@ def actualizar_seleccion(
         payload={"proveedor_id": proveedor_id, "seleccionado": seleccionado},
         usuario_id=usuario_id,
     )
-    return resultado
+    # El UPDATE crudo no trae precio/condiciones (ResultadoNegociacionOut sí
+    # los expone) -- un único round trip extra con el JOIN embebido de
+    # buscar_resultado, en vez del `return resultado` sin enriquecer de
+    # antes.
+    resultado_enriquecido = repo.buscar_resultado(
+        client, pcp_renglon_id=renglon["id"], proveedor_id=proveedor_id
+    )
+    return _aplanar_precio_proveedor(resultado_enriquecido)
 
 
 def listar_renglones_seleccionados(
     client: Client, *, pcp_id: str, drogueria_id: str, es_superadmin: bool = False
 ) -> list[str]:
-    renglones = renglones_service.listar_renglones(
-        client,
-        pcp_id=pcp_id,
-        drogueria_id=drogueria_id,
-        es_superadmin=es_superadmin,
+    """Badge "Negociado" de Gestión: id de renglón, deduplicado, para cada
+    renglón con al menos un proveedor `seleccionado`. Deriva de
+    `listar_selecciones_agrupables` en vez de repetir su propio
+    `listar_renglones` + su propia consulta a `pcp_renglon_resultados`
+    (`listar_selecciones_agrupables` ya hace ambas) -- antes eran dos
+    funciones casi idénticas divergiendo solo en si colapsaban por renglón."""
+    pares = listar_selecciones_agrupables(
+        client, pcp_id=pcp_id, drogueria_id=drogueria_id, es_superadmin=es_superadmin
     )
-    seleccionados = repo.listar_pcp_renglon_ids_seleccionados(
-        client, pcp_renglon_ids=[renglon["id"] for renglon in renglones]
-    )
-    return list(dict.fromkeys(seleccionados))
+    return list(dict.fromkeys(par["pcp_renglon_id"] for par in pares))
 
 
 def listar_selecciones_agrupables(
@@ -275,6 +315,24 @@ def listar_selecciones_agrupables(
     return repo.listar_pcp_renglon_proveedor_seleccionados(
         client, pcp_renglon_ids=[renglon["id"] for renglon in renglones]
     )
+
+
+def listar_resultados_renglon(
+    client: Client, *, drogueria_id: str, pcp_id: str, pcp_renglon_id: str
+) -> list[dict[str, Any]]:
+    """Batched read -- un único round trip para el resultado de negociación
+    de TODOS los proveedores catalogados de un renglón (frontend:
+    `ComparacionProveedoresTable`), en vez del fan-out de N llamados a
+    `obtener_resultado` (uno por proveedor) que hacía antes. Un proveedor sin
+    fila propia en `pcp_renglon_resultados` simplemente no aparece en la
+    lista -- equivalente al 404-por-proveedor que el fan-out anterior
+    interpretaba como "sin resultado aún"."""
+    renglon = renglones_service.obtener_renglon(
+        client, renglon_id=pcp_renglon_id, drogueria_id=drogueria_id
+    )
+    _validar_renglon_de_la_pcp(renglon, pcp_id=pcp_id, pcp_renglon_id=pcp_renglon_id)
+    filas = repo.listar_resultados_renglon(client, pcp_renglon_id=renglon["id"])
+    return [_aplanar_precio_proveedor(fila) for fila in filas]
 
 
 # -- 11.7-11.11 (tasks.md Fase 11, design.md D10): cierre de PCP + feedback
@@ -446,6 +504,7 @@ def cerrar_pcp(
 def registrar_resultado_para_endpoint(
     *,
     drogueria_id: str,
+    pcp_id: str,
     pcp_renglon_id: str,
     proveedor_id: str,
     body: RegistrarResultadoNegociacion,
@@ -454,6 +513,7 @@ def registrar_resultado_para_endpoint(
     return registrar_resultado(
         get_service_client(),
         drogueria_id=drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=pcp_renglon_id,
         proveedor_id=proveedor_id,
         body=body,
@@ -462,11 +522,12 @@ def registrar_resultado_para_endpoint(
 
 
 def obtener_resultado_para_endpoint(
-    *, drogueria_id: str, pcp_renglon_id: str, proveedor_id: str
+    *, drogueria_id: str, pcp_id: str, pcp_renglon_id: str, proveedor_id: str
 ) -> dict[str, Any]:
     return obtener_resultado(
         get_service_client(),
         drogueria_id=drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=pcp_renglon_id,
         proveedor_id=proveedor_id,
     )
@@ -475,6 +536,7 @@ def obtener_resultado_para_endpoint(
 def actualizar_seleccion_para_endpoint(
     *,
     drogueria_id: str,
+    pcp_id: str,
     pcp_renglon_id: str,
     proveedor_id: str,
     seleccionado: bool,
@@ -483,6 +545,7 @@ def actualizar_seleccion_para_endpoint(
     return actualizar_seleccion(
         get_service_client(),
         drogueria_id=drogueria_id,
+        pcp_id=pcp_id,
         pcp_renglon_id=pcp_renglon_id,
         proveedor_id=proveedor_id,
         seleccionado=seleccionado,
@@ -509,6 +572,17 @@ def listar_selecciones_agrupables_para_endpoint(
         pcp_id=pcp_id,
         drogueria_id=drogueria_id,
         es_superadmin=es_superadmin,
+    )
+
+
+def listar_resultados_renglon_para_endpoint(
+    *, drogueria_id: str, pcp_id: str, pcp_renglon_id: str
+) -> list[dict[str, Any]]:
+    return listar_resultados_renglon(
+        get_service_client(),
+        drogueria_id=drogueria_id,
+        pcp_id=pcp_id,
+        pcp_renglon_id=pcp_renglon_id,
     )
 
 
