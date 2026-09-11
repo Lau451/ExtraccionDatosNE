@@ -16,15 +16,22 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
 import { Route as AuthenticatedTercerosRouteImport } from './routes/_authenticated.terceros'
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
+import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
 import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authenticated.terceros.index'
 import { Route as AuthenticatedProductosIndexRouteImport } from './routes/_authenticated.productos.index'
+import { Route as AuthenticatedPcpIndexRouteImport } from './routes/_authenticated.pcp.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
 import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
 import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
+import { Route as AuthenticatedPcpImportsRouteImport } from './routes/_authenticated.pcp.imports'
+import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
+import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
+import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
+import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -60,6 +67,11 @@ const AuthenticatedProductosRoute = AuthenticatedProductosRouteImport.update({
   path: '/productos',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedPcpRoute = AuthenticatedPcpRouteImport.update({
+  id: '/pcp',
+  path: '/pcp',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
@@ -83,6 +95,11 @@ const AuthenticatedProductosIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedProductosRoute,
   } as any)
+const AuthenticatedPcpIndexRoute = AuthenticatedPcpIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedPcpRoute,
+} as any)
 const AuthenticatedValidarExtraccionExtractionIdRoute =
   AuthenticatedValidarExtraccionExtractionIdRouteImport.update({
     id: '/validar-extraccion/$extractionId',
@@ -107,11 +124,39 @@ const AuthenticatedProductosProductoIdRoute =
     path: '/$productoId',
     getParentRoute: () => AuthenticatedProductosRoute,
   } as any)
+const AuthenticatedPcpImportsRoute = AuthenticatedPcpImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => AuthenticatedPcpRoute,
+} as any)
+const AuthenticatedPcpCatalogoRoute =
+  AuthenticatedPcpCatalogoRouteImport.update({
+    id: '/catalogo',
+    path: '/catalogo',
+    getParentRoute: () => AuthenticatedPcpRoute,
+  } as any)
+const AuthenticatedPcpPcpIdRoute = AuthenticatedPcpPcpIdRouteImport.update({
+  id: '/$pcpId',
+  path: '/$pcpId',
+  getParentRoute: () => AuthenticatedPcpRoute,
+} as any)
 const AuthenticatedAdminUsuariosRoute =
   AuthenticatedAdminUsuariosRouteImport.update({
     id: '/admin/usuarios',
     path: '/admin/usuarios',
     getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedPcpConsultasConsultaIdRoute =
+  AuthenticatedPcpConsultasConsultaIdRouteImport.update({
+    id: '/consultas/$consultaId',
+    path: '/consultas/$consultaId',
+    getParentRoute: () => AuthenticatedPcpRoute,
+  } as any)
+const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport.update({
+    id: '/renglones/$renglonId',
+    path: '/renglones/$renglonId',
+    getParentRoute: () => AuthenticatedPcpPcpIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -120,16 +165,23 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/productos': typeof AuthenticatedProductosRouteWithChildren
   '/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
+  '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
+  '/pcp/imports': typeof AuthenticatedPcpImportsRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/pcp/': typeof AuthenticatedPcpIndexRoute
   '/productos/': typeof AuthenticatedProductosIndexRoute
   '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
@@ -138,13 +190,19 @@ export interface FileRoutesByTo {
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
+  '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
+  '/pcp/imports': typeof AuthenticatedPcpImportsRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/pcp': typeof AuthenticatedPcpIndexRoute
   '/productos': typeof AuthenticatedProductosIndexRoute
   '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -153,17 +211,24 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/_authenticated/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
   '/_authenticated/terceros': typeof AuthenticatedTercerosRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
+  '/_authenticated/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
+  '/_authenticated/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
+  '/_authenticated/pcp/imports': typeof AuthenticatedPcpImportsRoute
   '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/_authenticated/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
   '/_authenticated/validar-extraccion/$extractionId': typeof AuthenticatedValidarExtraccionExtractionIdRoute
+  '/_authenticated/pcp/': typeof AuthenticatedPcpIndexRoute
   '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
   '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -173,16 +238,23 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/mi-cuenta'
+    | '/pcp'
     | '/productos'
     | '/terceros'
     | '/admin/usuarios'
+    | '/pcp/$pcpId'
+    | '/pcp/catalogo'
+    | '/pcp/imports'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
+    | '/pcp/'
     | '/productos/'
     | '/terceros/'
     | '/validar-extraccion/'
+    | '/pcp/consultas/$consultaId'
+    | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invite'
@@ -191,13 +263,19 @@ export interface FileRouteTypes {
     | '/mi-cuenta'
     | '/'
     | '/admin/usuarios'
+    | '/pcp/$pcpId'
+    | '/pcp/catalogo'
+    | '/pcp/imports'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
     | '/validar-extraccion/$extractionId'
+    | '/pcp'
     | '/productos'
     | '/terceros'
     | '/validar-extraccion'
+    | '/pcp/consultas/$consultaId'
+    | '/pcp/$pcpId/renglones/$renglonId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -205,17 +283,24 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/_authenticated/mi-cuenta'
+    | '/_authenticated/pcp'
     | '/_authenticated/productos'
     | '/_authenticated/terceros'
     | '/_authenticated/'
     | '/_authenticated/admin/usuarios'
+    | '/_authenticated/pcp/$pcpId'
+    | '/_authenticated/pcp/catalogo'
+    | '/_authenticated/pcp/imports'
     | '/_authenticated/productos/$productoId'
     | '/_authenticated/superadmin/empresas'
     | '/_authenticated/terceros/$terceroId'
     | '/_authenticated/validar-extraccion/$extractionId'
+    | '/_authenticated/pcp/'
     | '/_authenticated/productos/'
     | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
+    | '/_authenticated/pcp/consultas/$consultaId'
+    | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -276,6 +361,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProductosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/pcp': {
+      id: '/_authenticated/pcp'
+      path: '/pcp'
+      fullPath: '/pcp'
+      preLoaderRoute: typeof AuthenticatedPcpRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/mi-cuenta': {
       id: '/_authenticated/mi-cuenta'
       path: '/mi-cuenta'
@@ -303,6 +395,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/productos/'
       preLoaderRoute: typeof AuthenticatedProductosIndexRouteImport
       parentRoute: typeof AuthenticatedProductosRoute
+    }
+    '/_authenticated/pcp/': {
+      id: '/_authenticated/pcp/'
+      path: '/'
+      fullPath: '/pcp/'
+      preLoaderRoute: typeof AuthenticatedPcpIndexRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
     }
     '/_authenticated/validar-extraccion/$extractionId': {
       id: '/_authenticated/validar-extraccion/$extractionId'
@@ -332,6 +431,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProductosProductoIdRouteImport
       parentRoute: typeof AuthenticatedProductosRoute
     }
+    '/_authenticated/pcp/imports': {
+      id: '/_authenticated/pcp/imports'
+      path: '/imports'
+      fullPath: '/pcp/imports'
+      preLoaderRoute: typeof AuthenticatedPcpImportsRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/pcp/catalogo': {
+      id: '/_authenticated/pcp/catalogo'
+      path: '/catalogo'
+      fullPath: '/pcp/catalogo'
+      preLoaderRoute: typeof AuthenticatedPcpCatalogoRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/pcp/$pcpId': {
+      id: '/_authenticated/pcp/$pcpId'
+      path: '/$pcpId'
+      fullPath: '/pcp/$pcpId'
+      preLoaderRoute: typeof AuthenticatedPcpPcpIdRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
     '/_authenticated/admin/usuarios': {
       id: '/_authenticated/admin/usuarios'
       path: '/admin/usuarios'
@@ -339,8 +459,56 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/pcp/consultas/$consultaId': {
+      id: '/_authenticated/pcp/consultas/$consultaId'
+      path: '/consultas/$consultaId'
+      fullPath: '/pcp/consultas/$consultaId'
+      preLoaderRoute: typeof AuthenticatedPcpConsultasConsultaIdRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/pcp/$pcpId/renglones/$renglonId': {
+      id: '/_authenticated/pcp/$pcpId/renglones/$renglonId'
+      path: '/renglones/$renglonId'
+      fullPath: '/pcp/$pcpId/renglones/$renglonId'
+      preLoaderRoute: typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport
+      parentRoute: typeof AuthenticatedPcpPcpIdRoute
+    }
   }
 }
+
+interface AuthenticatedPcpPcpIdRouteChildren {
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRoute: typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
+}
+
+const AuthenticatedPcpPcpIdRouteChildren: AuthenticatedPcpPcpIdRouteChildren = {
+  AuthenticatedPcpPcpIdRenglonesRenglonIdRoute:
+    AuthenticatedPcpPcpIdRenglonesRenglonIdRoute,
+}
+
+const AuthenticatedPcpPcpIdRouteWithChildren =
+  AuthenticatedPcpPcpIdRoute._addFileChildren(
+    AuthenticatedPcpPcpIdRouteChildren,
+  )
+
+interface AuthenticatedPcpRouteChildren {
+  AuthenticatedPcpPcpIdRoute: typeof AuthenticatedPcpPcpIdRouteWithChildren
+  AuthenticatedPcpCatalogoRoute: typeof AuthenticatedPcpCatalogoRoute
+  AuthenticatedPcpImportsRoute: typeof AuthenticatedPcpImportsRoute
+  AuthenticatedPcpIndexRoute: typeof AuthenticatedPcpIndexRoute
+  AuthenticatedPcpConsultasConsultaIdRoute: typeof AuthenticatedPcpConsultasConsultaIdRoute
+}
+
+const AuthenticatedPcpRouteChildren: AuthenticatedPcpRouteChildren = {
+  AuthenticatedPcpPcpIdRoute: AuthenticatedPcpPcpIdRouteWithChildren,
+  AuthenticatedPcpCatalogoRoute: AuthenticatedPcpCatalogoRoute,
+  AuthenticatedPcpImportsRoute: AuthenticatedPcpImportsRoute,
+  AuthenticatedPcpIndexRoute: AuthenticatedPcpIndexRoute,
+  AuthenticatedPcpConsultasConsultaIdRoute:
+    AuthenticatedPcpConsultasConsultaIdRoute,
+}
+
+const AuthenticatedPcpRouteWithChildren =
+  AuthenticatedPcpRoute._addFileChildren(AuthenticatedPcpRouteChildren)
 
 interface AuthenticatedProductosRouteChildren {
   AuthenticatedProductosProductoIdRoute: typeof AuthenticatedProductosProductoIdRoute
@@ -376,6 +544,7 @@ const AuthenticatedTercerosRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
+  AuthenticatedPcpRoute: typeof AuthenticatedPcpRouteWithChildren
   AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
   AuthenticatedTercerosRoute: typeof AuthenticatedTercerosRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -387,6 +556,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
+  AuthenticatedPcpRoute: AuthenticatedPcpRouteWithChildren,
   AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,
   AuthenticatedTercerosRoute: AuthenticatedTercerosRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
