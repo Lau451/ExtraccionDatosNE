@@ -137,6 +137,60 @@ describe('RenglonDetalle', () => {
     expect(screen.getByRole('checkbox', { name: 'SUR-2' })).toBeChecked()
   })
 
+  it('no vuelve a ofrecer como checkbox seleccionable un proveedor que ya tiene un resultado de negociación registrado', async () => {
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([
+      {
+        id: 'res-1', drogueria_id: 'drog-1', pcp_renglon_id: 'reng-1', proveedor_id: 'prov-1',
+        resultado: 'no_cotiza', seleccionado: false, precio_proveedor_id: null, precio_unitario: null,
+        cantidad_minima: null, cantidad_maxima: null, mantenimiento_hasta: null,
+        condicion_pago_id: null, forma_pago_id: null, motivo: null, registrado_por: null,
+      },
+    ] as never)
+    renderDetalle()
+    await screen.findByRole('heading', { name: 'Amoxicilina 500 mg' })
+    // Espera a que resuelva la query batched de resultados (misma clave que
+    // usa ComparacionProveedoresTable) antes de afirmar la ausencia del
+    // checkbox -- ambos checkboxes existen mientras esa query sigue pendiente.
+    await screen.findByRole('checkbox', { name: 'SUR-2' })
+
+    expect(screen.queryByRole('checkbox', { name: 'NORTE-15' })).not.toBeInTheDocument()
+    expect(screen.getByText('NORTE-15 (ya confirmado)')).toBeInTheDocument()
+  })
+
+  it('mantiene deshabilitado el botón de un proveedor cuya actualización sigue en curso, sin verse afectado por otra selección concurrente ya resuelta', async () => {
+    const base = {
+      drogueria_id: 'drog-1', pcp_renglon_id: 'reng-1', resultado: 'precio_obtenido', seleccionado: false,
+      precio_proveedor_id: 'precio-1', precio_unitario: 100, cantidad_minima: null, cantidad_maxima: null,
+      mantenimiento_hasta: null, condicion_pago_id: null, forma_pago_id: null, motivo: null, registrado_por: null,
+    }
+    const resultadoNorte = { ...base, id: 'res-1', proveedor_id: 'prov-1' }
+    const resultadoSur = { ...base, id: 'res-2', proveedor_id: 'prov-2' }
+    vi.mocked(listarResultadosRenglon).mockResolvedValue([resultadoNorte, resultadoSur] as never)
+
+    let resolverNorte: (valor: unknown) => void = () => {}
+    vi.mocked(actualizarSeleccion).mockImplementation((_pcpId, _renglonId, proveedorId) => {
+      if (proveedorId === 'prov-1') {
+        return new Promise((resolve) => { resolverNorte = resolve as (valor: unknown) => void }) as never
+      }
+      return new Promise(() => {}) as never // prov-2 permanece pendiente durante todo el test
+    })
+
+    renderDetalle()
+    await screen.findByRole('heading', { name: 'Amoxicilina 500 mg' })
+
+    const [botonNorte, botonSur] = await screen.findAllByRole('button', { name: 'Seleccionar proveedor' })
+    fireEvent.click(botonNorte)
+    fireEvent.click(botonSur)
+
+    expect(botonNorte).toBeDisabled()
+    expect(botonSur).toBeDisabled()
+
+    resolverNorte({ ...resultadoNorte, seleccionado: true })
+    await waitFor(() => expect(botonNorte).not.toBeDisabled())
+
+    expect(botonSur).toBeDisabled()
+  })
+
   it('muestra la comparación de proveedores y permite alternar la selección persistida con permisos de escritura', async () => {
     const resultadoNorte = {
       id: 'res-1', drogueria_id: 'drog-1', pcp_renglon_id: 'reng-1', proveedor_id: 'prov-1',
