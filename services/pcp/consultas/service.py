@@ -72,11 +72,18 @@ def agrupar_renglones(
         # Cada selección debe corresponder a una fila pcp_renglon_resultados
         # real (PR5 seleccionar_proveedores) -- si no existe,
         # obtener_resultado levanta NotFoundError; también valida
-        # tenant/existencia del renglón internamente.
+        # tenant/existencia del renglón internamente. obtener_resultado exige
+        # pcp_id (fix de seguridad D-post: valida que el renglón pertenezca a
+        # la PCP nombrada) -- SeleccionParaAgrupar deliberadamente no lo trae
+        # (D9, agrupamiento cross-PCP), así que se resuelve acá desde el
+        # propio renglón, mismo criterio que enviar_consulta más abajo.
         resultados = [
             negociacion_service.obtener_resultado(
                 client,
                 drogueria_id=drogueria_id,
+                pcp_id=renglones_service.obtener_renglon(
+                    client, renglon_id=seleccion.pcp_renglon_id, drogueria_id=drogueria_id
+                )["pcp_id"],
                 pcp_renglon_id=seleccion.pcp_renglon_id,
                 proveedor_id=proveedor_id,
             )

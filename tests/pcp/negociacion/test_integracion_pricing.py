@@ -56,6 +56,7 @@ def test_precio_obtenido_es_recogido_por_buscar_precio_especial_puntual(
         resultado = registrar_resultado(
             service_client,
             drogueria_id=seed_drogueria["id"],
+            pcp_id=pcp["id"],
             pcp_renglon_id=renglon["id"],
             proveedor_id=seed_proveedor_pcp["id"],
             body=RegistrarResultadoNegociacion(

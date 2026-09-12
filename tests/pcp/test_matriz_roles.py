@@ -218,6 +218,7 @@ def mundo(service_client):
     registrar_resultado(
         service_client,
         drogueria_id=drogueria["id"],
+        pcp_id=pcp["id"],
         pcp_renglon_id=renglon["id"],
         proveedor_id=proveedor["id"],
         body=RegistrarResultadoNegociacion(
