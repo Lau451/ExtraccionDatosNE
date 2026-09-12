@@ -22,8 +22,21 @@ def get_service_client() -> Client:
     return create_client(settings.supabase_url, settings.supabase_service_key)
 
 
-def get_user_client(token: str = Depends(get_bearer_token)) -> Client:
+@lru_cache(maxsize=256)
+def _cliente_por_token(token: str) -> Client:
+    # Un Client nuevo por request paga de nuevo el handshake TLS completo a
+    # Supabase en cada llamada -- medido en vivo: ~650-750ms en un Client
+    # recién creado contra ~200ms reusando uno ya caliente (ver mem discovery
+    # "PCP delay"). Cachear por token (nunca un único Client compartido entre
+    # tokens) es obligatorio: SyncPostgrestClient.auth() escribe
+    # self.headers["Authorization"] en el propio objeto, así que reusar una
+    # instancia entre usuarios distintos filtraría el token de uno al pedido
+    # de otro. maxsize acota el crecimiento a medida que rotan usuarios/tokens.
     settings = get_settings()
     client = create_client(settings.supabase_url, settings.supabase_anon_key)
     client.postgrest.auth(token)
     return client
+
+
+def get_user_client(token: str = Depends(get_bearer_token)) -> Client:
+    return _cliente_por_token(token)
