@@ -29,7 +29,7 @@ const DETALLE_RENGLON = {
   producto: {
     id: 'prod-1', drogueria_id: 'drog-1', codigo_interno: 'AMOX-500', nombre: 'Amoxicilina 500 mg',
     categoria_id: null, clasificacion: 'medicamento', droga: 'Amoxicilina', presentacion: 'Caja x 20',
-    forma_farmaceutica: null, laboratorio: null, codigo_anmat: null, activo: true,
+    forma_farmaceutica: null, marca_id: null, envase_id: null, alicuota_iva: null, codigo_anmat: null, activo: true,
   },
   proveedores_catalogados: [
     { id: 'pp-1', proveedor_id: 'prov-1', codigo_proveedor: 'NORTE-15', activo: true },

@@ -90,7 +90,9 @@ export interface ProductoRenglon {
   droga: string | null
   presentacion: string | null
   forma_farmaceutica: string | null
-  laboratorio: string | null
+  marca_id: string | null
+  envase_id: string | null
+  alicuota_iva: number | null
   codigo_anmat: string | null
   activo: boolean
 }

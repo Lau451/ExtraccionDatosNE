@@ -18,18 +18,28 @@ vi.mock('@/features/auth/AuthContext', () => ({
 vi.mock('@/lib/api/productos', () => ({
   listarProductos: vi.fn(),
   listarCategorias: vi.fn(),
+  listarMarcas: vi.fn(),
+  listarEnvases: vi.fn(),
+  listarCaracteristicas: vi.fn(),
+  listarCaracteristicasProducto: vi.fn(),
   crearProducto: vi.fn(),
   actualizarProducto: vi.fn(),
   eliminarProducto: vi.fn(),
   crearCategoria: vi.fn(),
   actualizarCategoria: vi.fn(),
+  asignarCaracteristicaProducto: vi.fn(),
+  quitarCaracteristicaProducto: vi.fn(),
 }))
 
 import {
   actualizarProducto,
   crearProducto,
   eliminarProducto,
+  listarCaracteristicas,
+  listarCaracteristicasProducto,
   listarCategorias,
+  listarEnvases,
+  listarMarcas,
   listarProductos,
 } from '@/lib/api/productos'
 
@@ -43,7 +53,9 @@ const PRODUCTO_A = {
   droga: null,
   presentacion: null,
   forma_farmaceutica: null,
-  laboratorio: 'Lab X',
+  marca_id: null,
+  envase_id: null,
+  alicuota_iva: null,
   codigo_anmat: null,
   activo: true,
 }
@@ -57,6 +69,10 @@ beforeEach(() => {
   perfilMock.rol = 'admin'
   vi.mocked(listarProductos).mockReset().mockResolvedValue([PRODUCTO_A])
   vi.mocked(listarCategorias).mockReset().mockResolvedValue([])
+  vi.mocked(listarMarcas).mockReset().mockResolvedValue([])
+  vi.mocked(listarEnvases).mockReset().mockResolvedValue([])
+  vi.mocked(listarCaracteristicas).mockReset().mockResolvedValue([])
+  vi.mocked(listarCaracteristicasProducto).mockReset().mockResolvedValue([])
   vi.mocked(crearProducto).mockReset().mockResolvedValue(PRODUCTO_A)
   vi.mocked(actualizarProducto).mockReset().mockResolvedValue(PRODUCTO_A)
   vi.mocked(eliminarProducto).mockReset().mockResolvedValue(undefined)

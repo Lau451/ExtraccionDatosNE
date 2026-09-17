@@ -1,11 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   actualizarProducto,
+  asignarCaracteristicaProducto,
   crearProducto,
+  listarCaracteristicas,
+  listarCaracteristicasProducto,
+  quitarCaracteristicaProducto,
+  type Caracteristica,
   type Categoria,
   type Clasificacion,
+  type Envase,
+  type Marca,
   type Producto,
   type ProductoCreatePayload,
 } from '@/lib/api/productos'
@@ -13,9 +20,11 @@ import {
 const CLASIFICACIONES: Clasificacion[] = [
   'medicamento',
   'descartable',
-  'insumo',
+  'solucion',
+  'nutricion',
   'equipamiento',
-  'perfumeria',
+  'reactivo',
+  'cosmetico',
   'otro',
 ]
 
@@ -27,7 +36,9 @@ const CAMPOS_VACIOS: ProductoCreatePayload = {
   droga: '',
   presentacion: '',
   forma_farmaceutica: '',
-  laboratorio: '',
+  marca_id: '',
+  envase_id: '',
+  alicuota_iva: undefined,
   codigo_anmat: '',
 }
 
@@ -40,7 +51,9 @@ function camposDesdeProducto(producto: Producto): ProductoCreatePayload {
     droga: producto.droga ?? '',
     presentacion: producto.presentacion ?? '',
     forma_farmaceutica: producto.forma_farmaceutica ?? '',
-    laboratorio: producto.laboratorio ?? '',
+    marca_id: producto.marca_id ?? '',
+    envase_id: producto.envase_id ?? '',
+    alicuota_iva: producto.alicuota_iva ?? undefined,
     codigo_anmat: producto.codigo_anmat ?? '',
   }
 }
@@ -53,24 +66,43 @@ function camposDesdeProducto(producto: Producto): ProductoCreatePayload {
 export function CrearProductoDialog({
   producto,
   categorias,
+  marcas,
+  envases,
   trigger,
 }: {
   producto?: Producto
   categorias: Categoria[]
+  marcas: Marca[]
+  envases: Envase[]
   trigger: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [campos, setCampos] = useState<ProductoCreatePayload>(
     producto ? camposDesdeProducto(producto) : CAMPOS_VACIOS,
   )
+  const [caracteristicasSeleccionadas, setCaracteristicasSeleccionadas] = useState<string[]>([])
   const queryClient = useQueryClient()
   const esEdicion = !!producto
+
+  const { data: caracteristicas } = useQuery({
+    queryKey: ['caracteristicas'],
+    queryFn: listarCaracteristicas,
+  })
+  const { data: caracteristicasProducto } = useQuery({
+    queryKey: ['productos', producto?.id, 'caracteristicas'],
+    queryFn: () => listarCaracteristicasProducto(producto!.id),
+    enabled: esEdicion && open,
+  })
 
   useEffect(() => {
     if (open) {
       setCampos(producto ? camposDesdeProducto(producto) : CAMPOS_VACIOS)
     }
   }, [open, producto])
+
+  useEffect(() => {
+    setCaracteristicasSeleccionadas(caracteristicasProducto?.map((c) => c.caracteristica_id) ?? [])
+  }, [caracteristicasProducto])
 
   function limpiarPayload(): ProductoCreatePayload {
     return {
@@ -80,19 +112,43 @@ export function CrearProductoDialog({
       droga: campos.droga || undefined,
       presentacion: campos.presentacion || undefined,
       forma_farmaceutica: campos.forma_farmaceutica || undefined,
-      laboratorio: campos.laboratorio || undefined,
+      marca_id: campos.marca_id || undefined,
+      envase_id: campos.envase_id || undefined,
+      alicuota_iva: campos.alicuota_iva ?? undefined,
       codigo_anmat: campos.codigo_anmat || undefined,
     }
   }
 
+  async function sincronizarCaracteristicas(productoId: string) {
+    const previas = new Set(caracteristicasProducto?.map((c) => c.caracteristica_id) ?? [])
+    const actuales = new Set(caracteristicasSeleccionadas)
+    const aAgregar = [...actuales].filter((id) => !previas.has(id))
+    const aQuitar = [...previas].filter((id) => !actuales.has(id))
+    await Promise.all([
+      ...aAgregar.map((id) => asignarCaracteristicaProducto(productoId, id)),
+      ...aQuitar.map((id) => quitarCaracteristicaProducto(productoId, id)),
+    ])
+  }
+
   const mutation = useMutation({
-    mutationFn: () =>
-      esEdicion ? actualizarProducto(producto.id, limpiarPayload()) : crearProducto(limpiarPayload()),
+    mutationFn: async () => {
+      const resultado = esEdicion
+        ? await actualizarProducto(producto.id, limpiarPayload())
+        : await crearProducto(limpiarPayload())
+      await sincronizarCaracteristicas(resultado.id)
+      return resultado
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       setOpen(false)
     },
   })
+
+  function toggleCaracteristica(id: string) {
+    setCaracteristicasSeleccionadas((seleccionadas) =>
+      seleccionadas.includes(id) ? seleccionadas.filter((c) => c !== id) : [...seleccionadas, id],
+    )
+  }
 
   function campo(key: keyof ProductoCreatePayload, label: string, required = false) {
     return (
@@ -169,8 +225,73 @@ export function CrearProductoDialog({
             {campo('droga', 'Droga')}
             {campo('presentacion', 'Presentación')}
             {campo('forma_farmaceutica', 'Forma farmacéutica')}
-            {campo('laboratorio', 'Laboratorio')}
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Marca</span>
+              <select
+                value={campos.marca_id ?? ''}
+                onChange={(event) => setCampos((c) => ({ ...c, marca_id: event.target.value }))}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Sin marca</option>
+                {marcas.map((marca) => (
+                  <option key={marca.id} value={marca.id}>
+                    {marca.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Envase</span>
+              <select
+                value={campos.envase_id ?? ''}
+                onChange={(event) => setCampos((c) => ({ ...c, envase_id: event.target.value }))}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Sin envase</option>
+                {envases.map((envase) => (
+                  <option key={envase.id} value={envase.id}>
+                    {envase.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Alícuota IVA (%)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={campos.alicuota_iva ?? ''}
+                onChange={(event) =>
+                  setCampos((c) => ({
+                    ...c,
+                    alicuota_iva: event.target.value === '' ? undefined : Number(event.target.value),
+                  }))
+                }
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
             {campo('codigo_anmat', 'Código ANMAT')}
+
+            <fieldset className="block text-sm">
+              <legend className="mb-1 text-slate-600">Características</legend>
+              <div className="flex flex-wrap gap-3">
+                {(caracteristicas ?? []).map((caracteristica: Caracteristica) => (
+                  <label key={caracteristica.id} className="flex items-center gap-1.5 text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={caracteristicasSeleccionadas.includes(caracteristica.id)}
+                      onChange={() => toggleCaracteristica(caracteristica.id)}
+                    />
+                    {caracteristica.nombre}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             {mutation.isError && (
               <p className="text-sm text-red-600">
