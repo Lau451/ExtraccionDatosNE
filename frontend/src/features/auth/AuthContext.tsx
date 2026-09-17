@@ -97,7 +97,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // El JWT de Supabase no trae el rol como claim — se resuelve con el mismo
     // GET que ya usa el backend en core/auth.py (SELECT a `usuarios` vía RLS).
     cargarPerfil(session.user.id).finally(() => setPerfilLoading(false))
-  }, [session, loading])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a propósito:
+    // depender de `session` completo (en vez de session?.user.id) hacía que
+    // CUALQUIER evento de onAuthStateChange recargara el perfil y, con eso,
+    // tirara abajo toda la app (InnerApp en main.tsx devuelve null mientras
+    // perfilLoading). El SDK de Supabase refresca el token solo cada vez que
+    // la pestaña recupera el foco, disparando un evento con el mismo usuario
+    // — eso se veía como "recargar todo" al volver a la pestaña. Sólo
+    // importa si CAMBIÓ el usuario real, no cada renovación de token.
+  }, [session?.user.id, loading])
 
   async function refrescarPerfil() {
     if (!session) return

@@ -128,6 +128,33 @@ describe('AuthProvider', () => {
     expect(supabase.auth.signOut).not.toHaveBeenCalled()
   })
 
+  it('un refresh de token del mismo usuario no recarga el perfil ni tira perfilLoading a true', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
+    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('perfil').textContent).toBe('Ana'))
+    expect(presupuestacionFetch).toHaveBeenCalledTimes(1)
+
+    // Supabase dispara onAuthStateChange con un objeto session NUEVO pero el
+    // MISMO user.id cada vez que la pestaña recupera el foco y refresca el
+    // token. Antes del fix esto recargaba el perfil entero (perfilLoading
+    // pasaba a true) y con eso tiraba abajo toda la app en main.tsx.
+    const onAuthStateChangeCallback = vi.mocked(supabase.auth.onAuthStateChange).mock.calls[0][0]
+    const sesionRefrescada = { user: { id: 'user-1' } } as never
+
+    await act(async () => {
+      onAuthStateChangeCallback('TOKEN_REFRESHED' as never, sesionRefrescada)
+    })
+
+    expect(screen.getByTestId('perfilLoading').textContent).toBe('false')
+    expect(presupuestacionFetch).toHaveBeenCalledTimes(1)
+  })
+
   it('refrescarPerfil() vuelve a pedir el perfil', async () => {
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
     vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
