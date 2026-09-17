@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useAuth } from '@/features/auth/AuthContext'
 import {
@@ -9,6 +9,7 @@ import {
   listarEnvases,
   listarMarcas,
   listarProductos,
+  type Clasificacion,
   type Producto,
 } from '@/lib/api/productos'
 import { CrearProductoDialog } from './CrearProductoDialog'
@@ -19,12 +20,8 @@ const CLASIFICACIONES = [
   'medicamento', 'descartable', 'solucion', 'nutricion', 'equipamiento', 'reactivo', 'cosmetico', 'otro',
 ]
 
-// Límite del listado sin buscador: mostrar un catálogo de miles de productos
-// completo y sin filtrar no tiene lectura útil en una tabla — se pide una
-// página chica por defecto y se guía al buscador para encontrar algo puntual,
-// en vez de traer y filtrar del lado del cliente (eso era lo que tardaba
-// segundos en un catálogo de 7000+ productos).
-const LIMITE_LISTADO = 200
+const PAGE_SIZE = 50
+const DEBOUNCE_BUSQUEDA_MS = 300
 
 export function GestionProductos() {
   const { perfil } = useAuth()
@@ -34,26 +31,36 @@ export function GestionProductos() {
   const [textoBuscado, setTextoBuscado] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [clasificacion, setClasificacion] = useState('')
+  const [pagina, setPagina] = useState(1)
 
-  // Debounce manual: no hace falta una dependencia nueva para esto, y es la
-  // única pantalla que lo necesita por ahora.
+  // Debounce manual: no hace falta una dependencia nueva para esto.
   useEffect(() => {
-    const id = setTimeout(() => setTextoBuscado(texto.trim()), 300)
+    const id = setTimeout(() => setTextoBuscado(texto.trim()), DEBOUNCE_BUSQUEDA_MS)
     return () => clearTimeout(id)
   }, [texto])
+
+  // Cambiar de búsqueda o de filtro vuelve a página 1 -- si no, se puede
+  // quedar mostrando una página vacía de un resultado más chico.
+  useEffect(() => {
+    setPagina(1)
+  }, [textoBuscado, categoriaId, clasificacion])
 
   const puedeEscribir = puedeRol(perfil?.rol, PRODUCTOS_WRITE_ROLES)
   const puedeEscribirCategorias = puedeRol(perfil?.rol, CATEGORIAS_WRITE_ROLES)
 
-  const { data: productos, isPending } = useQuery({
-    queryKey: ['productos', { q: textoBuscado, categoriaId, clasificacion, limit: LIMITE_LISTADO }],
+  const { data, isPending } = useQuery({
+    queryKey: ['productos', { q: textoBuscado, categoriaId, clasificacion, pagina }],
     queryFn: () =>
       listarProductos({
         q: textoBuscado || undefined,
         categoriaId: categoriaId || undefined,
-        clasificacion: (clasificacion || undefined) as Producto['clasificacion'] | undefined,
-        limit: LIMITE_LISTADO,
+        clasificacion: (clasificacion || undefined) as Clasificacion | undefined,
+        page: pagina,
+        pageSize: PAGE_SIZE,
       }),
+    // Al cambiar de página/filtro/búsqueda, mantiene la tabla anterior visible
+    // mientras llega la nueva en vez de tirarla y mostrar "Cargando…".
+    placeholderData: keepPreviousData,
   })
   const { data: categorias } = useQuery({ queryKey: ['categorias'], queryFn: listarCategorias })
   const { data: marcas } = useQuery({ queryKey: ['marcas'], queryFn: listarMarcas })
@@ -70,8 +77,9 @@ export function GestionProductos() {
   const nombreCategoria = (id: string | null) => categorias?.find((c) => c.id === id)?.nombre ?? '—'
   const nombreMarca = (id: string | null) => marcas?.find((m) => m.id === id)?.nombre ?? '—'
 
-  const productosFiltrados = productos ?? []
-  const hayMasResultados = productosFiltrados.length === LIMITE_LISTADO
+  const productosFiltrados = data?.items ?? []
+  const total = data?.total ?? 0
+  const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="p-8">
@@ -130,12 +138,6 @@ export function GestionProductos() {
           ))}
         </select>
       </div>
-
-      {hayMasResultados && (
-        <p className="mb-4 text-sm text-slate-500">
-          Mostrando los primeros {LIMITE_LISTADO} resultados — usá el buscador para acotar.
-        </p>
-      )}
 
       {eliminarMutation.isError && (
         <p className="mb-4 text-sm text-red-600">
@@ -212,6 +214,32 @@ export function GestionProductos() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!isPending && total > 0 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+          <span>
+            {total} {total === 1 ? 'producto' : 'productos'} — página {pagina} de {totalPaginas}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => p - 1)}
+              className="rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina((p) => p + 1)}
+              className="rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

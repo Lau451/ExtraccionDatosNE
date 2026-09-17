@@ -11,7 +11,13 @@ import { PCP_WRITE_ROLES, puedeRol } from './roles'
 export function GestionCatalogoProveedores() {
   const { perfil } = useAuth()
   const [productoSeleccionado, setProductoSeleccionado] = useState('')
-  const { data: productos = [], isPending: productosPendientes } = useQuery({ queryKey: ['productos'], queryFn: listarProductos })
+  // pageSize generoso a propósito: este selector necesita TODOS los productos
+  // de la droguería (~7144 hoy en Nueva Era), no una página de búsqueda.
+  const { data: productosPagina, isPending: productosPendientes } = useQuery({
+    queryKey: ['productos', 'todos'],
+    queryFn: () => listarProductos({ pageSize: 10000 }),
+  })
+  const productos = productosPagina?.items ?? []
   // pageSize generoso a propósito: este selector necesita TODOS los proveedores
   // de la droguería (picker + resolución de nombre por id), no una página de
   // búsqueda -- a diferencia de GestionTerceros, acá no hay UI de paginado.

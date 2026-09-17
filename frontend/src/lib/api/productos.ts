@@ -160,17 +160,23 @@ export interface ListarProductosParams {
   q?: string
   categoriaId?: string
   clasificacion?: Clasificacion
-  limit?: number
+  page?: number
+  pageSize?: number
 }
 
-export function listarProductos(params: ListarProductosParams = {}): Promise<Producto[]> {
+export interface ProductosPagina {
+  items: Producto[]
+  total: number
+}
+
+export function listarProductos(params: ListarProductosParams = {}): Promise<ProductosPagina> {
   const query = new URLSearchParams()
   if (params.q) query.set('q', params.q)
   if (params.categoriaId) query.set('categoria_id', params.categoriaId)
   if (params.clasificacion) query.set('clasificacion', params.clasificacion)
-  if (params.limit) query.set('limit', String(params.limit))
-  const suffix = query.toString() ? `?${query.toString()}` : ''
-  return presupuestacionFetch<Producto[]>(`/productos${suffix}`)
+  query.set('page', String(params.page ?? 1))
+  query.set('page_size', String(params.pageSize ?? 50))
+  return presupuestacionFetch<ProductosPagina>(`/productos?${query.toString()}`)
 }
 
 export function crearProducto(payload: ProductoCreatePayload): Promise<Producto> {

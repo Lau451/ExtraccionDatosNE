@@ -67,6 +67,41 @@ def listar_productos(
         inicio += _TAMANO_PAGINA_PRODUCTOS
 
 
+def listar_productos_paginado(
+    client: Client,
+    *,
+    drogueria_id: str,
+    activo: bool | None = None,
+    categoria_id: str | None = None,
+    clasificacion: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    # A diferencia de listar_terceros_paginado, acá el filtro (categoria_id/
+    # clasificacion son columnas propias, no un embed) es un WHERE simple, así
+    # que Postgres puede contar y paginar en una sola vuelta con
+    # `count="exact"` -- no hace falta traer todo y filtrar en Python.
+    query = (
+        client.table("productos")
+        .select("*", count="exact")
+        .eq("drogueria_id", drogueria_id)
+        .is_("deleted_at", None)
+    )
+    if activo is not None:
+        query = query.eq("activo", activo)
+    if categoria_id is not None:
+        query = query.eq("categoria_id", categoria_id)
+    if clasificacion is not None:
+        query = query.eq("clasificacion", clasificacion)
+    if q:
+        patron = q.replace("%", "").replace(",", "")
+        query = query.or_(f"nombre.ilike.%{patron}%,codigo_interno.ilike.%{patron}%")
+    inicio = (page - 1) * page_size
+    resultado = query.order("nombre").range(inicio, inicio + page_size - 1).execute()
+    return resultado.data, resultado.count or 0
+
+
 def obtener_producto(client: Client, *, producto_id: str) -> dict[str, Any] | None:
     resultado = (
         client.table("productos")

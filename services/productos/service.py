@@ -70,6 +70,29 @@ def listar_productos(
     )
 
 
+def listar_productos_paginado(
+    client: Client,
+    *,
+    drogueria_id: str,
+    activo: bool | None = None,
+    categoria_id: str | None = None,
+    clasificacion: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    return repo.listar_productos_paginado(
+        client,
+        drogueria_id=drogueria_id,
+        activo=activo,
+        categoria_id=categoria_id,
+        clasificacion=clasificacion,
+        q=q,
+        page=page,
+        page_size=page_size,
+    )
+
+
 def obtener_producto(client: Client, *, producto_id: str, drogueria_id: str) -> dict[str, Any]:
     producto = repo.obtener_producto(client, producto_id=producto_id)
     if producto is None or producto["drogueria_id"] != drogueria_id:

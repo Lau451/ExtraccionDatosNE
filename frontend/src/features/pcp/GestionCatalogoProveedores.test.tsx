@@ -35,7 +35,7 @@ describe('GestionCatalogoProveedores', () => {
   beforeEach(() => {
     catalogo = [ASOCIACION]
     perfilMock.rol = 'admin'
-    vi.mocked(listarProductos).mockReset().mockResolvedValue(PRODUCTOS as never)
+    vi.mocked(listarProductos).mockReset().mockResolvedValue({ items: PRODUCTOS, total: PRODUCTOS.length } as never)
     vi.mocked(listarTerceros).mockReset().mockResolvedValue({ items: [PROVEEDOR], total: 1 } as never)
     vi.mocked(listarProveedoresProducto).mockReset().mockImplementation(async (productoId) =>
       catalogo.filter((asociacion) => asociacion.producto_id === productoId),
@@ -57,7 +57,7 @@ describe('GestionCatalogoProveedores', () => {
   })
 
   it('muestra el estado vacío de productos sin consultar asociaciones', async () => {
-    vi.mocked(listarProductos).mockResolvedValue([] as never)
+    vi.mocked(listarProductos).mockResolvedValue({ items: [], total: 0 } as never)
     renderCatalogo()
 
     expect(await screen.findByText(/no hay productos disponibles/i)).toBeInTheDocument()

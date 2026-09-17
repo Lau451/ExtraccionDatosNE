@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
 from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
@@ -21,6 +21,7 @@ from services.productos.models import (
     ProductoCaracteristicaCreate,
     ProductoCaracteristicaOut,
     ProductoCreate,
+    ProductoListOut,
     ProductoOut,
     ProductoUpdate,
     StockAjuste,
@@ -47,7 +48,7 @@ from services.productos.service import (
     listar_costos_para_endpoint,
     listar_envases,
     listar_marcas,
-    listar_productos,
+    listar_productos_paginado,
     listar_stock_para_endpoint,
     obtener_producto,
     quitar_caracteristica_producto_para_endpoint,
@@ -63,25 +64,32 @@ _ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
 
 # -- productos ---------------------------------------------------------------
 
-@router.get("/productos", response_model=list[ProductoOut])
+@router.get("/productos", response_model=ProductoListOut)
 def listar_productos_endpoint(
     activo: bool | None = None,
     categoria_id: str | None = None,
     clasificacion: str | None = None,
     q: str | None = None,
-    limit: int | None = None,
+    page: int = Query(1, ge=1),
+    # Tope alto a propósito: el selector de producto de PCP necesita "todos
+    # los que matchean" en un solo request (~7144 hoy en Nueva Era), no una
+    # página de búsqueda -- mismo criterio que el picker de proveedores de
+    # terceros.
+    page_size: int = Query(50, ge=1, le=10000),
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
     user_client: Client = Depends(get_user_client),
-) -> list[ProductoOut]:
-    return listar_productos(
+) -> ProductoListOut:
+    items, total = listar_productos_paginado(
         user_client,
         drogueria_id=usuario.drogueria_id,
         activo=activo,
         categoria_id=categoria_id,
         clasificacion=clasificacion,
         q=q,
-        limit=min(limit, 500) if limit else None,
+        page=page,
+        page_size=page_size,
     )
+    return ProductoListOut(items=items, total=total)
 
 
 @router.post("/productos", response_model=ProductoOut)

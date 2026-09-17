@@ -67,7 +67,7 @@ function renderConQueryClient(ui: React.ReactElement) {
 
 beforeEach(() => {
   perfilMock.rol = 'admin'
-  vi.mocked(listarProductos).mockReset().mockResolvedValue([PRODUCTO_A])
+  vi.mocked(listarProductos).mockReset().mockResolvedValue({ items: [PRODUCTO_A], total: 1 })
   vi.mocked(listarCategorias).mockReset().mockResolvedValue([])
   vi.mocked(listarMarcas).mockReset().mockResolvedValue([])
   vi.mocked(listarEnvases).mockReset().mockResolvedValue([])
@@ -101,6 +101,22 @@ describe('GestionProductos', () => {
         expect.objectContaining({ codigo_interno: 'B002', nombre: 'Paracetamol 500mg' }),
       ),
     )
+  })
+
+  it('muestra controles de paginación y pide la página siguiente al backend', async () => {
+    const PRODUCTO_B = { ...PRODUCTO_A, id: 'prod-2', codigo_interno: 'B002', nombre: 'Paracetamol 500mg' }
+    vi.mocked(listarProductos).mockImplementation(({ page } = {}) =>
+      Promise.resolve({ items: page === 2 ? [PRODUCTO_B] : [PRODUCTO_A], total: 51 }),
+    )
+    renderConQueryClient(<GestionProductos />)
+
+    await waitFor(() => expect(screen.getByText('Ibuprofeno 400mg')).toBeInTheDocument())
+    expect(screen.getByText(/página 1 de 2/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    expect(listarProductos).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }))
   })
 
   it('un rol sin permiso de escritura no ve las acciones de alta/edición/borrado', async () => {

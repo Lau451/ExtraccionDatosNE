@@ -33,6 +33,7 @@ from services.productos.service import (
     listar_categorias,
     listar_costos,
     listar_productos,
+    listar_productos_paginado,
     listar_stock,
     obtener_producto,
     quitar_caracteristica_producto,
@@ -84,6 +85,56 @@ def test_listar_productos_filtra_por_activo_y_categoria(
         service_client, drogueria_id=seed_drogueria["id"], categoria_id=categoria["id"]
     )
     assert [p["id"] for p in filtrados] == [a["id"]]
+
+
+@pytest.mark.integration
+def test_listar_productos_paginado_devuelve_total_exacto_contra_postgres_real(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    for i in range(5):
+        crear_producto(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            body=ProductoCreate(codigo_interno=_codigo(), nombre=f"Producto Paginado {i}"),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+
+    primera_pagina, total = listar_productos_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], page=1, page_size=2
+    )
+    segunda_pagina, _ = listar_productos_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], page=2, page_size=2
+    )
+
+    assert total == 5
+    assert len(primera_pagina) == 2
+    assert len(segunda_pagina) == 2
+    assert {p["id"] for p in primera_pagina}.isdisjoint({p["id"] for p in segunda_pagina})
+
+
+@pytest.mark.integration
+def test_listar_productos_paginado_filtra_por_q_contra_postgres_real(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(codigo_interno=_codigo(), nombre="Amoxicilina 500mg"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(codigo_interno=_codigo(), nombre="Ibuprofeno 400mg"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    items, total = listar_productos_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], q="amoxicilina"
+    )
+
+    assert total == 1
+    assert items[0]["nombre"] == "Amoxicilina 500mg"
 
 
 @pytest.mark.integration

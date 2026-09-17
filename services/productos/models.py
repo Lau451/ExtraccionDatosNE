@@ -55,6 +55,11 @@ class ProductoOut(BaseModel):
     activo: bool
 
 
+class ProductoListOut(BaseModel):
+    items: list[ProductoOut]
+    total: int
+
+
 class CategoriaCreate(BaseModel):
     nombre: str
     descripcion: str | None = None
