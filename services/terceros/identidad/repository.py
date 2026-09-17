@@ -15,6 +15,12 @@ def buscar_tercero(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
     return resultado.data[0] if resultado.data else None
 
 
+# PostgREST corta a esta cantidad de filas por página si no se pide `.range()`
+# explícito. Sin el loop de abajo, una droguería con más terceros que esto pierde
+# en silencio todo lo que ordena alfabéticamente después del límite.
+_TAMANO_PAGINA = 1000
+
+
 def listar_terceros(
     client: Client, *, drogueria_id: str, activo: bool | None = None
 ) -> list[dict[str, Any]]:
@@ -23,15 +29,28 @@ def listar_terceros(
     # appear, just with an empty `clientes`/`proveedores` array. The service layer turns
     # those arrays into `tiene_rol_cliente`/`tiene_rol_proveedor` booleans for the list's
     # role badge, without a second round-trip per row.
-    query = (
-        client.table("terceros")
-        .select("*, clientes(id), proveedores(id)")
-        .eq("drogueria_id", drogueria_id)
-        .is_("deleted_at", None)
-    )
-    if activo is not None:
-        query = query.eq("activo", activo)
-    return query.order("razon_social").execute().data
+    filas: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        query = (
+            client.table("terceros")
+            .select("*, clientes(id), proveedores(id)")
+            .eq("drogueria_id", drogueria_id)
+            .is_("deleted_at", None)
+        )
+        if activo is not None:
+            query = query.eq("activo", activo)
+        pagina = (
+            query.order("razon_social")
+            .range(offset, offset + _TAMANO_PAGINA - 1)
+            .execute()
+            .data
+        )
+        filas.extend(pagina)
+        if len(pagina) < _TAMANO_PAGINA:
+            break
+        offset += _TAMANO_PAGINA
+    return filas
 
 
 def crear_tercero(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
@@ -73,10 +92,22 @@ def listar_clientes_con_tercero(
     # closing the post-verify gap where a deactivated tercero (activo=false) still
     # appeared in this listing because only `clientes.activo` (the role's own column)
     # was ever filtered.
-    query = client.table("clientes").select("*, terceros!inner(*)").eq("drogueria_id", drogueria_id)
-    if activo is not None:
-        query = query.eq("activo", activo).eq("terceros.activo", activo)
-    return query.execute().data
+    filas: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        query = (
+            client.table("clientes")
+            .select("*, terceros!inner(*)")
+            .eq("drogueria_id", drogueria_id)
+        )
+        if activo is not None:
+            query = query.eq("activo", activo).eq("terceros.activo", activo)
+        pagina = query.range(offset, offset + _TAMANO_PAGINA - 1).execute().data
+        filas.extend(pagina)
+        if len(pagina) < _TAMANO_PAGINA:
+            break
+        offset += _TAMANO_PAGINA
+    return filas
 
 
 def buscar_cliente_con_tercero(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
@@ -110,12 +141,22 @@ def listar_proveedores_con_tercero(
     client: Client, *, drogueria_id: str, activo: bool | None = None
 ) -> list[dict[str, Any]]:
     # Same `!inner` embed rationale as listar_clientes_con_tercero above.
-    query = (
-        client.table("proveedores").select("*, terceros!inner(*)").eq("drogueria_id", drogueria_id)
-    )
-    if activo is not None:
-        query = query.eq("activo", activo).eq("terceros.activo", activo)
-    return query.execute().data
+    filas: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        query = (
+            client.table("proveedores")
+            .select("*, terceros!inner(*)")
+            .eq("drogueria_id", drogueria_id)
+        )
+        if activo is not None:
+            query = query.eq("activo", activo).eq("terceros.activo", activo)
+        pagina = query.range(offset, offset + _TAMANO_PAGINA - 1).execute().data
+        filas.extend(pagina)
+        if len(pagina) < _TAMANO_PAGINA:
+            break
+        offset += _TAMANO_PAGINA
+    return filas
 
 
 def buscar_proveedor_con_tercero(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
