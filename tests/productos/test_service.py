@@ -6,9 +6,13 @@ import pytest
 
 from services.presupuestacion.core.exceptions import NotFoundError
 from services.productos.models import (
+    CaracteristicaCreate,
     CategoriaCreate,
     CategoriaUpdate,
     CostoCreate,
+    EnvaseCreate,
+    MarcaCreate,
+    ProductoCaracteristicaCreate,
     ProductoCreate,
     ProductoUpdate,
     StockAjuste,
@@ -17,15 +21,21 @@ from services.productos.service import (
     actualizar_categoria,
     actualizar_producto,
     ajustar_stock,
+    asignar_caracteristica_producto,
+    crear_caracteristica,
     crear_categoria,
     crear_costo,
+    crear_envase,
+    crear_marca,
     crear_producto,
     eliminar_producto,
+    listar_caracteristicas_producto,
     listar_categorias,
     listar_costos,
     listar_productos,
     listar_stock,
     obtener_producto,
+    quitar_caracteristica_producto,
 )
 
 
@@ -97,7 +107,7 @@ def test_actualizar_producto_solo_pisa_campos_enviados(
     producto = crear_producto(
         service_client,
         drogueria_id=seed_drogueria["id"],
-        body=ProductoCreate(codigo_interno=_codigo(), nombre="Original", laboratorio="Lab A"),
+        body=ProductoCreate(codigo_interno=_codigo(), nombre="Original", droga="Droga A"),
         usuario_id=seed_usuario_sistema["id"],
     )
 
@@ -105,11 +115,11 @@ def test_actualizar_producto_solo_pisa_campos_enviados(
         service_client,
         producto_id=producto["id"],
         drogueria_id=seed_drogueria["id"],
-        body=ProductoUpdate(laboratorio="Lab B"),
+        body=ProductoUpdate(droga="Droga B"),
         usuario_id=seed_usuario_sistema["id"],
     )
 
-    assert resultado["laboratorio"] == "Lab B"
+    assert resultado["droga"] == "Droga B"
     assert resultado["nombre"] == "Original"
 
 
@@ -131,6 +141,69 @@ def test_eliminar_producto_soft_delete(
 
     with pytest.raises(NotFoundError):
         obtener_producto(service_client, producto_id=producto["id"], drogueria_id=seed_drogueria["id"])
+
+
+@pytest.mark.integration
+def test_crear_producto_con_marca_envase_y_alicuota(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    marca = crear_marca(service_client, drogueria_id=seed_drogueria["id"], body=MarcaCreate(nombre="Raffo"))
+    envase = crear_envase(service_client, drogueria_id=seed_drogueria["id"], body=EnvaseCreate(nombre="Caja"))
+
+    resultado = crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(
+            codigo_interno=_codigo(),
+            nombre="Paracetamol 500mg",
+            marca_id=marca["id"],
+            envase_id=envase["id"],
+            alicuota_iva=Decimal("21"),
+        ),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    assert resultado["marca_id"] == marca["id"]
+    assert resultado["envase_id"] == envase["id"]
+    assert Decimal(str(resultado["alicuota_iva"])) == Decimal("21")
+
+
+@pytest.mark.integration
+def test_asignar_y_quitar_caracteristica_producto(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    producto = crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(codigo_interno=_codigo(), nombre="Diazepam 10mg"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    caracteristica = crear_caracteristica(
+        service_client, drogueria_id=seed_drogueria["id"], body=CaracteristicaCreate(nombre="PSICOTROPICO")
+    )
+
+    asignar_caracteristica_producto(
+        service_client,
+        producto_id=producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCaracteristicaCreate(caracteristica_id=caracteristica["id"]),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+    asignadas = listar_caracteristicas_producto(
+        service_client, producto_id=producto["id"], drogueria_id=seed_drogueria["id"]
+    )
+    assert [c["caracteristica_id"] for c in asignadas] == [caracteristica["id"]]
+
+    quitar_caracteristica_producto(
+        service_client,
+        producto_id=producto["id"],
+        caracteristica_id=caracteristica["id"],
+        drogueria_id=seed_drogueria["id"],
+    )
+    asignadas = listar_caracteristicas_producto(
+        service_client, producto_id=producto["id"], drogueria_id=seed_drogueria["id"]
+    )
+    assert asignadas == []
 
 
 # ---------------------------------------------------------------------------

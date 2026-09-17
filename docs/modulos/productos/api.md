@@ -11,6 +11,18 @@
 
 Firmas verificadas contra el código real en esta sesión.
 
+> **Actualización (migración `0016_productos_marca_envase_caracteristicas`)**:
+> `ProductoCreate`/`ProductoUpdate`/`ProductoOut` perdieron `laboratorio` y
+> ganaron `marca_id`, `envase_id`, `alicuota_iva`. Se agregaron
+> `MarcaCreate`/`Update`/`Out`, `EnvaseCreate`/`Update`/`Out`,
+> `CaracteristicaCreate`/`Update`/`Out` (mismo shape que `Categoria*` pero sin
+> `descripcion`) y `ProductoCaracteristicaCreate`/`Out` para la asignación N:M.
+> Los bloques de código de abajo (`models.py`) están actualizados; los rangos
+> de línea de `repository.py`/`service.py`/`router.py` citados en el resto de
+> este documento **no se renumeraron** tras estos cambios — igual que la
+> sección `proveedores` ya señalada como no purgada línea por línea arriba,
+> tratar esos rangos como aproximados, no verificados en esta sesión.
+
 ## `productos/models.py`
 
 ```python
@@ -28,14 +40,16 @@ class ProductoCreate(BaseModel):
     droga: str | None = None
     presentacion: str | None = None
     forma_farmaceutica: str | None = None
-    laboratorio: str | None = None
+    marca_id: str | None = None
+    envase_id: str | None = None
+    alicuota_iva: Decimal | None = None
     codigo_anmat: str | None = None
-# models.py:13-22
+# models.py — actualizado en migración 0016, sin `laboratorio`
 
 class ProductoUpdate(BaseModel):
     # todos los campos de ProductoCreate salvo codigo_interno, opcionales, más:
     activo: bool | None = None
-# models.py:25-34
+# models.py
 
 class ProductoOut(BaseModel):
     id: str
@@ -47,10 +61,12 @@ class ProductoOut(BaseModel):
     droga: str | None
     presentacion: str | None
     forma_farmaceutica: str | None
-    laboratorio: str | None
+    marca_id: str | None
+    envase_id: str | None
+    alicuota_iva: Decimal | None
     codigo_anmat: str | None
     activo: bool
-# models.py:37-49
+# models.py — actualizado en migración 0016, sin `laboratorio`
 
 class CategoriaCreate(BaseModel):
     nombre: str
@@ -70,6 +86,32 @@ class CategoriaOut(BaseModel):
     descripcion: str | None
     activa: bool
 # models.py:63-68
+
+# marcas / envases / caracteristicas: mismo shape entre las tres, sin
+# descripcion (a diferencia de Categoria*). Ejemplo con Marca — Envase y
+# Caracteristica son idénticos, solo cambia el prefijo del nombre de clase.
+
+class MarcaCreate(BaseModel):
+    nombre: str
+
+class MarcaUpdate(BaseModel):
+    nombre: str | None = None
+    activa: bool | None = None
+
+class MarcaOut(BaseModel):
+    id: str
+    drogueria_id: str
+    nombre: str
+    activa: bool
+
+class ProductoCaracteristicaCreate(BaseModel):
+    caracteristica_id: str
+
+class ProductoCaracteristicaOut(BaseModel):
+    id: str
+    producto_id: str
+    caracteristica_id: str
+# models.py — todo lo de este bloque agregado en migración 0016
 
 class ProveedorCreate(BaseModel):
     razon_social: str
@@ -385,6 +427,18 @@ _ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
 | GET | `/categorias` | `activa?` (query) | `list[CategoriaOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py:103-109` |
 | POST | `/categorias` | `CategoriaCreate` | `CategoriaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py:112-117` |
 | PATCH | `/categorias/{categoria_id}` | `CategoriaUpdate` | `CategoriaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py:120-128` |
+| GET | `/marcas` | `activa?` (query) | `list[MarcaOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py` (migración 0016) |
+| POST | `/marcas` | `MarcaCreate` | `MarcaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| PATCH | `/marcas/{marca_id}` | `MarcaUpdate` | `MarcaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| GET | `/envases` | `activa?` (query) | `list[EnvaseOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py` (migración 0016) |
+| POST | `/envases` | `EnvaseCreate` | `EnvaseOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| PATCH | `/envases/{envase_id}` | `EnvaseUpdate` | `EnvaseOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| GET | `/caracteristicas` | `activa?` (query) | `list[CaracteristicaOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py` (migración 0016) |
+| POST | `/caracteristicas` | `CaracteristicaCreate` | `CaracteristicaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| PATCH | `/caracteristicas/{caracteristica_id}` | `CaracteristicaUpdate` | `CaracteristicaOut` | `_ROLES_ESCRITURA_CATEGORIAS` | `router.py` (migración 0016) |
+| GET | `/productos/{producto_id}/caracteristicas` | — | `list[ProductoCaracteristicaOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py` (migración 0016) |
+| POST | `/productos/{producto_id}/caracteristicas` | `ProductoCaracteristicaCreate` | `ProductoCaracteristicaOut` | `_ROLES_ESCRITURA_CATALOGO` | `router.py` (migración 0016) |
+| DELETE | `/productos/{producto_id}/caracteristicas/{caracteristica_id}` | — | `204 No Content` | `_ROLES_ESCRITURA_CATALOGO` | `router.py` (migración 0016) |
 | GET | `/proveedores` | `activo?` (query) | `list[ProveedorOut]` | `_ROLES_LECTURA_CATALOGO` | `router.py:133-139` |
 | POST | `/proveedores` | `ProveedorCreate` | `ProveedorOut` | `_ROLES_ESCRITURA_CATALOGO` | `router.py:142-147` |
 | GET | `/proveedores/{proveedor_id}` | — | `ProveedorOut` | `_ROLES_LECTURA_CATALOGO` | `router.py:150-156` |

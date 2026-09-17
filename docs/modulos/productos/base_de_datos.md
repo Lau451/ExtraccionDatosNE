@@ -16,7 +16,21 @@
 > **anterior**; el estado vigente está en
 > [`../terceros/base_de_datos.md`](../terceros/base_de_datos.md).
 
-Productos es el módulo dueño de 4 tablas activas —`productos`, `categorias`,
+> **Actualización (migración `0016_productos_marca_envase_caracteristicas`)**:
+> `productos.laboratorio` (TEXT libre) queda deprecado — reemplazado para altas
+> nuevas por `marca_id` (FK a `marcas`, tabla nueva). La columna `laboratorio`
+> **no se eliminó** en esta migración: al momento de escribirla, `productos` ya
+> tenía 15 filas de fixtures de test en el proyecto de test (no 0 como se
+> esperaba), así que se dejó la columna nullable y sin uso nuevo en vez de un
+> `DROP COLUMN` no verificado contra datos reales. Se agregaron además
+> `envase_id` (FK a `envases`, tabla nueva — concepto distinto de
+> `forma_farmaceutica`: envase es el contenedor físico, no la forma del
+> producto) y `alicuota_iva` (dato fiscal, antes inexistente). Características
+> especiales (psicotrópico, heladera, vale...) pasan a ser N:M vía la tabla
+> puente nueva `producto_caracteristicas`, no un campo de texto único.
+
+Productos es el módulo dueño de 8 tablas activas —`productos`, `categorias`,
+`marcas`, `envases`, `caracteristicas`, `producto_caracteristicas`,
 `costos_productos`, `stock_productos`— más la sección histórica de `proveedores`
 documentada abajo. Ver [`arquitectura.md`](./arquitectura.md) para el detalle de los
 módulos que además leen o escriben estas tablas por fuera de este código.
@@ -31,7 +45,11 @@ módulos que además leen o escriben estas tablas por fuera de este código.
 | `nombre` | NOT NULL. Escrita al crear, actualizable parcialmente. Usada para ordenar el listado (`repository.py:27`). |
 | `categoria_id` | Nullable. FK a `categorias`. Escrita al crear, actualizable parcialmente; filtro opcional de `listar_productos` (`repository.py:25-26`, query param `categoria_id`). |
 | `clasificacion` | `Clasificacion` (`Literal`, `models.py:7-9`). Nullable. |
-| `droga`, `presentacion`, `forma_farmaceutica`, `laboratorio`, `codigo_anmat` | Nullable. Escritas al crear, actualizables parcialmente. |
+| `droga`, `presentacion`, `forma_farmaceutica`, `codigo_anmat` | Nullable. Escritas al crear, actualizables parcialmente. |
+| `marca_id` | Nullable. FK a `marcas` (reemplaza `laboratorio` para altas nuevas — ver nota de migración arriba). Escrita al crear/actualizar (`service.py`, dict de `crear_producto`/`actualizar_producto`). |
+| `envase_id` | Nullable. FK a `envases`. Distinto de `forma_farmaceutica`: envase es el contenedor físico (caja, frasco, blister), no la forma del producto. |
+| `alicuota_iva` | Nullable. `NUMERIC(5,2)`, `CHECK (alicuota_iva IS NULL OR alicuota_iva >= 0)`. Convertida a `str` antes de escribir (mismo patrón que `costo_unitario` en `costos_productos`, evita que el cliente de Supabase reciba un `Decimal` no serializable). |
+| `laboratorio` | **Deprecado, sin uso nuevo.** No aparece en `ProductoCreate`/`ProductoUpdate`/`ProductoOut` desde la migración 0016. Columna todavía presente en la tabla (ver nota arriba); retiro definitivo pendiente. |
 | `activo` | BOOLEAN. Filtro opcional en `listar_productos` (`repository.py:23-24`); forzada a `False` por `soft_delete_producto` (`repository.py:51`). Leída directo (sin pasar por este módulo) por `matching/repository.py:42` e `imports/repository.py`. |
 | `deleted_at`, `deleted_by` | Escritas únicamente por `soft_delete_producto` (`repository.py:49-50`). Filtro `is_("deleted_at", None)` en `obtener_producto` (`repository.py:35`) y `listar_productos` (`repository.py:21`). |
 | `created_by`, `updated_by` | `created_by`/`updated_by` escritas al crear (`service.py:39-40`); `updated_by` reescrita en cada `actualizar_producto` (`service.py:63`). |
@@ -53,6 +71,44 @@ módulos que además leen o escriben estas tablas por fuera de este código.
 **CRUD**: Create (`repository.py:58-59`), Read (`obtener_categoria`,
 `repository.py:69-71`; `listar_categorias`, `repository.py:62-66`), Update
 (`repository.py:74-75`). Sin Delete, ni físico ni lógico.
+
+## `marcas`, `envases`, `caracteristicas` (migración 0016)
+
+Mismo shape entre las tres — catálogo por drogueria sin `descripcion` (a
+diferencia de `categorias`: el nombre alcanza para una marca, un envase o una
+característica; no se replicó `descripcion` para no sobre-normalizar un
+catálogo cuyo único dato relevante es el nombre). `repository.py:80-147`
+implementa las tres con un mismo set de helpers genéricos parametrizados por
+nombre de tabla (`_crear_catalogo`, `_listar_catalogo`, `_obtener_catalogo`,
+`_actualizar_catalogo`, `repository.py:80-99`).
+
+| Columna | Qué hace este módulo |
+|---|---|
+| `id` | PK. |
+| `drogueria_id` | FK a `droguerias`. `UNIQUE(drogueria_id, nombre)` en las tres tablas. |
+| `nombre` | NOT NULL. Escrita al crear, actualizable parcialmente. |
+| `activa` | BOOLEAN, default `TRUE`. Filtro opcional en los tres `listar_*` (mismo patrón que `categorias.activa`). |
+
+**CRUD**: Create, Read (obtener + listar), Update — igual que `categorias`.
+Sin Delete, ni físico ni lógico (mismo criterio que `categorias`).
+
+## `producto_caracteristicas` (migración 0016)
+
+Tabla puente N:M entre `productos` y `caracteristicas` — reemplaza lo que en
+el maestro legado era un campo de texto único de "características especiales"
+(psicotrópico, heladera, vale...). Sin campo mutable propio: la fila existe o
+no existe, así que no hay `UPDATE`, solo alta y baja (`repository.py:150-173`).
+
+| Columna | Qué hace este módulo |
+|---|---|
+| `id` | PK. |
+| `drogueria_id` | FK a `droguerias`. |
+| `producto_id` | FK a `productos` (simple, sin `UNIQUE(id, drogueria_id)` compuesto — `productos` no usa ese patrón). |
+| `caracteristica_id` | FK a `caracteristicas`. `UNIQUE(producto_id, caracteristica_id)` — un producto no puede tener la misma característica asignada dos veces. |
+| `created_by` | Escrita al asignar (`service.py`, `asignar_caracteristica_producto`). |
+
+**CRUD**: Create (asignar, `repository.py:162-163`), Read (`listar_caracteristicas_producto`,
+`repository.py:152-159`), Delete físico (quitar, `repository.py:166-173`). Sin Update.
 
 ## `proveedores`
 
@@ -114,6 +170,10 @@ Delete.
 |---|---|---|
 | `productos` | C/R/U/soft-D | Sí. `deleted_at`/`deleted_by`/`activo=False` (`repository.py:46-53`). |
 | `categorias` | C/R/U | No — ni soft ni físico. Sin endpoint `DELETE`. |
+| `marcas` | C/R/U | No — ni soft ni físico. |
+| `envases` | C/R/U | No — ni soft ni físico. |
+| `caracteristicas` | C/R/U | No — ni soft ni físico. |
+| `producto_caracteristicas` | C/R/D (físico) | No aplica — es una asociación, se borra directo. |
 | `proveedores` | C/R/U/soft-D | Sí. `deleted_at`/`deleted_by`/`activo=False` (`repository.py:114-121`). |
 | `costos_productos` | C/R/U (solo `fecha_hasta`) | No. Vigencia se resuelve con `fecha_hasta IS NULL`. |
 | `stock_productos` | R/upsert | No aplica — es una tabla de magnitudes, no de entidades dadas de baja. |

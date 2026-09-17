@@ -46,7 +46,8 @@ y sus tests (`tests/productos/test_service.py`) en esta sesión.
 - **Observaciones**: [IMPLEMENTADO]. Verificada en
   `tests/productos/test_service.py:100-120`
   (`test_actualizar_producto_solo_pisa_campos_enviados`, confirma que `nombre` no se
-  pierde al actualizar solo `laboratorio`), `tests/productos/test_service.py:147-161`
+  pierde al actualizar solo `droga` — el ejemplo usaba `laboratorio` antes de la
+  migración 0016, que lo dejó deprecado), `tests/productos/test_service.py:147-161`
   (`test_crear_y_actualizar_categoria`, confirma que `nombre` no se pierde al
   actualizar solo `activa`) y `tests/productos/test_service.py:177-210`
   (`test_crear_listar_actualizar_y_eliminar_proveedor`, confirma que `razon_social` no

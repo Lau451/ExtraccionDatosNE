@@ -4,11 +4,22 @@ from supabase import Client
 from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
 from services.presupuestacion.core.database import get_user_client
 from services.productos.models import (
+    CaracteristicaCreate,
+    CaracteristicaOut,
+    CaracteristicaUpdate,
     CategoriaCreate,
     CategoriaOut,
     CategoriaUpdate,
     CostoCreate,
     CostoOut,
+    EnvaseCreate,
+    EnvaseOut,
+    EnvaseUpdate,
+    MarcaCreate,
+    MarcaOut,
+    MarcaUpdate,
+    ProductoCaracteristicaCreate,
+    ProductoCaracteristicaOut,
     ProductoCreate,
     ProductoOut,
     ProductoUpdate,
@@ -16,18 +27,30 @@ from services.productos.models import (
     StockOut,
 )
 from services.productos.service import (
+    actualizar_caracteristica_para_endpoint,
     actualizar_categoria_para_endpoint,
+    actualizar_envase_para_endpoint,
+    actualizar_marca_para_endpoint,
     actualizar_producto_para_endpoint,
     ajustar_stock_para_endpoint,
+    asignar_caracteristica_producto_para_endpoint,
+    crear_caracteristica_para_endpoint,
     crear_categoria_para_endpoint,
     crear_costo_para_endpoint,
+    crear_envase_para_endpoint,
+    crear_marca_para_endpoint,
     crear_producto_para_endpoint,
     eliminar_producto_para_endpoint,
+    listar_caracteristicas,
+    listar_caracteristicas_producto_para_endpoint,
     listar_categorias,
     listar_costos_para_endpoint,
+    listar_envases,
+    listar_marcas,
     listar_productos,
     listar_stock_para_endpoint,
     obtener_producto,
+    quitar_caracteristica_producto_para_endpoint,
 )
 
 router = APIRouter()
@@ -44,11 +67,20 @@ _ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
 def listar_productos_endpoint(
     activo: bool | None = None,
     categoria_id: str | None = None,
+    clasificacion: str | None = None,
+    q: str | None = None,
+    limit: int | None = None,
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
     user_client: Client = Depends(get_user_client),
 ) -> list[ProductoOut]:
     return listar_productos(
-        user_client, drogueria_id=usuario.drogueria_id, activo=activo, categoria_id=categoria_id
+        user_client,
+        drogueria_id=usuario.drogueria_id,
+        activo=activo,
+        categoria_id=categoria_id,
+        clasificacion=clasificacion,
+        q=q,
+        limit=min(limit, 500) if limit else None,
     )
 
 
@@ -117,6 +149,126 @@ def actualizar_categoria_endpoint(
 ) -> CategoriaOut:
     return actualizar_categoria_para_endpoint(
         categoria_id=categoria_id, drogueria_id=usuario.drogueria_id, body=body
+    )
+
+
+# -- marcas ----------------------------------------------------------------------
+
+@router.get("/marcas", response_model=list[MarcaOut])
+def listar_marcas_endpoint(
+    activa: bool | None = None,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
+    user_client: Client = Depends(get_user_client),
+) -> list[MarcaOut]:
+    return listar_marcas(user_client, drogueria_id=usuario.drogueria_id, activa=activa)
+
+
+@router.post("/marcas", response_model=MarcaOut)
+def crear_marca_endpoint(
+    body: MarcaCreate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> MarcaOut:
+    return crear_marca_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
+
+
+@router.patch("/marcas/{marca_id}", response_model=MarcaOut)
+def actualizar_marca_endpoint(
+    marca_id: str,
+    body: MarcaUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> MarcaOut:
+    return actualizar_marca_para_endpoint(marca_id=marca_id, drogueria_id=usuario.drogueria_id, body=body)
+
+
+# -- envases ---------------------------------------------------------------------
+
+@router.get("/envases", response_model=list[EnvaseOut])
+def listar_envases_endpoint(
+    activa: bool | None = None,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
+    user_client: Client = Depends(get_user_client),
+) -> list[EnvaseOut]:
+    return listar_envases(user_client, drogueria_id=usuario.drogueria_id, activa=activa)
+
+
+@router.post("/envases", response_model=EnvaseOut)
+def crear_envase_endpoint(
+    body: EnvaseCreate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> EnvaseOut:
+    return crear_envase_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
+
+
+@router.patch("/envases/{envase_id}", response_model=EnvaseOut)
+def actualizar_envase_endpoint(
+    envase_id: str,
+    body: EnvaseUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> EnvaseOut:
+    return actualizar_envase_para_endpoint(envase_id=envase_id, drogueria_id=usuario.drogueria_id, body=body)
+
+
+# -- caracteristicas (catalogo) ---------------------------------------------------
+
+@router.get("/caracteristicas", response_model=list[CaracteristicaOut])
+def listar_caracteristicas_endpoint(
+    activa: bool | None = None,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
+    user_client: Client = Depends(get_user_client),
+) -> list[CaracteristicaOut]:
+    return listar_caracteristicas(user_client, drogueria_id=usuario.drogueria_id, activa=activa)
+
+
+@router.post("/caracteristicas", response_model=CaracteristicaOut)
+def crear_caracteristica_endpoint(
+    body: CaracteristicaCreate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> CaracteristicaOut:
+    return crear_caracteristica_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
+
+
+@router.patch("/caracteristicas/{caracteristica_id}", response_model=CaracteristicaOut)
+def actualizar_caracteristica_endpoint(
+    caracteristica_id: str,
+    body: CaracteristicaUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATEGORIAS)),
+) -> CaracteristicaOut:
+    return actualizar_caracteristica_para_endpoint(
+        caracteristica_id=caracteristica_id, drogueria_id=usuario.drogueria_id, body=body
+    )
+
+
+# -- caracteristicas de un producto (asignacion N:M) ------------------------------
+
+@router.get("/productos/{producto_id}/caracteristicas", response_model=list[ProductoCaracteristicaOut])
+def listar_caracteristicas_producto_endpoint(
+    producto_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
+) -> list[ProductoCaracteristicaOut]:
+    return listar_caracteristicas_producto_para_endpoint(
+        producto_id=producto_id, drogueria_id=usuario.drogueria_id
+    )
+
+
+@router.post("/productos/{producto_id}/caracteristicas", response_model=ProductoCaracteristicaOut)
+def asignar_caracteristica_producto_endpoint(
+    producto_id: str,
+    body: ProductoCaracteristicaCreate,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
+) -> ProductoCaracteristicaOut:
+    return asignar_caracteristica_producto_para_endpoint(
+        producto_id=producto_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
+    )
+
+
+@router.delete("/productos/{producto_id}/caracteristicas/{caracteristica_id}", status_code=204)
+def quitar_caracteristica_producto_endpoint(
+    producto_id: str,
+    caracteristica_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
+) -> None:
+    quitar_caracteristica_producto_para_endpoint(
+        producto_id=producto_id, caracteristica_id=caracteristica_id, drogueria_id=usuario.drogueria_id
     )
 
 
