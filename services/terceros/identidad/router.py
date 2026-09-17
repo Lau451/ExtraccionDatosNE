@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
 from services.shared.auth import UsuarioPerfil, require_roles
@@ -11,17 +11,19 @@ from services.terceros.identidad.models import (
     ProveedorRolOut,
     ProveedorRolUpdate,
     TerceroCreate,
+    TerceroListOut,
     TerceroOut,
     TerceroUpdate,
 )
 from services.terceros.identidad.service import (
+    FiltroRol,
     actualizar_rol_cliente_para_endpoint,
     actualizar_rol_proveedor_para_endpoint,
     actualizar_tercero_para_endpoint,
     asignar_rol_cliente_para_endpoint,
     asignar_rol_proveedor_para_endpoint,
     crear_tercero_para_endpoint,
-    listar_terceros,
+    listar_terceros_paginado,
     obtener_rol_cliente,
     obtener_rol_proveedor,
     obtener_tercero,
@@ -39,13 +41,30 @@ def _es_superadmin(usuario: UsuarioPerfil) -> bool:
     return usuario.rol == "superadmin"
 
 
-@router.get("/terceros", response_model=list[TerceroOut])
+@router.get("/terceros", response_model=TerceroListOut)
 def listar_terceros_endpoint(
     activo: bool | None = True,
+    q: str | None = None,
+    rol: FiltroRol = "todos",
+    page: int = Query(1, ge=1),
+    # Tope alto a propósito: algunos consumidores (ej. el picker de
+    # proveedores de PCP) necesitan "todos los que matchean el filtro" en un
+    # solo request, no una página de búsqueda -- 5000 cubre holgado los ~3264
+    # proveedores reales de Nueva Era hoy.
+    page_size: int = Query(50, ge=1, le=5000),
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
     user_client: Client = Depends(get_user_client),
-) -> list[TerceroOut]:
-    return listar_terceros(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
+) -> TerceroListOut:
+    items, total = listar_terceros_paginado(
+        user_client,
+        drogueria_id=usuario.drogueria_id,
+        activo=activo,
+        q=q,
+        filtro_rol=rol,
+        page=page,
+        page_size=page_size,
+    )
+    return TerceroListOut(items=items, total=total)
 
 
 @router.post("/terceros", response_model=TerceroOut)

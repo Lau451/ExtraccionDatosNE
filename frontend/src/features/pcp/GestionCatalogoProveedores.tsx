@@ -12,7 +12,14 @@ export function GestionCatalogoProveedores() {
   const { perfil } = useAuth()
   const [productoSeleccionado, setProductoSeleccionado] = useState('')
   const { data: productos = [], isPending: productosPendientes } = useQuery({ queryKey: ['productos'], queryFn: listarProductos })
-  const { data: terceros = [] } = useQuery({ queryKey: ['terceros'], queryFn: listarTerceros })
+  // pageSize generoso a propósito: este selector necesita TODOS los proveedores
+  // de la droguería (picker + resolución de nombre por id), no una página de
+  // búsqueda -- a diferencia de GestionTerceros, acá no hay UI de paginado.
+  const { data: proveedoresPagina } = useQuery({
+    queryKey: ['terceros', 'proveedores'],
+    queryFn: () => listarTerceros({ rol: 'proveedores', pageSize: 5000 }),
+  })
+  const proveedores = proveedoresPagina?.items ?? []
   const sinProductos = !productosPendientes && productos.length === 0
   const productoId = productoSeleccionado || productos[0]?.id || ''
   const { data: asociaciones = [], isPending, isError } = useQuery({
@@ -20,9 +27,8 @@ export function GestionCatalogoProveedores() {
     queryFn: () => listarProveedoresProducto(productoId),
     enabled: !!productoId,
   })
-  const proveedores = terceros.filter((tercero) => tercero.tiene_rol_proveedor)
   const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
-  const nombreProveedor = (id: string) => terceros.find((tercero) => tercero.id === id)?.razon_social ?? id
+  const nombreProveedor = (id: string) => proveedores.find((tercero) => tercero.id === id)?.razon_social ?? id
 
   return (
     <main className="p-8">

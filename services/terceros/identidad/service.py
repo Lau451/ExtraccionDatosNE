@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from postgrest.exceptions import APIError
 from supabase import Client
@@ -64,6 +64,47 @@ def listar_terceros(
 ) -> list[dict[str, Any]]:
     filas = repo.listar_terceros(client, drogueria_id=drogueria_id, activo=activo)
     return [_con_flags_de_rol(fila) for fila in filas]
+
+
+FiltroRol = Literal["todos", "clientes", "proveedores", "ambos"]
+
+
+def _coincide_filtro_rol(fila: dict[str, Any], filtro_rol: FiltroRol) -> bool:
+    tiene_cliente = bool(fila.get("clientes"))
+    tiene_proveedor = bool(fila.get("proveedores"))
+    if filtro_rol == "clientes":
+        return tiene_cliente and not tiene_proveedor
+    if filtro_rol == "proveedores":
+        return tiene_proveedor and not tiene_cliente
+    if filtro_rol == "ambos":
+        return tiene_cliente and tiene_proveedor
+    return True
+
+
+def listar_terceros_paginado(
+    client: Client,
+    *,
+    drogueria_id: str,
+    activo: bool | None = True,
+    q: str | None = None,
+    filtro_rol: FiltroRol = "todos",
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    # El filtro de rol depende de si el tercero tiene fila en `clientes`/
+    # `proveedores` -- eso no es expresable como un filtro PostgREST simple
+    # sobre `terceros` (haría falta un "no existe" sobre un embed, que
+    # supabase-py no ofrece), así que se aplica acá en Python sobre lo que
+    # ya trajo paginado internamente el repository (D: bug de truncado en
+    # 1000 filas). `total` es el conteo POST-filtro de rol, para que la
+    # paginación del listado coincida con lo que el usuario realmente ve.
+    filas = repo.listar_terceros(client, drogueria_id=drogueria_id, activo=activo, q=q)
+    if filtro_rol != "todos":
+        filas = [f for f in filas if _coincide_filtro_rol(f, filtro_rol)]
+    total = len(filas)
+    inicio = (page - 1) * page_size
+    pagina = filas[inicio : inicio + page_size]
+    return [_con_flags_de_rol(fila) for fila in pagina], total
 
 
 def obtener_tercero(

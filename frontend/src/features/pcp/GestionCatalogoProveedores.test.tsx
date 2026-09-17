@@ -36,7 +36,7 @@ describe('GestionCatalogoProveedores', () => {
     catalogo = [ASOCIACION]
     perfilMock.rol = 'admin'
     vi.mocked(listarProductos).mockReset().mockResolvedValue(PRODUCTOS as never)
-    vi.mocked(listarTerceros).mockReset().mockResolvedValue([PROVEEDOR] as never)
+    vi.mocked(listarTerceros).mockReset().mockResolvedValue({ items: [PROVEEDOR], total: 1 } as never)
     vi.mocked(listarProveedoresProducto).mockReset().mockImplementation(async (productoId) =>
       catalogo.filter((asociacion) => asociacion.producto_id === productoId),
     )

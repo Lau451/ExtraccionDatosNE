@@ -104,11 +104,13 @@ function renderConQueryClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
+const TODOS_LOS_TERCEROS = [TERCERO_CLIENTE, TERCERO_PROVEEDOR, TERCERO_AMBOS, TERCERO_SIN_ROL]
+
 beforeEach(() => {
   perfilMock.rol = 'admin'
   vi.mocked(listarTerceros)
     .mockReset()
-    .mockResolvedValue([TERCERO_CLIENTE, TERCERO_PROVEEDOR, TERCERO_AMBOS, TERCERO_SIN_ROL])
+    .mockResolvedValue({ items: TODOS_LOS_TERCEROS, total: TODOS_LOS_TERCEROS.length })
   vi.mocked(crearTercero).mockReset().mockResolvedValue(TERCERO_SIN_ROL)
 })
 
@@ -125,17 +127,70 @@ describe('GestionTerceros', () => {
     expect(tabla.getByText('Sin rol')).toBeInTheDocument()
   })
 
-  it('el filtro de rol "Solo clientes" deja solo los terceros con rol cliente exclusivo', async () => {
+  it('el filtro de rol "Solo clientes" pide al backend solo esos terceros', async () => {
+    vi.mocked(listarTerceros).mockImplementation(({ rol } = {}) =>
+      Promise.resolve(
+        rol === 'clientes'
+          ? { items: [TERCERO_CLIENTE], total: 1 }
+          : { items: TODOS_LOS_TERCEROS, total: TODOS_LOS_TERCEROS.length },
+      ),
+    )
     renderConQueryClient(<GestionTerceros />)
 
     await waitFor(() => expect(screen.getByText('Hospital Central')).toBeInTheDocument())
 
     fireEvent.change(screen.getByDisplayValue('Todos'), { target: { value: 'clientes' } })
 
+    await waitFor(() => expect(screen.queryByText('Laboratorio XYZ')).not.toBeInTheDocument())
     expect(screen.getByText('Hospital Central')).toBeInTheDocument()
-    expect(screen.queryByText('Laboratorio XYZ')).not.toBeInTheDocument()
     expect(screen.queryByText('Droguería Mixta')).not.toBeInTheDocument()
     expect(screen.queryByText('Tercero Nuevo')).not.toBeInTheDocument()
+    expect(listarTerceros).toHaveBeenCalledWith(expect.objectContaining({ rol: 'clientes' }))
+  })
+
+  it('busca con debounce y sin filtrar los resultados que ya vinieron paginados del backend', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(listarTerceros).mockImplementation(({ q } = {}) =>
+      Promise.resolve(
+        q === 'hospital'
+          ? { items: [TERCERO_CLIENTE], total: 1 }
+          : { items: TODOS_LOS_TERCEROS, total: TODOS_LOS_TERCEROS.length },
+      ),
+    )
+    renderConQueryClient(<GestionTerceros />)
+    await waitFor(() => expect(screen.getByText('Hospital Central')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByPlaceholderText(/buscar por razón social/i), {
+      target: { value: 'hospital' },
+    })
+
+    // Sin avanzar el debounce todavía no debería haber pedido nada con q=hospital.
+    expect(listarTerceros).not.toHaveBeenCalledWith(expect.objectContaining({ q: 'hospital' }))
+
+    await vi.advanceTimersByTimeAsync(300)
+
+    await waitFor(() =>
+      expect(listarTerceros).toHaveBeenCalledWith(expect.objectContaining({ q: 'hospital' })),
+    )
+    vi.useRealTimers()
+  })
+
+  it('muestra controles de paginación y pide la página siguiente al backend', async () => {
+    vi.mocked(listarTerceros).mockImplementation(({ page } = {}) =>
+      Promise.resolve({
+        items: page === 2 ? [TERCERO_PROVEEDOR] : [TERCERO_CLIENTE],
+        total: 51,
+      }),
+    )
+    renderConQueryClient(<GestionTerceros />)
+
+    await waitFor(() => expect(screen.getByText('Hospital Central')).toBeInTheDocument())
+    expect(screen.getByText(/página 1 de 2/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    await waitFor(() => expect(screen.getByText('Laboratorio XYZ')).toBeInTheDocument())
+    expect(listarTerceros).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }))
   })
 
   it('el diálogo de alta llama a crearTercero con los campos cargados', async () => {

@@ -193,8 +193,27 @@ export interface TerceroContactoUpdatePayload {
 
 // Identidad de terceros
 
-export function listarTerceros(): Promise<Tercero[]> {
-  return presupuestacionFetch<Tercero[]>('/terceros')
+export type FiltroRolTercero = 'todos' | 'clientes' | 'proveedores' | 'ambos'
+
+export interface ListarTercerosParams {
+  q?: string
+  rol?: FiltroRolTercero
+  page?: number
+  pageSize?: number
+}
+
+export interface TercerosPagina {
+  items: Tercero[]
+  total: number
+}
+
+export function listarTerceros(params: ListarTercerosParams = {}): Promise<TercerosPagina> {
+  const query = new URLSearchParams()
+  if (params.q) query.set('q', params.q)
+  if (params.rol) query.set('rol', params.rol)
+  query.set('page', String(params.page ?? 1))
+  query.set('page_size', String(params.pageSize ?? 50))
+  return presupuestacionFetch<TercerosPagina>(`/terceros?${query.toString()}`)
 }
 
 export function crearTercero(payload: TerceroCreatePayload): Promise<Tercero> {

@@ -21,14 +21,22 @@ def buscar_tercero(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
 _TAMANO_PAGINA = 1000
 
 
+def _sanitizar_termino_or(q: str) -> str:
+    # `,` y `()` son separadores/agrupadores en la sintaxis de filtro PostgREST
+    # (`.or_()`); un término de búsqueda con esos caracteres rompería el filtro
+    # en vez de buscarse literalmente, así que se descartan.
+    return q.translate(str.maketrans({",": " ", "(": " ", ")": " "})).strip()
+
+
 def listar_terceros(
-    client: Client, *, drogueria_id: str, activo: bool | None = None
+    client: Client, *, drogueria_id: str, activo: bool | None = None, q: str | None = None
 ) -> list[dict[str, Any]]:
     # Embeds default to LEFT JOIN semantics (unlike the `!inner` embeds below), which is
     # exactly what a listing needs here: a tercero with no role assigned yet must still
     # appear, just with an empty `clientes`/`proveedores` array. The service layer turns
     # those arrays into `tiene_rol_cliente`/`tiene_rol_proveedor` booleans for the list's
     # role badge, without a second round-trip per row.
+    termino = _sanitizar_termino_or(q) if q else None
     filas: list[dict[str, Any]] = []
     offset = 0
     while True:
@@ -40,6 +48,12 @@ def listar_terceros(
         )
         if activo is not None:
             query = query.eq("activo", activo)
+        if termino:
+            query = query.or_(
+                f"razon_social.ilike.%{termino}%,"
+                f"cuit.ilike.%{termino}%,"
+                f"codigo_interno.ilike.%{termino}%"
+            )
         pagina = (
             query.order("razon_social")
             .range(offset, offset + _TAMANO_PAGINA - 1)

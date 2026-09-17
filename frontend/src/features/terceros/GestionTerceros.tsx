@@ -1,22 +1,26 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
-import { listarTerceros, type Tercero } from '@/lib/api/terceros'
+import { listarTerceros, type FiltroRolTercero, type Tercero } from '@/lib/api/terceros'
 import { CrearTerceroDialog } from './CrearTerceroDialog'
 import { GestionSectoresDialog } from './GestionSectoresDialog'
 import { GestionCondicionesPagoDialog } from './GestionCondicionesPagoDialog'
 import { GestionFormasPagoDialog } from './GestionFormasPagoDialog'
 import { CATALOGOS_COMERCIALES_WRITE_ROLES, TERCEROS_WRITE_ROLES, puedeRol } from './roles'
 
-type FiltroRol = 'todos' | 'clientes' | 'proveedores' | 'ambos'
-
-const FILTROS_ROL: { value: FiltroRol; label: string }[] = [
+const FILTROS_ROL: { value: FiltroRolTercero; label: string }[] = [
   { value: 'todos', label: 'Todos' },
   { value: 'clientes', label: 'Solo clientes' },
   { value: 'proveedores', label: 'Solo proveedores' },
   { value: 'ambos', label: 'Ambos' },
 ]
+
+const PAGE_SIZE = 50
+// Esperar a que el usuario deje de tipear antes de pegarle al backend --
+// evita un request por letra sin que el usuario perciba latencia (búsqueda
+// server-side, ver bug de truncado en 1000 filas de GestionTerceros).
+const DEBOUNCE_BUSQUEDA_MS = 300
 
 function badgeRol(tercero: Tercero): { texto: string; clase: string } {
   if (tercero.tiene_rol_cliente && tercero.tiene_rol_proveedor) {
@@ -34,39 +38,37 @@ function badgeRol(tercero: Tercero): { texto: string; clase: string } {
 export function GestionTerceros() {
   const { perfil } = useAuth()
   const [texto, setTexto] = useState('')
-  const [filtroRol, setFiltroRol] = useState<FiltroRol>('todos')
+  const [textoDebounced, setTextoDebounced] = useState('')
+  const [filtroRol, setFiltroRol] = useState<FiltroRolTercero>('todos')
+  const [pagina, setPagina] = useState(1)
 
   const puedeEscribir = puedeRol(perfil?.rol, TERCEROS_WRITE_ROLES)
   const puedeEscribirCatalogos = puedeRol(perfil?.rol, CATALOGOS_COMERCIALES_WRITE_ROLES)
 
-  const { data: terceros, isPending } = useQuery({
-    queryKey: ['terceros'],
-    queryFn: listarTerceros,
+  useEffect(() => {
+    const id = setTimeout(() => setTextoDebounced(texto.trim()), DEBOUNCE_BUSQUEDA_MS)
+    return () => clearTimeout(id)
+  }, [texto])
+
+  // Cambiar de búsqueda o de filtro de rol vuelve a página 1 -- si no, se
+  // puede quedar mostrando una página vacía de un resultado más chico.
+  useEffect(() => {
+    setPagina(1)
+  }, [textoDebounced, filtroRol])
+
+  const { data, isPending } = useQuery({
+    queryKey: ['terceros', textoDebounced, filtroRol, pagina],
+    queryFn: () =>
+      listarTerceros({ q: textoDebounced || undefined, rol: filtroRol, page: pagina, pageSize: PAGE_SIZE }),
+    // Al cambiar de página/filtro/búsqueda, mantiene la tabla anterior visible
+    // mientras llega la nueva en vez de tirarla y mostrar "Cargando…" -- solo
+    // el primer fetch de la pantalla pasa por isPending.
+    placeholderData: keepPreviousData,
   })
 
-  const tercerosFiltrados = useMemo(() => {
-    const textoNormalizado = texto.trim().toLowerCase()
-    return (terceros ?? []).filter((tercero) => {
-      if (filtroRol === 'clientes' && !(tercero.tiene_rol_cliente && !tercero.tiene_rol_proveedor)) {
-        return false
-      }
-      if (filtroRol === 'proveedores' && !(tercero.tiene_rol_proveedor && !tercero.tiene_rol_cliente)) {
-        return false
-      }
-      if (filtroRol === 'ambos' && !(tercero.tiene_rol_cliente && tercero.tiene_rol_proveedor)) {
-        return false
-      }
-      if (
-        textoNormalizado &&
-        !tercero.razon_social.toLowerCase().includes(textoNormalizado) &&
-        !(tercero.cuit ?? '').toLowerCase().includes(textoNormalizado) &&
-        !(tercero.codigo_interno ?? '').toLowerCase().includes(textoNormalizado)
-      ) {
-        return false
-      }
-      return true
-    })
-  }, [terceros, texto, filtroRol])
+  const tercerosFiltrados = data?.items ?? []
+  const total = data?.total ?? 0
+  const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="p-8">
@@ -101,7 +103,7 @@ export function GestionTerceros() {
         />
         <select
           value={filtroRol}
-          onChange={(event) => setFiltroRol(event.target.value as FiltroRol)}
+          onChange={(event) => setFiltroRol(event.target.value as FiltroRolTercero)}
           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
         >
           {FILTROS_ROL.map((opcion) => (
@@ -156,6 +158,32 @@ export function GestionTerceros() {
             })}
           </tbody>
         </table>
+      )}
+
+      {!isPending && total > 0 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+          <span>
+            {total} {total === 1 ? 'tercero' : 'terceros'} — página {pagina} de {totalPaginas}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => p - 1)}
+              className="rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina((p) => p + 1)}
+              className="rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

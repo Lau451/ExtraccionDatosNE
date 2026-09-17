@@ -53,6 +53,11 @@ class TerceroOut(BaseModel):
     tiene_rol_proveedor: bool = False
 
 
+class TerceroListOut(BaseModel):
+    items: list[TerceroOut]
+    total: int
+
+
 class ClienteRolCreate(BaseModel):
     tipo: TipoCliente = "otro"
     condicion_pago_id: str | None = None

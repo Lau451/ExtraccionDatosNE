@@ -21,6 +21,7 @@ from services.terceros.identidad.service import (
     listar_clientes_con_tercero,
     listar_proveedores_con_tercero,
     listar_terceros,
+    listar_terceros_paginado,
     obtener_cliente_con_tercero,
     obtener_proveedor_con_tercero,
     obtener_rol_cliente,
@@ -127,6 +128,48 @@ def test_listar_terceros_incluye_flags_de_rol_sin_consulta_extra(
     assert listado[ambos["id"]]["tiene_rol_proveedor"] is True
     assert listado[sin_rol["id"]]["tiene_rol_cliente"] is False
     assert listado[sin_rol["id"]]["tiene_rol_proveedor"] is False
+
+
+# ---------------------------------------------------------------------------
+# Paginación server-side y búsqueda por texto (motivo: GestionTerceros.tsx
+# renderizaba las 5541 filas de Nueva Era de una sola vez -- ver bug de
+# truncado en 1000 filas más arriba en este mismo módulo).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_listar_terceros_paginado_filtra_por_q_contra_postgres_real(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    seed_tercero_factory(razon_social="Hospital Provincial Rosario", codigo_interno="C996")
+    seed_tercero_factory(razon_social="Farmacia del Centro", codigo_interno="C100")
+
+    items, total = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], q="c996"
+    )
+
+    assert total == 1
+    assert items[0]["razon_social"] == "Hospital Provincial Rosario"
+
+
+@pytest.mark.integration
+def test_listar_terceros_paginado_pagina_contra_postgres_real(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    for i in range(5):
+        seed_tercero_factory(razon_social=f"Tercero Paginado {i}")
+
+    primera_pagina, total = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], activo=None, page=1, page_size=2
+    )
+    segunda_pagina, _ = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], activo=None, page=2, page_size=2
+    )
+
+    assert total == 5
+    assert len(primera_pagina) == 2
+    assert len(segunda_pagina) == 2
+    assert {f["id"] for f in primera_pagina}.isdisjoint({f["id"] for f in segunda_pagina})
 
 
 # ---------------------------------------------------------------------------

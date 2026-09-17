@@ -23,6 +23,7 @@ class _FakeQuery:
         self._is: dict[str, Any] = {}
         self._orden: str | None = None
         self._rango: tuple[int, int] | None = None
+        self._or: str | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> "_FakeQuery":
         return self
@@ -39,9 +40,27 @@ class _FakeQuery:
         self._orden = campo
         return self
 
+    def or_(self, filtro: str) -> "_FakeQuery":
+        # Emula el formato PostgREST "col.ilike.%term%,col2.ilike.%term%,...":
+        # alcanza para probar que el repository arma y aplica el filtro bien,
+        # sin depender de la red.
+        self._or = filtro
+        return self
+
     def range(self, inicio: int, fin: int) -> "_FakeQuery":
         self._rango = (inicio, fin)
         return self
+
+    def _coincide_or(self, fila: dict[str, Any]) -> bool:
+        if self._or is None:
+            return True
+        for condicion in self._or.split(","):
+            campo, _, resto = condicion.partition(".ilike.")
+            termino = resto.strip("%").lower()
+            valor = str(fila.get(campo) or "").lower()
+            if termino in valor:
+                return True
+        return False
 
     def execute(self) -> _FakeResultado:
         filas = [
@@ -49,6 +68,7 @@ class _FakeQuery:
             for f in self._dataset
             if all(f.get(k) == v for k, v in self._eq.items())
             and all(f.get(k) is v for k, v in self._is.items())
+            and self._coincide_or(f)
         ]
         if self._orden:
             filas = sorted(filas, key=lambda f: f[self._orden])
@@ -144,3 +164,41 @@ def test_listar_proveedores_con_tercero_no_trunca_droguerias_con_mas_de_mil_prov
     filas = repo.listar_proveedores_con_tercero(client, drogueria_id="drog-1", activo=None)
 
     assert len(filas) == 1800
+
+
+def test_listar_terceros_filtra_por_q_en_razon_social_cuit_o_codigo_interno():
+    dataset = [
+        {
+            "id": "id-1",
+            "drogueria_id": "drog-1",
+            "razon_social": "Hospital Provincial Rosario",
+            "cuit": "33685444459",
+            "codigo_interno": "C996",
+            "activo": True,
+            "deleted_at": None,
+            "clientes": [],
+            "proveedores": [],
+        },
+        {
+            "id": "id-2",
+            "drogueria_id": "drog-1",
+            "razon_social": "Farmacia del Centro",
+            "cuit": "20111111112",
+            "codigo_interno": "C100",
+            "activo": True,
+            "deleted_at": None,
+            "clientes": [],
+            "proveedores": [],
+        },
+    ]
+    client = _FakeClient(dataset)
+
+    por_codigo = repo.listar_terceros(client, drogueria_id="drog-1", activo=None, q="c996")
+    por_razon_social = repo.listar_terceros(
+        client, drogueria_id="drog-1", activo=None, q="hospital"
+    )
+    sin_match = repo.listar_terceros(client, drogueria_id="drog-1", activo=None, q="inexistente")
+
+    assert [f["id"] for f in por_codigo] == ["id-1"]
+    assert [f["id"] for f in por_razon_social] == ["id-1"]
+    assert sin_match == []
