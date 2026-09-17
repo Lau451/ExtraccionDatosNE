@@ -1,20 +1,38 @@
-from typing import Any
+from typing import Any, Iterable, TypeVar
 
 from supabase import Client
+
+# .in_() codifica cada valor en la URL (GET): con un import legado de miles
+# de codigo_interno de golpe, la URL supera el limite del servidor y
+# PostgREST devuelve 400 Bad Request. Se trocea en lotes chicos en vez de
+# mandar todo en una sola llamada — mismo criterio para insert/upsert por
+# si el body tambien crece demasiado.
+_TAMANO_LOTE = 200
+
+_T = TypeVar("_T")
+
+
+def _en_lotes(items: list[_T], tamano: int = _TAMANO_LOTE) -> Iterable[list[_T]]:
+    for inicio in range(0, len(items), tamano):
+        yield items[inicio : inicio + tamano]
+
 
 # -- productos -----------------------------------------------------------
 
 def codigos_existentes_productos(client: Client, *, drogueria_id: str, codigos: list[str]) -> set[str]:
     if not codigos:
         return set()
-    resultado = (
-        client.table("productos")
-        .select("codigo_interno")
-        .eq("drogueria_id", drogueria_id)
-        .in_("codigo_interno", codigos)
-        .execute()
-    )
-    return {fila["codigo_interno"] for fila in resultado.data}
+    existentes: set[str] = set()
+    for lote in _en_lotes(codigos):
+        resultado = (
+            client.table("productos")
+            .select("codigo_interno")
+            .eq("drogueria_id", drogueria_id)
+            .in_("codigo_interno", lote)
+            .execute()
+        )
+        existentes.update(fila["codigo_interno"] for fila in resultado.data)
+    return existentes
 
 
 def codigos_activos_productos(client: Client, *, drogueria_id: str) -> set[str]:
@@ -30,20 +48,20 @@ def codigos_activos_productos(client: Client, *, drogueria_id: str) -> set[str]:
 
 
 def insertar_productos(client: Client, filas: list[dict[str, Any]]) -> None:
-    if filas:
-        client.table("productos").insert(filas).execute()
+    for lote in _en_lotes(filas):
+        client.table("productos").insert(lote).execute()
 
 
 def actualizar_productos_existentes(client: Client, filas: list[dict[str, Any]]) -> None:
-    if filas:
-        client.table("productos").upsert(filas, on_conflict="drogueria_id,codigo_interno").execute()
+    for lote in _en_lotes(filas):
+        client.table("productos").upsert(lote, on_conflict="drogueria_id,codigo_interno").execute()
 
 
 def desactivar_productos(client: Client, *, drogueria_id: str, codigos: list[str], usuario_id: str) -> None:
-    if codigos:
+    for lote in _en_lotes(codigos):
         client.table("productos").update({"activo": False, "updated_by": usuario_id}).eq(
             "drogueria_id", drogueria_id
-        ).in_("codigo_interno", codigos).execute()
+        ).in_("codigo_interno", lote).execute()
 
 
 def mapear_productos_por_codigo(
@@ -51,14 +69,17 @@ def mapear_productos_por_codigo(
 ) -> dict[str, str]:
     if not codigos:
         return {}
-    resultado = (
-        client.table("productos")
-        .select("id, codigo_interno")
-        .eq("drogueria_id", drogueria_id)
-        .in_("codigo_interno", codigos)
-        .execute()
-    )
-    return {fila["codigo_interno"]: fila["id"] for fila in resultado.data}
+    mapa: dict[str, str] = {}
+    for lote in _en_lotes(codigos):
+        resultado = (
+            client.table("productos")
+            .select("id, codigo_interno")
+            .eq("drogueria_id", drogueria_id)
+            .in_("codigo_interno", lote)
+            .execute()
+        )
+        mapa.update({fila["codigo_interno"]: fila["id"] for fila in resultado.data})
+    return mapa
 
 
 # -- costos ----------------------------------------------------------------
@@ -66,14 +87,17 @@ def mapear_productos_por_codigo(
 def costos_vigentes_por_producto(client: Client, *, producto_ids: list[str]) -> dict[str, dict[str, Any]]:
     if not producto_ids:
         return {}
-    resultado = (
-        client.table("costos_productos")
-        .select("id, producto_id, costo_unitario")
-        .in_("producto_id", producto_ids)
-        .is_("fecha_hasta", None)
-        .execute()
-    )
-    return {fila["producto_id"]: fila for fila in resultado.data}
+    vigentes: dict[str, dict[str, Any]] = {}
+    for lote in _en_lotes(producto_ids):
+        resultado = (
+            client.table("costos_productos")
+            .select("id, producto_id, costo_unitario")
+            .in_("producto_id", lote)
+            .is_("fecha_hasta", None)
+            .execute()
+        )
+        vigentes.update({fila["producto_id"]: fila for fila in resultado.data})
+    return vigentes
 
 
 def crear_costo(client: Client, fila: dict[str, Any]) -> dict[str, Any]:

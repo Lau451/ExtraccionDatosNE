@@ -5,7 +5,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 Clasificacion = Literal[
-    "medicamento", "descartable", "insumo", "equipamiento", "perfumeria", "otro"
+    "medicamento", "descartable", "solucion", "nutricion",
+    "equipamiento", "reactivo", "cosmetico", "otro",
 ]
 TipoProveedor = Literal["laboratorio", "drogueria", "distribuidor", "cooperativa", "otro"]
 TipoCliente = Literal["hospital", "obra_social", "municipio", "provincia", "nacional", "otro"]
@@ -19,7 +20,9 @@ class ImportProductoRow(BaseModel):
     droga: str | None = None
     presentacion: str | None = None
     forma_farmaceutica: str | None = None
-    laboratorio: str | None = None
+    marca_id: str | None = None
+    envase_id: str | None = None
+    alicuota_iva: Decimal | None = None
     codigo_anmat: str | None = None
     datos_sistema: dict | None = None
 
