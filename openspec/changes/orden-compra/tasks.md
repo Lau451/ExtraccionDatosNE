@@ -405,85 +405,157 @@ recachear una estrategia distinta si lo prefiere.
 > el caso multi-archivo). Es la fase más grande — considerar partirla en dos PRs si el diff real
 > supera el estimado.
 
-- [ ] 5.1 [RED] Crear `tests/extraccion/test_orden_compra.py` con tabla de casos de
-  `repartir_cantidad` (D8): `(100, 3) -> [34,34,32]`; `(100, 1) -> [100]`; `(7, 2) -> [4,3]`;
-  `(10.5, 4)`; `(0, 3)`. **Property test**: `sum(repartir_cantidad(c, n)) == c` para un rango de `c`
-  y `n>=1` generados.
-- [ ] 5.2 [RED] En el mismo archivo, `_validar_orden_compra_override`: suma de `entregas` por línea
-  ≠ `cantidad` del renglón; cero entregas (`entregas: []` viola `min_length=1` del modelo, cubrir
-  también el caso de lista no vacía pero sin desglose válido); `precio_unitario` vacío/no numérico;
-  clave de `cantidades_por_posicion` fuera del rango `1..len(filas)`; acumulación de múltiples
-  errores en un solo 422 (mismo patrón que
-  `test_validar_filas_override_acumula_errores_de_multiples_filas` existente); `cliente_id` que no
-  existe / no es cliente / es de otra droguería → `ValidationError` antes del primer write. Confirmar
-  que **no** existe el caso "`numero_renglon` duplicado" (imposible por construcción, D13.1).
-  Threat-matrix: documento sin `precio_unitario` detectable no bloquea la extracción, pero el editor
-  lo exige antes de confirmar (`test_precio_vacio_bloquea_confirmacion`).
-- [ ] 5.3 [RED] Test unitario de la asignación de `numero_renglon` (D13.1): filas con
-  `numero_renglon_documento` `"7","3",None` en ese orden → `oc_items.numero_renglon` `1,2,3`; dos
-  filas con el mismo `numero_renglon_documento` → `1,2` sin conflicto; todas las filas sin número de
-  documento → `1..N` igual. Test de no-regresión: `_materializar_licitacion` sigue leyendo
-  `int(fila["item"])` sin cambios (D13.2) — no tocar esa función.
-- [ ] 5.4 [RED] Invertir en `tests/extraccion/test_service.py` (líneas 385-401)
-  `test_validar_orden_compra_no_implementado` a un test de materialización exitosa: dado un
-  `seed_extraction_result_factory("orden_compra", ...)` y un `cliente_id` válido,
-  `validar_extraccion(..., orden_compra=OrdenCompraOverride(...))` crea filas en `ordenes_compra` /
-  `oc_items` / `entregas_oc` / `entregas_oc_items`, con `estado='emitida'`,
-  `proceso_comercial_id IS NULL`, `extraction_id` y `cantidad_entregas` poblados. Agregar en el mismo
-  archivo: `_materializar_orden_compra` crea `entregas_oc_items.cantidad_planificada` sumando la
-  cantidad de cada renglón; **ninguna llamada a `entregar_stock_producto`** (aserción explícita sobre
-  el mock — invariante duro "confirmar no descuenta stock"); `proceso_comercial_id` ausente no
-  levanta error en esta rama; `extraction_results.validado` queda en `true`.
-- [ ] 5.5 [RED] Test de confirmación de grupo (depende de Phase 4): una sola fila en
-  `ordenes_compra` a partir de N archivos; `extraction_id` = el ancla (la extracción que el usuario
-  abrió); **todos** los miembros del grupo quedan `validado=true` con el mismo `validado_por`/
-  `validado_at`; si un miembro ya estaba `validado=true`, `ConflictError` antes de escribir.
-- [ ] 5.6 [RED] Test de unicidad (D5) end-to-end vía `validar_extraccion`: mismo `numero_oc` + dos
-  `cliente_id` distintos de la misma droguería → ambas confirmaciones OK; mismo `numero_oc` + mismo
-  cliente → `ConflictError`.
-- [ ] 5.7 [GREEN] Agregar a `services/presupuestacion/extraccion/models.py`: `FilaOrdenCompraIn`
-  (`numero_renglon_documento: str | None = None`, `descripcion`, `cantidad`, `precio_unitario`,
-  `producto_id: str | None = None`), `EntregaPlanIn` (`numero_entrega`, `plazo_dias`,
-  `cantidades_por_posicion: dict[str, str] | None`), `OrdenCompraOverride` (`numero_oc`,
-  `cliente_id`, `razon_social_extraida`, `fecha_emision`, `direccion_entrega`, `notas`,
-  `filas: list[FilaOrdenCompraIn]`, `entregas: list[EntregaPlanIn]` con `min_length=1`) — **sin**
-  `modo_fusion` ni alias `ModoFusion`. Extender `ValidarExtraccionRequest.orden_compra:
-  OrdenCompraOverride | None = None`. Extender `ResultadoValidarExtraccion`:
-  `proceso_comercial_id: str | None` (era `str`), `orden_compra_id: str | None = None`,
-  `entregas_creadas: int = 0`, `renglones_sin_producto: int = 0`,
-  `extracciones_validadas: int = 1`.
-- [ ] 5.8 [GREEN] Agregar a `services/presupuestacion/extraccion/service.py`: `repartir_cantidad()`
-  (D8: reparto entero con resto al frente; reparto decimal con resto al final, usando `Decimal`),
-  `_validar_orden_compra_override()` (puro, corre antes del primer write: valida `cliente_id`,
-  coherencia de `numero_oc` entre miembros del grupo, suma de entregas por posición == `cantidad` del
-  renglón, acumula todos los errores en un solo `ValidationError`).
-- [ ] 5.9 [GREEN] Agregar a `services/presupuestacion/extraccion/service.py`:
-  `_materializar_orden_compra()` — asigna `numero_renglon = 1..N` por posición sobre `override.filas`
-  (descartando `numero_renglon_documento`, D13.1), inserta `ordenes_compra`
-  (`cliente_id`, `proceso_comercial_id=NULL`, `estado='emitida'`, `extraction_id=<ancla>`,
-  `cantidad_entregas`), `oc_items`, `entregas_oc` (`estado='pendiente'`) y `entregas_oc_items`
-  (`cantidad_planificada` desde `repartir_cantidad`/`cantidades_por_posicion`, `cantidad_entregada=0`,
-  `cantidad_rechazada=0`); si el grupo tiene más de un miembro, marca **todos** como `validado=true`
-  vía `marcar_validadas()`; registra `registrar_evento_ciclo_vida(entidad="orden_compra",
-  tipo_cambio="creacion", origen="usuario")` + `registrar_cambio` de `estado` `None -> 'emitida'`
-  (mismo patrón de auditoría que `crear_orden_compra`, D4). Al final, invoca
-  `_registrar_alias_cliente()` (Phase 3) **solo si** la materialización tuvo éxito.
-- [ ] 5.10 [GREEN] Extender `_TIPOS_CON_LECTURA_DE_FILAS` (línea 39) con `"orden_compra"` y corregir
-  su comentario. Agregar la rama `orden_compra` en `validar_extraccion()` (líneas 442-463): usa
-  `_leer_filas_grupo()` si corresponde, corre `_validar_orden_compra_override()` y
-  `_materializar_orden_compra()`, **saltea** `_resolver_proceso_comercial_id`. Confirmar que
-  `_materializar_licitacion` (línea 234) **no se toca**.
-- [ ] 5.11 [GREEN] Agregar a `services/presupuestacion/extraccion/repository.py` los inserts de
-  `ordenes_compra` / `oc_items` / `entregas_oc` / `entregas_oc_items` para la ruta de extracción,
-  respetando la nota de frontera de módulos de `design.md` (escritura directa a tablas de `compras/`
-  sin importar `compras/repository.py`).
-- [ ] 5.12 [GREEN] Agregar en `services/presupuestacion/extraccion/router.py` el paso de
-  `body.orden_compra` a `validar_extraccion_para_endpoint` en `POST /extracciones/{id}/validar`
-  (mismo endpoint existente, sin roles nuevos).
-- [ ] 5.13 [REFACTOR] Correr `pytest tests/extraccion -m integration` completo contra el proyecto
-  Supabase de test; confirmar cero regresiones en licitación/comparativa y que las filas de
-  `oc_cliente_alias`/`ordenes_compra`/`oc_items`/`entregas_oc`/`entregas_oc_items` creadas en los
-  tests de integración se limpian correctamente entre corridas (fixtures de `conftest.py`).
+- [x] 5.1 [RED→GREEN] Creado `tests/extraccion/test_orden_compra.py` con tabla de casos de
+  `repartir_cantidad` (D8) parametrizada: `(100,3)`, `(100,1)`, `(7,2)`, `(0,3)` enteros +
+  `(10.5,4)` decimal + property test parametrizado (6 cantidades × 6 conteos de entregas = 36
+  combinaciones) que confirma `sum(resultado) == cantidad` siempre. **Desviación del prompt de esta
+  fase, documentada en el propio test**: el prompt listaba `(100,3) -> [34,34,32]`, que **no**
+  satisface el algoritmo literal de `design.md` § D8 ("las primeras `resto` entregas reciben
+  base+1, las restantes base" → `100 // 3 = 33`, resto `1` → `[34,33,33]`, no `[34,34,32]`). Se
+  siguió `design.md` (autoritativo, con alternativas consideradas y rationale explícito) en vez del
+  ejemplo del prompt — el resto de los casos (`(7,2)->[4,3]`, `(100,1)->[100]`, `(0,3)->[0,0,0]`) sí
+  coinciden entre prompt y diseño, confirmando que el algoritmo implementado es el correcto y el
+  ejemplo del prompt tenía un error puntual. Confirmado RED antes de 5.8: `ModuleNotFoundError`/
+  `AttributeError: module 'service' has no attribute 'repartir_cantidad'` (función inexistente).
+- [x] 5.2 [RED→GREEN] En el mismo archivo, `_validar_orden_compra_override`: suma de `entregas` por
+  línea ≠ `cantidad` del renglón (`test_suma_de_entregas_por_linea_distinta_de_cantidad_levanta_error`);
+  `entregas: []` confirmado que viola `min_length=1` **a nivel de pydantic**, antes de llegar a la
+  función (`test_entregas_vacia_viola_min_length_del_modelo`, `pytest.raises(PydanticValidationError)`);
+  lista no vacía sin desglose válido (`test_entregas_no_vacia_sin_desglose_valido_no_coincide_con_cantidad`);
+  `precio_unitario` vacío (`test_precio_vacio_bloquea_confirmacion`, nombre exacto pedido) y no numérico
+  (`test_precio_unitario_no_numerico_levanta_error`); clave de `cantidades_por_posicion` fuera de
+  rango (`test_clave_de_cantidades_por_posicion_fuera_de_rango`); acumulación de múltiples errores en
+  un solo `ValidationError` (`test_validar_override_acumula_errores_de_multiples_problemas_en_un_solo_422`,
+  mismo patrón que el test existente de licitación/comparativa); `cliente_id` inexistente
+  (`test_cliente_id_inexistente_levanta_error_antes_del_primer_write`, con
+  `mock_buscar.assert_called_once()`) y de otra droguería (`test_cliente_id_de_otra_drogueria_levanta_error`).
+  **Confirmado explícitamente que no existe el caso "`numero_renglon` duplicado"**
+  (`test_no_existe_validacion_de_numero_renglon_duplicado`, inspecciona el código fuente de la
+  función vía `inspect.getsource` y confirma que no menciona `numero_renglon`). Confirmado RED antes
+  de 5.8: `AttributeError` por `service._validar_orden_compra_override`/`repo.buscar_cliente_por_id`
+  inexistentes.
+- [x] 5.3 [RED→GREEN] Tests unitarios de la asignación de `numero_renglon` sobre
+  `_materializar_orden_compra` (D13.1), con todos los writes mockeados
+  (`_preparar_mocks_materializacion`, inspecciona `filas_items` reales enviadas a
+  `repo.insertar_oc_items`): `numero_renglon_documento` `"7","3",None` → `oc_items.numero_renglon`
+  `1,2,3` (`test_numero_renglon_se_asigna_por_posicion_no_del_documento`); dos filas con el mismo
+  `numero_renglon_documento` → `1,2` sin conflicto
+  (`test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto`); todas sin número de
+  documento → `1..N` igual (`test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual`).
+  Test de no-regresión (D13.2): `_materializar_licitacion` sigue con
+  `int(fila["item"].strip())` sin fallback, verificado por inspección de código fuente
+  (`test_materializar_licitacion_sigue_leyendo_item_sin_fallback_no_regresion`) — función no tocada,
+  confirmado también por la suite completa de licitación/comparativa en verde (ver 5.13).
+- [x] 5.4 [RED→GREEN] Invertido en `tests/extraccion/test_service.py`
+  `test_validar_orden_compra_no_implementado` (integración, **live**) a
+  `test_validar_orden_compra_materializa_oc_items_y_entregas`: dado `seed_cliente_factory` +
+  `seed_extraction_result_factory("orden_compra", ...)`, `validar_extraccion(...,
+  orden_compra=OrdenCompraOverride(...))` crea filas reales en `ordenes_compra`/`oc_items`/
+  `entregas_oc`/`entregas_oc_items`, con `estado='emitida'`, `proceso_comercial_id IS NULL`,
+  `extraction_id`/`cantidad_entregas` poblados, `oc_items.numero_renglon` en `[1,2]`,
+  `entregas_oc.estado='pendiente'`, suma de `cantidad_planificada` = 10+20 = 30 (reparto automático
+  de 1 entrega), `cantidad_entregada`/`cantidad_rechazada` en 0. **Invariante duro "confirmar no
+  descuenta stock"**: `stock.entregar_stock_producto` mockeado vía `monkeypatch` y
+  `mock_entregar_stock.assert_not_called()` explícito tras la confirmación real contra la DB de
+  test. `extraction_results.validado` queda `true` con `validado_por` poblado. Confirmado RED antes
+  de 5.7-5.12: el test original (`pytest.raises(ValidationError)`) invertido ya no aplica una vez
+  agregados los modelos — corrida antes de la implementación, falló con
+  `AttributeError`/`ImportError` por `OrdenCompraOverride` inexistente.
+- [x] 5.5 [RED→GREEN] Test de confirmación de grupo (live, depende de Phase 4):
+  `test_validar_orden_compra_agrupada_materializa_una_sola_oc_y_valida_todo_el_grupo` — 2 archivos
+  con el mismo `grupo_id`, confirmar desde el ancla produce **una sola** fila en `ordenes_compra`
+  (`extraction_id = ancla`), y **ambos** miembros quedan `validado=true` con idéntico
+  `validado_por`/`validado_at` (aserción de igualdad exacta de `validado_at` entre ambas filas).
+  `test_validar_orden_compra_agrupada_con_miembro_ya_validado_da_conflict_sin_escribir`: un miembro
+  ya `validado=true` en el grupo → `ConflictError` **antes de escribir nada** (aserción: 0 filas en
+  `ordenes_compra` con ese `extraction_id` tras la excepción).
+- [x] 5.6 [RED→GREEN] Test de unicidad (D5) end-to-end vía `validar_extraccion` (live):
+  `test_validar_orden_compra_mismo_numero_oc_clientes_distintos_ambas_confirman` — mismo `numero_oc`
+  contra 2 clientes distintos de la misma droguería → ambas confirmaciones OK (`uq_oc_por_cliente`
+  scoped por `cliente_id`). `test_validar_orden_compra_mismo_numero_oc_mismo_cliente_da_conflict` —
+  mismo `numero_oc` + mismo cliente → segunda confirmación levanta `ConflictError` (capturado el
+  `APIError` `23505` de PostgREST y traducido en `_materializar_orden_compra`).
+- [x] 5.7 [GREEN] Agregado a `services/presupuestacion/extraccion/models.py`: `FilaOrdenCompraIn`,
+  `EntregaPlanIn`, `OrdenCompraOverride` (`entregas: list[EntregaPlanIn] = Field(min_length=1)`) —
+  **sin** `modo_fusion` ni `ModoFusion`, literal a `design.md` § Interfaces. `ValidarExtraccionRequest.
+  orden_compra: OrdenCompraOverride | None = None`. `ResultadoValidarExtraccion.proceso_comercial_id`
+  pasa de `str` a `str | None`; agregados `orden_compra_id`, `entregas_creadas`,
+  `renglones_sin_producto`, `extracciones_validadas`.
+- [x] 5.8 [GREEN] Agregado a `services/presupuestacion/extraccion/service.py`: `repartir_cantidad()`
+  (D8, usando `Decimal`/`ROUND_DOWN`, sin punto flotante), `_validar_orden_compra_override()` (lee
+  `repo.buscar_cliente_por_id` para el chequeo de cliente; acumula todos los errores de
+  precio/desglose/cliente en un único `ValidationError`). **Nota de alcance sobre "coherencia de
+  `numero_oc` entre miembros del grupo"**: esa validación específica se implementó reusando
+  `_conciliar_cabecera()` (Phase 4, ya la implementa y ya la testea) desde
+  `_validar_y_materializar_orden_compra()` en vez de duplicarla dentro de
+  `_validar_orden_compra_override()` — sigue corriendo antes del primer write, sigue siendo un solo
+  `ValidationError` bloqueante, pero vive en la función que ya tiene esa responsabilidad (DRY, D13.1
+  ya la diseña como la dueña de la reconciliación de cabecera).
+- [x] 5.9 [GREEN] Agregado a `services/presupuestacion/extraccion/service.py`:
+  `_materializar_orden_compra()` — asigna `numero_renglon = 1..N` por posición, inserta
+  `ordenes_compra`/`oc_items`/`entregas_oc`(`estado='pendiente'`)/`entregas_oc_items`
+  (`cantidad_planificada` desde `repartir_cantidad()` en modo automático o
+  `cantidades_por_posicion` en modo manual, `cantidad_entregada=0`, `cantidad_rechazada=0`);
+  `fecha_entrega_planificada` calculada desde `fecha_emision + plazo_dias` (D6, no explícito en el
+  prompt pero literal del diseño); captura `APIError` `23505` de `uq_oc_por_cliente`/
+  `uq_oc_por_proceso` y la traduce a `ConflictError` (mismo patrón que `compras/service.py::
+  crear_orden_compra`). `_validar_y_materializar_orden_compra()` (nueva, orquesta el flujo completo)
+  usa `marcar_validadas()` incondicionalmente (1 o N miembros — simplifica sin cambiar de
+  comportamiento, ya que `.in_("id", [...])` funciona igual con una lista de 1), registra
+  `registrar_evento_ciclo_vida` + `registrar_cambio` de `estado` `None -> 'emitida'` (D4), e invoca
+  `_registrar_alias_cliente()` (Phase 3) solo si `_materializar_orden_compra` no lanzó excepción
+  (estructural: el código después de la llamada solo se alcanza si tuvo éxito).
+- [x] 5.10 [GREEN] Extendido `_TIPOS_CON_LECTURA_DE_FILAS` (línea real 44, no 39 — el prompt pedía
+  verificar la línea real) con `"orden_compra"`, comentario corregido. Agregada la rama
+  `orden_compra` en `validar_extraccion()`, **al principio** de la función (antes de
+  `_validar_filas_override`/`_resolver_proceso_comercial_id`, no en el bloque `if/elif` de líneas
+  442-463 que el prompt señalaba como referencia — la ubicación real difiere porque D4 exige
+  **saltear por completo** `_resolver_proceso_comercial_id`, no solo la materialización): delega en
+  `_validar_y_materializar_orden_compra()`, que usa `_leer_filas_grupo()` (D13, funciona igual con 1
+  o N miembros), corre `_conciliar_cabecera()` (numero_oc bloqueante) +
+  `_validar_orden_compra_override()` + `_materializar_orden_compra()`. Confirmado con `grep`:
+  `_materializar_licitacion` no fue tocada (mismo cuerpo, mismo `int(fila["item"].strip())`).
+  **Extensión no listada explícitamente en el prompt de esta fase, pero requerida por design.md §
+  Data Flow y por la nota de Phase 4 ("estos 3 campos quedan sin wiring... hasta Phase 5")**:
+  `leer_filas_extraccion()` (el `GET /extracciones/{id}/filas` existente) ahora usa
+  `_leer_filas_grupo()` para `orden_compra` en vez de leer un solo CSV, poblando `grupo_id`/
+  `miembros`/`advertencias_cabecera` de verdad. `numero_oc` discrepante **advierte, no bloquea** en
+  este GET (a diferencia de la confirmación) — nuevo helper `_advertencias_cabecera_para_lectura()`
+  que reusa `_conciliar_cabecera()` pero degrada su `ValidationError` a advertencia, sin duplicar la
+  lógica de conciliación. Requirió agregar `client: Client | None = None` a la firma de
+  `leer_filas_extraccion()` (retrocompatible: default `None`, solo se usa en la rama `orden_compra`)
+  y pasar `user_client` desde el router. Test unitario agregado:
+  `test_leer_filas_extraccion_orden_compra_agrupada_no_bloquea_por_numero_oc_discrepante`.
+- [x] 5.11 [GREEN] Agregado a `services/presupuestacion/extraccion/repository.py`:
+  `buscar_cliente_por_id()`, `crear_orden_compra()`, `insertar_oc_items()`, `crear_entrega_oc()`,
+  `insertar_entregas_oc_items()` — escritura directa a las 4 tablas de `compras/`, sin importar
+  `compras/repository.py` (frontera de módulos de `design.md`, mismo precedente que
+  `pcp/imports/repository.py`).
+- [x] 5.12 [GREEN] Agregado en `services/presupuestacion/extraccion/router.py`: `body.orden_compra`
+  pasado tal cual (el modelo pydantic, no un dict) a `validar_extraccion_para_endpoint` en
+  `POST /extracciones/{id}/validar` — mismo endpoint existente, sin roles nuevos.
+- [x] 5.13 [REFACTOR] `pytest tests/extraccion -m integration -q` completo corrido contra el
+  proyecto Supabase de test (`grnamollopxdlstcpxhc`) → **36 passed, 0 regresiones** en
+  licitación/comparativa/cliente-candidato/agrupación (incluye los 5 tests nuevos de este batch en
+  `test_service.py`, más el resto de la suite de integración de Phases 1-4 en verde). Las filas de `oc_cliente_alias`/
+  `ordenes_compra`/`oc_items`/`entregas_oc`/`entregas_oc_items` creadas por los tests de esta fase
+  **no se limpiaban correctamente al principio** — se encontró y arregló en el mismo batch (ver
+  "Issues Found"): `entregas_oc_items.oc_item_id` (`fk_eoci_oci`) no tiene `ON DELETE CASCADE`, así
+  que un `DELETE` directo sobre `ordenes_compra` revienta con violación de FK cuando Postgres intenta
+  la cascada a `oc_items` antes de que la cascada paralela vía `entregas_oc` haya limpiado
+  `entregas_oc_items`. Se agregó `_borrar_orden_compra_en_cascada()` a
+  `tests/extraccion/conftest.py` (mismo orden manual que el helper ya existente
+  `tests/compras/conftest.py::limpiar_ordenes_compra`: `entregas_oc_items` → `entregas_oc` →
+  `historial_cambios` → `oc_items` → `ordenes_compra`), invocado desde el teardown de
+  `seed_extraction_result_factory` (por `extraction_id`) y `seed_cliente_factory` (por `cliente_id`,
+  redundante a propósito porque el orden de teardown entre esas 2 fixtures no está garantizado). La
+  corrida que expuso el bug dejó 5 filas de `ordenes_compra` huérfanas (con su cascada de
+  `oc_items`/`entregas_oc`/`entregas_oc_items`) más sus `terceros`/`clientes`/`droguerias`/
+  `extraction_results`/`oc_cliente_alias` asociados (el teardown abortaba a mitad de camino, así que
+  ninguna fixture dependiente llegaba a borrarse) — limpiadas a mano contra `grnamollopxdlstcpxhc`
+  con el mismo orden de `_borrar_orden_compra_en_cascada`, verificado con `select` antes/después.
+  **Confirmado con una segunda corrida completa** (5 tests, mismos `numero_oc` reusados) que ya no
+  quedan filas huérfanas: `select ... in_("numero_oc", [...])` devuelve `[]` después del run.
 
 ## Phase 6: Frontend — Resolución de cliente (D3/D3.2)
 
