@@ -50,33 +50,64 @@ recachear una estrategia distinta si lo prefiere.
 
 ## Phase 1: Esquema (Foundation) — bloquea todo lo demás
 
-- [ ] 1.1 Ejecutar contra el proyecto Supabase de test (`grnamollopxdlstcpxhc`) las 6 queries de
-  verificación previa de `design.md` § "Verificación previa obligatoria": `uq_oc` existe con ese
-  nombre exacto; ninguna FK la referencia; `entregas_oc_items` no tiene ya `cantidad_planificada`;
-  `clientes` tiene `uq_cli_id_drog UNIQUE (id, drogueria_id)`; existen `mismo_tenant(uuid)`,
-  `get_rol()`, `es_superadmin()`; `extraction_results` no tiene ya `grupo_id`. Registrar el
-  resultado de cada query antes de continuar.
-- [ ] 1.2 Crear `supabase/migrations/0025_orden_compra_desde_extraccion.sql` (read-only reference:
-  contenido completo ya especificado en `design.md` § Migration) — guard de versión de Postgres,
-  `ALTER TABLE ordenes_compra` (`proceso_comercial_id` nullable + `ck_oc_anclaje`), drop de `uq_oc` y
-  alta de `uq_oc_por_cliente`/`uq_oc_por_proceso`, `entregas_oc_items.cantidad_planificada` +
+- [~] 1.1 **PARCIAL / BLOQUEADO** — Ejecutar contra el proyecto Supabase de test
+  (`grnamollopxdlstcpxhc`) las 6 queries de verificación previa. Este apply batch **no tuvo
+  herramienta de SQL directo** (sin MCP de Supabase, sin `psql`/CLI, sin credencial de conexión
+  Postgres directa — solo `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`, que son credenciales de
+  PostgREST, no de la base). Se verificó lo que PostgREST permite indirectamente (columnas vía
+  error `42703` / schema OpenAPI, funciones vía RPC), contra la base **viva** de test:
+  - ✅ **Verificado en vivo**: `entregas_oc_items` NO tiene `cantidad_planificada` (probe PostgREST:
+    `{"code":"42703","message":"column entregas_oc_items.cantidad_planificada does not exist"}` y
+    ausente de `definitions.entregas_oc_items.properties` en el OpenAPI de `/rest/v1/`).
+  - ✅ **Verificado en vivo**: `extraction_results` NO tiene `grupo_id` (mismo patrón: `42703` +
+    ausente del OpenAPI).
+  - ✅ **Verificado en vivo**: `mismo_tenant(uuid)`, `get_rol()`, `es_superadmin()` existen —
+    `POST /rest/v1/rpc/get_rol` → `200 null`; `POST /rest/v1/rpc/es_superadmin` → `200 false`;
+    `POST /rest/v1/rpc/mismo_tenant {"p_drogueria": "<uuid>"}` → `200 null` (el primer intento con
+    un nombre de parámetro incorrecto devolvió `PGRST202` con el hint
+    `"Perhaps you meant to call the function public.mismo_tenant(p_drogueria)"`, confirmando además
+    la firma real del parámetro).
+  - ⚠️ **Confirmado indirectamente, no como constraint nombrado**: el OpenAPI de `/rest/v1/` para
+    `ordenes_compra` muestra en vivo las columnas `deleted_at`/`created_by`/`updated_by`/`deleted_by`
+    (evidencia independiente de C4, ver 1.6) — pero **no** expone nombres de UNIQUE/constraint, así
+    que no se pudo confirmar el nombre exacto `uq_cli_id_drog` en `clientes` (sí se confirmó que
+    `clientes.id`/`drogueria_id` existen como se espera).
+  - ❌ **No verificable con las herramientas disponibles**: (1) que `uq_oc` exista con ese nombre
+    exacto en `ordenes_compra`, y (2) que ninguna FK la referencie — ambos requieren consultar
+    `pg_constraint`/`information_schema`, que PostgREST no expone y para los que no hubo acceso SQL
+    directo en este batch.
+  - **No se intentó ninguna verificación mutante** (insertar filas para forzar un conflicto de
+    constraint) porque la tarea es explícitamente de solo lectura.
+  - **Siguiente paso recomendado**: re-ejecutar 1.1 (los 2 checks pendientes) desde una sesión con
+    el MCP de Supabase habilitado, o correr manualmente en el SQL Editor de Supabase Studio antes de
+    aplicar 1.4.
+- [x] 1.2 Creado `supabase/migrations/0025_orden_compra_desde_extraccion.sql` — transcripción
+  literal de `design.md` § Migration: guard de versión de Postgres, `ALTER TABLE ordenes_compra`
+  (`proceso_comercial_id` nullable + `ck_oc_anclaje`), drop de `uq_oc` y alta de
+  `uq_oc_por_cliente`/`uq_oc_por_proceso`, `entregas_oc_items.cantidad_planificada` +
   `ck_eoci_planificada`, tabla `oc_cliente_alias` completa con sus 4 políticas RLS
-  (`oca_sel/ins/upd/del`) y `GRANT`s, `extraction_results.grupo_id` + `idx_er_grupo`.
-- [ ] 1.3 Crear `supabase/migrations/0025_orden_compra_desde_extraccion.down.sql` con los 4 avisos
+  (`oca_sel/ins/upd/del`) y `GRANT`s, `extraction_results.grupo_id` + `idx_er_grupo`. Ningún hallazgo
+  de 1.1 contradijo las asunciones de `design.md`, así que no fue necesario ajustar el SQL.
+- [x] 1.3 Creado `supabase/migrations/0025_orden_compra_desde_extraccion.down.sql` con los 4 avisos
   documentados (orden datos-antes-que-esquema, `uq_oc` global más restrictivo, pérdida de
   `oc_cliente_alias`, disolución de grupos pendientes) y los `DROP`/`ALTER` en el orden inverso.
-- [ ] 1.4 Aplicar `0025` contra el proyecto Supabase de test y verificar en vivo: `ck_oc_anclaje`
-  rechaza una fila con ambos anclajes en `NULL`; `uq_oc_por_cliente` y `uq_oc_por_proceso` existen y
-  tienen el `WHERE` correcto; `oc_cliente_alias` tiene RLS habilitada y las 4 políticas; los `GRANT`
-  a `authenticated`/`service_role` están aplicados; `idx_er_grupo` existe como índice parcial.
-- [ ] 1.5 Aplicar la down migration sobre el mismo entorno de test para confirmar que revierte sin
-  error partiendo de una base sin filas que colisionen, y volver a aplicar `0025` para dejar el
-  entorno listo para las fases siguientes.
-- [ ] 1.6 Actualizar `docs/schema/extractor_final.sql`: reflejar `0025` completa (`ck_oc_anclaje`,
-  los dos índices parciales, `cantidad_planificada`, `CREATE TABLE oc_cliente_alias` con su RLS,
-  `extraction_results.grupo_id`) y corregir el drift de C4 (`ordenes_compra` en el snapshot no lista
-  `deleted_at`/`created_by`/`updated_by`/`deleted_by`, que sí existen en la base viva) verificando
-  contra la base real, no contra el `CREATE TABLE` desactualizado.
+- [ ] 1.4 **BLOQUEADO** — Aplicar `0025` contra el proyecto Supabase de test y verificar en vivo.
+  No hay forma de ejecutar DDL con las herramientas de este batch: PostgREST (único acceso de red
+  disponible, vía `SUPABASE_SERVICE_KEY`) no ejecuta `ALTER TABLE`/`CREATE TABLE`/etc., y no hay
+  `psql`, Supabase CLI, ni una cadena de conexión Postgres directa (host/password) en el entorno.
+  Requiere: MCP de Supabase (`apply_migration`/`execute_sql`), Supabase CLI con `supabase link`, o
+  aplicar manualmente vía Supabase Studio SQL Editor.
+- [ ] 1.5 **BLOQUEADO** — depende de 1.4 (aplicar down + reaplicar) por el mismo motivo: sin acceso
+  DDL no hay forma de ejecutar ninguna migración, forward ni inversa.
+- [x] 1.6 Actualizado `docs/schema/extractor_final.sql`: `ordenes_compra` ahora declara
+  `proceso_comercial_id` nullable + `ck_oc_anclaje`, `created_by`/`updated_by`/`deleted_at`/
+  `deleted_by` (corrige el drift de C4 — **confirmado en vivo** vía el OpenAPI de `/rest/v1/`, que sí
+  lista esas 4 columnas para `ordenes_compra` en la base de test); `uq_oc` reemplazado por
+  `uq_oc_por_cliente`/`uq_oc_por_proceso` en la sección de índices; `entregas_oc_items` con
+  `cantidad_planificada` + `ck_eoci_planificada`; tabla nueva `oc_cliente_alias` con su comentario y
+  FKs; `extraction_results.grupo_id` + `idx_er_grupo`. La parte de "reflejar el contenido de 0025"
+  se hizo por transcripción directa de la migración (1.2); la parte de C4 se verificó contra la base
+  viva vía el probe de PostgREST descripto en 1.1, no contra el `CREATE TABLE` desactualizado.
 
 ## Phase 2: Extracción — Tramo 1 (`services/extraccion/`)
 
