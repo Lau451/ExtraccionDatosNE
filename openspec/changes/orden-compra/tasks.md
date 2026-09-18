@@ -205,44 +205,95 @@ recachear una estrategia distinta si lo prefiere.
 
 > Depende de Phase 1 (tabla `oc_cliente_alias`). No depende de Phase 2.
 
-- [ ] 3.1 [RED] Crear `tests/extraccion/test_cliente_candidato.py` con los casos de
-  `resolver_cliente_candidato`: nivel 1 (alias exacto tras `normalizar_descripcion`) gana sobre nivel
-  2 aunque ambos resuelvan y difieran; nivel 2 con CUIT exclusivo → 1 candidato; CUIT con
-  `cuit_no_exclusivo=true` (C6) → N candidatos; sin match en ningún nivel → `origen='ninguno'`, 200 y
-  lista vacía (no excepción); CUIT malformado (≠11 dígitos tras normalizar) → se saltea nivel 2,
-  `advertencias[]`; tercero con CUIT pero sin fila en `clientes` → candidato omitido + advertencia;
-  cliente con `activo=false` → incluido pero marcado; **aserción explícita de que la función no hace
-  ningún write** (mock de escritura, o verificación de que la tabla no cambió).
-- [ ] 3.2 [RED] En el mismo archivo, cubrir el threat-matrix de resolución de cliente: alias no se
-  escribe sin confirmación humana (`test_alias_no_se_escribe_sin_confirmacion`); corrección de alias
-  pisa `cliente_id` y resetea `veces_confirmado=1` (`test_correccion_pisa_y_resetea`); texto de
-  cabecera vacío o solo puntuación no genera alias, rechazado por `ck_oca_texto`
-  (`test_texto_vacio_no_genera_alias`); alias de la droguería A invisible desde B
-  (`test_alias_aislado_por_drogueria`).
-- [ ] 3.3 [RED] Tests unitarios de `_normalizar_cuit`: `"30-12345678-9"`, `"30123456789"`,
-  `"30.123.456.78 9"` → mismos 11 dígitos; `"1234"` → `None` + advertencia. Y de la clave de alias:
-  `normalizar_descripcion("Hospital Público Ñandú S.A. - Sede Nº2") == "HOSPITAL PUBLICO NANDU S A SEDE N 2"`,
-  dos variantes tipográficas del mismo encabezado colapsan a la misma clave (test de no-regresión:
-  `services/presupuestacion/core/texto.py` no se modifica en este cambio).
-- [ ] 3.4 [GREEN] Agregar a `services/presupuestacion/extraccion/models.py`: `OrigenCandidato`
-  (`Literal["alias", "cuit", "cuit_compartido", "ninguno"]`), `CandidatoCliente`, `CandidatoClienteOut`
-  — exactamente como en `design.md` § Interfaces/Resolución de cliente.
-- [ ] 3.5 [GREEN] Agregar a `services/presupuestacion/extraccion/repository.py`:
-  `buscar_alias_cliente(texto_normalizado)`, `upsert_alias_cliente(...)` (UPSERT sobre `uq_oca`,
-  incrementa `veces_confirmado` en reconfirmación idéntica, resetea a 1 en corrección),
-  `buscar_clientes_por_cuit(cuit_normalizado)` (join `terceros` ⋈ `clientes`, respeta
-  `cuit_no_exclusivo`).
-- [ ] 3.6 [GREEN] Agregar a `services/presupuestacion/extraccion/service.py`: `_normalizar_cuit()`,
-  `resolver_cliente_candidato(client, *, drogueria_id, cuit_extraido, texto_extraido) ->
-  CandidatoClienteOut` (3 niveles con cortocircuito, nunca escribe, nunca levanta excepción por "no
-  encontrado"), `_registrar_alias_cliente()` (UPSERT, se invoca solo dentro de una confirmación
-  exitosa — ver Phase 5, no expuesto todavía).
-- [ ] 3.7 [GREEN] Agregar a `services/presupuestacion/extraccion/router.py`:
-  `GET /extracciones/{id}/cliente-candidato`, roles `_ROLES_VALIDAR` (existente, sin tupla nueva —
-  D12), con `_verificar_pertenencia` existente.
-- [ ] 3.8 [REFACTOR] Correr `pytest tests/extraccion/test_cliente_candidato.py -m integration` contra
-  el proyecto Supabase de test y confirmar los 3 niveles, la precedencia, y el aislamiento
-  multi-tenant en vivo.
+- [x] 3.1 [RED] Creado `tests/extraccion/test_cliente_candidato.py` con los casos de
+  `resolver_cliente_candidato`: nivel 1 gana sobre nivel 2 aunque ambos resuelvan y difieran
+  (`test_nivel1_alias_gana_sobre_nivel2_aunque_ambos_resuelvan_y_difieran`, con
+  `mock_cuit.assert_not_called()` probando el cortocircuito); nivel 2 CUIT exclusivo → 1 candidato
+  (`test_nivel2_cuit_exclusivo_devuelve_un_candidato`); `cuit_no_exclusivo=true` (C6) → N candidatos
+  (`test_nivel2_cuit_no_exclusivo_devuelve_n_candidatos`); sin match → `origen='ninguno'`, lista vacía,
+  sin excepción (`test_sin_match_en_ningun_nivel_devuelve_ninguno_y_lista_vacia_sin_excepcion`); CUIT
+  malformado → nivel 2 salteado + advertencia (`test_cuit_malformado_saltea_nivel2_y_deja_advertencia`,
+  con `mock_cuit.assert_not_called()`); tercero con CUIT sin fila en `clientes` → omitido + advertencia
+  (`test_tercero_con_cuit_pero_sin_fila_en_clientes_se_omite_con_advertencia`); cliente `activo=false`
+  → incluido y marcado (`test_cliente_inactivo_se_incluye_marcado`); **aserción explícita de que no
+  escribe** (`test_resolver_cliente_candidato_nunca_escribe`, mockeando
+  `repo.upsert_alias_cliente` y confirmando `assert_not_called()`). Confirmado RED:
+  `pytest tests/extraccion/test_cliente_candidato.py -m "not integration" -q` → 21 failed / 2 passed
+  (los 2 que pasaron son los de `normalizar_descripcion`, función existente que este cambio no toca —
+  ver 3.3). Los 21 fallos fueron `AttributeError` por atributos inexistentes en `service`/`repo`, la
+  falla RED esperada.
+- [x] 3.2 [RED] En el mismo archivo, threat-matrix de resolución de cliente: alias no se escribe sin
+  confirmación (`test_alias_no_se_escribe_sin_confirmacion`); corrección pisa `cliente_id` y resetea
+  `veces_confirmado=1` (`test_correccion_pisa_y_resetea`, unitario con `MagicMock` del client
+  inspeccionando la `fila` enviada a `.upsert()`) — agregado también
+  `test_reconfirmacion_identica_incrementa_veces_confirmado` y
+  `test_primera_confirmacion_sin_alias_previo_arranca_en_uno` para cubrir las otras 2 ramas de la
+  misma función; texto vacío/solo-puntuación no genera alias
+  (`test_texto_vacio_no_genera_alias`, `test_texto_none_no_genera_alias`, unitarios contra el guard de
+  `_registrar_alias_cliente`, no contra `ck_oca_texto` directamente — ver nota de diseño abajo); alias
+  aislado por droguería (`test_alias_aislado_por_drogueria`, **integración en vivo**: alias creado en
+  la droguería A, `resolver_cliente_candidato` desde B con el mismo texto cae a `origen='ninguno'`).
+- [x] 3.3 [RED] Tests unitarios de `_normalizar_cuit`: los 3 formatos (`"30-12345678-9"`,
+  `"30123456789"`, `"30.123.456.78 9"`) → mismos 11 dígitos (parametrizado); `"1234"`, `""`, `None` →
+  `None`. Clave de alias: `test_normalizar_descripcion_produce_la_clave_de_alias_esperada` y
+  `test_normalizar_descripcion_dos_variantes_tipograficas_colapsan_a_la_misma_clave` — **desviación de
+  diseño encontrada y documentada en el test**: el ejemplo de `design.md` § D3.1
+  (`normalizar_descripcion("Hospital Público Ñandú S.A. - Sede Nº2") == "HOSPITAL PUBLICO NANDU S A SEDE N 2"`)
+  no coincide con el comportamiento real y verificado en vivo de la función (sin tocarla): produce
+  `"...SEDE NO2"`, no `"...SEDE N 2"` — NFKD descompone `º` (U+00BA) a la letra `"o"`, que `[^\w\s]` no
+  reemplaza porque `"o"` es `\w`. El test de no-regresión quedó con el valor REAL (verificado con
+  `python -c "..."` contra la función sin modificar), que es lo relevante para D3.1 (colapsar
+  variantes tipográficas a la misma clave), no la prosa del documento. También se corrigió la segunda
+  aserción: `"S.A."` normaliza a `"S A"` (con espacio, no a `"SA""`) porque la puntuación se reemplaza
+  por espacio, no se elimina — el par de variantes se cambió a uno que sí colapsa de verdad
+  (`"Clínica San Roque"` vs `"  clinica   SAN roque  "` → `"CLINICA SAN ROQUE"` en ambos casos).
+- [x] 3.4 [GREEN] Agregado a `services/presupuestacion/extraccion/models.py`: `OrigenCandidato`,
+  `CandidatoCliente`, `CandidatoClienteOut` — literal a `design.md` § Interfaces/Resolución de
+  cliente.
+- [x] 3.5 [GREEN] Agregado a `services/presupuestacion/extraccion/repository.py`:
+  `buscar_alias_cliente()` (embebe `clientes(tipo, activo, terceros(...))` en la misma consulta, para
+  que nivel 1 arme el `CandidatoCliente` completo en un solo viaje), `upsert_alias_cliente()` (no es un
+  UPSERT atómico de una sentencia — PostgREST no expone `CASE` en el `SET`; lee el alias previo con
+  `buscar_alias_cliente`, decide `veces_confirmado` en Python — mismo cliente incrementa, distinto o
+  inexistente resetea/arranca en 1 — y hace `.upsert(fila, on_conflict="drogueria_id,texto_extraido_normalizado")`,
+  mismo patrón que `productos/repository.py:315` y `notificaciones/repository.py:69`),
+  `buscar_clientes_por_cuit()` (`terceros` ⋈ `clientes` embed LEFT, mismo precedente de acceso directo
+  a tabla ajena que `pcp/imports/repository.py:39-51`).
+- [x] 3.6 [GREEN] Agregado a `services/presupuestacion/extraccion/service.py`: `_normalizar_cuit()`,
+  `_candidato_desde_alias()` / `_candidatos_desde_cuit()` (mappers privados de los embeds de PostgREST
+  a `CandidatoCliente`), `resolver_cliente_candidato()` (3 niveles con cortocircuito real — nivel 2 ni
+  se consulta si nivel 1 resuelve, confirmado con `mock.assert_not_called()` en los tests — nunca
+  escribe, nunca levanta excepción por "no encontrado"), `obtener_cliente_candidato()` (lee
+  `cuit_cliente`/`razon_social_cliente` de la primera fila del CSV propio de la extracción — **nota**:
+  esto no estaba en la firma explícita de `design.md`, que solo especifica
+  `resolver_cliente_candidato(client, *, drogueria_id, cuit_extraido, texto_extraido)`; el diseño no
+  dice de dónde saca esos dos parámetros el endpoint GET, así que se agregó esta función wrapper
+  siguiendo el patrón de `leer_filas_extraccion` — Phase 3 no depende de Phase 4, así que lee el CSV
+  propio, no `_leer_filas_grupo()`), `_registrar_alias_cliente()` (guard de texto vacío/None antes de
+  llamar a `repo.upsert_alias_cliente`, no expuesta en ningún endpoint todavía — la invocará Phase 5
+  desde `_materializar_orden_compra()` tras una confirmación exitosa).
+- [x] 3.7 [GREEN] Agregado a `services/presupuestacion/extraccion/router.py`:
+  `GET /extracciones/{id}/cliente-candidato`, roles `_ROLES_VALIDAR` (existente, sin tupla nueva),
+  reusando `_verificar_pertenencia` con `select="id, drogueria_id, csv_disk_path"`.
+  `pytest tests/extraccion/test_cliente_candidato.py -m "not integration" -q` → **23 passed** (GREEN
+  confirmado tras 3.4-3.7).
+- [x] 3.8 [REFACTOR] Corrido `pytest tests/extraccion/test_cliente_candidato.py -m integration -q`
+  contra el proyecto Supabase de test (`grnamollopxdlstcpxhc`) → **5 passed**:
+  `test_alias_aislado_por_drogueria` (alias de A invisible desde B, crea y borra una segunda
+  droguería), `test_resolver_cliente_candidato_nivel1_alias_en_vivo` (alias real + variante
+  tipográfica en el texto extraído sigue matcheando por la clave normalizada),
+  `test_resolver_cliente_candidato_nivel2_cuit_exclusivo_en_vivo`,
+  `test_resolver_cliente_candidato_cuit_compartido_en_vivo` (2 sedes con el mismo CUIT
+  `cuit_no_exclusivo=true` → 2 candidatos), `test_upsert_alias_cliente_ciclo_completo_en_vivo` (primera
+  confirmación `veces_confirmado=1` → reconfirmación idéntica incrementa a 2 → corrección de cliente
+  pisa `cliente_id` y resetea a 1, las 3 aserciones del ciclo del design.md § Tests/Integration en una
+  sola fila real, con cleanup en `finally`). Se agregaron 2 fixtures nuevas en
+  `tests/extraccion/conftest.py`: `seed_cliente_factory` (alta en dos pasos `terceros`+`clientes`,
+  mismo patrón que `tests/conftest.py::seed_proveedor`, con cleanup por cascada desde `terceros`) y
+  `seed_alias_cliente_factory` (alta directa de `oc_cliente_alias` para armar el estado inicial exacto
+  de cada test). Verificación de no-regresión: `pytest tests/ -q -m "not integration"` → **303 passed,
+  436 deselected** (vs. 280 del baseline de PR2 — +23 tests netos, todos de este archivo; 0
+  regresiones fuera de Phase 3).
 
 ## Phase 4: Validación — Agrupación multi-archivo (D13)
 
