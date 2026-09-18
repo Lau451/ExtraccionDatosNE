@@ -1,0 +1,3 @@
+numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas
+OC-4471;12/09/2026;30712345679;HOSPITAL SAN ROQUE;Av. Siempreviva 742;2;1;IBUPROFENO 400MG X 20;100;1250,00;50@30|50@60
+OC-4471;12/09/2026;30712345679;HOSPITAL SAN ROQUE;Av. Siempreviva 742;2;2;AMOXICILINA 500MG X 16;80;980,50;
