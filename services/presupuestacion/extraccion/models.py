@@ -66,3 +66,29 @@ class FilasExtraccionOut(BaseModel):
     editable: bool
     columnas: list[str]
     filas: list[dict[str, str]]
+
+
+# -- Resolución de cliente (D3 / D3.1 / D3.2, Phase 3) -----------------------
+
+OrigenCandidato = Literal["alias", "cuit", "cuit_compartido", "ninguno"]
+
+
+class CandidatoCliente(BaseModel):
+    cliente_id: str
+    razon_social: str
+    cuit: str | None
+    codigo_interno: str | None
+    tipo: str
+    activo: bool  # false -> el front lo muestra deshabilitado con el motivo
+    cuit_no_exclusivo: bool  # true -> es una sede de un CUIT institucional (C6)
+
+
+class CandidatoClienteOut(BaseModel):
+    origen: OrigenCandidato
+    # 1 elemento  -> sugerencia única (alias, o CUIT exclusivo)
+    # N elementos -> candidatos de un CUIT compartido; el usuario elige (C6)
+    # 0 elementos -> el usuario busca a mano (D3.2)
+    candidatos: list[CandidatoCliente]
+    cuit_extraido: str | None  # ya normalizado a 11 dígitos, o None
+    razon_social_extraida: str | None  # texto crudo, tal cual salió del documento
+    advertencias: list[str]  # CUIT malformado, tercero sin rol cliente, etc.

@@ -107,6 +107,98 @@ def actualizar_oferta_item(
     client.table("ofertas_items").update(campos).eq("id", oferta_item_id).execute()
 
 
+# -- resolución de cliente (D3/D3.1) -- lectura/escritura directa de
+# oc_cliente_alias (tabla propia de extraccion/, ver nota de frontera de
+# design.md) y de terceros/clientes (D1: acceso directo a la tabla permitido,
+# solo se prohíbe importar el repository de otro módulo -- mismo precedente
+# que pcp/imports/repository.py::buscar_tercero_por_codigo). ---------------
+
+
+def buscar_alias_cliente(
+    client: Client, *, drogueria_id: str, texto_normalizado: str
+) -> dict[str, Any] | None:
+    """Nivel 1 de D3 -- match exacto por el índice único uq_oca. Trae embebidos
+    los datos del cliente (y del tercero que comparte su id) para que el
+    service pueda armar el CandidatoCliente en un solo viaje."""
+    resultado = (
+        client.table("oc_cliente_alias")
+        .select(
+            "id, cliente_id, veces_confirmado, "
+            "clientes(id, tipo, activo, terceros(razon_social, codigo_interno, cuit, cuit_no_exclusivo))"
+        )
+        .eq("drogueria_id", drogueria_id)
+        .eq("texto_extraido_normalizado", texto_normalizado)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def upsert_alias_cliente(
+    client: Client,
+    *,
+    drogueria_id: str,
+    texto_normalizado: str,
+    texto_original: str,
+    cliente_id: str,
+    usuario_id: str | None,
+) -> dict[str, Any]:
+    """UPSERT sobre uq_oca (drogueria_id, texto_extraido_normalizado) -- D3.1.
+    La última confirmación gana: si ya existía un alias con el MISMO
+    cliente_id, incrementa veces_confirmado (reconfirmación); si el cliente
+    difiere (corrección), resetea a 1 -- un alias corregido es un alias nuevo y
+    no hereda la confianza del mapeo equivocado. No es un UPSERT atómico de una
+    sola sentencia SQL (PostgREST no expone `ON CONFLICT DO UPDATE SET x =
+    CASE...`): lee el estado previo primero y decide en Python, mismo criterio
+    que el resto de este repository."""
+    existente = buscar_alias_cliente(
+        client, drogueria_id=drogueria_id, texto_normalizado=texto_normalizado
+    )
+    if existente is not None and existente["cliente_id"] == cliente_id:
+        veces_confirmado = existente["veces_confirmado"] + 1
+    else:
+        veces_confirmado = 1
+
+    fila: dict[str, Any] = {
+        "drogueria_id": drogueria_id,
+        "texto_extraido_normalizado": texto_normalizado,
+        "texto_extraido_original": texto_original,
+        "cliente_id": cliente_id,
+        "veces_confirmado": veces_confirmado,
+        "updated_by": usuario_id,
+    }
+    if existente is None:
+        fila["created_by"] = usuario_id
+
+    return (
+        client.table("oc_cliente_alias")
+        .upsert(fila, on_conflict="drogueria_id,texto_extraido_normalizado")
+        .execute()
+        .data[0]
+    )
+
+
+def buscar_clientes_por_cuit(
+    client: Client, *, drogueria_id: str, cuit_normalizado: str
+) -> list[dict[str, Any]]:
+    """Nivel 2 de D3 -- terceros ⋈ clientes por CUIT. Embed LEFT (default de
+    PostgREST): un tercero con ese CUIT pero sin fila de rol en `clientes`
+    vuelve con `clientes=None`, y es el service quien decide omitirlo y
+    agregar la advertencia (no es candidato porque no es cliente)."""
+    resultado = (
+        client.table("terceros")
+        .select(
+            "id, razon_social, codigo_interno, cuit, cuit_no_exclusivo, "
+            "clientes(id, tipo, activo)"
+        )
+        .eq("drogueria_id", drogueria_id)
+        .eq("cuit", cuit_normalizado)
+        .is_("deleted_at", None)
+        .execute()
+    )
+    return resultado.data
+
+
 def listar_usuarios_por_rol(
     client: Client,
     *,

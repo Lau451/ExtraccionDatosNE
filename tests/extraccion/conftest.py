@@ -4,6 +4,93 @@ import uuid
 
 import pytest
 
+from services.presupuestacion.core.texto import normalizar_descripcion
+
+
+@pytest.fixture
+def seed_cliente_factory(service_client, seed_drogueria):
+    """Alta de cliente en dos pasos (terceros + clientes), mismo patrón que
+    tests/conftest.py::seed_proveedor -- `clientes` comparte `id` con `terceros`
+    desde 0008_terceros_modelo.sql y no tiene columnas de identidad propias
+    (razon_social/cuit/codigo_interno viven en terceros). Devuelve un dict
+    combinado con los campos que resolver_cliente_candidato necesita armar en
+    CandidatoCliente, para que los tests de integración no tengan que volver a
+    unir las dos tablas a mano."""
+    creados: list[tuple[str, str]] = []  # (tercero_id, drogueria_id) para el teardown
+
+    def _seed(
+        razon_social: str = "Cliente de test",
+        *,
+        drogueria_id: str | None = None,
+        cuit: str | None = None,
+        cuit_no_exclusivo: bool = False,
+        codigo_interno: str | None = None,
+        tipo: str = "hospital",
+        activo: bool = True,
+    ) -> dict:
+        drog_id = drogueria_id or seed_drogueria["id"]
+        tercero = (
+            service_client.table("terceros")
+            .insert(
+                {
+                    "drogueria_id": drog_id,
+                    "razon_social": razon_social,
+                    "cuit": cuit,
+                    "cuit_no_exclusivo": cuit_no_exclusivo,
+                    "codigo_interno": codigo_interno,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        cliente = (
+            service_client.table("clientes")
+            .insert({"id": tercero["id"], "drogueria_id": drog_id, "tipo": tipo, "activo": activo})
+            .execute()
+            .data[0]
+        )
+        creados.append((tercero["id"], drog_id))
+        return {
+            "cliente_id": cliente["id"],
+            "drogueria_id": drog_id,
+            "razon_social": tercero["razon_social"],
+            "cuit": tercero["cuit"],
+            "cuit_no_exclusivo": tercero["cuit_no_exclusivo"],
+            "codigo_interno": tercero["codigo_interno"],
+            "tipo": cliente["tipo"],
+            "activo": cliente["activo"],
+        }
+
+    yield _seed
+    for tercero_id, _drog_id in creados:
+        # fk_cli_tercero (clientes -> terceros) es ON DELETE CASCADE -- borrar el
+        # tercero alcanza para limpiar la fila de rol también.
+        service_client.table("terceros").delete().eq("id", tercero_id).execute()
+
+
+@pytest.fixture
+def seed_alias_cliente_factory(service_client, seed_drogueria):
+    """Alta directa de una fila de `oc_cliente_alias` para tests de integración
+    del nivel 1 (D3.1) -- no pasa por upsert_alias_cliente a propósito, para
+    poder armar el estado inicial exacto que cada test necesita."""
+    creados: list[str] = []
+
+    def _seed(*, cliente_id: str, texto_original: str, drogueria_id: str | None = None, **overrides):
+        fila = {
+            "drogueria_id": drogueria_id or seed_drogueria["id"],
+            "texto_extraido_normalizado": normalizar_descripcion(texto_original),
+            "texto_extraido_original": texto_original,
+            "cliente_id": cliente_id,
+            **overrides,
+        }
+        alias = service_client.table("oc_cliente_alias").insert(fila).execute().data[0]
+        creados.append(alias["id"])
+        return alias
+
+    yield _seed
+    for alias_id in creados:
+        service_client.table("oc_cliente_alias").delete().eq("id", alias_id).execute()
+
 
 @pytest.fixture
 def seed_proceso_con_cliente(service_client, seed_drogueria):

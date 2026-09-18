@@ -7,6 +7,7 @@ from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 from services.presupuestacion.extraccion.models import (
+    CandidatoClienteOut,
     ExtraccionResumen,
     FilasExtraccionOut,
     ResultadoValidarExtraccion,
@@ -15,6 +16,7 @@ from services.presupuestacion.extraccion.models import (
 from services.presupuestacion.extraccion.service import (
     leer_filas_extraccion,
     listar_extracciones,
+    obtener_cliente_candidato,
     validar_extraccion_para_endpoint,
 )
 
@@ -74,6 +76,23 @@ def obtener_filas_extraccion_endpoint(
         select="id, drogueria_id, document_type, csv_disk_path, row_count",
     )
     return leer_filas_extraccion(extraccion)
+
+
+@router.get(
+    "/extracciones/{extraction_id}/cliente-candidato", response_model=CandidatoClienteOut
+)
+def obtener_cliente_candidato_endpoint(
+    extraction_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    user_client: Client = Depends(get_user_client),
+) -> CandidatoClienteOut:
+    extraccion = _verificar_pertenencia(
+        user_client,
+        usuario=usuario,
+        extraction_id=extraction_id,
+        select="id, drogueria_id, csv_disk_path",
+    )
+    return obtener_cliente_candidato(user_client, extraccion)
 
 
 @router.post("/extracciones/{extraction_id}/validar", response_model=ResultadoValidarExtraccion)

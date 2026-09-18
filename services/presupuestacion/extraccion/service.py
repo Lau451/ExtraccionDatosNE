@@ -1,5 +1,6 @@
 import csv
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -19,6 +20,8 @@ from services.presupuestacion.core.texto import normalizar_descripcion
 from services.presupuestacion.extraccion import repository as repo
 from services.presupuestacion.extraccion.models import (
     MAX_FILAS_EDITABLES,
+    CandidatoCliente,
+    CandidatoClienteOut,
     ExtraccionResumen,
     FilasExtraccionOut,
     ResultadoValidarExtraccion,
@@ -102,6 +105,193 @@ def leer_filas_extraccion(extraction: dict[str, Any]) -> FilasExtraccionOut:
         # (§8.2) -- el frontend ya bloquea la edición antes de pedir esto, esto es
         # la red de seguridad del servidor.
         filas=filas_completas if editable else [],
+    )
+
+
+# -- Resolución de cliente (D3 / D3.1) ---------------------------------------
+
+
+def _normalizar_cuit(cuit: str | None) -> str | None:
+    """Saca guiones/puntos/espacios y exige exactamente 11 dígitos (D3/D6). Un
+    CUIT extraído malformado no es un error: se saltea el nivel 2 en silencio
+    (el caller registra la advertencia)."""
+    if not cuit:
+        return None
+    digitos = re.sub(r"\D", "", cuit)
+    if len(digitos) != 11:
+        return None
+    return digitos
+
+
+def _candidato_desde_alias(alias: dict[str, Any]) -> CandidatoCliente | None:
+    cliente_embed = alias.get("clientes")
+    if cliente_embed is None:
+        return None
+    tercero_embed = cliente_embed.get("terceros") or {}
+    return CandidatoCliente(
+        cliente_id=alias["cliente_id"],
+        razon_social=tercero_embed.get("razon_social") or "",
+        cuit=tercero_embed.get("cuit"),
+        codigo_interno=tercero_embed.get("codigo_interno"),
+        tipo=cliente_embed.get("tipo") or "",
+        activo=cliente_embed.get("activo", True),
+        cuit_no_exclusivo=tercero_embed.get("cuit_no_exclusivo", False),
+    )
+
+
+def _candidatos_desde_cuit(filas: list[dict[str, Any]]) -> tuple[list[CandidatoCliente], bool]:
+    """Mapea las filas de terceros ⋈ clientes (D3 nivel 2) a CandidatoCliente.
+    Un tercero con ese CUIT pero sin fila en `clientes` (embed None) no es un
+    candidato -- se omite y el segundo valor de la tupla avisa al caller que
+    hubo al menos uno así, para que agregue la advertencia."""
+    candidatos: list[CandidatoCliente] = []
+    hubo_omitido = False
+    for fila in filas:
+        cliente_embed = fila.get("clientes")
+        if cliente_embed is None:
+            hubo_omitido = True
+            continue
+        candidatos.append(
+            CandidatoCliente(
+                cliente_id=cliente_embed["id"],
+                razon_social=fila.get("razon_social") or "",
+                cuit=fila.get("cuit"),
+                codigo_interno=fila.get("codigo_interno"),
+                tipo=cliente_embed.get("tipo") or "",
+                activo=cliente_embed.get("activo", True),
+                cuit_no_exclusivo=fila.get("cuit_no_exclusivo", False),
+            )
+        )
+    return candidatos, hubo_omitido
+
+
+def resolver_cliente_candidato(
+    client: Client,
+    *,
+    drogueria_id: str,
+    cuit_extraido: str | None,
+    texto_extraido: str | None,
+) -> CandidatoClienteOut:
+    """Sugiere un cliente para una OC extraída (D3). Corre al abrir la pantalla
+    de validación. NUNCA escribe, NUNCA ancla: la confirmación es siempre un
+    click del usuario. NUNCA levanta excepción por "no encontrado" -- no
+    encontrar es un resultado válido (origen='ninguno').
+
+    Nivel 1 -- oc_cliente_alias por normalizar_descripcion(texto_extraido): exacto.
+    Nivel 2 -- terceros.cuit ⋈ clientes: 1 fila (exclusivo) o N (cuit_no_exclusivo, C6).
+    Nivel 3 -- sin candidatos; el front usa GET /terceros (D3.2).
+
+    Corta en el primer nivel que devuelva algo (cortocircuito).
+    """
+    advertencias: list[str] = []
+
+    cuit_normalizado = _normalizar_cuit(cuit_extraido)
+    if cuit_extraido and cuit_normalizado is None:
+        advertencias.append(
+            f'El CUIT extraído ("{cuit_extraido}") no tiene 11 dígitos válidos '
+            "— se omite la búsqueda por CUIT"
+        )
+
+    texto_normalizado = normalizar_descripcion(texto_extraido) if texto_extraido else ""
+
+    # Nivel 1 -- alias exacto. Gana con cortocircuito aunque el nivel 2 también
+    # resuelva (y difiera): es la fuente de más confianza, alguien ya confirmó
+    # este texto.
+    if texto_normalizado:
+        alias = repo.buscar_alias_cliente(
+            client, drogueria_id=drogueria_id, texto_normalizado=texto_normalizado
+        )
+        if alias is not None:
+            candidato = _candidato_desde_alias(alias)
+            if candidato is not None:
+                return CandidatoClienteOut(
+                    origen="alias",
+                    candidatos=[candidato],
+                    cuit_extraido=cuit_normalizado,
+                    razon_social_extraida=texto_extraido,
+                    advertencias=advertencias,
+                )
+
+    # Nivel 2 -- CUIT (exclusivo -> 1 candidato; compartido, C6 -> N candidatos).
+    if cuit_normalizado is not None:
+        filas = repo.buscar_clientes_por_cuit(
+            client, drogueria_id=drogueria_id, cuit_normalizado=cuit_normalizado
+        )
+        candidatos, hubo_omitido = _candidatos_desde_cuit(filas)
+        if hubo_omitido:
+            advertencias.append(
+                "El CUIT extraído corresponde a un tercero que no es cliente"
+            )
+        if len(candidatos) == 1:
+            return CandidatoClienteOut(
+                origen="cuit",
+                candidatos=candidatos,
+                cuit_extraido=cuit_normalizado,
+                razon_social_extraida=texto_extraido,
+                advertencias=advertencias,
+            )
+        if len(candidatos) > 1:
+            return CandidatoClienteOut(
+                origen="cuit_compartido",
+                candidatos=candidatos,
+                cuit_extraido=cuit_normalizado,
+                razon_social_extraida=texto_extraido,
+                advertencias=advertencias,
+            )
+
+    # Nivel 3 -- nada. No es un error (D3): el usuario busca a mano (D3.2).
+    return CandidatoClienteOut(
+        origen="ninguno",
+        candidatos=[],
+        cuit_extraido=cuit_normalizado,
+        razon_social_extraida=texto_extraido,
+        advertencias=advertencias,
+    )
+
+
+def obtener_cliente_candidato(client: Client, extraction: dict[str, Any]) -> CandidatoClienteOut:
+    """GET /extracciones/{id}/cliente-candidato (D3). Lee `cuit_cliente`/
+    `razon_social_cliente` de la primera fila del CSV -- cabecera repetida por
+    renglón (D6) -- y delega en resolver_cliente_candidato(). Phase 3 no
+    depende de la agrupación (Phase 4): lee solo el CSV propio de esta
+    extracción, no _leer_filas_grupo()."""
+    filas = _leer_filas_csv(extraction["csv_disk_path"])
+    primera_fila = filas[0] if filas else {}
+    cuit_extraido = (primera_fila.get("cuit_cliente") or "").strip() or None
+    texto_extraido = (primera_fila.get("razon_social_cliente") or "").strip() or None
+    return resolver_cliente_candidato(
+        client,
+        drogueria_id=extraction["drogueria_id"],
+        cuit_extraido=cuit_extraido,
+        texto_extraido=texto_extraido,
+    )
+
+
+def _registrar_alias_cliente(
+    client: Client,
+    *,
+    drogueria_id: str,
+    texto_extraido: str | None,
+    cliente_id: str,
+    usuario_id: str | None,
+) -> None:
+    """Aprende el mapeo encabezado -> cliente tras una confirmación EXITOSA
+    (D3.1). Se invoca solo desde dentro de una confirmación que ya
+    materializó la OC (Phase 5), nunca al abrir la pantalla. texto_extraido
+    vacío/None/solo-puntuación -> no se aprende nada, no es un error (y
+    tampoco llegaría a violar ck_oca_texto, que además ya lo rechazaría)."""
+    if not texto_extraido:
+        return
+    texto_normalizado = normalizar_descripcion(texto_extraido)
+    if not texto_normalizado:
+        return
+    repo.upsert_alias_cliente(
+        client,
+        drogueria_id=drogueria_id,
+        texto_normalizado=texto_normalizado,
+        texto_original=texto_extraido,
+        cliente_id=cliente_id,
+        usuario_id=usuario_id,
     )
 
 
