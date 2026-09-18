@@ -299,48 +299,104 @@ recachear una estrategia distinta si lo prefiere.
 
 > Depende de Phase 1 (`extraction_results.grupo_id`). No depende de Phase 3.
 
-- [ ] 4.1 [RED] Crear `tests/extraccion/test_grupo_extracciones.py`: `_leer_filas_grupo` con
-  `grupo_id IS NULL` → forma idéntica a la de un archivo suelto (no-regresión de
-  licitación/comparativa); 3 miembros → filas concatenadas en orden `created_at ASC, id ASC`, con
-  `_archivo`/`_extraction_id` poblados; **aserción explícita de que NO transforma**: la cantidad de
-  filas devueltas es la suma exacta de las de cada miembro y ninguna `cantidad`/`numero_renglon`
-  cambia respecto del CSV de origen, ni siquiera cuando los 3 archivos declaran el mismo conjunto de
-  números de línea; `editable` se evalúa sobre el total concatenado contra `MAX_FILAS_EDITABLES`
-  (500).
-- [ ] 4.2 [RED] En el mismo archivo, `_conciliar_cabecera`: `numero_oc` distinto entre miembros →
-  bloqueo; `razon_social`/`fecha_emision`/`direccion_entrega`/`cantidad_entregas` distintos →
-  advertencia sin bloqueo; valor más frecuente gana; empate → primer miembro.
-- [ ] 4.3 [RED] Las 5 precondiciones de `agrupar_extracciones` (una por test): ≥2 ids sin repetidos;
-  todas existen y son de la droguería del usuario (404/403); todas `document_type='orden_compra'`
-  (422); ninguna `validado=true` (409); a lo sumo un `grupo_id` distinto ya presente entre ellas
-  (409). Más: `desagrupar_extracciones` deja `grupo_id=NULL` y disuelve el grupo de un solo miembro
-  restante.
-- [ ] 4.4 [RED] Threat-matrix de agrupación: agrupar una extracción ya validada → `ConflictError`
-  antes del `UPDATE` (`test_agrupar_validada_rechazado`); renglones repetidos entre archivos nunca se
-  fusionan ni suman (`test_renglones_repetidos_no_se_suman`); documento sin número de línea en un
-  grupo de N archivos no bloquea ni se rellena (`test_grupo_sin_numero_de_renglon_se_materializa`);
-  un miembro del grupo sin CSV en disco (volumen no montado) levanta `ExtraccionNoDisponibleError` en
-  la primera lectura que falle, antes de cualquier write (`test_miembro_sin_csv_aborta`). En
-  `tests/extraccion/test_router.py`, agregar `test_agrupar_multi_tenant_rechazado`: ids de dos
-  droguerías (solo posible como `superadmin`, exento del chequeo de tenant por id) → `ValidationError`
-  porque los N miembros deben compartir `drogueria_id` entre sí.
-- [ ] 4.5 [GREEN] Agregar a `services/presupuestacion/extraccion/models.py`: `MiembroGrupo`,
-  `AgruparExtraccionesRequest` (`extraction_ids: list[str] = Field(min_length=2)`); extender
-  `FilasExtraccionOut` con `grupo_id: str | None`, `miembros: list[MiembroGrupo] = []`,
-  `advertencias_cabecera: list[str] = []` (sin `modo_fusion_sugerido` — D13.1 lo elimina).
-- [ ] 4.6 [GREEN] Agregar a `services/presupuestacion/extraccion/repository.py`:
-  `listar_miembros_de_grupo()`, `actualizar_grupo_id()`, `marcar_validadas()` (bulk sobre el grupo).
-- [ ] 4.7 [GREEN] Agregar a `services/presupuestacion/extraccion/service.py`: `_leer_filas_grupo()`
-  (concatena tal cual, sin dedup/fusión/renumeración — D13.1; `grupo_id IS NULL` se comporta como hoy
-  con N=1), `_conciliar_cabecera()`, `agrupar_extracciones()` / `desagrupar_extracciones()` con las 5
-  precondiciones validadas **antes** del `UPDATE`. Confirmar explícitamente que **no** se crea
-  `_fusionar_filas()`.
-- [ ] 4.8 [GREEN] Agregar a `services/presupuestacion/extraccion/router.py`: `POST
-  /extracciones/agrupar`, `POST /extracciones/desagrupar`, roles `_ROLES_VALIDAR` (sin tupla nueva),
-  `_verificar_pertenencia` aplicado **por cada id** de la lista con el user client antes de tocar
-  nada con el service client — mismo patrón `*_para_endpoint` ya establecido.
-- [ ] 4.9 [REFACTOR] Correr `pytest tests/extraccion/test_grupo_extracciones.py -m integration` y
-  `pytest tests/extraccion/test_router.py -k agrupar` contra el proyecto Supabase de test.
+- [x] 4.1 [RED] Creado `tests/extraccion/test_grupo_extracciones.py`: `_leer_filas_grupo` con
+  `grupo_id IS NULL` → forma idéntica a la de un archivo suelto
+  (`test_leer_filas_grupo_grupo_id_null_se_comporta_como_archivo_suelto`, con
+  `mock_listar_grupo.assert_not_called()` probando que ni siquiera consulta miembros de grupo); 3
+  miembros → filas concatenadas en orden `created_at ASC, id ASC`
+  (`test_leer_filas_grupo_tres_miembros_concatena_en_orden_de_grupo`), con `_archivo`/
+  `_extraction_id` poblados por fila; **aserción explícita de que NO transforma**
+  (`test_renglones_repetidos_no_se_suman`, también threat-matrix de 4.4): 3 archivos que declaran el
+  mismo conjunto de `numero_renglon` (`1`, `2`) devuelven 6 filas (suma exacta 2+2+2), sin fusionar
+  ni sumar cantidades; `editable` se evalúa sobre el total concatenado contra `MAX_FILAS_EDITABLES`
+  (500) en `test_leer_filas_grupo_editable_se_evalua_sobre_el_total_concatenado` (3 miembros × 200
+  filas = 600 > 500, aunque ningún miembro individual supere el límite). Confirmado RED: `pytest
+  tests/extraccion/test_grupo_extracciones.py -q` → 19 failed, todos `AttributeError` por
+  `service._leer_filas_grupo`/`repo.listar_miembros_de_grupo`/`service.agrupar_extracciones`
+  inexistentes — la falla RED esperada, corrida antes de 4.5-4.7.
+- [x] 4.2 [RED] En el mismo archivo, `_conciliar_cabecera`: `numero_oc` distinto entre miembros →
+  bloqueo (`test_conciliar_cabecera_numero_oc_distinto_bloquea`, `ValidationError`);
+  `razon_social`/`fecha_emision`/`direccion_entrega`/`cantidad_entregas` distintos → advertencia sin
+  bloqueo (`test_conciliar_cabecera_otros_campos_distintos_advierten_sin_bloquear`, 3 advertencias
+  para 3 campos discrepantes); valor más frecuente gana
+  (`test_conciliar_cabecera_valor_mas_frecuente_gana`, 2 de 3 miembros); empate → primer miembro
+  (`test_conciliar_cabecera_empate_gana_el_primer_miembro`). Implementación cubre también
+  `cuit_cliente` como campo de advertencia (tabla completa de D13.1 § Cabecera inconsistente entre
+  archivos, un campo más que el listado literal de esta tarea).
+- [x] 4.3 [RED] Las 5 precondiciones de `agrupar_extracciones`, una por test:
+  `test_agrupar_requiere_al_menos_2_ids_sin_repetidos`,
+  `test_agrupar_extraccion_inexistente_da_404` (`NotFoundError`),
+  `test_agrupar_extraccion_de_otra_drogueria_da_403` (`ForbiddenError`),
+  `test_agrupar_document_type_distinto_da_422` (`ValidationError`),
+  `test_agrupar_mas_de_un_grupo_id_distinto_da_409` (`ConflictError`) — la quinta precondición
+  ("ninguna `validado=true`") se comparte con la threat-matrix de 4.4
+  (`test_agrupar_validada_rechazado`) para no duplicar el mismo caso con dos nombres. Agregado
+  también `test_agrupar_exitoso_genera_grupo_id_nuevo_y_actualiza_ambas` (camino feliz, inspecciona
+  los kwargs reales enviados a `repo.actualizar_grupo_id`) y
+  `test_desagrupar_deja_grupo_id_null_y_disuelve_el_de_un_solo_miembro_restante` (desagrupar "a" de
+  un grupo de 2 dónde queda un solo miembro restante "c" → "c" también se desagrupa) +
+  `test_desagrupar_extraccion_validada_rechazado`.
+- [x] 4.4 [RED] Threat-matrix de agrupación: agrupar una extracción ya validada → `ConflictError`
+  antes del `UPDATE` (`test_agrupar_validada_rechazado`, con `mock_actualizar.assert_not_called()`);
+  renglones repetidos entre archivos nunca se fusionan ni suman
+  (`test_renglones_repetidos_no_se_suman`, ver 4.1); documento sin número de línea en un grupo de N
+  archivos no bloquea ni se rellena (`test_grupo_sin_numero_de_renglon_se_materializa`, celda vacía
+  en las 2 filas de salida); un miembro del grupo sin CSV en disco levanta
+  `ExtraccionNoDisponibleError` en la primera lectura que falle (`test_miembro_sin_csv_aborta`, con
+  la función real `_leer_filas_csv_con_columnas` sin mockear, sobre un `csv_disk_path` genuinamente
+  inexistente en `tmp_path`). En `tests/extraccion/test_router.py`, agregado
+  `test_agrupar_multi_tenant_rechazado`: `_verificar_pertenencia` stubeada (exenta para `superadmin`,
+  ya cubierta por los tests existentes de GET .../filas) para ids de dos droguerías distintas →
+  `service.agrupar_extracciones` rechaza con `ValidationError` (no `ForbiddenError`: no hay
+  "droguería del usuario" contra la cual comparar cuando quien agrupa es `superadmin` — el rechazo es
+  porque los N miembros deben compartir `drogueria_id` entre sí). Confirmado RED:
+  `pytest tests/extraccion/test_router.py -k "not integration" -q` → `ImportError:
+  AgruparExtraccionesRequest` (falla de colección, la falla RED esperada, corrida antes de 4.5).
+- [x] 4.5 [GREEN] Agregado a `services/presupuestacion/extraccion/models.py`: `MiembroGrupo`,
+  `AgruparExtraccionesRequest` (`extraction_ids: list[str] = Field(min_length=2)`, reusado también
+  para `POST /extracciones/desagrupar` — mismo shape, no se justifica un modelo separado para la
+  inversa); extendida `FilasExtraccionOut` con `grupo_id: str | None = None`,
+  `miembros: list[MiembroGrupo] = []`, `advertencias_cabecera: list[str] = []` (sin
+  `modo_fusion_sugerido` — D13.1 lo elimina; estos 3 campos quedan sin wiring en el endpoint GET
+  .../filas hasta Phase 5, que extiende `_TIPOS_CON_LECTURA_DE_FILAS` con `orden_compra`).
+- [x] 4.6 [GREEN] Agregado a `services/presupuestacion/extraccion/repository.py`:
+  `listar_miembros_de_grupo()` (orden `created_at ASC, id ASC`), `actualizar_grupo_id()`,
+  `marcar_validadas()` (bulk sobre el grupo vía `.in_("id", extraction_ids)`, para uso de Phase 5
+  desde `_materializar_orden_compra()`).
+- [x] 4.7 [GREEN] Agregado a `services/presupuestacion/extraccion/service.py`: `_leer_filas_grupo()`
+  (concatena tal cual, sin dedup/fusión/renumeración — D13.1; `grupo_id IS NULL` trata a la propia
+  extracción como grupo de un solo miembro, sin consultar `listar_miembros_de_grupo`),
+  `_conciliar_cabecera()` (con `_valor_mas_frecuente()` como helper puro), `agrupar_extracciones()` /
+  `desagrupar_extracciones()` con las 5 precondiciones validadas **antes** del `UPDATE`, más
+  `agrupar_extracciones_para_endpoint()` / `desagrupar_extracciones_para_endpoint()` (mismo patrón
+  `*_para_endpoint` que `validar_extraccion_para_endpoint`, corren con `get_service_client()`).
+  **Confirmado: no se creó `_fusionar_filas()`** — `grep -n "_fusionar_filas"
+  services/presupuestacion/extraccion/service.py` no devuelve nada. `pytest
+  tests/extraccion/test_grupo_extracciones.py -q` → **19 passed** (GREEN confirmado tras 4.5-4.7).
+- [x] 4.8 [GREEN] Agregado a `services/presupuestacion/extraccion/router.py`: `POST
+  /extracciones/agrupar` (devuelve `{"grupo_id": str}`), `POST /extracciones/desagrupar`
+  (`status_code=204`), roles `_ROLES_VALIDAR` (sin tupla nueva), `_verificar_pertenencia` aplicado
+  **por cada id** de la lista con el user client antes de tocar nada con el service client — mismo
+  patrón `*_para_endpoint` ya establecido por `validar_extraccion_endpoint`. `pytest
+  tests/extraccion/test_router.py -k "not integration" -q` → **1 passed** (GREEN confirmado:
+  `test_agrupar_multi_tenant_rechazado`).
+- [x] 4.9 [REFACTOR] Agregadas 2 pruebas de integración a `test_grupo_extracciones.py`
+  (`test_leer_filas_grupo_en_vivo_concatena_los_miembros_del_grupo`,
+  `test_agrupar_y_desagrupar_extracciones_en_vivo`, con fixtures CSV reales de OC vía
+  `seed_extraction_result_factory("orden_compra", ...)`) y 1 a `test_router.py`
+  (`test_agrupar_extracciones_endpoint_en_vivo`, ejercitando el endpoint completo agrupar→desagrupar)
+  — mismo patrón de `seed_extraction_result_factory`/teardown de Phase 3, sin fixtures nuevas
+  (`grupo_id` es un override directo que el fixture ya soporta vía `**overrides`). Corrido contra el
+  proyecto Supabase de test (`grnamollopxdlstcpxhc`): `pytest
+  tests/extraccion/test_grupo_extracciones.py -m integration -q` → **2 passed**; `pytest
+  tests/extraccion/test_router.py -k agrupar -q` → **2 passed** (el filtro `-k agrupar` matchea
+  también `test_agrupar_multi_tenant_rechazado`, ya que "desagrupar" contiene "agrupar" como
+  substring). Verificación de no-regresión: `pytest tests/ -q -m "not integration"` → **323 passed,
+  442 deselected** (vs. 303 del baseline de PR3 — +20 tests netos: 19 de
+  `test_grupo_extracciones.py` + 1 de `test_router.py`; 0 regresiones fuera de Phase 4). Refactor
+  evaluado: el código quedó sin necesidad de extracción adicional (`_valor_mas_frecuente` ya nace
+  como helper puro separado); no se aplicaron cambios de REFACTOR más allá de correr la suite de
+  integración.
 
 ## Phase 5: Validación — Materialización (D1, D7, D8, D13.1)
 
