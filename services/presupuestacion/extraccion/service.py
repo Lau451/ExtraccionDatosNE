@@ -13,6 +13,7 @@ from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import (
     ConflictError,
     ExtraccionNoDisponibleError,
+    ForbiddenError,
     NotFoundError,
     ValidationError,
 )
@@ -292,6 +293,224 @@ def _registrar_alias_cliente(
         texto_original=texto_extraido,
         cliente_id=cliente_id,
         usuario_id=usuario_id,
+    )
+
+
+# -- Agrupación multi-archivo (D13 / D13.1) ----------------------------------
+
+
+def _leer_filas_grupo(
+    client: Client, *, extraction: dict[str, Any]
+) -> tuple[list[str], list[dict[str, str]], list[dict[str, Any]]]:
+    """Solo para document_type='orden_compra' (D13). Devuelve (columnas,
+    filas, miembros).
+
+    Concatena las filas de los N miembros TAL CUAL, en orden de grupo. No
+    deduplica, no suma cantidades, no renumera y no infiere nada (D13.1).
+
+    grupo_id NULL -> se comporta exactamente como el caso de un archivo (un
+    grupo de un solo miembro: la extracción misma).
+
+    Cada fila lleva `_archivo` (source_filename) y `_extraction_id` para que
+    el editor muestre de dónde vino y el usuario pueda corregir con
+    contexto."""
+    grupo_id = extraction.get("grupo_id")
+    miembros = (
+        repo.listar_miembros_de_grupo(client, grupo_id=grupo_id)
+        if grupo_id is not None
+        else [extraction]
+    )
+
+    columnas: list[str] = []
+    filas: list[dict[str, str]] = []
+    for miembro in miembros:
+        columnas_miembro, filas_miembro = _leer_filas_csv_con_columnas(
+            miembro["csv_disk_path"]
+        )
+        if not columnas:
+            columnas = columnas_miembro
+        for fila in filas_miembro:
+            fila_con_origen = dict(fila)
+            fila_con_origen["_archivo"] = miembro["source_filename"]
+            fila_con_origen["_extraction_id"] = miembro["id"]
+            filas.append(fila_con_origen)
+
+    return columnas, filas, miembros
+
+
+# Campos de cabecera desnormalizados por fila (D6) que D13.1 § Cabecera
+# inconsistente entre archivos solo advierte -- nunca bloquean la
+# confirmación. numero_oc es el único campo bloqueante (identifica de forma
+# unívoca a la OC) y se trata aparte.
+_CAMPOS_CABECERA_ADVERTENCIA = (
+    "cuit_cliente",
+    "razon_social_cliente",
+    "fecha_emision",
+    "direccion_entrega",
+    "cantidad_entregas",
+)
+
+
+def _valor_mas_frecuente(valores: list[str]) -> str:
+    """Empate -> gana el primer miembro (D13.1)."""
+    conteo: dict[str, int] = {}
+    for valor in valores:
+        conteo[valor] = conteo.get(valor, 0) + 1
+    mejor_valor = valores[0]
+    mejor_conteo = 0
+    for valor in valores:
+        if conteo[valor] > mejor_conteo:
+            mejor_valor = valor
+            mejor_conteo = conteo[valor]
+    return mejor_valor
+
+
+def _conciliar_cabecera(
+    filas_por_miembro: list[dict[str, str]],
+) -> tuple[dict[str, str], list[str]]:
+    """D13.1 § Cabecera inconsistente entre archivos. Recibe una fila
+    representativa por miembro del grupo (la cabecera se repite por renglón,
+    D6 -- el caller pasa una sola fila por `_extraction_id`, no todas).
+
+    numero_oc discrepante bloquea con ValidationError, ANTES de cualquier
+    write -- identifica de forma unívoca a la orden de compra. El resto de
+    los campos de cabecera solo advierte: la cabecera final se precarga con
+    el valor más frecuente entre miembros (empate -> el del primer
+    miembro)."""
+    valores_numero_oc = [fila.get("numero_oc", "") for fila in filas_por_miembro]
+    if len(set(valores_numero_oc)) > 1:
+        raise ValidationError(
+            "Los archivos del grupo declaran números de orden de compra distintos "
+            f"({sorted(set(valores_numero_oc))}) -- resolvé la discrepancia antes de confirmar"
+        )
+
+    cabecera: dict[str, str] = {"numero_oc": valores_numero_oc[0]}
+    advertencias: list[str] = []
+
+    for campo in _CAMPOS_CABECERA_ADVERTENCIA:
+        valores = [fila.get(campo, "") for fila in filas_por_miembro]
+        cabecera[campo] = _valor_mas_frecuente(valores)
+        if len(set(valores)) > 1:
+            advertencias.append(
+                f"Los archivos del grupo declaran valores distintos de '{campo}' "
+                f"-- se precargó el más frecuente (\"{cabecera[campo]}\")"
+            )
+
+    return cabecera, advertencias
+
+
+def agrupar_extracciones(
+    client: Client, *, extraction_ids: list[str], drogueria_id: str | None
+) -> str:
+    """D13 camino (b) -- POST /extracciones/agrupar. Todas las precondiciones
+    se verifican ANTES del UPDATE. `drogueria_id` es la droguería del usuario
+    que agrupa (None para superadmin, que no tiene una propia -- en ese caso
+    se exige igual que los N miembros compartan drogueria_id ENTRE SÍ,
+    porque el router ya no filtra por tenant a un superadmin)."""
+    if len(extraction_ids) < 2 or len(set(extraction_ids)) != len(extraction_ids):
+        raise ValidationError(
+            "Hacen falta al menos 2 ids de extracciones distintos para agrupar"
+        )
+
+    extracciones: list[dict[str, Any]] = []
+    for extraction_id in extraction_ids:
+        extraction = repo.buscar_extraction_result(client, extraction_id=extraction_id)
+        if extraction is None:
+            raise NotFoundError(f"No se encontró la extracción {extraction_id}")
+        extracciones.append(extraction)
+
+    drogueria_ids = {extraction["drogueria_id"] for extraction in extracciones}
+    if drogueria_id is not None:
+        if drogueria_ids != {drogueria_id}:
+            raise ForbiddenError(
+                "Todas las extracciones a agrupar deben pertenecer a tu droguería"
+            )
+    elif len(drogueria_ids) > 1:
+        raise ValidationError(
+            "Las extracciones seleccionadas pertenecen a droguerías distintas"
+        )
+
+    for extraction in extracciones:
+        if extraction["document_type"] != "orden_compra":
+            raise ValidationError(
+                "Solo se pueden agrupar extracciones de tipo 'orden_compra'"
+            )
+        if extraction["validado"]:
+            raise ConflictError("No se puede agrupar una extracción ya validada")
+
+    grupos_existentes = {
+        extraction["grupo_id"] for extraction in extracciones if extraction.get("grupo_id")
+    }
+    if len(grupos_existentes) > 1:
+        raise ConflictError(
+            "Las extracciones ya pertenecen a grupos distintos "
+            "-- fusionar grupos existentes no está soportado"
+        )
+
+    grupo_id = next(iter(grupos_existentes), None) or str(uuid.uuid4())
+
+    for extraction in extracciones:
+        if extraction.get("grupo_id") != grupo_id:
+            repo.actualizar_grupo_id(client, extraction_id=extraction["id"], grupo_id=grupo_id)
+
+    return grupo_id
+
+
+def desagrupar_extracciones(
+    client: Client, *, extraction_ids: list[str], drogueria_id: str | None
+) -> None:
+    """D13 -- POST /extracciones/desagrupar. Deja grupo_id=NULL en cada id
+    recibido; si el grupo original queda con un solo miembro restante, ese
+    miembro también se desagrupa (no debe existir un "grupo de uno" que se
+    comporte distinto a una extracción suelta)."""
+    if not extraction_ids:
+        raise ValidationError("Hacen falta ids de extracciones para desagrupar")
+
+    extracciones: list[dict[str, Any]] = []
+    for extraction_id in extraction_ids:
+        extraction = repo.buscar_extraction_result(client, extraction_id=extraction_id)
+        if extraction is None:
+            raise NotFoundError(f"No se encontró la extracción {extraction_id}")
+        extracciones.append(extraction)
+
+    drogueria_ids = {extraction["drogueria_id"] for extraction in extracciones}
+    if drogueria_id is not None and drogueria_ids != {drogueria_id}:
+        raise ForbiddenError(
+            "Todas las extracciones a desagrupar deben pertenecer a tu droguería"
+        )
+
+    for extraction in extracciones:
+        if extraction["validado"]:
+            raise ConflictError("No se puede desagrupar una extracción ya validada")
+
+    grupos_afectados: set[str] = set()
+    for extraction in extracciones:
+        grupo_id = extraction.get("grupo_id")
+        if grupo_id is not None:
+            grupos_afectados.add(grupo_id)
+        repo.actualizar_grupo_id(client, extraction_id=extraction["id"], grupo_id=None)
+
+    for grupo_id in grupos_afectados:
+        restantes = repo.listar_miembros_de_grupo(client, grupo_id=grupo_id)
+        if len(restantes) == 1:
+            repo.actualizar_grupo_id(client, extraction_id=restantes[0]["id"], grupo_id=None)
+
+
+def agrupar_extracciones_para_endpoint(
+    *, extraction_ids: list[str], drogueria_id: str | None
+) -> str:
+    """Corre con service_role -- mismo criterio que validar_extraccion_para_endpoint:
+    el router nunca importa el service client directamente."""
+    return agrupar_extracciones(
+        get_service_client(), extraction_ids=extraction_ids, drogueria_id=drogueria_id
+    )
+
+
+def desagrupar_extracciones_para_endpoint(
+    *, extraction_ids: list[str], drogueria_id: str | None
+) -> None:
+    desagrupar_extracciones(
+        get_service_client(), extraction_ids=extraction_ids, drogueria_id=drogueria_id
     )
 
 

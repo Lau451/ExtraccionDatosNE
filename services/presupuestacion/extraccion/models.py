@@ -58,6 +58,13 @@ class ExtraccionResumen(BaseModel):
     created_at: datetime
 
 
+class MiembroGrupo(BaseModel):
+    """Un miembro de un grupo de extracciones de orden de compra (D13)."""
+
+    extraction_id: str
+    source_filename: str
+
+
 class FilasExtraccionOut(BaseModel):
     extraction_id: str
     document_type: DocumentType
@@ -66,6 +73,12 @@ class FilasExtraccionOut(BaseModel):
     editable: bool
     columnas: list[str]
     filas: list[dict[str, str]]
+    # D13/D13.1 -- solo relevante para document_type='orden_compra'. grupo_id
+    # None y miembros=[] para el resto de los tipos (comportamiento actual,
+    # retrocompatible).
+    grupo_id: str | None = None
+    miembros: list[MiembroGrupo] = Field(default_factory=list)
+    advertencias_cabecera: list[str] = Field(default_factory=list)
 
 
 # -- Resolución de cliente (D3 / D3.1 / D3.2, Phase 3) -----------------------
@@ -92,3 +105,14 @@ class CandidatoClienteOut(BaseModel):
     cuit_extraido: str | None  # ya normalizado a 11 dígitos, o None
     razon_social_extraida: str | None  # texto crudo, tal cual salió del documento
     advertencias: list[str]  # CUIT malformado, tercero sin rol cliente, etc.
+
+
+# -- Agrupación multi-archivo (D13 / D13.1, Phase 4) -------------------------
+
+
+class AgruparExtraccionesRequest(BaseModel):
+    """Cuerpo de POST /extracciones/agrupar y POST /extracciones/desagrupar
+    (D13 § Agrupar después -- mismo shape para las dos operaciones, no se
+    justifica un modelo separado para la inversa)."""
+
+    extraction_ids: list[str] = Field(min_length=2)
