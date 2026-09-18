@@ -435,18 +435,37 @@ class TestProcesarLicitacionIdInvalido:
 
 
 # ---------------------------------------------------------------------------
-# tipo="ordenes" -> 422 (sin pipeline de extracción implementado — el frontend la
-# deja deshabilitada, pero el backend no confía solo en eso)
+# tipo="ordenes" -> tercer tipo de documento soportado (Tramo 1, D13): ya NO
+# se rechaza con 422 — invoca al robot dedicado procesar_orden_compra.
 # ---------------------------------------------------------------------------
 
 class TestProcesarTipoOrdenes:
-    """Orden de Compra no tiene pipeline todavía — rechazo fail-fast, antes de I/O."""
+    """Orden de Compra: tercer tipo de documento soportado, con agrupación (D13)."""
 
-    def test_tipo_ordenes_retorna_422_sin_llamar_robot(
-        self, client, headers_json, pdf_bytes, mocker
+    def test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
     ):
-        mock_archivo = mocker.patch("services.extraccion.main.procesar_archivo")
-        mock_comparativa = mocker.patch("services.extraccion.main.procesar_comparativa")
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="f" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mock_orden_compra = mocker.patch(
+            "services.extraccion.main.procesar_orden_compra",
+            return_value=str(csv_path),
+        )
+        mock_schedule = mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
 
         response = client.post(
             "/procesar",
@@ -455,9 +474,199 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
+        assert response.status_code != 422
+        assert response.status_code == 200
+        mock_orden_compra.assert_called_once()
+        mock_schedule.assert_awaited_once()
+        assert mock_schedule.await_args.kwargs["doc_type"] == "orden_compra"
+
+    def test_tipo_ordenes_acepta_html(
+        self, client, headers_json, tmp_path, mocker
+    ):
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="1" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
+        )
+        mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes"},
+            files={"archivo": ("orden.html", io.BytesIO(b"<html>orden</html>"), "text/html")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+
+    def test_tipo_ordenes_acepta_htm(
+        self, client, headers_json, tmp_path, mocker
+    ):
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="2" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
+        )
+        mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes"},
+            files={"archivo": ("orden.htm", io.BytesIO(b"<html>orden</html>"), "text/html")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+
+    def test_grupo_id_invalido_retorna_422_sin_llamar_robot(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        """D13: grupo_id que no tiene forma de UUID v4 se rechaza fail-fast, antes de
+        cualquier I/O o invocación a Gemini (mismo patrón que licitacion_id, SC-25)."""
+        mock_robot = mocker.patch("services.extraccion.main.procesar_orden_compra")
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes", "grupo_id": "no-es-un-uuid"},
+            files={"archivo": ("orden.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
         assert response.status_code == 422
-        mock_archivo.assert_not_called()
-        mock_comparativa.assert_not_called()
+        mock_robot.assert_not_called()
+
+    def test_grupo_id_ausente_se_comporta_como_extraccion_suelta(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """D13: sin grupo_id, el comportamiento es idéntico al de una extracción sin
+        capacidad de agrupación — None llega a schedule_persist_output."""
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="3" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
+        )
+        mock_schedule = mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes"},
+            files={"archivo": ("orden.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+        assert mock_schedule.await_args.kwargs["grupo_id"] is None
+
+    def test_grupo_id_valido_se_propaga_a_schedule_persist_output(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+        grupo_id = str(uuid.uuid4())
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="4" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
+        )
+        mock_schedule = mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "ordenes", "grupo_id": grupo_id},
+            files={"archivo": ("orden.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+        assert mock_schedule.await_args.kwargs["grupo_id"] == grupo_id
+
+    def test_grupo_id_ignorado_si_tipo_no_es_ordenes(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """D13: grupo_id se ignora por completo fuera de tipo=ordenes — ni se valida
+        ni se propaga, aunque venga en el form."""
+        session_uuid = uuid.uuid4()
+        csv_path = _mock_csv_output(tmp_path)
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="5" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
+        mock_schedule = mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "", "grupo_id": "esto-no-es-un-uuid-pero-no-deberia-importar"},
+            files={"archivo": ("doc.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 200
+        assert mock_schedule.await_args.kwargs["grupo_id"] is None
 
 
 # ---------------------------------------------------------------------------

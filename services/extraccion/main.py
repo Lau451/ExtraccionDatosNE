@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import FileResponse
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 from urllib.parse import urlencode
 
 from services.extraccion.auth import get_usuario_id_actual
@@ -25,6 +25,7 @@ from services.extraccion.procesos_comerciales_client import (
 )
 from services.extraccion.robot import obtener_cliente, procesar_archivo
 from services.extraccion.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
+from services.extraccion.robot_orden_compra import procesar_orden_compra, OrdenCompraSinRenglonesError
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
 from services.extraccion.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from services.extraccion.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
@@ -149,6 +150,35 @@ async def _resolver_formato_prompt(
     return None, None
 
 
+def _validar_grupo_id(grupo_id: str) -> str | None:
+    """D13: valida que `grupo_id`, si viene, sea un UUID v4.
+
+    Vacío -> None (extracción suelta, comportamiento idéntico al actual).
+    Inválido -> HTTPException 422, fail-fast antes de cualquier I/O (mismo patrón
+    que validar_proceso_comercial_id / SC-25). El llamador solo invoca esta función
+    cuando tipo == "ordenes" — para cualquier otro tipo, grupo_id se ignora entero.
+    """
+    valor = grupo_id.strip()
+    if not valor:
+        return None
+
+    try:
+        parsed = UUID(valor)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"grupo_id no es un UUID v4 válido: {grupo_id}",
+        ) from exc
+
+    if parsed.version != 4:
+        raise HTTPException(
+            status_code=422,
+            detail=f"grupo_id no es un UUID v4 válido: {grupo_id}",
+        )
+
+    return str(parsed)
+
+
 @app.post("/procesar", response_class=HTMLResponse)
 async def procesar(
     request: Request,
@@ -157,14 +187,14 @@ async def procesar(
     tipo: str = Form(""),
     licitacion_id: str = Form(""),
     cliente_id: str = Form(""),
+    grupo_id: str = Form(""),
     usuario_id: str | None = Depends(get_usuario_id_actual),
 ):
-    # SC-25: fail-fast antes de cualquier I/O o invocación a Gemini
+    # D13: grupo_id solo aplica a tipo=="ordenes" — se ignora entero para cualquier
+    # otro tipo. Fail-fast antes de cualquier I/O si viene y no es un UUID v4 (SC-25).
+    grupo_id_validado: str | None = None
     if tipo == "ordenes":
-        raise HTTPException(
-            status_code=422,
-            detail="Carga de Orden de Compra todavía no está implementada",
-        )
+        grupo_id_validado = _validar_grupo_id(grupo_id)
 
     # La vinculación a un proceso comercial NO se exige acá — es una decisión de negocio
     # sin impacto en la extracción, se resuelve en la pantalla "Validar extracción" (ver
@@ -182,6 +212,8 @@ async def procesar(
 
     if tipo == "comparativas":
         permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".ods", ".html", ".htm"}
+    elif tipo == "ordenes":
+        permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".html", ".htm"}
     else:
         permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
 
@@ -217,7 +249,12 @@ async def procesar(
     # ======================
     # FORMATO POR CLIENTE (§8) — opcional, nunca bloquea la carga
     # ======================
-    doc_type = "comparativa" if tipo == "comparativas" else "licitacion"
+    if tipo == "comparativas":
+        doc_type = "comparativa"
+    elif tipo == "ordenes":
+        doc_type = "orden_compra"
+    else:
+        doc_type = "licitacion"
     formato_id, instrucciones_prompt = await _resolver_formato_prompt(
         get_client(), cliente_id=cliente_id, doc_type=doc_type
     )
@@ -246,6 +283,13 @@ async def procesar(
                     instrucciones_extra=instrucciones_prompt,
                 )
                 params = urlencode({"origen": origen_id, "modulo": "comparativas"})
+            elif tipo == "ordenes":
+                csv_generado = await asyncio.to_thread(
+                    procesar_orden_compra, destino, nombre_original,
+                    session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+                params = urlencode({"origen": origen_id})
             else:
                 csv_generado = await asyncio.to_thread(
                     procesar_archivo, destino, nombre_original,
@@ -276,6 +320,7 @@ async def procesar(
             source_filename=nombre_original,
             source_sha256=sha256_doc,
             licitacion_id=licitacion_id_validado,
+            grupo_id=grupo_id_validado,
         )
 
         return render_upload_response(request, {"tipo": tipo})
@@ -301,6 +346,14 @@ async def procesar(
         return render_upload_response(
             request,
             {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
+            status_code=422,
+        )
+
+    except OrdenCompraSinRenglonesError as e:
+        logger.warning("No renglones detected in orden_compra: %s", e.message)
+        return render_upload_response(
+            request,
+            {"error": "No se detectaron renglones en el documento", "tipo": tipo},
             status_code=422,
         )
 
