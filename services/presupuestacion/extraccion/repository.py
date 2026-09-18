@@ -250,6 +250,48 @@ def marcar_validadas(
     ).in_("id", extraction_ids).execute()
 
 
+# -- materialización de orden de compra (D1/D7/D8/D13.1) -- escritura directa
+# a las tablas de compras/ (ordenes_compra/oc_items/entregas_oc/
+# entregas_oc_items), SIN importar compras/repository.py -- frontera de
+# módulos, mismo precedente que pcp/imports/repository.py. -------------------
+
+
+def buscar_cliente_por_id(client: Client, *, cliente_id: str) -> dict[str, Any] | None:
+    """Chequeo de `_validar_orden_compra_override`: existe / es cliente / es de
+    la droguería (`clientes` es la tabla de ROL -- una fila acá ya implica "es
+    cliente", sin necesidad de discriminar tipo)."""
+    resultado = (
+        client.table("clientes")
+        .select("id, drogueria_id, tipo, activo")
+        .eq("id", cliente_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def crear_orden_compra(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
+    return client.table("ordenes_compra").insert(fila).execute().data[0]
+
+
+def insertar_oc_items(client: Client, filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not filas:
+        return []
+    return client.table("oc_items").insert(filas).execute().data
+
+
+def crear_entrega_oc(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
+    return client.table("entregas_oc").insert(fila).execute().data[0]
+
+
+def insertar_entregas_oc_items(
+    client: Client, filas: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if not filas:
+        return []
+    return client.table("entregas_oc_items").insert(filas).execute().data
+
+
 def listar_usuarios_por_rol(
     client: Client,
     *,

@@ -2,10 +2,11 @@ import csv
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, timedelta, timezone
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from services.presupuestacion.core.audit import registrar_cambio, registrar_evento_ciclo_vida
@@ -25,6 +26,8 @@ from services.presupuestacion.extraccion.models import (
     CandidatoClienteOut,
     ExtraccionResumen,
     FilasExtraccionOut,
+    MiembroGrupo,
+    OrdenCompraOverride,
     ResultadoValidarExtraccion,
 )
 from services.presupuestacion.matching.service import procesar_matching_item
@@ -39,8 +42,12 @@ _TIPOS_ITEMS_PROCESO = {"licitacion", "cotizacion"}
 _ROLES_NOTIFICACION_REEMPLAZO = ("admin", "gerencia", "lider_comercial")
 
 # document_type que tienen lectura de filas implementada para GET .../filas
-# (§8.2 -- orden_compra queda deliberadamente afuera, no hay CSV materializable).
-_TIPOS_CON_LECTURA_DE_FILAS = {"licitacion", "cotizacion", "comparativa"}
+# (Phase 5 -- orden_compra se agrega acá: _leer_filas_grupo() concatena el
+# grupo, sin CSV materializado nuevo -- la lectura sigue siendo por CSV en
+# disco, uno por miembro).
+_TIPOS_CON_LECTURA_DE_FILAS = {"licitacion", "cotizacion", "comparativa", "orden_compra"}
+
+_UNIQUE_VIOLATION_OC = "23505"
 
 
 def _leer_filas_csv_con_columnas(
@@ -84,11 +91,67 @@ def listar_extracciones(
     return resumenes
 
 
-def leer_filas_extraccion(extraction: dict[str, Any]) -> FilasExtraccionOut:
+def _filas_representativas_por_miembro(
+    filas: list[dict[str, str]], miembros: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    """D13.1 § Cabecera inconsistente: una fila por miembro (la cabecera se
+    repite por renglón, D6). Toma la primera fila de cada `_extraction_id`, en
+    el mismo orden que `miembros`."""
+    primera_por_extraccion: dict[str, dict[str, str]] = {}
+    for fila in filas:
+        primera_por_extraccion.setdefault(fila["_extraction_id"], fila)
+    return [
+        primera_por_extraccion[miembro["id"]]
+        for miembro in miembros
+        if miembro["id"] in primera_por_extraccion
+    ]
+
+
+def _advertencias_cabecera_para_lectura(filas_por_miembro: list[dict[str, str]]) -> list[str]:
+    """GET .../filas NUNCA bloquea por cabecera discrepante -- ni siquiera el
+    numero_oc, que en `_conciliar_cabecera` SÍ bloquea (pero eso rige la
+    CONFIRMACIÓN, no la lectura, D13.1 § Cabecera inconsistente entre
+    archivos). Acá el desacuerdo de numero_oc se degrada a advertencia más,
+    para que la pantalla lo muestre en rojo antes de que el usuario confirme."""
+    try:
+        _cabecera, advertencias = _conciliar_cabecera(filas_por_miembro)
+    except ValidationError as exc:
+        return [str(exc)]
+    return advertencias
+
+
+def leer_filas_extraccion(
+    extraction: dict[str, Any], *, client: Client | None = None
+) -> FilasExtraccionOut:
     document_type = extraction["document_type"]
     if document_type not in _TIPOS_CON_LECTURA_DE_FILAS:
         raise ValidationError(
             f"document_type='{document_type}' no tiene lectura de filas implementada"
+        )
+
+    if document_type == "orden_compra":
+        # D13 -- concatena el grupo (grupo_id=NULL se comporta como un archivo
+        # suelto, con miembros=[self]).
+        columnas, filas_completas, miembros = _leer_filas_grupo(client, extraction=extraction)
+        filas_leidas = len(filas_completas)
+        editable = filas_leidas <= MAX_FILAS_EDITABLES
+        filas_representativas = _filas_representativas_por_miembro(filas_completas, miembros)
+        advertencias_cabecera = _advertencias_cabecera_para_lectura(filas_representativas)
+
+        return FilasExtraccionOut(
+            extraction_id=extraction["id"],
+            document_type=document_type,
+            row_count=extraction["row_count"],
+            filas_leidas=filas_leidas,
+            editable=editable,
+            columnas=columnas,
+            filas=filas_completas if editable else [],
+            grupo_id=extraction.get("grupo_id"),
+            miembros=[
+                MiembroGrupo(extraction_id=m["id"], source_filename=m["source_filename"])
+                for m in miembros
+            ],
+            advertencias_cabecera=advertencias_cabecera,
         )
 
     columnas, filas_completas = _leer_filas_csv_con_columnas(extraction["csv_disk_path"])
@@ -514,6 +577,324 @@ def desagrupar_extracciones_para_endpoint(
     )
 
 
+# -- Materialización de orden de compra (D1/D7/D8/D13.1) --------------------
+
+_CENTESIMOS = Decimal("0.01")
+
+
+def repartir_cantidad(cantidad: Decimal, entregas: int) -> list[Decimal]:
+    """Reparte `cantidad` entre `entregas` de la forma más pareja posible (D8).
+
+    Invariante duro: sum(resultado) == cantidad, exactamente, siempre.
+    Entero  -> las primeras (cantidad % entregas) reciben base+1, el resto base.
+    Decimal -> las primeras entregas-1 reciben floor a centésimos; la última,
+    el resto (para no arrastrar el error de redondeo).
+    """
+    if entregas < 1:
+        raise ValueError("entregas debe ser >= 1")
+
+    if cantidad == cantidad.to_integral_value():
+        cantidad_entera = int(cantidad)
+        base, resto = divmod(cantidad_entera, entregas)
+        return [Decimal(base + 1) if i < resto else Decimal(base) for i in range(entregas)]
+
+    base = (cantidad / entregas).quantize(_CENTESIMOS, rounding=ROUND_DOWN)
+    partes = [base] * (entregas - 1)
+    partes.append(cantidad - base * (entregas - 1))
+    return partes
+
+
+def _a_decimal(valor: str | None) -> Decimal | None:
+    try:
+        return Decimal((valor or "").strip().replace(",", "."))
+    except InvalidOperation:
+        return None
+
+
+def _validar_orden_compra_override(
+    client: Client, *, drogueria_id: str, override: OrdenCompraOverride
+) -> None:
+    """Corre en `validar_extraccion()` ANTES del primer write (D7), igual que
+    `_validar_filas_override` para licitación/comparativa. Acumula TODOS los
+    errores encontrados en un único ValidationError."""
+    errores: list[str] = []
+
+    cliente = repo.buscar_cliente_por_id(client, cliente_id=override.cliente_id)
+    if cliente is None or cliente["drogueria_id"] != drogueria_id:
+        errores.append(
+            f"El cliente '{override.cliente_id}' no existe, no es un cliente o "
+            "pertenece a otra droguería"
+        )
+
+    n_filas = len(override.filas)
+    for posicion, fila in enumerate(override.filas, start=1):
+        if _a_decimal(fila.precio_unitario) is None:
+            errores.append(
+                f"renglón {posicion}: 'precio_unitario' no es un número válido "
+                f"(\"{fila.precio_unitario}\")"
+            )
+
+    # D8 -- solo se valida la suma del desglose manual cuando el usuario cargó
+    # cantidades_por_posicion en AL MENOS una entrega. Si ninguna entrega trae
+    # desglose, el reparto es automático (repartir_cantidad) y no hay nada que
+    # verificar acá: la suma es exacta por construcción.
+    modo_manual = any(entrega.cantidades_por_posicion is not None for entrega in override.entregas)
+    if modo_manual:
+        for entrega_numero, entrega in enumerate(override.entregas, start=1):
+            if entrega.cantidades_por_posicion is None:
+                continue
+            for clave in entrega.cantidades_por_posicion:
+                try:
+                    posicion = int(clave)
+                except ValueError:
+                    errores.append(
+                        f"entrega {entrega_numero}: clave de posición inválida (\"{clave}\")"
+                    )
+                    continue
+                if posicion < 1 or posicion > n_filas:
+                    errores.append(
+                        f"entrega {entrega_numero}: la posición {posicion} está fuera de "
+                        f"rango (1..{n_filas})"
+                    )
+
+        for posicion, fila in enumerate(override.filas, start=1):
+            clave = str(posicion)
+            suma = Decimal("0")
+            for entrega in override.entregas:
+                valor_bruto = (entrega.cantidades_por_posicion or {}).get(clave)
+                if valor_bruto is None:
+                    continue
+                valor = _a_decimal(valor_bruto)
+                if valor is None:
+                    errores.append(
+                        f"renglón {posicion}: cantidad de entrega inválida (\"{valor_bruto}\")"
+                    )
+                    continue
+                suma += valor
+
+            cantidad_fila = _a_decimal(fila.cantidad)
+            if cantidad_fila is not None and suma != cantidad_fila:
+                errores.append(
+                    f"renglón {posicion}: la suma de las entregas ({suma}) no coincide con "
+                    f"la cantidad del renglón ({cantidad_fila})"
+                )
+
+    if errores:
+        detalle = "; ".join(errores[:10])
+        extra = f" (y {len(errores) - 10} más)" if len(errores) > 10 else ""
+        raise ValidationError(f"Orden de compra con datos inválidos — {detalle}{extra}")
+
+
+def _materializar_orden_compra(
+    client: Client,
+    *,
+    extraction: dict[str, Any],
+    drogueria_id: str,
+    usuario_id: str,
+    override: OrdenCompraOverride,
+) -> tuple[str, int, int, int]:
+    """D1/D7/D8/D13.1 -- inserta ordenes_compra/oc_items/entregas_oc/
+    entregas_oc_items a partir de las filas YA reconciliadas por el usuario
+    (filas concatenadas del grupo, editadas/borradas por el operador).
+
+    `numero_renglon` se asigna por POSICIÓN 1..N sobre `override.filas`,
+    descartando por completo `numero_renglon_documento` (D13.1). NUNCA llama
+    a `stock.entregar_stock_producto` -- invariante duro del spec ("confirmar
+    no descuenta stock").
+
+    Devuelve (orden_compra_id, filas_creadas, entregas_creadas,
+    renglones_sin_producto).
+    """
+    fila_oc: dict[str, Any] = {
+        "cliente_id": override.cliente_id,
+        "proceso_comercial_id": None,
+        "drogueria_id": drogueria_id,
+        "extraction_id": extraction["id"],  # el ancla del grupo (D13.1 § Confirmación)
+        "numero_oc": override.numero_oc,
+        "estado": "emitida",  # D4 -- nace emitida, no pendiente
+        "cantidad_entregas": len(override.entregas),
+        "items_cantidad": len(override.filas),
+        "fecha_emision": override.fecha_emision.isoformat() if override.fecha_emision else None,
+        "direccion_entrega": override.direccion_entrega,
+        "notas": override.notas,
+    }
+    try:
+        orden_compra = repo.crear_orden_compra(client, fila_oc)
+    except APIError as exc:
+        if exc.code == _UNIQUE_VIOLATION_OC:
+            raise ConflictError(
+                f"Ya existe una orden de compra '{override.numero_oc}' para este cliente (D5)"
+            ) from exc
+        raise
+    orden_compra_id = orden_compra["id"]
+
+    renglones_sin_producto = 0
+    filas_items = []
+    for posicion, fila in enumerate(override.filas, start=1):
+        if fila.producto_id is None:
+            renglones_sin_producto += 1
+        filas_items.append(
+            {
+                "orden_compra_id": orden_compra_id,
+                "drogueria_id": drogueria_id,
+                "numero_renglon": posicion,  # ordinal interno asignado ACÁ -- D13.1
+                "descripcion": fila.descripcion.strip(),
+                "cantidad": fila.cantidad,
+                "precio_unitario": fila.precio_unitario,
+                "producto_id": fila.producto_id,  # opcional (D11)
+            }
+        )
+    items_creados = repo.insertar_oc_items(client, filas_items)
+    item_id_por_posicion = {item["numero_renglon"]: item["id"] for item in items_creados}
+
+    registrar_evento_ciclo_vida(
+        client,
+        entidad="orden_compra",
+        entidad_id=orden_compra_id,
+        drogueria_id=drogueria_id,
+        tipo_cambio="creacion",
+        origen="usuario",
+        usuario_id=usuario_id,
+    )
+    registrar_cambio(
+        client,
+        entidad="orden_compra",
+        entidad_id=orden_compra_id,
+        drogueria_id=drogueria_id,
+        campo="estado",
+        valor_anterior=None,
+        valor_nuevo="emitida",
+        origen="usuario",
+        usuario_id=usuario_id,
+        batch_id=str(uuid.uuid4()),
+    )
+
+    fecha_base = override.fecha_emision or date.today()
+    modo_manual = any(entrega.cantidades_por_posicion is not None for entrega in override.entregas)
+
+    # Reparto automático (D8): se calcula UNA vez por renglón, sobre TODAS las
+    # entregas, cuando ninguna entrega trae desglose manual.
+    reparto_automatico: dict[int, list[Decimal]] = {}
+    if not modo_manual:
+        for posicion, fila in enumerate(override.filas, start=1):
+            cantidad_decimal = _a_decimal(fila.cantidad) or Decimal("0")
+            reparto_automatico[posicion] = repartir_cantidad(
+                cantidad_decimal, len(override.entregas)
+            )
+
+    entregas_creadas = 0
+    for indice_entrega, entrega in enumerate(override.entregas):
+        fecha_entrega_planificada = (
+            fecha_base + timedelta(days=entrega.plazo_dias)
+            if entrega.plazo_dias is not None
+            else None
+        )
+        fila_entrega = {
+            "orden_compra_id": orden_compra_id,
+            "drogueria_id": drogueria_id,
+            "numero_entrega": entrega.numero_entrega,
+            "fecha_entrega_planificada": (
+                fecha_entrega_planificada.isoformat() if fecha_entrega_planificada else None
+            ),
+            "estado": "pendiente",
+            "cantidad_items": len(override.filas),
+        }
+        entrega_creada = repo.crear_entrega_oc(client, fila_entrega)
+        entregas_creadas += 1
+
+        filas_entrega_items = []
+        for posicion in range(1, len(override.filas) + 1):
+            if modo_manual:
+                valor_bruto = (entrega.cantidades_por_posicion or {}).get(str(posicion), "0")
+                cantidad_planificada = _a_decimal(valor_bruto) or Decimal("0")
+            else:
+                cantidad_planificada = reparto_automatico[posicion][indice_entrega]
+            filas_entrega_items.append(
+                {
+                    "entrega_oc_id": entrega_creada["id"],
+                    "drogueria_id": drogueria_id,
+                    "oc_item_id": item_id_por_posicion[posicion],
+                    "cantidad_planificada": str(cantidad_planificada),
+                    "cantidad_entregada": "0",
+                    "cantidad_rechazada": "0",
+                }
+            )
+        repo.insertar_entregas_oc_items(client, filas_entrega_items)
+
+    return orden_compra_id, len(items_creados), entregas_creadas, renglones_sin_producto
+
+
+def _validar_y_materializar_orden_compra(
+    client: Client,
+    *,
+    extraction: dict[str, Any],
+    usuario_id: str,
+    override: OrdenCompraOverride | None,
+) -> ResultadoValidarExtraccion:
+    """Rama `orden_compra` de `validar_extraccion()` (D13.1 § Confirmación).
+    Saltea por completo `_resolver_proceso_comercial_id`: una OC de cliente no
+    tiene proceso comercial (D4)."""
+    if override is None:
+        raise ValidationError(
+            "Esta extracción es de tipo 'orden_compra' -- indicá el payload "
+            "'orden_compra' para confirmarla"
+        )
+
+    drogueria_id = extraction["drogueria_id"]
+
+    _columnas, filas_grupo, miembros = _leer_filas_grupo(client, extraction=extraction)
+
+    ya_validado = [miembro for miembro in miembros if miembro.get("validado")]
+    if ya_validado:
+        raise ConflictError(
+            "Al menos un archivo de este grupo ya fue validado -- no se puede confirmar de nuevo"
+        )
+
+    # D13.1 § Cabecera inconsistente -- numero_oc discrepante BLOQUEA la
+    # confirmación (re-chequeado acá server-side, no solo en el GET previo).
+    filas_representativas = _filas_representativas_por_miembro(filas_grupo, miembros)
+    _conciliar_cabecera(filas_representativas)
+
+    _validar_orden_compra_override(client, drogueria_id=drogueria_id, override=override)
+
+    orden_compra_id, filas_creadas, entregas_creadas, renglones_sin_producto = (
+        _materializar_orden_compra(
+            client,
+            extraction=extraction,
+            drogueria_id=drogueria_id,
+            usuario_id=usuario_id,
+            override=override,
+        )
+    )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    extraction_ids = [miembro["id"] for miembro in miembros]
+    repo.marcar_validadas(
+        client, extraction_ids=extraction_ids, usuario_id=usuario_id, validado_at=ahora
+    )
+
+    # D3.1 -- se aprende SOLO si la materialización tuvo éxito (ver docstring
+    # de _registrar_alias_cliente).
+    _registrar_alias_cliente(
+        client,
+        drogueria_id=drogueria_id,
+        texto_extraido=override.razon_social_extraida,
+        cliente_id=override.cliente_id,
+        usuario_id=usuario_id,
+    )
+
+    return ResultadoValidarExtraccion(
+        extraction_id=extraction["id"],
+        document_type="orden_compra",
+        proceso_comercial_id=None,
+        filas_creadas=filas_creadas,
+        orden_compra_id=orden_compra_id,
+        entregas_creadas=entregas_creadas,
+        renglones_sin_producto=renglones_sin_producto,
+        extracciones_validadas=len(extraction_ids),
+    )
+
+
 def _chequear_entero(errores: list[str], numero: int, campo: str, valor: str) -> None:
     try:
         entero = int((valor or "").strip())
@@ -823,12 +1204,21 @@ def validar_extraccion(
     usuario_id: str,
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
+    orden_compra: OrdenCompraOverride | None = None,
 ) -> ResultadoValidarExtraccion:
     extraction = repo.buscar_extraction_result(client, extraction_id=extraction_id)
     if extraction is None:
         raise NotFoundError("No se encontró la extracción")
     if extraction["validado"]:
         raise ConflictError("Esta extracción ya fue validada")
+
+    # D13.1 -- orden_compra ancla por cliente_id, no por proceso_comercial_id:
+    # saltea por completo _resolver_proceso_comercial_id (D4). _materializar_licitacion
+    # NO se toca (D13.2): esta rama es enteramente nueva y separada.
+    if extraction["document_type"] == "orden_compra":
+        return _validar_y_materializar_orden_compra(
+            client, extraction=extraction, usuario_id=usuario_id, override=orden_compra
+        )
 
     # §3 -- puro, sin tocar la DB, y ANTES del primer write (`_resolver_proceso_comercial_id`
     # abajo). Si `filas_override` trae datos inválidos, la extracción queda exactamente
@@ -914,6 +1304,7 @@ def validar_extraccion_para_endpoint(
     usuario_id: str,
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
+    orden_compra: OrdenCompraOverride | None = None,
 ) -> ResultadoValidarExtraccion:
     """Corre con service_role: materializar toca items_proceso/comparativas/ofertas_items/
     notificaciones y dispara matching — mismo criterio que pricing/matching/presupuestos,
@@ -924,4 +1315,5 @@ def validar_extraccion_para_endpoint(
         usuario_id=usuario_id,
         proceso_comercial_id=proceso_comercial_id,
         filas_override=filas_override,
+        orden_compra=orden_compra,
     )

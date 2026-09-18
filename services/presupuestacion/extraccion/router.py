@@ -76,9 +76,10 @@ def obtener_filas_extraccion_endpoint(
         user_client,
         usuario=usuario,
         extraction_id=extraction_id,
-        select="id, drogueria_id, document_type, csv_disk_path, row_count",
+        select="id, drogueria_id, document_type, csv_disk_path, row_count, grupo_id, "
+        "source_filename",
     )
-    return leer_filas_extraccion(extraccion)
+    return leer_filas_extraccion(extraccion, client=user_client)
 
 
 @router.get(
@@ -150,4 +151,5 @@ def validar_extraccion_endpoint(
         usuario_id=usuario.id,
         proceso_comercial_id=body.proceso_comercial_id,
         filas_override=filas_override,
+        orden_compra=body.orden_compra,
     )

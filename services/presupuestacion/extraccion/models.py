@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,20 +30,73 @@ class FilaComparativaIn(BaseModel):
     precio: str
 
 
+class FilaOrdenCompraIn(BaseModel):
+    """Un renglón de orden de compra confirmado por el usuario (D7/D13.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+    # Solo referencia visual (C10): el número de línea que el documento declaró,
+    # si lo declaró. NO se persiste tal cual -- oc_items.numero_renglon es un
+    # ordinal 1..N que _materializar_orden_compra() asigna por POSICIÓN en esta
+    # lista, al confirmar (D13.1).
+    numero_renglon_documento: str | None = None
+    descripcion: str
+    cantidad: str
+    precio_unitario: str  # obligatorio; manual si la extracción no lo detectó
+    producto_id: str | None = None  # opcional (D11)
+
+
+class EntregaPlanIn(BaseModel):
+    """Una entrega del plan de una orden de compra (D8)."""
+
+    model_config = ConfigDict(extra="forbid")
+    numero_entrega: int
+    plazo_dias: int | None = None
+    # None -> reparto automático parejo de cada renglón entre todas las entregas
+    # (D8, repartir_cantidad). La clave es la POSICIÓN 1-based de la fila en
+    # OrdenCompraOverride.filas -- el mismo numero_renglon que se asigna al
+    # confirmar (D13.1).
+    cantidades_por_posicion: dict[str, str] | None = None
+
+
+class OrdenCompraOverride(BaseModel):
+    """Payload de confirmación de una orden de compra (D7) -- bloque propio,
+    no una extensión del campo `filas` existente (licitación/comparativa)."""
+
+    model_config = ConfigDict(extra="forbid")
+    numero_oc: str
+    # El id del cliente que el usuario CONFIRMÓ en pantalla -- venga de un
+    # alias, de un CUIT o de la búsqueda manual, el backend no distingue ni lo
+    # infiere (D3).
+    cliente_id: str
+    # Texto de cabecera que originó la confirmación. Es lo que se aprende en
+    # oc_cliente_alias (D3.1). None -> no se aprende nada, no es un error.
+    razon_social_extraida: str | None = None
+    fecha_emision: date | None = None
+    direccion_entrega: str | None = None
+    notas: str | None = None
+    filas: list[FilaOrdenCompraIn]
+    entregas: list[EntregaPlanIn] = Field(min_length=1)
+
+
 class ValidarExtraccionRequest(BaseModel):
     proceso_comercial_id: str | None = None
     # None  -> materializa desde el CSV (comportamiento actual, retrocompatible)
     # lista -> materializa desde acá; el CSV en disco NO se toca (D2)
     filas: list[FilaLicitacionIn] | list[FilaComparativaIn] | None = Field(default=None)
+    orden_compra: OrdenCompraOverride | None = None  # NUEVO (D7)
 
 
 class ResultadoValidarExtraccion(BaseModel):
     extraction_id: str
     document_type: DocumentType
-    proceso_comercial_id: str
+    proceso_comercial_id: str | None  # CAMBIO: era `str` -- NULL en la ruta OC
     filas_creadas: int
     comparativa_id: str | None = None
     reemplazo_version_anterior: bool = False
+    orden_compra_id: str | None = None  # NUEVO
+    entregas_creadas: int = 0  # NUEVO
+    renglones_sin_producto: int = 0  # NUEVO (D11)
+    extracciones_validadas: int = 1  # NUEVO (D13) -- miembros del grupo marcados
 
 
 class ExtraccionResumen(BaseModel):
