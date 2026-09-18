@@ -121,48 +121,85 @@ recachear una estrategia distinta si lo prefiere.
 > Depende de Phase 1 solo por completitud de esquema (esta fase no escribe en las tablas nuevas
 > directamente; `extraction_results.grupo_id` sí se usa aquí).
 
-- [ ] 2.1 [RED] Crear `tests/fixtures/orden_compra/` con al menos 3 documentos de muestra (PDF,
-  imagen, Excel — HTML opcional) y sus CSV esperados según la gramática de D6
-  (`numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas`).
-  **Obligatorio**: al menos un fixture cuyo documento NO declare número de línea, con
-  `numero_renglon` vacío en todas las filas del CSV esperado (detecta si el prompt inventa
-  números — C10).
-- [ ] 2.2 [RED] Crear `tests/test_robot_orden_compra.py` con tests que mockean la llamada a Gemini y
-  verifican: `procesar_orden_compra(ruta, nombre) -> Path` escribe un CSV en disco con el
-  delimitador `;`, UTF-8, `csv.QUOTE_MINIMAL` (igual que `robot_comparativas.py:850-859`); las
-  columnas de D6 en el orden correcto; el caso sin número de línea produce celda vacía sin excepción;
-  un plan `entregas` con gramática `"50@30|50@60"` se escribe tal cual (el parseo ocurre después, en
-  validación, no acá).
-- [ ] 2.3 [GREEN] Crear `services/extraccion/robot_orden_compra.py`: prompt Gemini +
-  `procesar_orden_compra(ruta, nombre) -> Path`, misma firma y estructura que `procesar_comparativa`.
-  El prompt debe **prohibir explícitamente** inventar `numero_renglon` — instrucción literal de dejar
-  la celda vacía cuando el documento no declara número de línea, sin autoincrementar ni derivar del
-  orden de aparición.
-- [ ] 2.4 [REFACTOR] Correr los fixtures reales de 2.1 contra `procesar_orden_compra` (sin mock de
-  Gemini, llamada real controlada) y ajustar el prompt hasta que los 3+ goldens coincidan
-  exactamente con el CSV esperado, incluido el caso sin numeración.
-- [ ] 2.5 [RED] En `tests/test_main_integration.py`, invertir
-  `TestProcesarTipoOrdenes::test_tipo_ordenes_retorna_422_sin_llamar_robot` (líneas 442-460) a
-  `test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra`: mockea
-  `services.extraccion.main.procesar_orden_compra`, sube con `tipo="ordenes"` y afirma
-  `response.status_code != 422` y que el mock **sí** fue invocado. Agregar además: `.html`/`.htm`
-  aceptados para `tipo=ordenes`; `grupo_id` inválido (no UUID v4) rechazado sin abortar el resto del
-  formulario; `grupo_id` ausente se comporta igual que hoy (extracción suelta).
-- [ ] 2.6 [GREEN] Modificar `services/extraccion/main.py`: eliminar el `HTTPException(422)` de
-  `tipo=="ordenes"` (líneas 162-167); extender `permitidos` para `ordenes` con `.html`/`.htm`;
-  reemplazar el mapeo binario `doc_type = "comparativa" if ... else "licitacion"` (línea 220) por un
-  mapeo de tres vías que incluya `orden_compra`; tercera rama en el bloque `_GEMINI_SEMAPHORE`
-  (líneas 240-255) que invoca `procesar_orden_compra`; nuevo `grupo_id: str = Form("")`, validado
-  como UUID v4, propagado a `schedule_persist_output`, ignorado si `tipo != "ordenes"`.
-- [ ] 2.7 [GREEN] Modificar `services/extraccion/persistent_output.py`: `_DOC_TYPES_SOPORTADOS`
-  (línea 31) → `{"comparativa", "licitacion", "orden_compra"}`, actualizar el comentario obsoleto de
-  las líneas 28-30; `persistir_output_final(..., grupo_id: str | None = None)` agrega `grupo_id` a
-  `payload_base` solo si viene.
-- [ ] 2.8 [GREEN] Modificar `services/extraccion/background_tasks.py`: `schedule_persist_output` pasa
-  `grupo_id` a `persistir_output_final` (parámetro pasante, sin lógica nueva).
-- [ ] 2.9 Correr `pytest tests/test_robot_orden_compra.py tests/test_main_integration.py -k ordenes`
-  en verde y confirmar que las suites existentes de licitación/comparativa en el mismo archivo no se
-  rompieron.
+- [x] 2.1 [RED] Creado `tests/fixtures/orden_compra/` con 3 documentos de muestra reales — PDF
+  (`01_pdf_con_renglon/documento.pdf`, generado con `reportlab`), Excel
+  (`02_excel_sin_renglon/documento.xlsx`, `openpyxl`) e imagen
+  (`03_imagen_con_renglon/documento.png`, `Pillow`) — más sus `esperado.csv` según la gramática de
+  D6. El script generador (`_generar_fixtures.py`) queda junto a los fixtures para poder
+  regenerarlos. **Obligatorio cumplido**: `02_excel_sin_renglon` es un documento que no numera sus
+  renglones en ninguna forma (ni columna, ni referencia textual); su `esperado.csv` tiene
+  `numero_renglon` vacío en las 2 filas — es el caso C10. `01` y `03` sí declaran número de línea
+  (1/2 y 1/2/3 respectivamente) y ejercitan además la gramática de `entregas`
+  (`50@30|50@60` en 01; `50@15|50@30|50@45` y `40@10|40@20` en 03, con un renglón intermedio sin
+  desglose).
+- [x] 2.2 [RED] Creado `tests/test_robot_orden_compra.py` (13 tests): `TestConstruirFilas` (5 tests,
+  0 mocks — función pura) cubre repetición de cabecera por renglón, `numero_renglon` vacío sin
+  fabricarlo (C10), preservación del valor declarado, gramática de `entregas` verbatim y lista vacía
+  sin excepción. `TestProcesarOrdenCompra` (3 tests, mockeando `parse_document` y
+  `_llamar_gemini_orden_compra`) verifica CSV en disco con `;`, UTF-8, `csv.QUOTE_MINIMAL`, columnas
+  D6 en el orden correcto, caso sin numeración sin excepción, y `OrdenCompraSinRenglonesError` si no
+  hay renglones. Confirmado RED: `ModuleNotFoundError: No module named
+  'services.extraccion.robot_orden_compra'` (1 error de colección, ejecutado antes de 2.3).
+- [x] 2.3 [GREEN] Creado `services/extraccion/robot_orden_compra.py`: `_FIELDNAMES` (orden D6),
+  `_llamar_gemini_orden_compra()` (mismo patrón que `_llamar_gemini_json` de
+  `robot_comparativas.py` — JSON mode, detección de truncamiento antes de parsear),
+  `_construir_filas()` (pura, sin I/O — repite cabecera, preserva `numero_renglon` tal cual),
+  `_escribir_csv()` (idéntica a `robot_comparativas.py:850-859`: `;`, UTF-8, `QUOTE_MINIMAL`),
+  `_mover_a_procesados()`, y `procesar_orden_compra(ruta, nombre, *, session_id=None,
+  instrucciones_extra=None) -> Path` — misma firma y estructura que `procesar_comparativa`. El
+  prompt prohíbe explícitamente inventar `numero_renglon` con una sección "CRITICAL RULE" dedicada.
+  `pytest tests/test_robot_orden_compra.py -q` → **8 passed** (RED anterior confirmado, ahora GREEN).
+- [x] 2.4 [REFACTOR] Corridos los 3 fixtures reales de 2.1 contra `procesar_orden_compra` sin mock de
+  Gemini (llamada real a `gemini-2.5-flash`, confirmada conectividad antes con un ping
+  `generate_with_fallback` → `"PONG"`). Primera corrida: 2/3 coincidieron exactamente; `01` difería
+  solo en `precio_unitario` (`"1.250,00"` obtenido vs `"1250,00"` esperado — Gemini preservó el
+  separador de miles del documento). Ajustado el prompt: instrucción explícita de no incluir
+  separador de miles en `precio_unitario`, con ejemplo literal (`"$1.250,00" -> "1250,00"`). Segunda
+  corrida: **3/3 coinciden exactamente**. Repetido 2 veces más (3 corridas reales consecutivas en
+  total, 9 documentos procesados) para confirmar estabilidad — sin desvíos en ninguna, incluido el
+  caso sin numeración (02). Costo real de API asumido, como ya hacen licitación/comparativa.
+- [x] 2.5 [RED] En `tests/test_main_integration.py`, invertida
+  `TestProcesarTipoOrdenes::test_tipo_ordenes_retorna_422_sin_llamar_robot` a
+  `test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra` (mockea
+  `services.extraccion.main.procesar_orden_compra`, afirma `status_code != 422` y `== 200`, y que el
+  mock fue invocado). Agregados 6 tests más en la misma clase: `test_tipo_ordenes_acepta_html` /
+  `_acepta_htm` (antes rechazados por `permitidos`, ahora 200), `test_grupo_id_invalido_retorna_422_
+  sin_llamar_robot` (no UUID v4 → 422, robot no invocado — mismo patrón SC-25 que `licitacion_id`),
+  `test_grupo_id_ausente_se_comporta_como_extraccion_suelta` (`None` propagado),
+  `test_grupo_id_valido_se_propaga_a_schedule_persist_output`, y
+  `test_grupo_id_ignorado_si_tipo_no_es_ordenes` (un `grupo_id` inválido con `tipo=""` NO aborta —
+  se ignora por completo, confirmando que la validación solo corre para `tipo=="ordenes"`).
+  Confirmado RED: `pytest tests/test_main_integration.py -k ordenes -q` → **7 failed** (6× `does not
+  have the attribute 'procesar_orden_compra'` + 1× `KeyError: 'grupo_id'` en
+  `mock_schedule.await_args.kwargs`), ejecutado antes de 2.6.
+- [x] 2.6 [GREEN] Modificado `services/extraccion/main.py`: eliminado el `HTTPException(422)` fijo de
+  `tipo=="ordenes"`, reemplazado por la validación fail-fast de `grupo_id` (nueva, ver abajo) que
+  solo corre para ese tipo; `permitidos` para `ordenes` extendido con `.html`/`.htm`; mapeo binario
+  de `doc_type` reemplazado por mapeo de tres vías (`comparativa`/`orden_compra`/`licitacion`);
+  tercera rama en el bloque `_GEMINI_SEMAPHORE` que invoca `procesar_orden_compra` con la misma
+  firma (`session_id`, `instrucciones_extra`) que las otras dos ramas; agregado el manejo de
+  `OrdenCompraSinRenglonesError` (mismo patrón que `NoProvidersDetectedError`, 422). Nuevo
+  `grupo_id: str = Form("")` + función `_validar_grupo_id()` (valida `UUID` + `.version == 4`,
+  `HTTPException(422)` si es inválido, `None` si viene vacío o si `tipo != "ordenes"`), propagado a
+  `schedule_persist_output`.
+- [x] 2.7 [GREEN] Modificado `services/extraccion/persistent_output.py`: `_DOC_TYPES_SOPORTADOS` →
+  `{"comparativa", "licitacion", "orden_compra"}`; corregido el comentario obsoleto que decía que
+  `orden_compra` "todavía no tiene extractor propio"; `persistir_output_final(..., grupo_id: str |
+  None = None)` agrega `grupo_id` a `payload_base` solo si viene (mismo patrón que
+  `licitacion_id`/`proceso_comercial_id`).
+- [x] 2.8 [GREEN] Modificado `services/extraccion/background_tasks.py`: `grupo_id: str | None = None`
+  agregado a `_retry_persist()` y `schedule_persist_output()`, pasante hasta
+  `persistir_output_final()` en ambos (llamada directa y rama de reintento recursivo) — sin lógica
+  nueva, mismo patrón que `licitacion_id`.
+- [x] 2.9 `pytest tests/test_robot_orden_compra.py tests/test_main_integration.py -k ordenes` → **7
+  passed** (los 7 tests de `TestProcesarTipoOrdenes`; los tests de `test_robot_orden_compra.py` no
+  matchean el keyword `ordenes` por nombre de clase/módulo — confirmados aparte:
+  `pytest tests/test_robot_orden_compra.py -q` → **8 passed**). Confirmado que las suites de
+  licitación/comparativa en `test_main_integration.py` no se rompieron:
+  `pytest tests/test_main_integration.py -q` → **18 passed** (0 regresiones). Suite completa no
+  integración: `pytest tests/ -q -m "not integration"` → **280 passed, 434 deselected** (vs. 266
+  passed en el baseline de PR1 — +14 tests netos: +8 nuevos de `test_robot_orden_compra.py`, +6
+  netos en `TestProcesarTipoOrdenes` tras invertir 1 test por 7).
 
 ## Phase 3: Validación — Resolución de cliente (D3/D3.1/D3.2)
 
