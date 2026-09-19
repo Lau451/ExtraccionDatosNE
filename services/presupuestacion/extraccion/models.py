@@ -109,6 +109,10 @@ class ExtraccionResumen(BaseModel):
     proceso_comercial_id: str | None
     proceso_comercial_nombre: str | None
     created_at: datetime
+    # D13/D13.1 (gap post-Phase 7, task 7.13) -- persistido, para que el
+    # indicador de agrupación del listado sobreviva a un refetch/recarga sin
+    # depender solo del estado en memoria del front (`gruposLocales`).
+    grupo_id: str | None = None
 
 
 class MiembroGrupo(BaseModel):
