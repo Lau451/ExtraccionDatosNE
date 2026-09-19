@@ -1821,3 +1821,28 @@ Quedan abiertas, y **ninguna bloquea** empezar a implementar:
 - [ ] **Enganchar el motor de matching a `oc_items`** para auto-resolver `producto_id` (hoy
       `procesar_matching_item` está acoplado a `items_proceso`). Fuera de alcance, habilitado por
       D11.
+
+### Nota para `sdd-archive` (agregada en Phase 9, no reemplaza lo anterior)
+
+Ninguna edición de este documento se tocó para escribir esta nota — es una anotación agregada al
+final de la sección existente, no una reescritura. Su único propósito es que un futuro `sdd-archive`
+de este change **no** trate como resueltas dos de las Open Questions de arriba, porque ambas siguen
+genuinamente abiertas al cierre de Tramo 1+2 (`orden-compra-extraccion` + `orden-compra-validacion`)
+y ninguna de las dos bloqueó, ni bloquea, esta implementación:
+
+- **R1 — validación de formato con Progress v8**: sigue sin un template real de Progress contra el
+  cual verificar `csv_progress.py` (Tramo 3 de este mismo change, aún no implementado — ver README
+  de `docs/modulos/compras/` actualizado en esta misma fase). No aplica todavía porque Tramo 3 no se
+  implementó en Tramo 1+2; queda abierta para cuando se implemente esa fase futura, no para este
+  archive.
+- **Reconciliar `orden-compra-validacion` al archivar**: los specs `orden-compra-extraccion` y
+  `orden-compra-validacion` (`openspec/changes/orden-compra/specs/`) **ya fueron escritos** en esta
+  ejecución del change reflejando D3/D3.1/D3.2/D13/D13.1 (alias/CUIT/búsqueda manual, agrupación
+  multi-archivo, `numero_renglon` como ordinal del sistema) — no quedó pendiente el escenario
+  "`codigo_interno` ambiguo" que esta Open Question original advertía. La trazabilidad spec-a-test de
+  la tarea 9.4 de `tasks.md` es la verificación concreta de que esos specs, tal como quedaron
+  redactados, están cubiertos por la implementación real. Esta Open Question se deja igual como
+  **abierta y no bloqueante** para que un archive automático no la interprete como "cerrada por
+  default" solo porque los specs ya existen: el cierre explícito de este ítem requiere que un humano
+  confirme, al archivar, que no quedó ningún escenario del spec sin reconciliar contra el código —
+  ese es precisamente el insumo que deja 9.4.
