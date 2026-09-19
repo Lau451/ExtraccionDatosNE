@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { ExtraccionResumen } from '@/lib/api/extracciones'
+import { grupoIdDe } from '../ValidarExtraccionListado'
 
 const ETIQUETA_TIPO: Record<string, string> = {
   licitacion: 'Licitación',
@@ -12,9 +13,10 @@ interface PendientesTableProps {
   extracciones: ExtraccionResumen[]
   seleccionados?: Set<string>
   onAlternarSeleccion?: (id: string) => void
-  // D13 -- extraction_id -> grupo_id, rastreado por ValidarExtraccionListado
-  // en memoria (GET /extracciones no expone grupo_id, fuera de este alcance).
-  gruposLocales?: Record<string, string>
+  // D13/7.13 -- override OPTIMISTA post-agrupar/desagrupar de esta sesión (ver
+  // grupoIdDe); cuando no hay override se usa extraccion.grupo_id, el dato
+  // real que ya devuelve GET /extracciones.
+  gruposLocales?: Record<string, string | null>
 }
 
 export function PendientesTable({
@@ -45,7 +47,7 @@ export function PendientesTable({
           // D13 -- solo orden_compra sin validar se puede tildar para
           // agrupar/desagrupar (este listado ya filtra validado=false).
           const esAgrupable = extraccion.document_type === 'orden_compra'
-          const grupoId = gruposLocales[extraccion.id]
+          const grupoId = grupoIdDe(extraccion, gruposLocales)
 
           return (
             <tr key={extraccion.id} className="border-b border-slate-100">

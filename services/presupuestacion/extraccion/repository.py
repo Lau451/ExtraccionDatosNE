@@ -33,7 +33,7 @@ def listar_extracciones(
         client.table("extraction_results")
         .select(
             "id, document_type, source_filename, row_count, status, validado, "
-            "proceso_comercial_id, created_at, procesos_comerciales(nombre)"
+            "proceso_comercial_id, created_at, grupo_id, procesos_comerciales(nombre)"
         )
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)

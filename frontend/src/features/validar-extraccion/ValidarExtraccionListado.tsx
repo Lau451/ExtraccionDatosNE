@@ -22,14 +22,25 @@ export function puedeAgruparSeleccion(seleccionadas: ExtraccionResumen[]): boole
   )
 }
 
+/** 7.13 -- GET /extracciones ya expone `grupo_id` persistido. `gruposLocales`
+ * pasa a ser solo un override OPTIMISTA: se completa recién después de un
+ * agrupar/desagrupar exitoso en esta sesión, para no esperar el próximo
+ * refetch. Mientras no haya override para una extracción, se usa el dato
+ * persistido -- así el indicador y "Desagrupar" sobreviven a un
+ * refetch/recarga de página sin haber pasado por la acción local primero. */
+export function grupoIdDe(
+  extraccion: ExtraccionResumen,
+  gruposLocales: Record<string, string | null>,
+): string | null {
+  if (extraccion.id in gruposLocales) return gruposLocales[extraccion.id]
+  return extraccion.grupo_id ?? null
+}
+
 export function ValidarExtraccionListado() {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
-  // D13 -- GET /extracciones (ExtraccionResumen) no expone grupo_id (fuera de
-  // alcance de esta fase, solo frontend). Se rastrea acá, en memoria, qué
-  // extracciones se agruparon/desagruparon en esta sesión, para pintar el
-  // indicador y habilitar "Desagrupar" sin depender de un dato que hoy el
-  // listado no devuelve.
-  const [gruposLocales, setGruposLocales] = useState<Record<string, string>>({})
+  // Override optimista post-acción (ver grupoIdDe) -- null significa
+  // "desagrupada en esta sesión", string significa "agrupada en esta sesión".
+  const [gruposLocales, setGruposLocales] = useState<Record<string, string | null>>({})
 
   // D-VALIDAREXTRACCION (design.md §9.3) -- POST /procesar persiste en un
   // BackgroundTask del lado de `services/extraccion`; un usuario que sube un
@@ -62,7 +73,7 @@ export function ValidarExtraccionListado() {
     onSuccess: (_data, ids) => {
       setGruposLocales((previo) => {
         const copia = { ...previo }
-        for (const id of ids) delete copia[id]
+        for (const id of ids) copia[id] = null
         return copia
       })
       setSeleccionados(new Set())
@@ -80,7 +91,7 @@ export function ValidarExtraccionListado() {
 
   const puedeDesagrupar =
     filasSeleccionadas.length >= 1 &&
-    filasSeleccionadas.every((extraccion) => gruposLocales[extraccion.id] !== undefined)
+    filasSeleccionadas.every((extraccion) => grupoIdDe(extraccion, gruposLocales) !== null)
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
