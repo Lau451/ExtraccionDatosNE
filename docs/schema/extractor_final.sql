@@ -567,6 +567,7 @@ CREATE TABLE extraction_results (
     validado                BOOLEAN         NOT NULL DEFAULT FALSE,
     validado_por            UUID            NULL,
     validado_at             TIMESTAMPTZ     NULL,
+    grupo_id                UUID            NULL,
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
@@ -577,6 +578,7 @@ CREATE TABLE extraction_results (
 
 COMMENT ON COLUMN extraction_results.validado IS 'FALSE = extracción cruda sin revisar. TRUE = un humano validó y los datos se materializaron en las tablas de negocio (items_proceso / comparativas / ordenes_compra).';
 COMMENT ON COLUMN extraction_results.archivo_path IS 'El documento original. Los datos documentales viven acá, NO en las tablas de negocio.';
+COMMENT ON COLUMN extraction_results.grupo_id IS 'NULL = extracción suelta (caso normal). No NULL = esta fila es una parte de un documento repartido en varios archivos; todas las filas con el mismo grupo_id se validan juntas y producen UNA sola orden_compra (design.md D13). Agregada en 0025.';
 
 CREATE TABLE chunk_results (
     id              UUID            NOT NULL DEFAULT gen_random_uuid(),
@@ -1015,7 +1017,7 @@ COMMENT ON COLUMN ofertas_items.adjudicacion_estimada IS 'TRUE en el más barato
 
 CREATE TABLE ordenes_compra (
     id                      UUID            NOT NULL DEFAULT gen_random_uuid(),
-    proceso_comercial_id    UUID            NOT NULL,
+    proceso_comercial_id    UUID            NULL,
     cliente_id              UUID            NULL,
     drogueria_id            UUID            NOT NULL,
     extraction_id           UUID            NULL,
@@ -1032,16 +1034,26 @@ CREATE TABLE ordenes_compra (
     es_vigente              BOOLEAN         NOT NULL DEFAULT TRUE,
     reemplaza_id            UUID            NULL,
     motivo_version          TEXT            NULL,
+    created_by              UUID            NULL,
+    updated_by              UUID            NULL,
+    deleted_at              TIMESTAMPTZ     NULL,
+    deleted_by              UUID            NULL,
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_oc_id_drog UNIQUE (id, drogueria_id),
-    CONSTRAINT uq_oc UNIQUE (numero_oc, version_numero),
     CONSTRAINT ck_oc_estado
         CHECK (estado IN ('pendiente', 'emitida', 'en_entrega', 'parcialmente_entregada', 'entregada', 'cancelada')),
     CONSTRAINT ck_oc_version CHECK (version_numero >= 1),
-    CONSTRAINT ck_oc_motivo CHECK ((reemplaza_id IS NULL AND motivo_version IS NULL) OR (reemplaza_id IS NOT NULL))
+    CONSTRAINT ck_oc_motivo CHECK ((reemplaza_id IS NULL AND motivo_version IS NULL) OR (reemplaza_id IS NOT NULL)),
+    -- 0025: una OC extraída de un documento de cliente se ancla por cliente_id
+    -- en vez de proceso_comercial_id (no tiene proceso comercial). Al menos uno
+    -- de los dos anclajes siempre está presente.
+    CONSTRAINT ck_oc_anclaje CHECK (proceso_comercial_id IS NOT NULL OR cliente_id IS NOT NULL)
 );
+
+COMMENT ON COLUMN ordenes_compra.proceso_comercial_id IS
+  'NULL cuando la OC se origina en una extracción de documento de cliente; en ese caso el anclaje es cliente_id. Garantizado por ck_oc_anclaje (0025).';
 
 CREATE TABLE oc_items (
     id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
@@ -1081,20 +1093,60 @@ CREATE TABLE entregas_oc (
 );
 
 CREATE TABLE entregas_oc_items (
-    id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
-    entrega_oc_id       UUID            NOT NULL,
+    id                     UUID            NOT NULL DEFAULT gen_random_uuid(),
+    entrega_oc_id          UUID            NOT NULL,
     drogueria_id                UUID            NOT NULL,
-    oc_item_id          UUID            NOT NULL,
-    cantidad_entregada  NUMERIC(12, 2)  NOT NULL,
-    cantidad_rechazada  NUMERIC(12, 2)  NOT NULL DEFAULT 0,
-    motivo_rechazo      TEXT            NULL,
-    lote                TEXT            NULL,
-    vencimiento         DATE            NULL,
-    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    oc_item_id             UUID            NOT NULL,
+    cantidad_planificada   NUMERIC(12, 2)  NOT NULL DEFAULT 0,
+    cantidad_entregada     NUMERIC(12, 2)  NOT NULL,
+    cantidad_rechazada     NUMERIC(12, 2)  NOT NULL DEFAULT 0,
+    motivo_rechazo         TEXT            NULL,
+    lote                   TEXT            NULL,
+    vencimiento            DATE            NULL,
+    created_at             TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_eoci UNIQUE (entrega_oc_id, oc_item_id),
-    CONSTRAINT ck_eoci_cant CHECK (cantidad_entregada >= 0 AND cantidad_rechazada >= 0)
+    CONSTRAINT ck_eoci_cant CHECK (cantidad_entregada >= 0 AND cantidad_rechazada >= 0),
+    -- 0025: el plan y el hecho comparten fila (design.md D1). crear_entrega no
+    -- la escribe -> 0 = "registrada directo, sin plan previo".
+    CONSTRAINT ck_eoci_planificada CHECK (cantidad_planificada >= 0)
 );
+
+COMMENT ON COLUMN entregas_oc_items.cantidad_planificada IS
+  'Lo que se prometió entregar en esta entrega. Se escribe al confirmar la OC (stock SIN tocar) y se compara contra cantidad_entregada al importar el retorno de Progress. 0 = entrega registrada directo, sin plan previo (camino de crear_entrega). Agregada en 0025.';
+
+-- 0025 (D3.1): la OC la redacta el cliente y nunca puede traer nuestro
+-- codigo_interno (C5). El único dato confiable para anclar es el que un
+-- humano YA confirmó. Esta tabla persiste ese aprendizaje: encabezado
+-- normalizado -> cliente, por droguería. RLS habilitada, políticas
+-- oca_sel/ins/upd/del (misma convención que terceros / tercero_direcciones).
+CREATE TABLE oc_cliente_alias (
+    id                          UUID            NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id                UUID            NOT NULL,
+    texto_extraido_normalizado  TEXT            NOT NULL,
+    texto_extraido_original     TEXT            NOT NULL,
+    cliente_id                  UUID            NOT NULL,
+    veces_confirmado            INTEGER         NOT NULL DEFAULT 1,
+    created_by                  UUID            NULL,
+    updated_by                  UUID            NULL,
+    created_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_oca UNIQUE (drogueria_id, texto_extraido_normalizado),
+    CONSTRAINT ck_oca_texto CHECK (length(trim(texto_extraido_normalizado)) > 0),
+    CONSTRAINT ck_oca_veces CHECK (veces_confirmado >= 1),
+    CONSTRAINT fk_oca_drogueria FOREIGN KEY (drogueria_id)
+        REFERENCES droguerias (id) ON DELETE CASCADE,
+    CONSTRAINT fk_oca_cliente FOREIGN KEY (cliente_id, drogueria_id)
+        REFERENCES clientes (id, drogueria_id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE oc_cliente_alias IS
+  'Aprendizaje del pipeline de OC: qué texto de encabezado de un documento de cliente corresponde a qué cliente nuestro. Se escribe por UPSERT en cada confirmación humana de la pantalla de validación (design.md D3.1). La última confirmación gana y resetea veces_confirmado. Agregada en 0025.';
+COMMENT ON COLUMN oc_cliente_alias.texto_extraido_normalizado IS
+  'Clave de match del nivel 1. Producida por services/presupuestacion/core/texto.py::normalizar_descripcion (NFKD -> ascii, puntuación -> espacio, espacios colapsados, UPPER).';
+COMMENT ON COLUMN oc_cliente_alias.veces_confirmado IS
+  'Cuántas veces se reconfirmó este mapeo. Se resetea a 1 cuando el usuario CORRIGE el cliente.';
 
 -- Compras reales a proveedores: a quién le compraste efectivamente al ganar.
 -- Cierra el círculo: precio especial ofertado → compra concreta.
@@ -1654,12 +1706,26 @@ CREATE INDEX idx_oi_sin_match           ON ofertas_items (proveedor) WHERE prove
 CREATE INDEX idx_oc_proc                ON ordenes_compra (proceso_comercial_id);
 CREATE INDEX idx_oc_estado              ON ordenes_compra (estado);
 CREATE INDEX idx_oc_vigente             ON ordenes_compra (proceso_comercial_id) WHERE es_vigente = TRUE;
+-- 0025: reemplaza a uq_oc (numero_oc, version_numero) GLOBAL. Un índice único
+-- parcial por ruta de anclaje: dos clientes distintos pueden numerar sus OC
+-- igual, y ck_oc_anclaje garantiza que cliente_id IS NULL implica
+-- proceso_comercial_id IS NOT NULL dentro de uq_oc_por_proceso.
+CREATE UNIQUE INDEX uq_oc_por_cliente   ON ordenes_compra (drogueria_id, cliente_id, numero_oc, version_numero)
+    WHERE cliente_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_oc_por_proceso   ON ordenes_compra (drogueria_id, proceso_comercial_id, numero_oc, version_numero)
+    WHERE cliente_id IS NULL;
 CREATE INDEX idx_oci_oc                 ON oc_items (orden_compra_id);
 CREATE INDEX idx_oci_prod               ON oc_items (producto_id) WHERE producto_id IS NOT NULL;
 CREATE INDEX idx_eoc_oc                 ON entregas_oc (orden_compra_id);
 CREATE INDEX idx_eoc_estado             ON entregas_oc (estado);
 CREATE INDEX idx_eoci_ent               ON entregas_oc_items (entrega_oc_id);
 CREATE INDEX idx_eoci_lote              ON entregas_oc_items (lote) WHERE lote IS NOT NULL;
+-- uq_oca (arriba) ES el índice del nivel 1 (igualdad exacta). Este otro existe
+-- solo para listar/limpiar los alias de un cliente dado (0025).
+CREATE INDEX idx_oca_cliente            ON oc_cliente_alias (drogueria_id, cliente_id);
+-- 0025 (D13): parcial, solo indexa las filas agrupadas (minoría). El acceso es
+-- siempre "dame los miembros de este grupo".
+CREATE INDEX idx_er_grupo               ON extraction_results (grupo_id) WHERE grupo_id IS NOT NULL;
 
 CREATE INDEX idx_cp_prov                ON compras_proveedor (proveedor_id);
 CREATE INDEX idx_cp_prod                ON compras_proveedor (producto_id);

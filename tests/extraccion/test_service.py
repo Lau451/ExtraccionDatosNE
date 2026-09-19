@@ -1,15 +1,23 @@
 import csv as csv_module
 import secrets
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
+from services.presupuestacion.core import stock
 from services.presupuestacion.core.exceptions import (
     ConflictError,
     ExtraccionNoDisponibleError,
     NotFoundError,
     ValidationError,
+)
+from services.presupuestacion.extraccion.models import (
+    EntregaPlanIn,
+    FilaOrdenCompraIn,
+    OrdenCompraOverride,
 )
 from services.presupuestacion.extraccion.service import (
     _filas_a_materializar,
@@ -18,6 +26,8 @@ from services.presupuestacion.extraccion.service import (
     leer_filas_extraccion,
     validar_extraccion,
 )
+
+_COLUMNAS_OC = ["numero_renglon", "descripcion", "cantidad", "precio_unitario"]
 
 
 def test_leer_filas_csv_sin_path_levanta_extraccion_no_disponible():
@@ -116,16 +126,33 @@ def test_leer_filas_extraccion_mas_de_500_filas_no_es_editable_y_no_manda_filas(
     assert resultado.columnas == ["item", "cantidad", "descripcion"]
 
 
-def test_leer_filas_extraccion_orden_compra_no_tiene_lectura_implementada():
-    with pytest.raises(ValidationError):
-        leer_filas_extraccion(
-            {
-                "id": "extraction-4",
-                "document_type": "orden_compra",
-                "csv_disk_path": None,
-                "row_count": 0,
-            }
-        )
+def test_leer_filas_extraccion_orden_compra_grupo_id_null_lee_su_propio_csv(tmp_path):
+    # Phase 5 -- orden_compra pasa a _TIPOS_CON_LECTURA_DE_FILAS: con grupo_id
+    # NULL, _leer_filas_grupo() se comporta como un archivo suelto (D13), sin
+    # necesitar client (no consulta miembros de grupo).
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["numero_renglon", "descripcion", "cantidad", "precio_unitario"],
+        filas=[{"numero_renglon": "1", "descripcion": "Item", "cantidad": "10", "precio_unitario": "5"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-4",
+            "document_type": "orden_compra",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "source_filename": "test.pdf",
+            "grupo_id": None,
+        }
+    )
+
+    assert resultado.filas_leidas == 1
+    assert resultado.editable is True
+    assert resultado.grupo_id is None
+    assert len(resultado.miembros) == 1
+    assert resultado.miembros[0].extraction_id == "extraction-4"
+    assert resultado.advertencias_cabecera == []
 
 
 def test_leer_filas_extraccion_csv_no_disponible_levanta_extraccion_no_disponible():
@@ -382,22 +409,316 @@ def test_validar_no_pisa_proceso_comercial_id_ya_vinculado(
 
 
 @pytest.mark.integration
-def test_validar_orden_compra_no_implementado(
-    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+def test_validar_orden_compra_materializa_oc_items_y_entregas(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
     seed_usuario_sistema,
+    seed_cliente_factory,
+    monkeypatch,
 ):
+    cliente = seed_cliente_factory("Hospital San Roque")
     extraction = seed_extraction_result_factory(
         "orden_compra",
-        filas=[{"numero_renglon": "1", "descripcion": "x", "cantidad": "1", "precio_unitario": "1"}],
-        columnas=["numero_renglon", "descripcion", "cantidad", "precio_unitario"],
+        filas=[
+            {"numero_renglon": "1", "descripcion": "Ibuprofeno", "cantidad": "10", "precio_unitario": "150"},
+            {"numero_renglon": "2", "descripcion": "Amoxicilina", "cantidad": "20", "precio_unitario": "80"},
+        ],
+        columnas=_COLUMNAS_OC,
+    )
+    override = OrdenCompraOverride(
+        numero_oc="OC-INT-1",
+        cliente_id=cliente["cliente_id"],
+        razon_social_extraida="Hospital San Roque",
+        filas=[
+            FilaOrdenCompraIn(
+                numero_renglon_documento="1", descripcion="Ibuprofeno", cantidad="10", precio_unitario="150"
+            ),
+            FilaOrdenCompraIn(
+                numero_renglon_documento="2", descripcion="Amoxicilina", cantidad="20", precio_unitario="80"
+            ),
+        ],
+        entregas=[EntregaPlanIn(numero_entrega=1)],
+    )
+    mock_entregar_stock = MagicMock()
+    monkeypatch.setattr(stock, "entregar_stock_producto", mock_entregar_stock)
+
+    resultado = validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        orden_compra=override,
     )
 
-    with pytest.raises(ValidationError):
+    assert resultado.document_type == "orden_compra"
+    assert resultado.proceso_comercial_id is None
+    assert resultado.filas_creadas == 2
+    assert resultado.entregas_creadas == 1
+    assert resultado.orden_compra_id is not None
+    assert resultado.extracciones_validadas == 1
+
+    # Invariante duro del spec: "confirmar no descuenta stock".
+    mock_entregar_stock.assert_not_called()
+
+    oc = (
+        service_client.table("ordenes_compra")
+        .select("*")
+        .eq("id", resultado.orden_compra_id)
+        .execute()
+        .data[0]
+    )
+    assert oc["estado"] == "emitida"
+    assert oc["proceso_comercial_id"] is None
+    assert oc["cliente_id"] == cliente["cliente_id"]
+    assert oc["extraction_id"] == extraction["id"]
+    assert oc["cantidad_entregas"] == 1
+
+    items = (
+        service_client.table("oc_items")
+        .select("*")
+        .eq("orden_compra_id", oc["id"])
+        .order("numero_renglon")
+        .execute()
+        .data
+    )
+    assert [i["numero_renglon"] for i in items] == [1, 2]
+
+    entregas = (
+        service_client.table("entregas_oc")
+        .select("*")
+        .eq("orden_compra_id", oc["id"])
+        .execute()
+        .data
+    )
+    assert len(entregas) == 1
+    assert entregas[0]["estado"] == "pendiente"
+
+    entrega_items = (
+        service_client.table("entregas_oc_items")
+        .select("*")
+        .eq("entrega_oc_id", entregas[0]["id"])
+        .execute()
+        .data
+    )
+    # Una sola entrega -> repartir_cantidad(cantidad, 1) = [cantidad] entera para
+    # cada renglón; la suma total planificada = 10 + 20.
+    total_planificado = sum(Decimal(str(ei["cantidad_planificada"])) for ei in entrega_items)
+    assert total_planificado == Decimal("30")
+    for ei in entrega_items:
+        assert Decimal(str(ei["cantidad_entregada"])) == Decimal("0")
+        assert Decimal(str(ei["cantidad_rechazada"])) == Decimal("0")
+
+    extraction_final = (
+        service_client.table("extraction_results")
+        .select("validado, validado_por, validado_at")
+        .eq("id", extraction["id"])
+        .execute()
+        .data[0]
+    )
+    assert extraction_final["validado"] is True
+    assert extraction_final["validado_por"] == seed_usuario_sistema["id"]
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_agrupada_materializa_una_sola_oc_y_valida_todo_el_grupo(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+):
+    cliente = seed_cliente_factory("Clínica del Sol")
+    grupo_id = str(uuid.uuid4())
+    ancla = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Gasa", "cantidad": "5", "precio_unitario": "10"}],
+        columnas=_COLUMNAS_OC,
+        grupo_id=grupo_id,
+    )
+    miembro_2 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "2", "descripcion": "Alcohol", "cantidad": "3", "precio_unitario": "20"}],
+        columnas=_COLUMNAS_OC,
+        grupo_id=grupo_id,
+    )
+    override = OrdenCompraOverride(
+        numero_oc="OC-GRUPO-1",
+        cliente_id=cliente["cliente_id"],
+        filas=[
+            FilaOrdenCompraIn(descripcion="Gasa", cantidad="5", precio_unitario="10"),
+            FilaOrdenCompraIn(descripcion="Alcohol", cantidad="3", precio_unitario="20"),
+        ],
+        entregas=[EntregaPlanIn(numero_entrega=1)],
+    )
+
+    resultado = validar_extraccion(
+        service_client,
+        extraction_id=ancla["id"],  # el ancla es la extracción que el usuario abrió
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        orden_compra=override,
+    )
+
+    assert resultado.extracciones_validadas == 2
+
+    ordenes = (
+        service_client.table("ordenes_compra")
+        .select("id")
+        .eq("extraction_id", ancla["id"])
+        .execute()
+        .data
+    )
+    assert len(ordenes) == 1  # UNA sola OC a partir de los 2 archivos
+
+    filas_finales = {}
+    for extraction_id in (ancla["id"], miembro_2["id"]):
+        fila = (
+            service_client.table("extraction_results")
+            .select("validado, validado_por, validado_at")
+            .eq("id", extraction_id)
+            .execute()
+            .data[0]
+        )
+        assert fila["validado"] is True
+        assert fila["validado_por"] == seed_usuario_sistema["id"]
+        filas_finales[extraction_id] = fila
+
+    assert filas_finales[ancla["id"]]["validado_at"] == filas_finales[miembro_2["id"]]["validado_at"]
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_agrupada_con_miembro_ya_validado_da_conflict_sin_escribir(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+):
+    cliente = seed_cliente_factory("Otro cliente")
+    grupo_id = str(uuid.uuid4())
+    ancla = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "X", "cantidad": "1", "precio_unitario": "1"}],
+        columnas=_COLUMNAS_OC,
+        grupo_id=grupo_id,
+    )
+    seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "2", "descripcion": "Y", "cantidad": "1", "precio_unitario": "1"}],
+        columnas=_COLUMNAS_OC,
+        grupo_id=grupo_id,
+        validado=True,
+        validado_por=seed_usuario_sistema["id"],
+        validado_at=datetime.now(timezone.utc).isoformat(),
+    )
+    override = OrdenCompraOverride(
+        numero_oc="OC-GRUPO-2",
+        cliente_id=cliente["cliente_id"],
+        filas=[FilaOrdenCompraIn(descripcion="X", cantidad="1", precio_unitario="1")],
+        entregas=[EntregaPlanIn(numero_entrega=1)],
+    )
+
+    with pytest.raises(ConflictError):
         validar_extraccion(
+            service_client,
+            extraction_id=ancla["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=None,
+            orden_compra=override,
+        )
+
+    ordenes = (
+        service_client.table("ordenes_compra")
+        .select("id")
+        .eq("extraction_id", ancla["id"])
+        .execute()
+        .data
+    )
+    assert ordenes == []  # nada se escribió
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_mismo_numero_oc_clientes_distintos_ambas_confirman(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+):
+    for razon_social in ("Cliente A de unicidad", "Cliente B de unicidad"):
+        cliente = seed_cliente_factory(razon_social)
+        extraction = seed_extraction_result_factory(
+            "orden_compra",
+            filas=[{"numero_renglon": "1", "descripcion": "Item", "cantidad": "1", "precio_unitario": "1"}],
+            columnas=_COLUMNAS_OC,
+        )
+        override = OrdenCompraOverride(
+            numero_oc="OC-DUP-1",
+            cliente_id=cliente["cliente_id"],
+            filas=[FilaOrdenCompraIn(descripcion="Item", cantidad="1", precio_unitario="1")],
+            entregas=[EntregaPlanIn(numero_entrega=1)],
+        )
+
+        resultado = validar_extraccion(
             service_client,
             extraction_id=extraction["id"],
             usuario_id=seed_usuario_sistema["id"],
-            proceso_comercial_id=seed_proceso_comercial["id"],
+            proceso_comercial_id=None,
+            orden_compra=override,
+        )
+
+        assert resultado.orden_compra_id is not None
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_mismo_numero_oc_mismo_cliente_da_conflict(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+):
+    cliente = seed_cliente_factory("Cliente C de unicidad")
+    extraction_1 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Item", "cantidad": "1", "precio_unitario": "1"}],
+        columnas=_COLUMNAS_OC,
+    )
+    extraction_2 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Item", "cantidad": "1", "precio_unitario": "1"}],
+        columnas=_COLUMNAS_OC,
+    )
+
+    def _override():
+        return OrdenCompraOverride(
+            numero_oc="OC-DUP-2",
+            cliente_id=cliente["cliente_id"],
+            filas=[FilaOrdenCompraIn(descripcion="Item", cantidad="1", precio_unitario="1")],
+            entregas=[EntregaPlanIn(numero_entrega=1)],
+        )
+
+    validar_extraccion(
+        service_client,
+        extraction_id=extraction_1["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        orden_compra=_override(),
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            service_client,
+            extraction_id=extraction_2["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=None,
+            orden_compra=_override(),
         )
 
 
