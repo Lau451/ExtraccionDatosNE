@@ -561,27 +561,82 @@ recachear una estrategia distinta si lo prefiere.
 
 > Depende de Phase 3 (endpoint `GET /extracciones/{id}/cliente-candidato`).
 
-- [ ] 6.1 [RED] Tests de `ClienteBuscador` (nuevo archivo de test junto al componente, convención del
-  proyecto): `q` de 1 carácter no dispara request; debounce de 300 ms coalesce pulsaciones; la
-  llamada lleva `rol: 'todos'` (no `'clientes'` — test explícito de C7-iii) y filtra por
-  `tiene_rol_cliente`; sin `q` no hay ningún request al montar (arranca vacío).
-- [ ] 6.2 [RED] Tests de `OrdenCompraSelector`: sugerencia de alias se muestra preseleccionada pero
-  "Confirmar OC" sigue deshabilitado hasta el click explícito de "Confirmar cliente" (test del
-  invariante humano); "No es este" abre `ClienteBuscador`; N candidatos de CUIT compartido → N radio
-  buttons, ninguno preseleccionado; sin sugerencia → cae directo al buscador.
-- [ ] 6.3 [GREEN] Modificar `frontend/src/lib/api/extracciones.ts`: tipos `CandidatoCliente`,
-  `CandidatoClienteOut`, `OrigenCandidato`; función `obtenerClienteCandidato(extractionId)`.
-- [ ] 6.4 [GREEN] Crear `frontend/src/features/validar-extraccion/components/ClienteBuscador.tsx`:
-  búsqueda manual sobre `listarTerceros({ q, rol: 'todos', pageSize: 20 })` (D3.2), `q` mínimo 2
-  caracteres, debounce 300 ms, filtrado en cliente por `tiene_rol_cliente`, muestra `razon_social` +
-  `cuit` + `codigo_interno`.
-- [ ] 6.5 [GREEN] Crear `frontend/src/features/validar-extraccion/components/OrdenCompraSelector.tsx`:
-  muestra la sugerencia (alias o CUIT) con botones "Confirmar" / "No es este"; con N candidatos de
-  CUIT compartido, lista de radio buttons; sin sugerencia o tras rechazarla, cae a `ClienteBuscador`;
-  botón de confirmar la OC deshabilitado hasta que haya `cliente_id` elegido; sin input de código.
-- [ ] 6.6 [REFACTOR] Correr `pnpm --filter frontend test -- OrdenCompraSelector ClienteBuscador` en
-  verde; probar manualmente contra el backend de Phase 3 (`pnpm --filter frontend dev` +
-  `GET /extracciones/{id}/cliente-candidato` real).
+- [x] 6.1 [RED] Creado `frontend/src/features/validar-extraccion/components/ClienteBuscador.test.tsx`
+  (convención del proyecto: archivo de test junto al componente, mismo patrón que
+  `GestionTerceros.test.tsx`/`ValidarExtraccionDetalle.test.tsx` — `vitest` + `@testing-library/react`
+  + `vi.mock` del módulo de API + `QueryClientProvider` de test): `q` de 1 carácter no dispara ningún
+  request ni siquiera tras avanzar el debounce (`vi.useFakeTimers` + `advanceTimersByTimeAsync(300)`);
+  arranca vacío — sin tipear nada, ningún request al montar; el debounce de 300ms coalesce 4
+  pulsaciones (`h`→`ho`→`hos`→`hospital`) en **un solo** request con el valor final
+  (`toHaveBeenCalledTimes(1)` + `toHaveBeenCalledWith(objectContaining({q:'hospital'}))` — aserción
+  real, sin debounce el mock se habría llamado 4 veces); la llamada lleva `rol: 'todos'` (nunca
+  `'clientes'` — test explícito de C7-iii) y filtra en el cliente por `tiene_rol_cliente` (mock
+  devuelve un tercero cliente + uno solo-proveedor, se afirma que solo el primero se renderiza).
+  Confirmado RED: `corepack pnpm test -- ClienteBuscador OrdenCompraSelector` (vía `frontend/` directo,
+  ver nota de tooling en 6.6) → `Failed to resolve import "./ClienteBuscador"` — el componente no
+  existe todavía, la falla RED esperada, corrida antes de 6.4.
+- [x] 6.2 [RED] Creado
+  `frontend/src/features/validar-extraccion/components/OrdenCompraSelector.test.tsx`, con
+  `./ClienteBuscador` mockeado para aislar el componente bajo test (patrón de aislamiento de
+  subcomponente, no usado antes en este proyecto para features propias pero sí implícito en cómo
+  `vi.mock` aísla módulos de API — aplicado acá porque `OrdenCompraSelector` compone `ClienteBuscador`
+  como pieza ya testeada por separado en 6.1). **Arnés del invariante humano**
+  (`ArnesConBotonConfirmarOC`): envuelve `OrdenCompraSelector` con un botón local "Confirmar OC"
+  deshabilitado hasta que el callback `onClienteConfirmado` dispare — reproduce sin necesitar Phase 8
+  el contrato real que design.md § D3/D3.2 le exige al selector. Sugerencia de alias se muestra
+  preseleccionada (texto visible) pero "Confirmar OC" sigue deshabilitado hasta el click explícito de
+  "Confirmar cliente"; tras el click, se habilita (aserción real: el callback debe ejecutarse de
+  verdad para que el arnés cambie de estado). "No es este" abre el buscador manual (`ClienteBuscador`
+  mockeado, antes ausente de pantalla). N=2 candidatos de CUIT compartido → 2 radio buttons, ninguno
+  preseleccionado (`not.toBeChecked()` en cada uno) y "Confirmar OC" sigue deshabilitado. Sin
+  sugerencia (`origen: 'ninguno'`) cae directo al buscador sin pasar por "No es este" (ese botón ni
+  siquiera se renderiza en ese caso). Confirmado RED: mismo comando que 6.1 →
+  `Failed to resolve import "./OrdenCompraSelector"`, corrida antes de 6.5.
+- [x] 6.3 [GREEN] Agregado a `frontend/src/lib/api/extracciones.ts`: tipos `OrigenCandidato`
+  (`'alias' | 'cuit' | 'cuit_compartido' | 'ninguno'`), `CandidatoCliente`, `CandidatoClienteOut` —
+  espejo literal de los modelos Pydantic reales de `services/presupuestacion/extraccion/models.py`
+  (leídos antes de escribir, no asumidos desde design.md); función
+  `obtenerClienteCandidato(extractionId)` sobre `GET /extracciones/{id}/cliente-candidato` (router.py
+  real, Phase 3), mismo patrón `presupuestacionFetch` que el resto del archivo.
+- [x] 6.4 [GREEN] Creado `frontend/src/features/validar-extraccion/components/ClienteBuscador.tsx`:
+  estado `texto`/`textoDebounced` + `useEffect`/`setTimeout` de 300ms — **mismo patrón exacto** ya en
+  producción en `GestionTerceros.tsx` (`DEBOUNCE_BUSQUEDA_MS = 300`), no un mecanismo nuevo; búsqueda
+  vía `listarTerceros({ q: textoDebounced, rol: 'todos', pageSize: 20 })` habilitada solo con
+  `textoDebounced.length >= 2`; filtrado en cliente por `tercero.tiene_rol_cliente === true` (C7-iii);
+  cada resultado muestra `razon_social` + `cuit` + `codigo_interno`. `pytest` no aplica (frontend);
+  `corepack pnpm test -- ClienteBuscador` → **4 passed** (GREEN confirmado tras 6.4).
+- [x] 6.5 [GREEN] Creado `frontend/src/features/validar-extraccion/components/OrdenCompraSelector.tsx`:
+  `useQuery(obtenerClienteCandidato(extractionId))`; rama por `origen` — `'ninguno'` o
+  `mostrarBuscador===true` (tras "No es este") → `<ClienteBuscador>`; `'cuit_compartido'` → lista de
+  radio buttons (`useState<string|null>` sin valor inicial, así que ninguno nace marcado) + botón
+  "Confirmar cliente" deshabilitado hasta que haya un radio elegido; `'alias'`/`'cuit'` (1 candidato)
+  → tarjeta de sugerencia con botones "Confirmar cliente" / "No es este". El callback
+  `onClienteConfirmado(clienteId, razonSocialExtraida)` solo se invoca desde los 3 handlers de click
+  explícito (nunca automáticamente al recibir la respuesta del query) — es el contrato que Phase 8
+  usará para habilitar su propio "Confirmar OC" real, ya probado con el arnés de 6.2. Sin input de
+  código en ningún branch (C5). `corepack pnpm test -- OrdenCompraSelector` → **4 passed** (GREEN
+  confirmado tras 6.5).
+- [x] 6.6 [REFACTOR] **Nota de tooling descubierta en este batch**: el repo no tiene `package.json` en
+  la raíz ni `pnpm-workspace.yaml` (`ExtraccionDatosNE/` no es un workspace pnpm) — `pnpm --filter
+  frontend test` del prompt de esta fase falla con `ERR_PNPM_NO_PKG_MANIFEST` porque no hay manifiesto
+  que resolver ese filtro. El comando real que corre la suite de `frontend/` es `pnpm test` (o
+  `vitest run`) ejecutado **dentro** de `frontend/`, confirmado leyendo `frontend/package.json`
+  (`"test": "vitest run"`). Además `pnpm` no estaba en el `PATH` de la shell de este batch; se usó
+  `corepack pnpm` (ya presente vía Corepack), que resuelve la misma versión fijada por el proyecto sin
+  instalar nada global. `cd frontend && corepack pnpm test -- OrdenCompraSelector ClienteBuscador` →
+  **8 passed** (4+4, GREEN confirmado, sin necesidad de refactor — el código de 6.4/6.5 quedó limpio
+  en la primera pasada: sin duplicación entre los 3 branches de render, sin mocks de más en los tests
+  — máximo 2 mocks por archivo, `listarTerceros`/`obtenerClienteCandidato` respectivamente, más
+  `./ClienteBuscador` en el selector). Verificación de no-regresión: `corepack pnpm test` (suite
+  completa de `frontend/`) → **148 passed** (140 preexistentes + 8 nuevos, 0 regresiones).
+  `corepack pnpm build` (`tsc -b && vite build`) → **sin errores de tipo**, build completo en 909ms.
+  **Prueba manual contra el backend real de Phase 3, no alcanzada**: este batch de `sdd-apply` corre
+  sin navegador ni sesión interactiva (no hay forma de abrir `pnpm --filter frontend dev` y clickear a
+  través de la UI desde este entorno) — el propio prompt de esta fase contempla explícitamente esta
+  posibilidad ("notar si este paso manual no es prácticamente alcanzable... y conformarse con la suite
+  automatizada sola"). Queda pendiente como verificación manual humana antes de mergear PR6, o como
+  parte del flujo end-to-end manual explícito de la tarea 8.7 (que si cubre el mismo camino con los 3
+  componentes ya cableados en `ValidarExtraccionDetalle`).
 
 ## Phase 7: Frontend — Cabecera de grupo, entregas y carga múltiple (D13, D13.1, D8)
 
