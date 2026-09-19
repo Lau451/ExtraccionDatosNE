@@ -274,6 +274,15 @@ def crear_orden_compra(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("ordenes_compra").insert(fila).execute().data[0]
 
 
+def borrar_orden_compra(client: Client, *, orden_compra_id: str) -> None:
+    """Compensación manual (no hay transacción real vía PostgREST): usada por
+    `_materializar_orden_compra` para deshacer el insert de `ordenes_compra`
+    cuando un insert posterior (oc_items/entregas_oc/...) falla, evitando
+    dejar una fila huérfana que bloquearía un reintento vía
+    `uq_oc_por_cliente`."""
+    client.table("ordenes_compra").delete().eq("id", orden_compra_id).execute()
+
+
 def insertar_oc_items(client: Client, filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not filas:
         return []

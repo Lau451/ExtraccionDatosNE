@@ -14,6 +14,7 @@ from services.presupuestacion.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from services.presupuestacion.extraccion import repository as repo
 from services.presupuestacion.extraccion.models import (
     EntregaPlanIn,
     FilaOrdenCompraIn,
@@ -519,6 +520,142 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
     )
     assert extraction_final["validado"] is True
     assert extraction_final["validado_por"] == seed_usuario_sistema["id"]
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_precio_unitario_con_coma_no_crashea(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+    monkeypatch,
+):
+    # Bugfix (bug 1): precio_unitario="890,75" (coma decimal, formato real
+    # que produce el extractor Gemini) crasheaba con "invalid input syntax
+    # for type numeric" -- _materializar_orden_compra mandaba el string crudo
+    # al insert de oc_items, sin pasar por _a_decimal() como sí hace la
+    # validación previa (_validar_orden_compra_override). Prueba en vivo
+    # contra el proyecto de test: si el bug volviera, este test falla con el
+    # mismo APIError 22P02 del reporte original, no con un mock.
+    cliente = seed_cliente_factory("Farmacia Los Andes")
+    extraction = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[
+            {
+                "numero_renglon": "1",
+                "descripcion": "Paracetamol",
+                "cantidad": "10,5",
+                "precio_unitario": "890,75",
+            },
+        ],
+        columnas=_COLUMNAS_OC,
+    )
+    override = OrdenCompraOverride(
+        numero_oc="OC-INT-COMA-1",
+        cliente_id=cliente["cliente_id"],
+        filas=[
+            FilaOrdenCompraIn(
+                numero_renglon_documento="1",
+                descripcion="Paracetamol",
+                cantidad="10,5",
+                precio_unitario="890,75",
+            ),
+        ],
+        entregas=[EntregaPlanIn(numero_entrega=1)],
+    )
+    monkeypatch.setattr(stock, "entregar_stock_producto", MagicMock())
+
+    resultado = validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        orden_compra=override,
+    )
+
+    assert resultado.orden_compra_id is not None
+
+    item = (
+        service_client.table("oc_items")
+        .select("*")
+        .eq("orden_compra_id", resultado.orden_compra_id)
+        .execute()
+        .data[0]
+    )
+    assert Decimal(str(item["precio_unitario"])) == Decimal("890.75")
+    assert Decimal(str(item["cantidad"])) == Decimal("10.5")
+
+
+@pytest.mark.integration
+def test_validar_orden_compra_falla_en_items_no_deja_orden_huerfana(
+    service_client,
+    seed_drogueria,
+    seed_proceso_comercial,
+    seed_extraction_result_factory,
+    seed_usuario_sistema,
+    seed_cliente_factory,
+    monkeypatch,
+):
+    # Bugfix (bug 2): si insertar_oc_items falla DESPUÉS de que
+    # crear_orden_compra ya comprometió la fila padre contra la DB real, esa
+    # fila quedaba huérfana (sin oc_items) y bloquearía cualquier reintento
+    # futuro vía uq_oc_por_cliente con un conflicto sin relación con la causa
+    # real. Prueba en vivo: crear_orden_compra corre de verdad contra el
+    # proyecto de test; solo insertar_oc_items se mockea para simular la
+    # falla. Si la compensación no funcionara, quedaría una fila real en
+    # ordenes_compra sin oc_items.
+    cliente = seed_cliente_factory("Droguería del Centro")
+    extraction = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[
+            {
+                "numero_renglon": "1",
+                "descripcion": "Ibuprofeno",
+                "cantidad": "10",
+                "precio_unitario": "150",
+            },
+        ],
+        columnas=_COLUMNAS_OC,
+    )
+    override = OrdenCompraOverride(
+        numero_oc="OC-INT-HUERFANA-1",
+        cliente_id=cliente["cliente_id"],
+        filas=[
+            FilaOrdenCompraIn(
+                numero_renglon_documento="1",
+                descripcion="Ibuprofeno",
+                cantidad="10",
+                precio_unitario="150",
+            ),
+        ],
+        entregas=[EntregaPlanIn(numero_entrega=1)],
+    )
+    monkeypatch.setattr(stock, "entregar_stock_producto", MagicMock())
+
+    def _falla(*args, **kwargs):
+        raise RuntimeError("simulando falla de red en insertar_oc_items")
+
+    monkeypatch.setattr(repo, "insertar_oc_items", _falla)
+
+    with pytest.raises(RuntimeError, match="simulando falla de red"):
+        validar_extraccion(
+            service_client,
+            extraction_id=extraction["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=None,
+            orden_compra=override,
+        )
+
+    ordenes_huerfanas = (
+        service_client.table("ordenes_compra")
+        .select("id")
+        .eq("cliente_id", cliente["cliente_id"])
+        .execute()
+        .data
+    )
+    assert ordenes_huerfanas == []
 
 
 @pytest.mark.integration

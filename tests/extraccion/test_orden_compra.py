@@ -313,6 +313,62 @@ def test_materializar_licitacion_sigue_leyendo_item_sin_fallback_no_regresion():
 
 
 # =============================================================================
+# Bugfix -- decimales con coma sin convertir antes del insert de oc_items
+# (bug encontrado en vivo: precio_unitario="890,75" crashea con
+# "invalid input syntax for type numeric" porque _materializar_orden_compra
+# manda fila.cantidad/fila.precio_unitario crudos, sin pasar por _a_decimal(),
+# a diferencia de _validar_orden_compra_override que sí los normaliza).
+# =============================================================================
+
+
+def test_precio_unitario_con_coma_se_convierte_a_punto_antes_del_insert(monkeypatch):
+    items_insertados = _preparar_mocks_materializacion(monkeypatch)
+    filas = [_fila(cantidad="10,5", precio="890,75")]
+    override = OrdenCompraOverride(
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas, entregas=[_entrega(numero=1)]
+    )
+
+    service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    assert items_insertados[0]["precio_unitario"] == "890.75"
+    assert items_insertados[0]["cantidad"] == "10.5"
+
+
+# =============================================================================
+# Bugfix -- no atomicidad entre crear_orden_compra e insertar_oc_items: si el
+# segundo insert falla, la fila de ordenes_compra recién creada queda
+# huérfana (bloquea reintentos futuros vía uq_oc_por_cliente). Verificado en
+# vivo. _materializar_orden_compra debe compensar borrando esa fila antes de
+# relanzar la excepción original.
+# =============================================================================
+
+
+def test_falla_en_insertar_oc_items_borra_la_orden_compra_huerfana(monkeypatch):
+    _preparar_mocks_materializacion(monkeypatch)
+
+    borrados: list[str] = []
+    monkeypatch.setattr(repo, "borrar_orden_compra", lambda client, *, orden_compra_id: borrados.append(orden_compra_id))
+
+    def _falla(*args, **kwargs):
+        raise RuntimeError("insert de oc_items falló")
+
+    monkeypatch.setattr(repo, "insertar_oc_items", _falla)
+
+    override = OrdenCompraOverride(
+        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()], entregas=[_entrega(numero=1)]
+    )
+
+    with pytest.raises(RuntimeError, match="insert de oc_items falló"):
+        service._materializar_orden_compra(
+            MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+        )
+
+    assert borrados == ["oc-1"]
+
+
+# =============================================================================
 # GET .../filas para orden_compra agrupada (wiring de _TIPOS_CON_LECTURA_DE_FILAS
 # con _leer_filas_grupo, requerido por 5.10 para que el endpoint muestre el
 # grupo concatenado en vez de solo el archivo ancla -- ver design.md Data Flow

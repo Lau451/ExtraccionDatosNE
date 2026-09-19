@@ -728,98 +728,127 @@ def _materializar_orden_compra(
         raise
     orden_compra_id = orden_compra["id"]
 
-    renglones_sin_producto = 0
-    filas_items = []
-    for posicion, fila in enumerate(override.filas, start=1):
-        if fila.producto_id is None:
-            renglones_sin_producto += 1
-        filas_items.append(
-            {
-                "orden_compra_id": orden_compra_id,
-                "drogueria_id": drogueria_id,
-                "numero_renglon": posicion,  # ordinal interno asignado ACÁ -- D13.1
-                "descripcion": fila.descripcion.strip(),
-                "cantidad": fila.cantidad,
-                "precio_unitario": fila.precio_unitario,
-                "producto_id": fila.producto_id,  # opcional (D11)
-            }
-        )
-    items_creados = repo.insertar_oc_items(client, filas_items)
-    item_id_por_posicion = {item["numero_renglon"]: item["id"] for item in items_creados}
-
-    registrar_evento_ciclo_vida(
-        client,
-        entidad="orden_compra",
-        entidad_id=orden_compra_id,
-        drogueria_id=drogueria_id,
-        tipo_cambio="creacion",
-        origen="usuario",
-        usuario_id=usuario_id,
-    )
-    registrar_cambio(
-        client,
-        entidad="orden_compra",
-        entidad_id=orden_compra_id,
-        drogueria_id=drogueria_id,
-        campo="estado",
-        valor_anterior=None,
-        valor_nuevo="emitida",
-        origen="usuario",
-        usuario_id=usuario_id,
-        batch_id=str(uuid.uuid4()),
-    )
-
-    fecha_base = override.fecha_emision or date.today()
-    modo_manual = any(entrega.cantidades_por_posicion is not None for entrega in override.entregas)
-
-    # Reparto automático (D8): se calcula UNA vez por renglón, sobre TODAS las
-    # entregas, cuando ninguna entrega trae desglose manual.
-    reparto_automatico: dict[int, list[Decimal]] = {}
-    if not modo_manual:
+    # Bug 2 (no atomicidad): `repo.crear_orden_compra` y todos los inserts que
+    # siguen son llamadas REST separadas, sin transacción (limitación de
+    # PostgREST -- una RPC real está fuera de alcance de este fix puntual).
+    # Si cualquiera de ellas falla, la fila de `ordenes_compra` ya insertada
+    # quedaría huérfana (sin oc_items/entregas_oc) y bloquearía un reintento
+    # futuro vía `uq_oc_por_cliente` con un conflicto que no tiene nada que
+    # ver con la causa real. Compensación manual: ante cualquier excepción acá
+    # adentro, borrar esa fila y relanzar la excepción original.
+    try:
+        renglones_sin_producto = 0
+        filas_items = []
         for posicion, fila in enumerate(override.filas, start=1):
-            cantidad_decimal = _a_decimal(fila.cantidad) or Decimal("0")
-            reparto_automatico[posicion] = repartir_cantidad(
-                cantidad_decimal, len(override.entregas)
+            if fila.producto_id is None:
+                renglones_sin_producto += 1
+            # Bug 1 (coma decimal): `fila.cantidad`/`fila.precio_unitario` ya
+            # pasaron por `_a_decimal()` en `_validar_orden_compra_override`
+            # (falla ANTES del primer write si no son números válidos), así
+            # que acá `_a_decimal()` nunca debería devolver None -- pero se
+            # aplica de nuevo (no se reutiliza el resultado de la validación)
+            # para convertir la coma decimal a punto antes de mandarlo a
+            # Postgres, que rechaza "890,75" con invalid input syntax.
+            cantidad_decimal_fila = _a_decimal(fila.cantidad)
+            precio_decimal_fila = _a_decimal(fila.precio_unitario)
+            assert cantidad_decimal_fila is not None, (
+                "cantidad ya validada en _validar_orden_compra_override -- no debería ser None acá"
             )
-
-    entregas_creadas = 0
-    for indice_entrega, entrega in enumerate(override.entregas):
-        fecha_entrega_planificada = (
-            fecha_base + timedelta(days=entrega.plazo_dias)
-            if entrega.plazo_dias is not None
-            else None
-        )
-        fila_entrega = {
-            "orden_compra_id": orden_compra_id,
-            "drogueria_id": drogueria_id,
-            "numero_entrega": entrega.numero_entrega,
-            "fecha_entrega_planificada": (
-                fecha_entrega_planificada.isoformat() if fecha_entrega_planificada else None
-            ),
-            "estado": "pendiente",
-            "cantidad_items": len(override.filas),
-        }
-        entrega_creada = repo.crear_entrega_oc(client, fila_entrega)
-        entregas_creadas += 1
-
-        filas_entrega_items = []
-        for posicion in range(1, len(override.filas) + 1):
-            if modo_manual:
-                valor_bruto = (entrega.cantidades_por_posicion or {}).get(str(posicion), "0")
-                cantidad_planificada = _a_decimal(valor_bruto) or Decimal("0")
-            else:
-                cantidad_planificada = reparto_automatico[posicion][indice_entrega]
-            filas_entrega_items.append(
+            assert precio_decimal_fila is not None, (
+                "precio_unitario ya validado en _validar_orden_compra_override -- no debería ser None acá"
+            )
+            filas_items.append(
                 {
-                    "entrega_oc_id": entrega_creada["id"],
+                    "orden_compra_id": orden_compra_id,
                     "drogueria_id": drogueria_id,
-                    "oc_item_id": item_id_por_posicion[posicion],
-                    "cantidad_planificada": str(cantidad_planificada),
-                    "cantidad_entregada": "0",
-                    "cantidad_rechazada": "0",
+                    "numero_renglon": posicion,  # ordinal interno asignado ACÁ -- D13.1
+                    "descripcion": fila.descripcion.strip(),
+                    "cantidad": str(cantidad_decimal_fila),
+                    "precio_unitario": str(precio_decimal_fila),
+                    "producto_id": fila.producto_id,  # opcional (D11)
                 }
             )
-        repo.insertar_entregas_oc_items(client, filas_entrega_items)
+        items_creados = repo.insertar_oc_items(client, filas_items)
+        item_id_por_posicion = {item["numero_renglon"]: item["id"] for item in items_creados}
+
+        registrar_evento_ciclo_vida(
+            client,
+            entidad="orden_compra",
+            entidad_id=orden_compra_id,
+            drogueria_id=drogueria_id,
+            tipo_cambio="creacion",
+            origen="usuario",
+            usuario_id=usuario_id,
+        )
+        registrar_cambio(
+            client,
+            entidad="orden_compra",
+            entidad_id=orden_compra_id,
+            drogueria_id=drogueria_id,
+            campo="estado",
+            valor_anterior=None,
+            valor_nuevo="emitida",
+            origen="usuario",
+            usuario_id=usuario_id,
+            batch_id=str(uuid.uuid4()),
+        )
+
+        fecha_base = override.fecha_emision or date.today()
+        modo_manual = any(
+            entrega.cantidades_por_posicion is not None for entrega in override.entregas
+        )
+
+        # Reparto automático (D8): se calcula UNA vez por renglón, sobre TODAS las
+        # entregas, cuando ninguna entrega trae desglose manual.
+        reparto_automatico: dict[int, list[Decimal]] = {}
+        if not modo_manual:
+            for posicion, fila in enumerate(override.filas, start=1):
+                cantidad_decimal = _a_decimal(fila.cantidad) or Decimal("0")
+                reparto_automatico[posicion] = repartir_cantidad(
+                    cantidad_decimal, len(override.entregas)
+                )
+
+        entregas_creadas = 0
+        for indice_entrega, entrega in enumerate(override.entregas):
+            fecha_entrega_planificada = (
+                fecha_base + timedelta(days=entrega.plazo_dias)
+                if entrega.plazo_dias is not None
+                else None
+            )
+            fila_entrega = {
+                "orden_compra_id": orden_compra_id,
+                "drogueria_id": drogueria_id,
+                "numero_entrega": entrega.numero_entrega,
+                "fecha_entrega_planificada": (
+                    fecha_entrega_planificada.isoformat() if fecha_entrega_planificada else None
+                ),
+                "estado": "pendiente",
+                "cantidad_items": len(override.filas),
+            }
+            entrega_creada = repo.crear_entrega_oc(client, fila_entrega)
+            entregas_creadas += 1
+
+            filas_entrega_items = []
+            for posicion in range(1, len(override.filas) + 1):
+                if modo_manual:
+                    valor_bruto = (entrega.cantidades_por_posicion or {}).get(str(posicion), "0")
+                    cantidad_planificada = _a_decimal(valor_bruto) or Decimal("0")
+                else:
+                    cantidad_planificada = reparto_automatico[posicion][indice_entrega]
+                filas_entrega_items.append(
+                    {
+                        "entrega_oc_id": entrega_creada["id"],
+                        "drogueria_id": drogueria_id,
+                        "oc_item_id": item_id_por_posicion[posicion],
+                        "cantidad_planificada": str(cantidad_planificada),
+                        "cantidad_entregada": "0",
+                        "cantidad_rechazada": "0",
+                    }
+                )
+            repo.insertar_entregas_oc_items(client, filas_entrega_items)
+    except Exception:
+        repo.borrar_orden_compra(client, orden_compra_id=orden_compra_id)
+        raise
 
     return orden_compra_id, len(items_creados), entregas_creadas, renglones_sin_producto
 
