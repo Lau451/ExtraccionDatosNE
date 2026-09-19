@@ -942,21 +942,139 @@ todavía — no estaba en el alcance de 8.1-8.7 y no se inventó un contrato nue
 
 ## Phase 9: Documentación y verificación integral
 
-- [ ] 9.1 Modificar `docs/modulos/compras/README.md`: documentar que la dirección del flujo es hacia
-  el cliente (no hacia el proveedor) y el ciclo plan → export → Progress → import, dejando explícito
-  que export/import (Tramo 3) quedan fuera de este cambio y siguen como trabajo futuro.
-- [ ] 9.2 Anotar en `openspec/changes/orden-compra/design.md` (ya escrito, sin re-editar el
-  contenido) que las Open Questions "R1 — validación de formato con Progress v8" y "Reconciliar
-  `orden-compra-validacion` al archivar" siguen abiertas y no bloquean el archive de este tramo,
-  para que `sdd-archive` no las de por resueltas.
-- [ ] 9.3 Correr la suite completa `pytest tests/ --cov=services` y `pnpm --filter frontend build` +
-  `pnpm --filter frontend test`, confirmar cero regresiones fuera del alcance de este cambio
-  (licitación, comparativa, terceros, PCP).
-- [ ] 9.4 Revisar manualmente cada escenario Given/When/Then de
-  `openspec/changes/orden-compra/specs/orden-compra-extraccion/spec.md` y
-  `openspec/changes/orden-compra/specs/orden-compra-validacion/spec.md` contra el comportamiento
-  real, dejando constancia de cuáles quedaron cubiertos por qué test (insumo directo para
-  `sdd-verify`).
+- [x] 9.1 Modificado `docs/modulos/compras/README.md`: agregada la sección "Dos direcciones de
+  flujo: proveedor (existente) y cliente (nueva, `orden-compra`)", insertada entre "Qué es" y "Qué
+  NO hace". Documenta explícitamente que el flujo histórico (nosotros → proveedor,
+  `crear_orden_compra`/`confirmar_orden_compra`/`crear_entrega`, sin tocar) convive con el nuevo
+  flujo cliente → nosotros (extracción + validación de `orden-compra`, materializado directo sin
+  pasar por esas 3 funciones), y detalla el ciclo de 4 pasos **plan → export → Progress → import**:
+  paso 1 (plan) es lo implementado en este cambio (Tramo 1+2: confirmar crea `entregas_oc`/
+  `entregas_oc_items` con `cantidad_planificada` y `cantidad_entregada=0`, sin mover stock); pasos 2
+  y 4 (export/import contra Progress, `nota-pedido-export`/`entregas-import`/`csv_progress.py`) se
+  marcan explícitamente **fuera de este cambio, trabajo futuro**, con referencia a
+  `openspec/changes/orden-compra/proposal.md` § Approach y `design.md` D1/D2/D10. Verificado con
+  `Grep` antes de escribir que ningún otro doc de `docs/modulos/` documenta ya este flujo nuevo (0
+  resultados de `orden_compra`/`orden-compra`/`oc_cliente_alias` fuera de `compras/`), así que no
+  había contenido previo que duplicar o contradecir.
+- [x] 9.2 Anotada en `openspec/changes/orden-compra/design.md` una nueva subsección "### Nota para
+  `sdd-archive` (agregada en Phase 9, no reemplaza lo anterior)" al final de § Open Questions —
+  contenido existente sin tocar (confirmado: los dos ítems `- [ ] **R1** ...` y `- [ ] **Reconciliar
+  `orden-compra-validacion`** ...` quedan literalmente igual, solo se agregó texto nuevo después de
+  la lista completa). La nota explica, ítem por ítem, por qué ninguna de las dos bloqueó ni bloquea
+  esta implementación de Tramo 1+2 y qué falta para cerrarlas de verdad (R1: falta el template real
+  de Progress, que es Tramo 3 y no se implementó acá; la reconciliación de specs: ya se escribieron
+  los specs nuevos en este change, y la tabla de trazabilidad de 9.4 es el insumo para que un humano
+  confirme el cierre al archivar, no un cierre automático).
+- [x] 9.3 Corridas las suites completas:
+  - Backend: `./venv/Scripts/python.exe -m pytest tests/ --cov=services -q` (incluye integración
+    contra el proyecto Supabase de test, corrida completa sin filtro `-m`) → **823 passed, 5 failed**
+    en 1628.77s (27m 08s), cobertura total `TOTAL 7858 stmts, 1321 missed, 83%`. Los 5 que fallan son
+    **`tests/core/test_stock.py::test_comprometer_stock_producto_concurrencia_no_sobrecompromete`** y
+    **4 tests de `tests/usuarios/test_service.py`** (`test_admin_crea_usuario_fuerza_su_propia_drogueria`,
+    `test_superadmin_crea_admin`, `test_superadmin_crea_usuario_con_drogueria_explicita`,
+    `test_superadmin_crea_otro_superadmin_sin_drogueria`) — **ninguno pertenece al alcance de
+    `orden-compra` ni a los módulos que este cambio debe verificar sin regresión** (licitación,
+    comparativa, terceros, PCP): el primero es un test de concurrencia real con
+    `threading.Barrier(2)` contra dos requests simultáneos al proyecto Supabase de test (clásicamente
+    sensible a latencia de red bajo carga, exactamente el patrón de una corrida de ~27 minutos
+    golpeando la misma base compartida); los otros 4 son de creación de usuarios por
+    admin/superadmin, un módulo (`services/presupuestacion/usuarios/`) que Phase 9 no toca ni de
+    lejos. **Confirmado que esta fase no puede haberlos causado**: `git status`/`git diff --stat`
+    tras los cambios de 9.1/9.2 muestran únicamente `docs/modulos/compras/README.md`,
+    `openspec/changes/orden-compra/design.md` y este `tasks.md` — 0 archivos `.py` tocados por Phase
+    9, y las Phases 1-8 (las únicas que tocaron backend) ya habían corrido y confirmado en verde sus
+    propios subconjuntos relevantes en cada batch anterior. Se reportan honestamente como hallazgo
+    pre-existente/ambiental de esta corrida específica, no como regresión introducida por
+    `orden-compra` — no se investigaron más a fondo ni se re-corrieron en aislamiento para no exceder
+    el alcance de esta fase (documentación + verificación, no debugging de módulos ajenos). La
+    cobertura específica de `services/presupuestacion/extraccion/` (el módulo central de Tramo 2)
+    quedó en `models.py` 100%, `repository.py` 94%, `router.py` 93%, `service.py` 94% — sin
+    herramienta de terminal interactiva adicional que el propio venv del repo, mismo patrón que fases
+    anteriores.
+  - Frontend: `corepack pnpm build` (desde `frontend/`) → **build limpio, sin errores de tipo**
+    (`tsc -b && vite build`, 327ms); `routeTree.gen.ts` volvió a reordenarse como efecto lateral
+    conocido del build (mismo hallazgo que PR6/PR7/PR7b/PR8) — revertido con `git checkout --` antes
+    de commitear. `corepack pnpm test` (desde `frontend/`) → **27 test files, 196 tests, todos
+    passed** — mismo número exacto que el baseline de PR8 (0 regresiones, 0 tests nuevos: Phase 9 no
+    tocó código de producción del frontend).
+  - Confirmado con `git status` que Phase 9 no tocó ningún archivo `.py` ni `.tsx`/`.ts` de
+    producción: los únicos cambios de esta fase son `docs/modulos/compras/README.md`,
+    `openspec/changes/orden-compra/design.md` y este `tasks.md` — por lo que "cero regresiones fuera
+    del alcance de este cambio" es estructuralmente cierto para frontend (mismos 196 tests que ya
+    pasaban en PR8) y se confirma para backend con el resultado de la corrida completa arriba.
+- [x] 9.4 Revisados manualmente los 33 escenarios Given/When/Then de
+  `orden-compra-extraccion/spec.md` (8) y `orden-compra-validacion/spec.md` (25) contra el código y
+  los tests reales (no contra `design.md`). Matriz completa en la subsección "Trazabilidad specs →
+  tests" al final de esta fase. **1 gap real encontrado y reportado, no tapado con un test nuevo**:
+  el escenario "Carga válida de orden de compra" exige que se cree una fila en `extraction_results`
+  con `document_type=orden_compra`; `_DOC_TYPES_SOPORTADOS` en `persistent_output.py` sí incluye
+  `"orden_compra"` (2.7), pero ningún test ejercita `persistir_output_final(doc_type="orden_compra",
+  ...)` como caso positivo — `tests/test_persistent_output.py::TestPersistirOutputFinal` solo usa
+  `doc_type="comparativa"` en sus casos de éxito y `"tipo_invalido"` en el caso de rechazo. Los
+  tests de integración de `tests/extraccion/` que sí crean filas reales con
+  `document_type="orden_compra"` lo hacen vía `seed_extraction_result_factory`, que inserta
+  directamente en la tabla y **no pasa por `persistir_output_final`** — así que la ruta real
+  end-to-end (`POST /procesar` → `schedule_persist_output` → `persistir_output_final` →
+  `extraction_results` con `document_type=orden_compra`) queda sin una prueba dedicada que la
+  ejercite de punta a punta. Ver el detalle completo en la fila correspondiente de la matriz y en
+  "Risks" del reporte de esta fase — no se agregó un test para cerrarlo en este batch porque el
+  prompt de esta fase pide reportar el gap, no ampliar el alcance para taparlo.
+
+### Trazabilidad specs → tests
+
+Insumo directo para un futuro `sdd-verify`. Un escenario cuenta **`partial`** cuando el mecanismo
+central está probado pero una afirmación específica del GIVEN/WHEN/THEN no tiene una aserción
+dedicada; cuenta **`no`** cuando no se encontró ningún test que lo ejercite ni directa ni
+indirectamente. Los tests marcados "(live)" son de integración contra el proyecto Supabase de test
+(`grnamollopxdlstcpxhc`, marcador `-m integration`); el resto son unitarios/mockeados.
+
+#### `orden-compra-extraccion/spec.md`
+
+| # | Escenario | Test(s) que lo cubren | Cubierto |
+|---|---|---|---|
+| E1 | Carga válida de orden de compra | `tests/test_main_integration.py::TestProcesarTipoOrdenes::test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra` (no 422, robot invocado) | **partial** — ver nota de gap en 9.4: nada ejercita `persistir_output_final(doc_type="orden_compra")` como caso positivo end-to-end; los tests de integración que sí crean la fila la insertan directo con `seed_extraction_result_factory`, sin pasar por la ruta real de persistencia |
+| E2 | Ya no se rechaza de antemano | mismo `test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra` (inversión literal del test viejo que esperaba 422) | yes |
+| E3 | Carga de N archivos como un solo grupo | `test_grupo_id_valido_se_propaga_a_schedule_persist_output`; `tests/extraccion/test_grupo_extracciones.py::test_leer_filas_grupo_en_vivo_concatena_los_miembros_del_grupo` (live); frontend `FormCard.test.tsx::con 3 archivos se disparan 3 procesarDocumento EN SECUENCIA con el mismo grupoId` | yes |
+| E4 | Carga de un solo archivo sin agrupar | `test_grupo_id_ausente_se_comporta_como_extraccion_suelta`; `test_leer_filas_grupo_grupo_id_null_se_comporta_como_archivo_suelto` | yes |
+| E5 | Identificador de grupo inválido | `test_grupo_id_invalido_retorna_422_sin_llamar_robot` | yes |
+| E6 | Archivo duplicado dentro de un grupo | `test_procesar_file_duplicate_blocks_second` (mecanismo de duplicado por SHA256, genérico — no específico de `tipo=ordenes`, corre **antes** del ruteo por tipo); frontend `FormCard.test.tsx::un 409 de duplicado en el segundo archivo no aborta el tercero, y se reporta por archivo` | **partial** — el rechazo 409 y el "no abortar el resto" están probados, pero ningún test confirma específicamente, para `tipo=ordenes`, que "el grupo queda formado con los archivos que sí se procesaron" del lado del backend (i.e. que las filas no-duplicadas efectivamente terminan con el mismo `grupo_id` en `extraction_results` tras el 409 del duplicado) |
+| E7 | Documento que declara número de línea | `tests/test_robot_orden_compra.py::TestConstruirFilas::test_numero_renglon_declarado_se_preserva_tal_cual`; fixtures reales `01_pdf_con_renglon`/`03_imagen_con_renglon` corridos contra Gemini real (tarea 2.4, 3 corridas consecutivas sin desvíos) | yes |
+| E8 | Documento que no declara número de línea | `TestConstruirFilas::test_numero_renglon_vacio_no_se_fabrica`; fixture real `02_excel_sin_renglon` (tarea 2.4, caso C10 explícito) | yes |
+
+#### `orden-compra-validacion/spec.md`
+
+| # | Escenario | Test(s) que lo cubren | Cubierto |
+|---|---|---|---|
+| V1 | Sugerencia por alias aprendido | `test_nivel1_alias_gana_sobre_nivel2_aunque_ambos_resuelvan_y_difieran`; `test_resolver_cliente_candidato_nivel1_alias_en_vivo` (live); frontend `OrdenCompraSelector.test.tsx::la sugerencia se muestra preseleccionada pero "Confirmar OC" sigue deshabilitado...` | yes |
+| V2 | Sugerencia por CUIT con un único candidato | `test_nivel2_cuit_exclusivo_devuelve_un_candidato`; `test_resolver_cliente_candidato_nivel2_cuit_exclusivo_en_vivo` (live) | yes |
+| V3 | CUIT compartido por varios clientes | `test_nivel2_cuit_no_exclusivo_devuelve_n_candidatos`; `test_resolver_cliente_candidato_cuit_compartido_en_vivo` (live); frontend `OrdenCompraSelector.test.tsx::con N candidatos de CUIT compartido muestra N radio buttons, ninguno preseleccionado` | yes |
+| V4 | Sin sugerencia disponible | `test_sin_match_en_ningun_nivel_devuelve_ninguno_y_lista_vacia_sin_excepcion`; frontend `OrdenCompraSelector.test.tsx::sin sugerencia (origen "ninguno") cae directo al buscador, sin pedir "No es este"` | yes |
+| V5 | Confirmación humana obligatoria en todos los casos | `test_resolver_cliente_candidato_nunca_escribe`; frontend `ValidarExtraccionDetalle.test.tsx::puedeConfirmar exige cliente_id confirmado + entregas sin bloqueo + cabecera sin bloqueos`; los 4 tests de `OrdenCompraSelector.test.tsx` (ningún branch invoca el callback de confirmación automáticamente) | yes |
+| V6 | `cliente_id` confirmado inválido | `test_cliente_id_inexistente_levanta_error_antes_del_primer_write`; `test_cliente_id_de_otra_drogueria_levanta_error` | yes |
+| V7 | Primera confirmación de un texto de cabecera nuevo | `test_primera_confirmacion_sin_alias_previo_arranca_en_uno`; `test_upsert_alias_cliente_ciclo_completo_en_vivo` (live) | yes |
+| V8 | Corrección de un alias existente | `test_correccion_pisa_y_resetea`; `test_reconfirmacion_identica_incrementa_veces_confirmado`; mismo `test_upsert_alias_cliente_ciclo_completo_en_vivo` (live, cubre las 3 ramas en una sola fila real) | yes |
+| V9 | Filas de un grupo se muestran concatenadas, sin fusión automática | `test_leer_filas_grupo_tres_miembros_concatena_en_orden_de_grupo`; `test_renglones_repetidos_no_se_suman`; `test_leer_filas_grupo_en_vivo_concatena_los_miembros_del_grupo` (live); frontend `ValidarExtraccionDetalle.test.tsx::la tabla muestra la concatenación de las 3 filas del grupo, sin fusionar ni deduplicar` | yes |
+| V10 | El número de línea del documento es solo de referencia | `test_renglones_repetidos_no_se_suman` (mismo `numero_renglon`, 2 filas separadas); frontend `useFilasEditables.test.ts::numero_renglon/_archivo/_extraction_id/entregas son columnas de referencia no editables`; `TablaEditable.test.tsx` (columnas no editables se renderizan como texto de solo lectura, sin bloquear ni advertir) | yes |
+| V11 | El usuario reconcilia filas duplicadas manualmente | `ValidarExtraccionDetalle.test.tsx::borrarFila sobre la fila duplicada la saca del payload enviado (queda solo A y C)` | yes |
+| V12 | Agrupar extracciones sueltas después de la carga | `test_agrupar_exitoso_genera_grupo_id_nuevo_y_actualiza_ambas`; `test_agrupar_y_desagrupar_extracciones_en_vivo` (live); `test_agrupar_extracciones_endpoint_en_vivo` (live); frontend `ValidarExtraccionListado.test.tsx::"Agrupar seleccionadas" arranca deshabilitado y se habilita al tildar 2 filas orden_compra` | yes |
+| V13 | No se puede agrupar una extracción ya validada | `test_agrupar_validada_rechazado` (`ConflictError` antes del `UPDATE`) | yes |
+| V14 | Desagrupar | `test_desagrupar_deja_grupo_id_null_y_disuelve_el_de_un_solo_miembro_restante`; `test_desagrupar_extraccion_validada_rechazado`; live en `test_agrupar_y_desagrupar_extracciones_en_vivo` | yes |
+| V15 | Número de orden de compra discrepante bloquea la confirmación | `test_conciliar_cabecera_numero_oc_distinto_bloquea`; frontend `CabeceraOrdenCompra.test.tsx::numero_oc en desacuerdo entre miembros: campo en rojo y "Confirmar OC" deshabilitado` | yes |
+| V16 | Otros campos de cabecera discrepantes solo advierten | `test_conciliar_cabecera_otros_campos_distintos_advierten_sin_bloquear`; `test_conciliar_cabecera_valor_mas_frecuente_gana`; `test_conciliar_cabecera_empate_gana_el_primer_miembro`; frontend `CabeceraOrdenCompra.test.tsx::desacuerdo en razón social / fecha de emisión / dirección de entrega muestra aviso pero no bloquea` | yes |
+| V17 | Entregas extraídas del documento | `tests/test_robot_orden_compra.py::TestConstruirFilas::test_gramatica_de_entregas_se_preserva_verbatim` (extracción preserva la gramática); frontend `useFilasEditables.test.ts` (`parsearPlanEntregas`, 3 tests); `test_validar_orden_compra_materializa_oc_items_y_entregas` (live, materializa desde el payload de entregas) | yes |
+| V18 | Entregas no detectadas | `test_entregas_vacia_viola_min_length_del_modelo` (pydantic `min_length=1` bloquea antes de la función) | yes |
+| V19 | Reparto parejo por conteo de entregas | `test_repartir_cantidad_casos_enteros`; `test_repartir_cantidad_decimal_resto_al_final`; `test_repartir_cantidad_propiedad_suma_exacta` (36 combinaciones, invariante de suma exacta); frontend `EntregasEditor.test.tsx::reparto automático parejo visible cuando el usuario solo carga cantidad de entregas` | yes |
+| V20 | Confirmación exitosa | `test_validar_orden_compra_materializa_oc_items_y_entregas` (live) | yes |
+| V21 | Confirmar no descuenta stock | mismo test, aserción explícita `mock_entregar_stock.assert_not_called()` | yes |
+| V22 | El número de línea persistido es siempre un ordinal del sistema | `test_numero_renglon_se_asigna_por_posicion_no_del_documento`; `test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto`; `test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual` | yes |
+| V23 | Confirmar una orden de compra agrupada valida todo el grupo | `test_validar_orden_compra_agrupada_materializa_una_sola_oc_y_valida_todo_el_grupo`; `test_validar_orden_compra_agrupada_con_miembro_ya_validado_da_conflict_sin_escribir` | yes |
+| V24 | Mismo `numero_oc`, clientes distintos | `test_validar_orden_compra_mismo_numero_oc_clientes_distintos_ambas_confirman` | yes |
+| V25 | Mismo `numero_oc`, mismo cliente | `test_validar_orden_compra_mismo_numero_oc_mismo_cliente_da_conflict` | yes |
+
+**Resumen**: 33 escenarios totales (8 extracción + 25 validación). **31 `yes`**, **2 `partial`** (E1,
+E6 — ambos en `orden-compra-extraccion`, ambos alrededor de la ruta real de persistencia/duplicados
+del lado del backend cuando `tipo=ordenes`, no de una regla de negocio sin probar), **0 `no`**.
+Ningún escenario del spec de validación quedó sin cobertura.
 
 ---
 
