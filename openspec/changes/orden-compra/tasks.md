@@ -780,6 +780,22 @@ recachear una estrategia distinta si lo prefiere.
   de levantar `pnpm --filter frontend dev` y subir 3 archivos a mano desde este entorno; el propio
   prompt de esta fase contempla explícitamente esta posibilidad. Queda pendiente como verificación
   manual humana antes de mergear PR7, o como parte del flujo end-to-end de la tarea 8.7.
+- [ ] 7.13 **Cierre de gap post-Phase 7, decidido por el usuario**: `GET /extracciones`
+  (`ExtraccionResumen`) no expone `grupo_id`, así que el indicador visual de agrupación y el botón
+  "Desagrupar" de `ValidarExtraccionListado`/`PendientesTable` dependen hoy de estado en memoria de la
+  sesión (`gruposLocales`), no del dato persistido — se pierde al recargar la página, aunque la
+  agrupación real en la base sigue intacta. Cerrar:
+  - [RED] Extender el test de `services/presupuestacion/extraccion/repository.py::listar_extracciones`
+    (o el que corresponda tras verificar el código real) para afirmar que `grupo_id` viaja en la fila
+    devuelta; extender el test de `GET /extracciones` para afirmar que `ExtraccionResumen.grupo_id`
+    llega en la respuesta.
+  - [GREEN] Agregar `grupo_id: str | None` a `ExtraccionResumen`
+    (`services/presupuestacion/extraccion/models.py`) y al `select` de la query que lo arma.
+  - [RED→GREEN] Frontend: `ValidarExtraccionListado`/`PendientesTable` leen `grupo_id` real de la
+    respuesta de `GET /extracciones` en vez de (o además de, para el caso optimista post-acción)
+    `gruposLocales`; el indicador de grupo sobrevive a un refetch/recarga.
+  - [REFACTOR] Confirmar no-regresión de la suite completa (backend `pytest tests/ -q -m "not
+    integration"` y frontend `corepack pnpm test`).
 
 ## Phase 8: Frontend — Wiring final (`ValidarExtraccionDetalle`, `useFilasEditables`)
 
