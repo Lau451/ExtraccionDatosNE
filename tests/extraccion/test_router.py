@@ -1,4 +1,5 @@
 import secrets
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -90,6 +91,44 @@ def test_listar_extracciones_validado_false_devuelve_solo_pendientes_de_la_propi
             ).execute()
     finally:
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
+
+
+@pytest.mark.integration
+def test_listar_extracciones_expone_grupo_id_persistido(
+    seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, crear_usuario_autenticado,
+):
+    # 7.13 -- gap post-Phase 7: el indicador de agrupación del front debe poder
+    # leer grupo_id directo de GET /extracciones (no solo del estado en memoria
+    # `gruposLocales`), así sobrevive a un refetch/recarga de página.
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+
+    grupo_id = str(uuid.uuid4())
+    agrupada = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        grupo_id=grupo_id,
+    )
+    suelta = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Amoxicilina 500mg", "cantidad": "5"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+    )
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+
+    por_id = {r.id: r for r in resultado}
+    assert por_id[agrupada["id"]].grupo_id == grupo_id
+    assert por_id[suelta["id"]].grupo_id is None
 
 
 @pytest.mark.integration

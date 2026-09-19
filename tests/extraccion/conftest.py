@@ -7,6 +7,37 @@ import pytest
 from services.presupuestacion.core.texto import normalizar_descripcion
 
 
+def _borrar_orden_compra_en_cascada(service_client, *, orden_compra_id: str) -> None:
+    """Orden de borrado manual para una fila de `ordenes_compra` creada por
+    Phase 5 (`_materializar_orden_compra`) -- mismo patrón que
+    `tests/compras/conftest.py::limpiar_ordenes_compra`. `entregas_oc_items.
+    oc_item_id` (fk_eoci_oci) NO tiene ON DELETE CASCADE, así que un DELETE
+    directo sobre `ordenes_compra` revienta con FK violation si no se borra
+    esto a mano primero: `ordenes_compra`.CASCADE -> `oc_items`/`entregas_oc`
+    en paralelo, pero `entregas_oc_items` solo cascadea desde `entregas_oc`
+    (no desde `oc_items`), y Postgres puede intentar borrar `oc_items` antes
+    de que la cascada de `entregas_oc` haya limpiado `entregas_oc_items`."""
+    entregas = (
+        service_client.table("entregas_oc")
+        .select("id")
+        .eq("orden_compra_id", orden_compra_id)
+        .execute()
+        .data
+    )
+    for entrega in entregas:
+        service_client.table("entregas_oc_items").delete().eq(
+            "entrega_oc_id", entrega["id"]
+        ).execute()
+    for entrega in entregas:
+        service_client.table("entregas_oc").delete().eq("id", entrega["id"]).execute()
+
+    service_client.table("historial_cambios").delete().eq(
+        "orden_compra_id", orden_compra_id
+    ).execute()
+    service_client.table("oc_items").delete().eq("orden_compra_id", orden_compra_id).execute()
+    service_client.table("ordenes_compra").delete().eq("id", orden_compra_id).execute()
+
+
 @pytest.fixture
 def seed_cliente_factory(service_client, seed_drogueria):
     """Alta de cliente en dos pasos (terceros + clientes), mismo patrón que
@@ -63,6 +94,24 @@ def seed_cliente_factory(service_client, seed_drogueria):
 
     yield _seed
     for tercero_id, _drog_id in creados:
+        # 0025 (Phase 5): ordenes_compra.cliente_id (fk_oc_cli) y
+        # oc_cliente_alias.cliente_id (fk_oca_cliente) NO tienen ON DELETE
+        # CASCADE -- si un test de integración confirmó una OC contra este
+        # cliente o le aprendió un alias (_registrar_alias_cliente), hay que
+        # limpiar eso ANTES de borrar el tercero. El orden de teardown entre
+        # fixtures independientes (esta y seed_extraction_result_factory) NO
+        # está garantizado, así que este cleanup es redundante a propósito:
+        # si ya se borró desde el otro lado, estas queries no encuentran nada.
+        ordenes = (
+            service_client.table("ordenes_compra")
+            .select("id")
+            .eq("cliente_id", tercero_id)
+            .execute()
+            .data
+        )
+        for oc in ordenes:
+            _borrar_orden_compra_en_cascada(service_client, orden_compra_id=oc["id"])
+        service_client.table("oc_cliente_alias").delete().eq("cliente_id", tercero_id).execute()
         # fk_cli_tercero (clientes -> terceros) es ON DELETE CASCADE -- borrar el
         # tercero alcanza para limpiar la fila de rol también.
         service_client.table("terceros").delete().eq("id", tercero_id).execute()
@@ -222,5 +271,21 @@ def seed_extraction_result_factory(
             ).execute()
         for item in items:
             service_client.table("items_proceso").delete().eq("id", item["id"]).execute()
+
+        # 0025 (Phase 5): ordenes_compra.extraction_id (fk_oc_extr) no tiene
+        # ON DELETE CASCADE -- si esta extracción fue el ancla de una
+        # confirmación de orden de compra (D13.1 § Confirmación), hay que
+        # borrar esa fila (y su cascada oc_items/entregas_oc/
+        # entregas_oc_items, y su historial_cambios sin cascade) antes de
+        # poder borrar extraction_results.
+        ordenes = (
+            service_client.table("ordenes_compra")
+            .select("id")
+            .eq("extraction_id", extraction_id)
+            .execute()
+            .data
+        )
+        for oc in ordenes:
+            _borrar_orden_compra_en_cascada(service_client, orden_compra_id=oc["id"])
 
         service_client.table("extraction_results").delete().eq("id", extraction_id).execute()

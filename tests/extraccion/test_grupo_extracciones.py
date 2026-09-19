@@ -423,6 +423,49 @@ def test_desagrupar_extraccion_validada_rechazado(monkeypatch):
 
 
 # =============================================================================
+# 7.13 -- GET /extracciones expone grupo_id persistido (gap post-Phase 7): el
+# indicador de agrupación del front debe leer el dato real de la respuesta, no
+# depender únicamente del estado en memoria `gruposLocales`.
+# =============================================================================
+
+
+def test_listar_extracciones_expone_grupo_id_de_cada_fila(monkeypatch):
+    filas = [
+        {
+            "id": "ext-a",
+            "document_type": "orden_compra",
+            "source_filename": "a.pdf",
+            "row_count": 1,
+            "status": "completed",
+            "validado": False,
+            "proceso_comercial_id": None,
+            "created_at": "2026-09-19T10:00:00+00:00",
+            "grupo_id": "grupo-1",
+            "procesos_comerciales": None,
+        },
+        {
+            "id": "ext-b",
+            "document_type": "licitacion",
+            "source_filename": "b.pdf",
+            "row_count": 2,
+            "status": "completed",
+            "validado": False,
+            "proceso_comercial_id": None,
+            "created_at": "2026-09-19T10:05:00+00:00",
+            "grupo_id": None,
+            "procesos_comerciales": None,
+        },
+    ]
+    monkeypatch.setattr(repo, "listar_extracciones", lambda client, **kw: filas)
+
+    resumenes = service.listar_extracciones(MagicMock(), validado=None, limit=50, offset=0)
+
+    por_id = {r.id: r for r in resumenes}
+    assert por_id["ext-a"].grupo_id == "grupo-1"  # persistido -> sobrevive a un refetch
+    assert por_id["ext-b"].grupo_id is None  # sin grupo -> None, no rompe el resto de tipos
+
+
+# =============================================================================
 # 4.9 -- contra el proyecto Supabase de test (grnamollopxdlstcpxhc).
 # =============================================================================
 
