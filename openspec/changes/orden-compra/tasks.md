@@ -838,36 +838,107 @@ recachear una estrategia distinta si lo prefiere.
 
 > Depende de Phase 5 (payload `orden_compra` real), 6 y 7 (todos los componentes nuevos).
 
-- [ ] 8.1 [RED] Tests de `useFilasEditables`: entrada `orden_compra` en
-  `CAMPOS_POR_DOCUMENT_TYPE`; nuevo `CampoTipo` `'decimal-positivo'` valida `precio_unitario`;
-  `parsearPlanEntregas()` parsea `"50@30|50@60"` y rechaza gramática malformada; columnas
-  `_archivo`/`_extraction_id`/`numero_renglon` se muestran pero no son editables (click no abre
-  `CeldaEditable`); `numero_renglon` se renderiza vacío cuando el documento no lo declaró.
-- [ ] 8.2 [RED] Tests de `ValidarExtraccionDetalle`: con `documentType === 'orden_compra'` no
-  renderiza `ProcesoComercialSelector`, renderiza `CabeceraOrdenCompra` + `OrdenCompraSelector` +
-  `EntregasEditor`; el payload enviado lleva `orden_compra` y no `filas`; `puedeConfirmar` exige
-  `cliente_id` confirmado y ≥1 entrega válida y cabecera sin bloqueos; `onBorrarFila`/`onAgregarFila`
-  siguen cableadas igual que hoy (líneas 127-128) — no se tocan.
-- [ ] 8.3 [RED] Test explícito de reconciliación manual (D13.1): con un grupo de 3 miembros, la tabla
-  muestra la suma de las filas; `borrarFila` sobre una fila duplicada la saca del payload enviado; no
-  existe ningún selector de modo de fusión en la pantalla.
-- [ ] 8.4 [GREEN] Modificar `frontend/src/features/validar-extraccion/useFilasEditables.ts`: entrada
-  `orden_compra` en `CAMPOS_POR_DOCUMENT_TYPE`; `CampoTipo` `'decimal-positivo'`;
-  `parsearPlanEntregas()`; columnas sintéticas/de referencia no editables — `borrarFila`/`agregarFila`
-  (líneas 118, 124) no se tocan.
-- [ ] 8.5 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
-  rama `documentType === 'orden_compra'` que renderiza `CabeceraOrdenCompra` + `OrdenCompraSelector` +
-  `EntregasEditor` en vez de `ProcesoComercialSelector`; envía `orden_compra` en vez de `filas`;
-  `puedeConfirmar` con las tres condiciones.
-- [ ] 8.6 [GREEN] Extender `frontend/src/lib/api/extracciones.ts` con los tipos restantes:
-  `FilaOrdenCompraIn`, `EntregaPlanIn`, `OrdenCompraOverride`, `ValidarExtraccionPayload.orden_compra`;
-  `ResultadoValidarExtraccion.proceso_comercial_id: string | null` (cambio de contrato — verificar que
-  ningún consumidor rompe, `ValidarExtraccionDetalle.tsx:62-66` solo invalida y navega).
-- [ ] 8.7 [REFACTOR] Correr `pnpm --filter frontend test -- ValidarExtraccionDetalle
-  useFilasEditables` en verde. Flujo manual end-to-end completo contra el backend real: subir 1
-  archivo → validar con sugerencia de alias → confirmar → verificar `ordenes_compra`/`oc_items`/
-  `entregas_oc` en la base de test. Repetir con 3 archivos agrupados al subir y con 2 extracciones
-  agrupadas post-hoc.
+- [x] 8.1 [RED] Tests de `useFilasEditables` (`useFilasEditables.test.ts`, nuevos `describe`
+  "orden_compra (D6/D13.1, Phase 8)" y "parsearPlanEntregas"): entrada `orden_compra` en
+  `CAMPOS_POR_DOCUMENT_TYPE` con las 7 columnas de D6/D13.1; `numero_renglon`/`entregas`/`_archivo`/
+  `_extraction_id` con `editable: false`; `numero_renglon` vacío cuando el documento no lo declaró;
+  columnas de referencia nunca aportan error aunque estén vacías; `CampoTipo` `'decimal-positivo'`
+  rechaza vacío/no-numérico/`"0"`/negativo y acepta positivo con coma decimal;
+  `parsearPlanEntregas()` parsea `"50@30|50@60"` (2 planes) y un plan único, `""` → `[]` (no
+  declarado, sin error), y rechaza 7 variantes de gramática malformada (`it.each`). El
+  comportamiento "click no abre `CeldaEditable`" es DOM (no aplica a `renderHook`) — se probó por
+  separado en `TablaEditable.test.tsx` (archivo nuevo, ver nota de alcance abajo). Confirmado RED:
+  `pnpm test -- useFilasEditables TablaEditable ValidarExtraccionDetalle` → **24 failed, 172
+  passed** (los 24 son exactamente los tests nuevos de 8.1-8.3; los 172 preexistentes no se tocaron),
+  ejecutado antes de 8.4-8.6.
+- [x] 8.2 [RED] Tests de `ValidarExtraccionDetalle` (nuevo `describe` "rama orden_compra (Phase 8)"
+  en `ValidarExtraccionDetalle.test.tsx`), con `OrdenCompraSelector`/`CabeceraOrdenCompra`/
+  `EntregasEditor` reemplazados por stubs mínimos que exponen solo su contrato de callback ya
+  probado en Phase 6/7 (`onClienteConfirmado`/`onCambio`) — Phase 8 prueba el WIRING, no vuelve a
+  probar cada componente hijo: con `document_type === 'orden_compra'` no renderiza
+  `ProcesoComercialSelector`, sí renderiza los 3 stubs; el payload enviado a `validarExtraccion`
+  lleva `orden_compra` (no `filas`); `puedeConfirmar` exige `cliente_id` confirmado + entregas sin
+  bloqueo + cabecera sin bloqueos (las 3, con el caso negativo de cabecera bloqueada y de entregas
+  bloqueadas); `onBorrarFila`/`onAgregarFila` siguen cableadas igual que hoy — verificado con un
+  test de comportamiento (agregar fila suma un textbox de descripción; borrar fila muestra
+  "Deshacer"), no por número de línea (la ubicación real de las líneas 127-128 citadas en el prompt
+  cambió tras Phases 6-7; el comportamiento en sí, sin tocar `hook.borrarFila`/`hook.agregarFila`,
+  es lo que se verificó y sigue intacto).
+- [x] 8.3 [RED] Test explícito de reconciliación manual (D13.1) (nuevo `describe` "reconciliación
+  manual de grupo" en `ValidarExtraccionDetalle.test.tsx`): con un grupo de 3 miembros (mismo
+  `numero_renglon` de documento, `_extraction_id` distinto cada uno — el caso real de
+  `_leer_filas_grupo`, Phase 4), la tabla muestra las 3 filas concatenadas (3 textbox de
+  descripción, sin fusionar ni deduplicar); `borrarFila` sobre la fila duplicada la saca del
+  payload enviado (`orden_compra.filas` queda con 2 elementos, los otros 2 renglones); ningún texto
+  ni `combobox` relacionado con "fusión" existe en la pantalla (assertion negativa explícita,
+  D13.1/C10 — el concepto no existe en absoluto, ni como selector deshabilitado ni oculto).
+- [x] 8.4 [GREEN] Modificado `frontend/src/features/validar-extraccion/useFilasEditables.ts`:
+  `CampoConfig.editable?: boolean` (default `true`, retrocompatible); entrada `orden_compra` en
+  `CAMPOS_POR_DOCUMENT_TYPE` (`numero_renglon`/`entregas`/`_archivo`/`_extraction_id` con
+  `editable: false`; `descripcion`/`cantidad`/`precio_unitario` editables); `CampoTipo`
+  `'decimal-positivo'` en `validarCampo()` (vacío/no-numérico/`<=0` inválido, espejo del lado
+  cliente de `_validar_orden_compra_override`); `erroresPorCelda` saltea columnas con
+  `editable === false` (nunca bloquean confirmación); exportada `parsearPlanEntregas()` (función
+  pura, gramática D6 literal: `plan ("|" plan)*`, `plan := cantidad "@" plazo_dias`, `plazo_dias`
+  entero `>= 0` vía `/^\d+$/`). `borrarFila`/`agregarFila` no se tocaron (confirmado con `grep -n
+  "function borrarFila\|function agregarFila"` — mismas líneas, mismo cuerpo).
+- [x] 8.5 [GREEN] Modificado `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
+  nuevo estado local para la rama `orden_compra` (`clienteId`/`razonSocialExtraida`/`cabecera`/
+  `cabeceraBloqueada`/`entregas`/`entregasBloqueadas`); rama `esOrdenCompra` que renderiza
+  `CabeceraOrdenCompra` + `OrdenCompraSelector` (en vez de `ProcesoComercialSelector`) y, debajo de
+  la tabla, `EntregasEditor` (recibe `hook.filas` no borradas mapeadas a `{descripcion, cantidad}` —
+  reactivo a los edits/altas/bajas de la tabla); `puedeConfirmar` con las 3 condiciones exactas del
+  prompt; `construirOrdenCompraOverride()` arma el payload real desde el estado del container +
+  `hook.filas`, mapeando `numero_renglon` (columna, solo referencia) → `numero_renglon_documento`
+  (campo del payload, D13.1) y `producto_id: null` siempre (D11, sin selector de producto en esta
+  pantalla — fuera de alcance de Phase 8). **`mutationFn` generalizado** de
+  `(filas) => validarExtraccion(id, {proceso_comercial_id, filas})` a
+  `(payload: ValidarExtraccionPayload) => validarExtraccion(id, payload)` para poder enviar
+  `{orden_compra}` en vez de `{proceso_comercial_id, filas}` sin dos mutations paralelas — el path
+  de "confirmar sin editar" (D7, filas > 500) se dejó con su semántica exacta anterior
+  (`{proceso_comercial_id, filas: null}`), sin extender a `orden_compra` porque el backend no
+  soporta materializar una OC sin `cliente_id`/`entregas`; ver nota de alcance abajo.
+- [x] 8.6 [GREEN] Extendido `frontend/src/lib/api/extracciones.ts` con los tipos restantes —
+  `FilaOrdenCompraIn`, `EntregaPlanIn`, `OrdenCompraOverride` (espejo literal de
+  `services/presupuestacion/extraccion/models.py`, sin `modo_fusion`), `ValidarExtraccionPayload.
+  orden_compra?: OrdenCompraOverride | null`; `ResultadoValidarExtraccion.proceso_comercial_id:
+  string | null` (cambio de contrato). **Verificado que ningún consumidor rompe**: único consumidor
+  de `ResultadoValidarExtraccion` es `mutation.onSuccess` en `ValidarExtraccionDetalle.tsx`, que
+  solo invalida queries y navega (no lee el campo) — confirmado con `grep -rn
+  "ResultadoValidarExtraccion\|proceso_comercial_id" frontend/src` (sin otros usos fuera de este
+  archivo y del propio `extracciones.ts`). `pnpm build` (`tsc -b`) sin errores de tipos confirma
+  además que no hay ningún otro consumidor roto por el cambio `string` → `string | null`.
+- [x] 8.7 [REFACTOR] `pnpm test -- ValidarExtraccionDetalle useFilasEditables TablaEditable` (desde
+  `frontend/`, con `corepack pnpm`) → **196 passed** (GREEN confirmado tras 8.4-8.6; incluye los 24
+  tests RED de 8.1-8.3 + los 172 preexistentes, 0 regresiones). Suite completa del frontend:
+  `corepack pnpm test` → **196 passed** (mismo número — la suite completa ya son exactamente estos
+  27 archivos). `corepack pnpm build` → limpio, sin errores de tipos; `routeTree.gen.ts` reordenado
+  como efecto lateral conocido (mismo patrón que PR6/PR7/PR7b), revertido con `git checkout --`
+  antes de commitear. Backend (no debería estar afectado, confirmado): `git status` muestra 0
+  archivos `.py` tocados por este batch; `pytest tests/ -q -m "not integration"` (venv) → **381
+  passed** (mismo número que el baseline de PR7b, 0 regresiones). **Flujo manual end-to-end contra
+  el backend real: NO ejecutado.** Mismo caveat documentado por PR6/PR7 ("no reachable from this
+  headless environment") — este entorno no tiene navegador interactivo ni acceso a
+  `pnpm dev` + click-through manual. Se confía en la suite automatizada (196 tests, incluye el
+  payload real enviado a `validarExtraccion` con la conversión de fecha DD/MM/AAAA → ISO, el mapeo
+  `numero_renglon` → `numero_renglon_documento`, y la reconciliación de grupo de 3 miembros) como
+  evidencia de que el wiring es correcto extremo a extremo del lado del cliente.
+
+**Nota de alcance (hallazgo de este batch, documentado en el propio código)**: `fecha_emision` en
+`CabeceraOrdenCompra` es el texto crudo `DD/MM/AAAA` que extrae el documento (D6); el backend tipa
+`OrdenCompraOverride.fecha_emision` como `date` (Pydantic v2, solo acepta ISO `YYYY-MM-DD` para
+strings). Sin conversión, cualquier fecha detectada habría roto la confirmación con un 422 — no
+estaba listado explícitamente en 8.1-8.6, pero es necesario para que el wiring funcione de verdad.
+Se agregó `fechaCsvAIso()` (función pura en `ValidarExtraccionDetalle.tsx`, formato inválido/vacío →
+`null`, cae al default del backend) y se cubrió en el test del payload (8.2, fecha
+`"12/09/2026"` → `"2026-09-12"`).
+
+**Nota de alcance (D7, gap preexistente no resuelto en este batch)**: el path "confirmar sin editar"
+(`DocumentoDemasiadoGrande`, filas_leidas > 500) sigue enviando `{proceso_comercial_id, filas: null}`
+para cualquier `document_type`, incluido `orden_compra`. El diseño no define una forma de
+materializar una OC sin cliente/entregas (`OrdenCompraOverride` es obligatorio y no tiene un modo
+"desde CSV sin override"), así que ese escape hatch no tiene una traducción natural a `orden_compra`
+todavía — no estaba en el alcance de 8.1-8.7 y no se inventó un contrato nuevo para resolverlo.
 
 ## Phase 9: Documentación y verificación integral
 
