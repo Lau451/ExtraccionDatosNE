@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ValidarExtraccionDetalle } from './ValidarExtraccionDetalle'
 
@@ -20,16 +21,146 @@ vi.mock('@/lib/api/procesosComerciales', () => ({
   crearProcesoComercial: vi.fn(),
 }))
 
-import { obtenerFilasExtraccion } from '@/lib/api/extracciones'
+// Los 3 componentes de Phases 6/7 ya tienen su propio contrato probado
+// (OrdenCompraSelector.test.tsx, CabeceraOrdenCompra.test.tsx,
+// EntregasEditor.test.tsx). Acá se reemplazan por stubs mínimos que exponen
+// SOLO el contrato de callback ya establecido (onClienteConfirmado /
+// onCambio) -- Phase 8 prueba el WIRING, no vuelve a probar cada componente.
+vi.mock('./components/OrdenCompraSelector', () => ({
+  OrdenCompraSelector: ({
+    onClienteConfirmado,
+  }: {
+    onClienteConfirmado: (clienteId: string, razonSocialExtraida: string | null) => void
+  }) => (
+    <div>
+      <p>orden-compra-selector-stub</p>
+      <button type="button" onClick={() => onClienteConfirmado('cli-1', 'HOSPITAL CENTRAL')}>
+        stub-confirmar-cliente
+      </button>
+    </div>
+  ),
+}))
+
+vi.mock('./components/CabeceraOrdenCompra', () => ({
+  CabeceraOrdenCompra: ({
+    onCambio,
+  }: {
+    onCambio: (
+      cabecera: { numero_oc: string; fecha_emision: string; direccion_entrega: string },
+      bloqueado: boolean,
+    ) => void
+  }) => {
+    // Espeja el default real de CabeceraOrdenCompra: reporta su cabecera
+    // (precargada, sin desacuerdo) apenas se monta, vía un useEffect --
+    // igual que el componente real (design.md/CabeceraOrdenCompra.tsx).
+    useEffect(() => {
+      onCambio(
+        { numero_oc: 'OC-4471', fecha_emision: '12/09/2026', direccion_entrega: 'Av. Siempreviva 742' },
+        false,
+      )
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    return (
+      <div>
+        <p>cabecera-orden-compra-stub</p>
+        <button
+          type="button"
+          onClick={() => onCambio({ numero_oc: '', fecha_emision: '', direccion_entrega: '' }, true)}
+        >
+          stub-cabecera-bloqueada
+        </button>
+      </div>
+    )
+  },
+}))
+
+vi.mock('./components/EntregasEditor', () => ({
+  EntregasEditor: ({
+    onCambio,
+  }: {
+    onCambio: (
+      entregas: { numero_entrega: number; plazo_dias: number | null; cantidades_por_posicion: null }[],
+      bloqueado: boolean,
+    ) => void
+  }) => {
+    // Espeja el default real de EntregasEditor: 1 entrega automática, sin
+    // bloqueo, reportada apenas se monta (mismo patrón que el componente real).
+    useEffect(() => {
+      onCambio([{ numero_entrega: 1, plazo_dias: null, cantidades_por_posicion: null }], false)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    return (
+      <div>
+        <p>entregas-editor-stub</p>
+        <button type="button" onClick={() => onCambio([], true)}>
+          stub-entregas-bloqueadas
+        </button>
+      </div>
+    )
+  },
+}))
+
+import { obtenerFilasExtraccion, validarExtraccion } from '@/lib/api/extracciones'
 
 function renderConQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
+const FILA_OC = (overrides: Record<string, string> = {}) => ({
+  numero_oc: 'OC-4471',
+  fecha_emision: '12/09/2026',
+  cuit_cliente: '30712345679',
+  razon_social_cliente: 'HOSPITAL SAN ROQUE',
+  direccion_entrega: 'Av. Siempreviva 742',
+  cantidad_entregas: '1',
+  numero_renglon: '1',
+  descripcion: 'Ibuprofeno 400mg x 20',
+  cantidad: '100',
+  precio_unitario: '1250,00',
+  entregas: '',
+  _archivo: 'oc-hospital.pdf',
+  _extraction_id: 'ext-1',
+  ...overrides,
+})
+
+function mockFilasOrdenCompra(filas: ReturnType<typeof FILA_OC>[]) {
+  vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+    extraction_id: 'abc',
+    document_type: 'orden_compra',
+    row_count: filas.length,
+    filas_leidas: filas.length,
+    editable: true,
+    columnas: Object.keys(filas[0] ?? {}),
+    filas,
+    grupo_id: null,
+    miembros: [],
+    advertencias_cabecera: [],
+  })
+}
+
+async function confirmarCliente() {
+  fireEvent.click(await screen.findByText('stub-confirmar-cliente'))
+}
+
+async function abrirYConfirmarDialogo() {
+  fireEvent.click(screen.getByRole('button', { name: /^confirmar validación$/i }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: /^confirmar validación$/i }))
+}
+
 beforeEach(() => {
   navigateMock.mockReset()
   vi.mocked(obtenerFilasExtraccion).mockReset()
+  vi.mocked(validarExtraccion).mockReset()
+  vi.mocked(validarExtraccion).mockResolvedValue({
+    extraction_id: 'abc',
+    document_type: 'orden_compra',
+    proceso_comercial_id: null,
+    filas_creadas: 1,
+    comparativa_id: null,
+    reemplazo_version_anterior: false,
+  })
 })
 
 describe('ValidarExtraccionDetalle — gate de tamaño (D7)', () => {
@@ -58,5 +189,150 @@ describe('ValidarExtraccionDetalle — gate de tamaño (D7)', () => {
 
     await waitFor(() => expect(obtenerFilasExtraccion).toHaveBeenCalledWith('abc'))
     expect(screen.queryByText(/documento demasiado grande/i)).not.toBeInTheDocument()
+  })
+})
+
+// Phase 8 (D7/D13/D13.1) — wiring final: rama document_type === 'orden_compra'.
+describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
+  it('no renderiza ProcesoComercialSelector; renderiza CabeceraOrdenCompra + OrdenCompraSelector + EntregasEditor', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    expect(screen.getByText('orden-compra-selector-stub')).toBeInTheDocument()
+    expect(screen.getByText('entregas-editor-stub')).toBeInTheDocument()
+    expect(screen.queryByText(/proceso comercial/i)).not.toBeInTheDocument()
+  })
+
+  it('onBorrarFila/onAgregarFila siguen cableadas igual que hoy: agregar fila suma una fila vacía a la tabla', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    expect(screen.getAllByRole('textbox', { name: /^descripción fila/i })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /agregar fila/i }))
+
+    expect(screen.getAllByRole('textbox', { name: /^descripción fila/i })).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: /^borrar fila 1$/i }))
+    expect(screen.getByRole('button', { name: /^deshacer borrado de fila 1$/i })).toBeInTheDocument()
+  })
+
+  it('puedeConfirmar exige cliente_id confirmado + entregas sin bloqueo + cabecera sin bloqueos', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    const botonConfirmar = screen.getByRole('button', { name: /^confirmar validación$/i })
+
+    // Cabecera y entregas ya se auto-reportaron sin bloqueo al montar (mismo
+    // comportamiento del componente real) -- solo falta el cliente.
+    expect(botonConfirmar).toBeDisabled()
+
+    await confirmarCliente()
+    // Las 3 condiciones están cumplidas: cliente confirmado, entregas sin
+    // bloqueo, cabecera sin bloqueos.
+    await waitFor(() => expect(botonConfirmar).not.toBeDisabled())
+
+    // Si la cabecera pasa a bloqueada (p. ej. numero_oc en desacuerdo sin
+    // resolver), puedeConfirmar vuelve a false.
+    fireEvent.click(screen.getByText('stub-cabecera-bloqueada'))
+    expect(botonConfirmar).toBeDisabled()
+  })
+
+  it('con entregas bloqueadas (suma de desglose manual no cuadra), puedeConfirmar es false', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+
+    fireEvent.click(screen.getByText('stub-entregas-bloqueadas'))
+
+    expect(screen.getByRole('button', { name: /^confirmar validación$/i })).toBeDisabled()
+  })
+
+  it('el payload enviado a validarExtraccion lleva orden_compra (fecha ISO, cliente, filas, entregas) y no filas', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(validarExtraccion).toHaveBeenCalledTimes(1))
+    const [extractionId, payload] = vi.mocked(validarExtraccion).mock.calls[0]
+    expect(extractionId).toBe('abc')
+    expect(payload.filas).toBeUndefined()
+    expect(payload.orden_compra).toMatchObject({
+      numero_oc: 'OC-4471',
+      cliente_id: 'cli-1',
+      razon_social_extraida: 'HOSPITAL CENTRAL',
+      fecha_emision: '2026-09-12', // D6: DD/MM/AAAA en el documento -> ISO para el backend
+      direccion_entrega: 'Av. Siempreviva 742',
+      entregas: [{ numero_entrega: 1, plazo_dias: null, cantidades_por_posicion: null }],
+    })
+    expect(payload.orden_compra?.filas).toEqual([
+      {
+        numero_renglon_documento: '1',
+        descripcion: 'Ibuprofeno 400mg x 20',
+        cantidad: '100',
+        precio_unitario: '1250,00',
+        producto_id: null,
+      },
+    ])
+  })
+})
+
+// Phase 8 / task 8.3 (D13.1) — reconciliación manual explícita de un grupo.
+describe('ValidarExtraccionDetalle — reconciliación manual de grupo (D13.1, task 8.3)', () => {
+  const GRUPO_3_MIEMBROS = [
+    FILA_OC({ numero_renglon: '1', descripcion: 'Renglón A', _extraction_id: 'ext-1', _archivo: 'a.pdf' }),
+    FILA_OC({ numero_renglon: '1', descripcion: 'Renglón B (duplicado)', _extraction_id: 'ext-2', _archivo: 'b.pdf' }),
+    FILA_OC({ numero_renglon: '1', descripcion: 'Renglón C', _extraction_id: 'ext-3', _archivo: 'c.pdf' }),
+  ]
+
+  it('la tabla muestra la concatenación de las 3 filas del grupo, sin fusionar ni deduplicar', async () => {
+    mockFilasOrdenCompra(GRUPO_3_MIEMBROS)
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={3} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    expect(screen.getAllByRole('textbox', { name: /^descripción fila/i })).toHaveLength(3)
+  })
+
+  it('borrarFila sobre la fila duplicada la saca del payload enviado (queda solo A y C)', async () => {
+    mockFilasOrdenCompra(GRUPO_3_MIEMBROS)
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={3} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    fireEvent.click(screen.getByRole('button', { name: /^borrar fila 2$/i }))
+
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(validarExtraccion).toHaveBeenCalledTimes(1))
+    const [, payload] = vi.mocked(validarExtraccion).mock.calls[0]
+    expect(payload.orden_compra?.filas).toHaveLength(2)
+    expect(payload.orden_compra?.filas.map((f) => f.descripcion)).toEqual(['Renglón A', 'Renglón C'])
+  })
+
+  it('no existe ningún selector de modo de fusión en la pantalla', async () => {
+    mockFilasOrdenCompra(GRUPO_3_MIEMBROS)
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={3} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    expect(screen.queryByText(/modo de fusi/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /fusi/i })).not.toBeInTheDocument()
   })
 })

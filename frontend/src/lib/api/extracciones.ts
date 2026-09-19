@@ -56,16 +56,53 @@ export interface FilaComparativaIn {
   precio: string
 }
 
+/** Espejo literal de `FilaOrdenCompraIn` (design.md § Interfaces).
+ * `numero_renglon_documento` es SOLO referencia (C10/D13.1): `oc_items.numero_renglon`
+ * lo asigna el backend por posición al confirmar, nunca este valor. */
+export interface FilaOrdenCompraIn {
+  numero_renglon_documento: string | null
+  descripcion: string
+  cantidad: string
+  precio_unitario: string
+  producto_id: string | null
+}
+
+/** Espejo literal de `EntregaPlanIn` (design.md § Interfaces). La clave de
+ * `cantidades_por_posicion` es la posición 1-based en `OrdenCompraOverride.filas`
+ * -- la misma que se va a asignar como `numero_renglon` (D13.1). */
+export interface EntregaPlanIn {
+  numero_entrega: number
+  plazo_dias: number | null
+  cantidades_por_posicion: Record<string, string> | null
+}
+
+/** Espejo literal de `OrdenCompraOverride` (design.md § Interfaces). Sin
+ * `modo_fusion`: D13.1 elimina ese concepto por completo -- las filas del
+ * grupo se concatenan siempre y el usuario reconcilia editando. */
+export interface OrdenCompraOverride {
+  numero_oc: string
+  cliente_id: string
+  razon_social_extraida: string | null
+  fecha_emision: string | null
+  direccion_entrega: string | null
+  notas: string | null
+  filas: FilaOrdenCompraIn[]
+  entregas: EntregaPlanIn[]
+}
+
 export interface ValidarExtraccionPayload {
   proceso_comercial_id?: string | null
   // undefined/null -> materializa desde el CSV en disco (comportamiento retrocompatible, D2)
   filas?: FilaLicitacionIn[] | FilaComparativaIn[] | null
+  orden_compra?: OrdenCompraOverride | null
 }
 
 export interface ResultadoValidarExtraccion {
   extraction_id: string
   document_type: DocumentType
-  proceso_comercial_id: string
+  // CAMBIO (D7): era `string` -- NULL en la ruta orden_compra
+  // (proceso_comercial_id no aplica, D4).
+  proceso_comercial_id: string | null
   filas_creadas: number
   comparativa_id: string | null
   reemplazo_version_anterior: boolean
