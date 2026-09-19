@@ -12,6 +12,10 @@ export interface ExtraccionResumen {
   proceso_comercial_id: string | null
   proceso_comercial_nombre: string | null
   created_at: string
+  // D13/D13.1 (gap post-Phase 7, task 7.13) -- persistido, para que el
+  // indicador de agrupación del listado sobreviva a un refetch/recarga sin
+  // depender solo del estado en memoria del front (`gruposLocales`).
+  grupo_id?: string | null
 }
 
 /** Espejo literal de `MiembroGrupo` (design.md § D13, Interfaces). */

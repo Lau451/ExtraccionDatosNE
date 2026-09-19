@@ -780,22 +780,59 @@ recachear una estrategia distinta si lo prefiere.
   de levantar `pnpm --filter frontend dev` y subir 3 archivos a mano desde este entorno; el propio
   prompt de esta fase contempla explícitamente esta posibilidad. Queda pendiente como verificación
   manual humana antes de mergear PR7, o como parte del flujo end-to-end de la tarea 8.7.
-- [ ] 7.13 **Cierre de gap post-Phase 7, decidido por el usuario**: `GET /extracciones`
+- [x] 7.13 **Cierre de gap post-Phase 7, decidido por el usuario**: `GET /extracciones`
   (`ExtraccionResumen`) no expone `grupo_id`, así que el indicador visual de agrupación y el botón
   "Desagrupar" de `ValidarExtraccionListado`/`PendientesTable` dependen hoy de estado en memoria de la
   sesión (`gruposLocales`), no del dato persistido — se pierde al recargar la página, aunque la
-  agrupación real en la base sigue intacta. Cerrar:
-  - [RED] Extender el test de `services/presupuestacion/extraccion/repository.py::listar_extracciones`
-    (o el que corresponda tras verificar el código real) para afirmar que `grupo_id` viaja en la fila
-    devuelta; extender el test de `GET /extracciones` para afirmar que `ExtraccionResumen.grupo_id`
-    llega en la respuesta.
-  - [GREEN] Agregar `grupo_id: str | None` a `ExtraccionResumen`
-    (`services/presupuestacion/extraccion/models.py`) y al `select` de la query que lo arma.
-  - [RED→GREEN] Frontend: `ValidarExtraccionListado`/`PendientesTable` leen `grupo_id` real de la
-    respuesta de `GET /extracciones` en vez de (o además de, para el caso optimista post-acción)
-    `gruposLocales`; el indicador de grupo sobrevive a un refetch/recarga.
-  - [REFACTOR] Confirmar no-regresión de la suite completa (backend `pytest tests/ -q -m "not
-    integration"` y frontend `corepack pnpm test`).
+  agrupación real en la base sigue intacta. Cerrado en PR7b (`feat/orden-compra-07b-grupo-id-listado`,
+  branch off PR7). Verificado contra el código real: la función correcta es
+  `repository.py::listar_extracciones` (confirmado, coincide con el nombre asumido en el enunciado);
+  el tipo TS real que respalda el listado es `ExtraccionResumen` en `frontend/src/lib/api/extracciones.ts`
+  (**plural**) — el `extraccion.ts` singular sugerido en el prompt resultó ser un módulo no relacionado
+  (`DocumentoReciente`/`/api/documentos`, otra pantalla legacy), corregido antes de tocar código.
+  - [x] [RED] Agregado `test_listar_extracciones_expone_grupo_id_de_cada_fila` (unit, sin DB) en
+    `tests/extraccion/test_grupo_extracciones.py`: mockea `repo.listar_extracciones` con 2 filas
+    (`grupo_id` seteado / `None`) y llama `service.listar_extracciones()` real → falla con
+    `AttributeError: 'ExtraccionResumen' object has no attribute 'grupo_id'` (RED confirmado por
+    ejecución, no por inspección). Agregado `test_listar_extracciones_expone_grupo_id_persistido`
+    (integration) en `tests/extraccion/test_router.py`: siembra 2 extracciones `orden_compra` vía
+    `seed_extraction_result_factory` (una con `grupo_id=uuid4()`, otra sin) y llama
+    `router.listar_extracciones_endpoint()` real contra el proyecto Supabase de test
+    (`grnamollopxdlstcpxhc`) → mismo `AttributeError` (RED confirmado por ejecución contra DB real,
+    no un mock — nota: `grupo_id` es columna `uuid`, un string arbitrario como `"grupo-test-7-13"`
+    revienta con `22P02 invalid input syntax for type uuid`, corregido a `str(uuid.uuid4())` antes de
+    llegar al RED real).
+  - [x] [GREEN] Agregado `grupo_id: str | None = None` a `ExtraccionResumen`
+    (`services/presupuestacion/extraccion/models.py`); agregado `grupo_id` al `select(...)` de
+    `repository.py::listar_extracciones` (`service.py::listar_extracciones` no necesitó cambios: ya
+    hace `ExtraccionResumen(**fila, ...)`, y `fila` trae `grupo_id` en cuanto el repository lo
+    selecciona). Ambos tests de RED pasan (`2 passed`).
+  - [x] [RED→GREEN] Frontend: agregado `grupo_id?: string | null` a `ExtraccionResumen`
+    (`frontend/src/lib/api/extracciones.ts`). Diseño elegido en `ValidarExtraccionListado.tsx`: nueva
+    función pura exportada `grupoIdDe(extraccion, gruposLocales)` — prioriza un override LOCAL
+    (`gruposLocales: Record<string, string | null>`, ahora solo optimista post-agrupar/desagrupar de
+    la sesión actual) sobre el `grupo_id` PERSISTIDO de la extracción; sin override usa el dato real.
+    `desagruparMutation.onSuccess` cambia de `delete copia[id]` a `copia[id] = null` (override
+    explícito, no solo ausencia) para poder distinguir "sin dato todavía" de "desagrupada en esta
+    sesión" sin esperar el próximo refetch. `puedeDesagrupar` y `PendientesTable` (badge "Grupo")
+    pasan a leer `grupoIdDe(...)` en vez de indexar `gruposLocales` directo. Tests RED agregados en
+    `ValidarExtraccionListado.test.tsx`: 4 casos unitarios de `grupoIdDe` (sin override + con
+    `grupo_id` persistido, sin override + sin `grupo_id`, override string gana, override `null`
+    explícito gana) + 1 test de componente que mockea `listarExtracciones` para devolver 2 filas ya
+    agrupadas (`grupo_id` seteado) SIN pasar por el botón "Agrupar" y verifica que el badge "Grupo"
+    aparece y "Desagrupar" se habilita — falla en RED con `TypeError` (`grupoIdDe` no exportado
+    todavía) y `getAllByText('Grupo')` vacío (5 tests fallando). GREEN: los 5 pasan; el test previo de
+    7.9-7.11 (agrupar → badge → desagrupar → badge desaparece) sigue pasando sin cambios, confirma que
+    el override optimista no rompió el flujo interactivo existente.
+  - [x] [REFACTOR] Backend `pytest tests/ -q -m "not integration"` → **381 passed** (baseline 380 + 1
+    test unitario nuevo, 0 regresiones). `pytest tests/extraccion -m integration -q` (contra
+    `grnamollopxdlstcpxhc`) → **37 passed** (incluye el nuevo test de router, 0 regresiones). Frontend
+    `corepack pnpm test` → **170 passed** (baseline 165 + 5 nuevos, 0 regresiones). `corepack pnpm
+    build` (`tsc -b && vite build`) → sin errores de tipo, build limpio;
+    `frontend/src/routeTree.gen.ts` volvió a reordenarse como efecto lateral del build (mismo hallazgo
+    que PR6/PR7) — revertido con `git checkout --` antes de commitear. Diff total autorado: 8 archivos,
+    161 inserciones / 14 borrados = **175 líneas** (`git diff --stat`), muy por debajo del presupuesto
+    de 400 — no aplica `size:exception`.
 
 ## Phase 8: Frontend — Wiring final (`ValidarExtraccionDetalle`, `useFilasEditables`)
 
