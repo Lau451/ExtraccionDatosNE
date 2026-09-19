@@ -11,6 +11,12 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   proveedor: 'Proveedor',
   marca: 'Marca',
   precio: 'Precio',
+  // orden_compra (D6/D13.1, Phase 8)
+  numero_renglon: 'N° renglón (documento)',
+  precio_unitario: 'Precio unitario',
+  entregas: 'Entregas (documento)',
+  _archivo: 'Archivo',
+  _extraction_id: 'Extracción',
 }
 
 interface Props {
@@ -66,12 +72,34 @@ export function TablaEditable({
               {campos.map((c) => {
                 const key = `${fila._id}:${c.campo}`
                 const siguiente = filas[filaIndex + 1]
+                const valor = String(fila[c.campo] ?? '')
+
+                // Columnas de referencia (D6/D13.1: numero_renglon, entregas,
+                // _archivo, _extraction_id) se muestran como texto plano -- un
+                // click nunca abre un CeldaEditable, el usuario no puede
+                // tocarlas desde acá.
+                if (c.editable === false) {
+                  return (
+                    <td key={c.campo} className="px-3 py-2 align-top">
+                      <span
+                        data-testid={key}
+                        className={clsx(
+                          'block px-2 py-1 text-sm text-slate-500',
+                          fila._borrada && 'line-through',
+                        )}
+                      >
+                        {valor}
+                      </span>
+                    </td>
+                  )
+                }
+
                 return (
                   <td key={c.campo} className="px-3 py-2 align-top">
                     <CeldaEditable
                       fieldId={key}
                       label={`${ETIQUETA_CAMPO[c.campo] ?? c.campo} fila ${filaIndex + 1}`}
-                      value={String(fila[c.campo] ?? '')}
+                      value={valor}
                       error={erroresPorCelda[key]}
                       disabled={fila._borrada}
                       onChange={(valor) => onActualizarCelda(fila._id, c.campo, valor)}
