@@ -7,14 +7,19 @@ from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 from services.presupuestacion.extraccion.models import (
+    AgruparExtraccionesRequest,
+    CandidatoClienteOut,
     ExtraccionResumen,
     FilasExtraccionOut,
     ResultadoValidarExtraccion,
     ValidarExtraccionRequest,
 )
 from services.presupuestacion.extraccion.service import (
+    agrupar_extracciones_para_endpoint,
+    desagrupar_extracciones_para_endpoint,
     leer_filas_extraccion,
     listar_extracciones,
+    obtener_cliente_candidato,
     validar_extraccion_para_endpoint,
 )
 
@@ -71,9 +76,59 @@ def obtener_filas_extraccion_endpoint(
         user_client,
         usuario=usuario,
         extraction_id=extraction_id,
-        select="id, drogueria_id, document_type, csv_disk_path, row_count",
+        select="id, drogueria_id, document_type, csv_disk_path, row_count, grupo_id, "
+        "source_filename",
     )
-    return leer_filas_extraccion(extraccion)
+    return leer_filas_extraccion(extraccion, client=user_client)
+
+
+@router.get(
+    "/extracciones/{extraction_id}/cliente-candidato", response_model=CandidatoClienteOut
+)
+def obtener_cliente_candidato_endpoint(
+    extraction_id: str,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    user_client: Client = Depends(get_user_client),
+) -> CandidatoClienteOut:
+    extraccion = _verificar_pertenencia(
+        user_client,
+        usuario=usuario,
+        extraction_id=extraction_id,
+        select="id, drogueria_id, csv_disk_path",
+    )
+    return obtener_cliente_candidato(user_client, extraccion)
+
+
+@router.post("/extracciones/agrupar")
+def agrupar_extracciones_endpoint(
+    body: AgruparExtraccionesRequest,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    user_client: Client = Depends(get_user_client),
+) -> dict[str, str]:
+    # D13 § Agrupar después -- _verificar_pertenencia POR CADA id con el user
+    # client (RLS real) antes de tocar nada con el service client, mismo
+    # patrón que el resto de los endpoints *_para_endpoint.
+    for extraction_id in body.extraction_ids:
+        _verificar_pertenencia(user_client, usuario=usuario, extraction_id=extraction_id)
+
+    grupo_id = agrupar_extracciones_para_endpoint(
+        extraction_ids=body.extraction_ids, drogueria_id=usuario.drogueria_id
+    )
+    return {"grupo_id": grupo_id}
+
+
+@router.post("/extracciones/desagrupar", status_code=204)
+def desagrupar_extracciones_endpoint(
+    body: AgruparExtraccionesRequest,
+    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    user_client: Client = Depends(get_user_client),
+) -> None:
+    for extraction_id in body.extraction_ids:
+        _verificar_pertenencia(user_client, usuario=usuario, extraction_id=extraction_id)
+
+    desagrupar_extracciones_para_endpoint(
+        extraction_ids=body.extraction_ids, drogueria_id=usuario.drogueria_id
+    )
 
 
 @router.post("/extracciones/{extraction_id}/validar", response_model=ResultadoValidarExtraccion)
@@ -96,4 +151,5 @@ def validar_extraccion_endpoint(
         usuario_id=usuario.id,
         proceso_comercial_id=body.proceso_comercial_id,
         filas_override=filas_override,
+        orden_compra=body.orden_compra,
     )

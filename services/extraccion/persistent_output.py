@@ -25,10 +25,9 @@ logger = logging.getLogger(__name__)
 # Umbral de filas que dispara un WARNING (el INSERT igualmente se ejecuta)
 _WARN_ROW_COUNT = 50_000
 
-# Tipos de documento con pipeline de extraccion real hoy. "orden_compra" todavia
-# no tiene extractor propio (ver presupuestacion/extraccion/) y "cotizacion" es
-# manejado como "licitacion" por el robot generico.
-_DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion"}
+# Tipos de documento con pipeline de extraccion real hoy. "cotizacion" es
+# manejado como "licitacion" por el robot generico (no tiene extractor propio).
+_DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion", "orden_compra"}
 
 
 def calcular_sha256(path: Path) -> str:
@@ -113,6 +112,7 @@ async def persistir_output_final(
     source_filename: str,
     source_sha256: str,
     licitacion_id: str | None = None,
+    grupo_id: str | None = None,
 ) -> UUID | None:
     """
     Persiste la METADATA de una extraccion en extraction_results (schema nuevo de
@@ -151,6 +151,10 @@ async def persistir_output_final(
         source_filename: Nombre del archivo original subido.
         source_sha256:   SHA256 del archivo original (para deduplicacion futura).
         licitacion_id:   proceso_comercial_id ya validado (o None). Se persiste tal cual.
+        grupo_id:        UUID v4 ya validado (o None) que asocia N extracciones de
+                          orden_compra como una sola OC lógica (D13). Se persiste tal
+                          cual, solo si viene. Ignorado para doc_type != "orden_compra"
+                          por el llamador (main.py), no por esta funcion.
 
     Returns:
         UUID del extraction_result insertado, o None si fallo.
@@ -208,6 +212,8 @@ async def persistir_output_final(
     }
     if licitacion_id:
         payload_base["proceso_comercial_id"] = licitacion_id
+    if grupo_id:
+        payload_base["grupo_id"] = grupo_id
 
     try:
         respuesta_base = await asyncio.to_thread(
