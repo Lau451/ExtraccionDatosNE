@@ -19,6 +19,51 @@ eventualmente adjudica (eso es de [`../comparativas/`](../comparativas/README.md
 Compras lee esas tablas por su cuenta (sin importar el código Python de esos módulos) y
 agrega su propia capa de negocio encima — creación, confirmación y entrega de OCs.
 
+## Dos direcciones de flujo: proveedor (existente) y cliente (nueva, `orden-compra`)
+
+El resto de este README, y de los demás documentos del módulo, describe el flujo **histórico**:
+una OC que **nosotros** emitimos hacia un **proveedor**, a partir de un proceso comercial ganado.
+Ese flujo sigue exactamente igual — `crear_orden_compra`/`confirmar_orden_compra`/`crear_entrega`
+no se tocaron.
+
+El cambio `orden-compra` (`openspec/changes/orden-compra/`) agrega una **segunda dirección de
+flujo, hacia el cliente**: una OC que un **cliente** nos envía como documento (PDF/imagen/Excel),
+que se extrae, se valida y se materializa **directamente** en `ordenes_compra`/`oc_items`/
+`entregas_oc` — sin pasar por `crear_orden_compra` ni por `confirmar_orden_compra` — anclada por
+`cliente_id` en vez de `proceso_comercial_id`, y nacida en estado `'emitida'` porque el cliente ya
+la emitió; nosotros solo la registramos. El módulo que hace esa extracción y validación es
+`services/extraccion/` (tercer extractor Gemini, `robot_orden_compra.py`) y
+`services/presupuestacion/extraccion/` (`_materializar_orden_compra()`), no `compras/`: este
+módulo (`compras/`) es el que recibe las filas ya materializadas y el que expondrá, a futuro, el
+ciclo de intercambio con Progress descripto abajo. Ver
+`openspec/changes/orden-compra/design.md` § Technical Approach y D3/D4/D13 para el detalle
+completo.
+
+**El ciclo completo, de punta a punta, es plan → export → Progress → import:**
+
+1. **Plan** (Tramo 1 + Tramo 2 de `orden-compra`, **implementado en este cambio**): al confirmar
+   la OC extraída, se crean en la misma operación las filas de `entregas_oc`
+   (`estado='pendiente'`) y `entregas_oc_items` con `cantidad_planificada` y
+   `cantidad_entregada = 0`. Confirmar **no** mueve stock.
+2. **Export** (Tramo 3, **fuera de este cambio, trabajo futuro**): un CSV de "nota de pedido" que
+   vuelca ese plan (OC + renglones + entregas planificadas) para enviarlo a Progress v8, el ERP
+   legacy que gestiona el envío físico al cliente.
+3. **Progress** (fuera de este repositorio): Progress procesa la nota de pedido y, en algún
+   momento posterior, genera su propio CSV de retorno con lo efectivamente entregado/rechazado por
+   línea.
+4. **Import** (Tramo 3, **fuera de este cambio, trabajo futuro**): un CSV de retorno que
+   **actualiza en el lugar** las mismas filas de `entregas_oc`/`entregas_oc_items` creadas en el
+   paso 1 (nunca crea filas nuevas por esa vía) y mueve stock por **delta**, reutilizando
+   `entregar_stock_producto`/`_recalcular_estado_orden_compra` sin modificarlos.
+
+El principio que ordena el diseño completo (ver `design.md` D1/D2) es que **el plan y el hecho
+viven en la misma fila**: el paso 1 crea la fila con lo planificado, el paso 4 la completa con lo
+real. Los pasos 2 y 4 (export/import contra Progress, módulos `nota-pedido-export` y
+`entregas-import`, archivo `csv_progress.py`) **no existen todavía** — están diseñados
+(`design.md` D10, contratos CSV) pero explícitamente fuera del alcance de `orden-compra` Tramo 1+2
+(ver `openspec/changes/orden-compra/proposal.md` § Approach y `tasks.md`), y quedan como una fase
+futura separada del mismo change.
+
 ## Qué NO hace
 
 - **No auto-detecta `es_drogueria_propia`.** `confirmar_orden_compra` solo marca

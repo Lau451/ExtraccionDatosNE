@@ -1,16 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
 
-type CampoTipo = 'entero' | 'texto' | 'texto-opcional' | 'decimal'
+type CampoTipo = 'entero' | 'texto' | 'texto-opcional' | 'decimal' | 'decimal-positivo'
 
 export interface CampoConfig {
   campo: string
   tipo: CampoTipo
+  /** `false` -> columna de solo referencia (D6/D13.1: `numero_renglon`,
+   * `entregas`, `_archivo`, `_extraction_id`): se muestra en la tabla pero un
+   * click no abre `CeldaEditable`, y nunca aporta a `erroresPorCelda`. Default
+   * (ausente) es `true` -- retrocompatible con licitación/comparativa, que no
+   * declaran esta propiedad. */
+  editable?: boolean
 }
 
 /** Mismos campos/orden que `services/presupuestacion/extraccion/models.py`
  * (`FilaLicitacionIn`/`FilaComparativaIn`) y que la validación de
  * `_validar_filas_override` en el service (design.md §3) -- espejo deliberado
- * en el cliente para que el usuario vea el error antes de mandar el request. */
+ * en el cliente para que el usuario vea el error antes de mandar el request.
+ *
+ * `orden_compra` (Phase 8, D6/D13.1): las columnas de cabecera
+ * (`numero_oc`/`fecha_emision`/`direccion_entrega`/etc.) NO están acá --
+ * `CabeceraOrdenCompra` las edita una sola vez para todo el grupo, no por
+ * fila (D13.1). Acá van solo las columnas de renglón: `numero_renglon`
+ * (referencia visual, C10, nunca editable ni obligatoria), `descripcion`/
+ * `cantidad`/`precio_unitario` (lo que de verdad viaja en `FilaOrdenCompraIn`)
+ * y las columnas sintéticas/de referencia `entregas`/`_archivo`/
+ * `_extraction_id` que `_leer_filas_grupo()` agrega para que el operador vea
+ * de dónde vino cada renglón (D13), pero que tampoco se envían. */
 const CAMPOS_POR_DOCUMENT_TYPE: Record<string, CampoConfig[]> = {
   comparativa: [
     { campo: 'renglon', tipo: 'entero' },
@@ -27,6 +43,15 @@ const CAMPOS_POR_DOCUMENT_TYPE: Record<string, CampoConfig[]> = {
     { campo: 'item', tipo: 'entero' },
     { campo: 'descripcion', tipo: 'texto' },
     { campo: 'cantidad', tipo: 'decimal' },
+  ],
+  orden_compra: [
+    { campo: 'numero_renglon', tipo: 'texto-opcional', editable: false },
+    { campo: 'descripcion', tipo: 'texto' },
+    { campo: 'cantidad', tipo: 'decimal' },
+    { campo: 'precio_unitario', tipo: 'decimal-positivo' },
+    { campo: 'entregas', tipo: 'texto-opcional', editable: false },
+    { campo: '_archivo', tipo: 'texto-opcional', editable: false },
+    { campo: '_extraction_id', tipo: 'texto-opcional', editable: false },
   ],
 }
 
@@ -53,12 +78,62 @@ function validarCampo(tipo: CampoTipo, valor: string): string | null {
     return null
   }
 
+  if (tipo === 'decimal-positivo') {
+    // Espejo del lado cliente de `_validar_orden_compra_override` (D6/D7):
+    // `precio_unitario` es obligatorio y estrictamente positivo -- "vacío
+    // bloquea confirmación" y "0" no es un precio válido.
+    const normalizadoPositivo = limpio.replace(',', '.')
+    const decimalPositivo = Number(normalizadoPositivo)
+    if (!limpio || Number.isNaN(decimalPositivo)) return 'Debe ser un número válido'
+    if (decimalPositivo <= 0) return 'Debe ser mayor a cero'
+    return null
+  }
+
   // decimal -- mismo normalizado "," -> "." que hace hoy _materializar_comparativa
   const normalizado = limpio.replace(',', '.')
   const decimal = Number(normalizado)
   if (!limpio || Number.isNaN(decimal)) return 'Debe ser un número válido'
   if (decimal < 0) return 'No puede ser negativo'
   return null
+}
+
+export interface PlanEntregaCsv {
+  cantidad: string
+  plazo_dias: number
+}
+
+/** Parser de la columna `entregas` del CSV de extracción (D6, gramática
+ * definida en design.md § D6):
+ *
+ *   entregas   := plan ("|" plan)*
+ *   plan       := cantidad "@" plazo_dias
+ *   cantidad   := decimal con "." o "," como separador
+ *   plazo_dias := entero >= 0
+ *
+ * `""` (o solo espacios) significa "el documento no declaró desglose para
+ * esta línea" -- resultado válido, `[]`, sin error. Cualquier otra cosa que
+ * no matchee la gramática devuelve `null` (distinto de `[]`: "declarado pero
+ * roto", no "no declarado"). Puramente informativo/de referencia -- no viaja
+ * en `FilaOrdenCompraIn` (el plan de entregas real lo arma `EntregasEditor`,
+ * D8). */
+export function parsearPlanEntregas(valor: string): PlanEntregaCsv[] | null {
+  const limpio = (valor ?? '').trim()
+  if (!limpio) return []
+
+  const resultado: PlanEntregaCsv[] = []
+  for (const plan of limpio.split('|')) {
+    const partes = plan.split('@')
+    if (partes.length !== 2) return null
+
+    const cantidad = (partes[0] ?? '').trim()
+    const plazoTexto = (partes[1] ?? '').trim()
+
+    if (!cantidad || Number.isNaN(Number(cantidad.replace(',', '.')))) return null
+    if (!/^\d+$/.test(plazoTexto)) return null
+
+    resultado.push({ cantidad, plazo_dias: Number(plazoTexto) })
+  }
+  return resultado
 }
 
 let contadorFilaNueva = 0
@@ -133,7 +208,10 @@ export function useFilasEditables(
     const errores: Record<string, string> = {}
     filas.forEach((fila) => {
       if (fila._borrada) return
-      campos.forEach(({ campo, tipo }) => {
+      campos.forEach(({ campo, tipo, editable }) => {
+        // Columnas de referencia (editable: false) nunca aportan error: el
+        // usuario no puede corregirlas desde la tabla (D13.1).
+        if (editable === false) return
         const mensaje = validarCampo(tipo, String(fila[campo] ?? ''))
         if (mensaje) errores[`${fila._id}:${campo}`] = mensaje
       })

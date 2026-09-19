@@ -1,0 +1,4 @@
+numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas
+OC-7788;15/09/2026;30698765432;FARMACIA DEL NORTE S.R.L.;Av. Rivadavia 1500;3;1;IBUPROFENO 600MG X 30;150;890,75;50@15|50@30|50@45
+OC-7788;15/09/2026;30698765432;FARMACIA DEL NORTE S.R.L.;Av. Rivadavia 1500;3;2;PARACETAMOL 500MG X 20;200;450,00;
+OC-7788;15/09/2026;30698765432;FARMACIA DEL NORTE S.R.L.;Av. Rivadavia 1500;3;3;DICLOFENAC GEL 60G;80;610,30;40@10|40@20
