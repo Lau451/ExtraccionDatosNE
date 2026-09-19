@@ -55,6 +55,37 @@ export interface ResultadoValidarExtraccion {
   reemplazo_version_anterior: boolean
 }
 
+/** Espejo literal de `services/presupuestacion/extraccion/models.py::OrigenCandidato`
+ * (design.md § D3). */
+export type OrigenCandidato = 'alias' | 'cuit' | 'cuit_compartido' | 'ninguno'
+
+/** Espejo literal de `CandidatoCliente` (design.md § D3 / Interfaces). */
+export interface CandidatoCliente {
+  cliente_id: string
+  razon_social: string
+  cuit: string | null
+  codigo_interno: string | null
+  tipo: string
+  activo: boolean
+  cuit_no_exclusivo: boolean
+}
+
+/** Espejo literal de `CandidatoClienteOut` (design.md § D3 / Interfaces):
+ * 1 elemento -> sugerencia única (alias, o CUIT exclusivo); N elementos ->
+ * candidatos de un CUIT compartido (C6); 0 elementos -> el usuario busca a
+ * mano (D3.2). */
+export interface CandidatoClienteOut {
+  origen: OrigenCandidato
+  candidatos: CandidatoCliente[]
+  cuit_extraido: string | null
+  razon_social_extraida: string | null
+  advertencias: string[]
+}
+
+export function obtenerClienteCandidato(extractionId: string): Promise<CandidatoClienteOut> {
+  return presupuestacionFetch<CandidatoClienteOut>(`/extracciones/${extractionId}/cliente-candidato`)
+}
+
 export interface ListarExtraccionesParams {
   validado?: boolean
   limit?: number
