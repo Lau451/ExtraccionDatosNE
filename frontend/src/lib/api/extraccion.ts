@@ -10,7 +10,7 @@ export interface Cliente {
 export interface DocumentoReciente {
   id: string
   source_filename: string
-  document_type: 'licitacion' | 'comparativa'
+  document_type: 'licitacion' | 'comparativa' | 'orden_compra'
   row_count: number
   status: string
   created_at: string
@@ -22,6 +22,9 @@ export interface ProcesarPayload {
   tipo: TipoDocumento
   licitacionId?: string
   clienteId?: string
+  // D13 § Agrupar al subir -- UUID v4 generado por el frontend, compartido
+  // por los N archivos de una misma OC repartida en varios documentos.
+  grupoId?: string
 }
 
 export interface ProcesarResultado {
@@ -44,12 +47,14 @@ export function procesarDocumento({
   tipo,
   licitacionId,
   clienteId,
+  grupoId,
 }: ProcesarPayload): Promise<ProcesarResultado> {
   const formData = new FormData()
   formData.append('archivo', archivo)
   formData.append('tipo', tipo)
   if (licitacionId) formData.append('licitacion_id', licitacionId)
   if (clienteId) formData.append('cliente_id', clienteId)
+  if (grupoId) formData.append('grupo_id', grupoId)
 
   return extraccionFetch('/procesar', {
     method: 'POST',
