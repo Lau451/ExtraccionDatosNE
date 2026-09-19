@@ -1,34 +1,120 @@
-import { useQuery } from '@tanstack/react-query'
-import { listarExtracciones } from '@/lib/api/extracciones'
+import { useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  agruparExtracciones,
+  desagruparExtracciones,
+  listarExtracciones,
+  type ExtraccionResumen,
+} from '@/lib/api/extracciones'
 import { PendientesTable } from './components/PendientesTable'
 
+const EXTRACCIONES_KEY = ['extracciones', { validado: false }]
+
+/** D13 § Agrupar después -- guard puro que espeja las precondiciones de
+ * `agrupar_extracciones` (service.py): al menos 2 filas, todas del mismo
+ * document_type. La UI real solo deja tildar filas orden_compra (ver
+ * PendientesTable), así que "tipos mixtos" es defensivo acá, pero la función
+ * se testea aparte de la integración con la tabla. */
+export function puedeAgruparSeleccion(seleccionadas: ExtraccionResumen[]): boolean {
+  return (
+    seleccionadas.length >= 2 &&
+    seleccionadas.every((extraccion) => extraccion.document_type === 'orden_compra')
+  )
+}
+
 export function ValidarExtraccionListado() {
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  // D13 -- GET /extracciones (ExtraccionResumen) no expone grupo_id (fuera de
+  // alcance de esta fase, solo frontend). Se rastrea acá, en memoria, qué
+  // extracciones se agruparon/desagruparon en esta sesión, para pintar el
+  // indicador y habilitar "Desagrupar" sin depender de un dato que hoy el
+  // listado no devuelve.
+  const [gruposLocales, setGruposLocales] = useState<Record<string, string>>({})
+
   // D-VALIDAREXTRACCION (design.md §9.3) -- POST /procesar persiste en un
   // BackgroundTask del lado de `services/extraccion`; un usuario que sube un
   // documento y navega directo acá puede no verlo todavía. staleTime: 0 +
   // refetchOnWindowFocus (default de TanStack Query) + botón "Actualizar"
   // cubren el caso sin polling -- ver conclusión doble en design.md.
   const query = useQuery({
-    queryKey: ['extracciones', { validado: false }],
+    queryKey: EXTRACCIONES_KEY,
     queryFn: () => listarExtracciones({ validado: false }),
     staleTime: 0,
   })
 
+  const filas = query.data ?? []
+  const filasSeleccionadas = filas.filter((extraccion) => seleccionados.has(extraccion.id))
+
+  const agruparMutation = useMutation({
+    mutationFn: (ids: string[]) => agruparExtracciones(ids),
+    onSuccess: (respuesta, ids) => {
+      setGruposLocales((previo) => {
+        const copia = { ...previo }
+        for (const id of ids) copia[id] = respuesta.grupo_id
+        return copia
+      })
+      setSeleccionados(new Set())
+    },
+  })
+
+  const desagruparMutation = useMutation({
+    mutationFn: (ids: string[]) => desagruparExtracciones(ids),
+    onSuccess: (_data, ids) => {
+      setGruposLocales((previo) => {
+        const copia = { ...previo }
+        for (const id of ids) delete copia[id]
+        return copia
+      })
+      setSeleccionados(new Set())
+    },
+  })
+
+  function alternarSeleccion(id: string) {
+    setSeleccionados((previo) => {
+      const copia = new Set(previo)
+      if (copia.has(id)) copia.delete(id)
+      else copia.add(id)
+      return copia
+    })
+  }
+
+  const puedeDesagrupar =
+    filasSeleccionadas.length >= 1 &&
+    filasSeleccionadas.every((extraccion) => gruposLocales[extraccion.id] !== undefined)
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Validar extracción</h1>
           <p className="text-sm text-slate-500">Extracciones pendientes de revisión</p>
         </div>
-        <button
-          type="button"
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {query.isFetching ? 'Actualizando…' : 'Actualizar'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => desagruparMutation.mutate(Array.from(seleccionados))}
+            disabled={!puedeDesagrupar || desagruparMutation.isPending}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Desagrupar
+          </button>
+          <button
+            type="button"
+            onClick={() => agruparMutation.mutate(Array.from(seleccionados))}
+            disabled={!puedeAgruparSeleccion(filasSeleccionadas) || agruparMutation.isPending}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Agrupar seleccionadas como una sola OC
+          </button>
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {query.isFetching ? 'Actualizando…' : 'Actualizar'}
+          </button>
+        </div>
       </header>
 
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -40,7 +126,30 @@ export function ValidarExtraccionListado() {
           </p>
         )}
 
-        {query.data && <PendientesTable extracciones={query.data} />}
+        {agruparMutation.isError && (
+          <p className="text-sm text-red-600">
+            {agruparMutation.error instanceof Error
+              ? agruparMutation.error.message
+              : 'No se pudo agrupar la selección.'}
+          </p>
+        )}
+
+        {desagruparMutation.isError && (
+          <p className="text-sm text-red-600">
+            {desagruparMutation.error instanceof Error
+              ? desagruparMutation.error.message
+              : 'No se pudo desagrupar la selección.'}
+          </p>
+        )}
+
+        {query.data && (
+          <PendientesTable
+            extracciones={query.data}
+            seleccionados={seleccionados}
+            onAlternarSeleccion={alternarSeleccion}
+            gruposLocales={gruposLocales}
+          />
+        )}
       </div>
     </div>
   )

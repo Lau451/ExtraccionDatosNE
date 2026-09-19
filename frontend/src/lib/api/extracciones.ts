@@ -14,6 +14,12 @@ export interface ExtraccionResumen {
   created_at: string
 }
 
+/** Espejo literal de `MiembroGrupo` (design.md § D13, Interfaces). */
+export interface MiembroGrupo {
+  extraction_id: string
+  source_filename: string
+}
+
 export interface FilasExtraccionOut {
   extraction_id: string
   document_type: DocumentType
@@ -22,6 +28,12 @@ export interface FilasExtraccionOut {
   editable: boolean
   columnas: string[]
   filas: Record<string, string>[]
+  // D13/D13.1 -- solo relevante para document_type='orden_compra'; grupo_id
+  // null y miembros=[] para el resto de los tipos (retrocompatible). Sin
+  // `modo_fusion_sugerido`: D13.1 elimina ese concepto por completo.
+  grupo_id?: string | null
+  miembros?: MiembroGrupo[]
+  advertencias_cabecera?: string[]
 }
 
 /** Mismos nombres de columna que `services/presupuestacion/extraccion/models.py`
@@ -115,5 +127,25 @@ export function validarExtraccion(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+}
+
+/** D13 § Agrupar después -- POST /extracciones/agrupar (router.py real,
+ * Phase 4). Mismo body shape para agrupar y desagrupar
+ * (AgruparExtraccionesRequest), sin modelo separado para la inversa. */
+export function agruparExtracciones(extractionIds: string[]): Promise<{ grupo_id: string }> {
+  return presupuestacionFetch<{ grupo_id: string }>('/extracciones/agrupar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_ids: extractionIds }),
+  })
+}
+
+/** POST /extracciones/desagrupar -- responde 204 sin cuerpo. */
+export function desagruparExtracciones(extractionIds: string[]): Promise<void> {
+  return presupuestacionFetch<void>('/extracciones/desagrupar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_ids: extractionIds }),
   })
 }
