@@ -643,44 +643,143 @@ recachear una estrategia distinta si lo prefiere.
 > Depende de Phase 4 (agrupar/desagrupar) para `ValidarExtraccionListado`, y de Phase 2 (`grupo_id`
 > en `/procesar`) para `FormCard`. No depende de Phase 6.
 
-- [ ] 7.1 [RED] Tests de `CabeceraOrdenCompra`: `numero_oc` en desacuerdo entre miembros → campo en
-  rojo y confirmar deshabilitado; editarlo a un valor único lo habilita; desacuerdo de
-  `razon_social`/`fecha_emision`/`direccion_entrega` muestra aviso pero no bloquea.
-- [ ] 7.2 [RED] Tests de `EntregasEditor`: la suma por renglón que no cuadra deshabilita confirmar,
-  con el mismo mensaje que el espejo del servidor (`_validar_orden_compra_override`); reparto
-  automático parejo visible cuando el usuario solo carga cantidad de entregas.
-- [ ] 7.3 [RED] Tests de `FormCard` multi-archivo: con `tipo='ordenes'` el input acepta múltiples
-  archivos; con 3 archivos se disparan 3 `procesarDocumento` en secuencia con **el mismo**
-  `grupoId` (`crypto.randomUUID()`); un 409 de duplicado en el segundo archivo no aborta el tercero y
-  se reporta por archivo; con `tipo='licitaciones'` el input **no** es múltiple.
-- [ ] 7.4 [RED] Tests de `ValidarExtraccionListado`: acción "Agrupar seleccionadas" deshabilitada con
-  <2 filas seleccionadas o con tipos mixtos; tras agrupar, las filas muestran el indicador de grupo;
-  acción inversa "Desagrupar" disponible sobre un grupo existente.
-- [ ] 7.5 [GREEN] Crear `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.tsx`:
-  cabecera única editable para todo el grupo, precargada con el valor más frecuente entre miembros,
-  campos en desacuerdo marcados, bloqueo solo por `numero_oc`.
-- [ ] 7.6 [GREEN] Crear `frontend/src/features/validar-extraccion/components/EntregasEditor.tsx`:
-  cantidad de entregas + plazo por entrega + desglose opcional por línea, validación en vivo.
-- [ ] 7.7 [GREEN] Modificar `frontend/src/lib/api/extraccion.ts`: `DocumentoReciente.document_type`
-  suma `'orden_compra'`; `ProcesarPayload.grupoId?: string`; `procesarDocumento` lo manda como campo
-  `grupo_id` del `FormData`.
-- [ ] 7.8 [GREEN] Modificar `frontend/src/features/carga-documentos/components/FormCard.tsx`: quitar
-  `disabled: true` de la opción `ordenes` (línea 37) y su badge "Próximamente"; `<input type="file"
-  multiple>` solo cuando `tipo === 'ordenes'`; con N>1 archivos genera `crypto.randomUUID()` y hace N
-  `procesarDocumento` en secuencia con ese `grupoId`, reportando el resultado por archivo;
-  `esperarNuevoDocumento` pasa a esperar que el conteo crezca en N.
-- [ ] 7.9 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`:
-  estado de selección múltiple + acción "Agrupar seleccionadas como una sola OC" (habilitada solo con
-  ≥2 filas `orden_compra` no validadas seleccionadas) + acción inversa "Desagrupar".
-- [ ] 7.10 [GREEN] Modificar `frontend/src/features/validar-extraccion/components/PendientesTable.tsx`:
-  columna de checkbox (solo en filas `orden_compra` no validadas) + indicador visual de pertenencia a
-  un grupo (`ETIQUETA_TIPO` ya contempla `orden_compra`, línea 8 — no tocar).
-- [ ] 7.11 [GREEN] Agregar a `frontend/src/lib/api/extracciones.ts`: `agruparExtracciones(ids)`,
-  `desagruparExtracciones(ids)`; extender `FilasExtraccionOut` con `miembros`/`advertencias_cabecera`
-  (sin `modo_fusion_sugerido`).
-- [ ] 7.12 [REFACTOR] Correr `pnpm --filter frontend test -- CabeceraOrdenCompra EntregasEditor
-  FormCard ValidarExtraccionListado` en verde; probar manualmente el flujo de carga de 3 archivos
-  contra el backend de Phase 2 y 4.
+- [x] 7.1 [RED] Creado
+  `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.test.tsx` (4 tests, mismo
+  patrón de arnés que `OrdenCompraSelector.test.tsx`: un botón local "Confirmar OC" deshabilitado
+  según el `bloqueado` que reporta el componente vía `onCambio`): `numero_oc` en desacuerdo entre 2
+  miembros → input con clase `border-red-500` y "Confirmar OC" deshabilitado; editar el campo a un
+  valor distinto (`'9999'`, deliberadamente NO igual al valor ya precargado por empate — ver nota de
+  diseño en 7.5) lo habilita; desacuerdo en `razon_social_cliente`/`fecha_emision`/`direccion_entrega`
+  muestra un aviso (`getByText(/desacuerdo entre archivos del grupo/i)` con las 3 etiquetas dentro del
+  mismo nodo, via `toHaveTextContent`) sin deshabilitar "Confirmar OC"; sin desacuerdo → sin aviso y
+  habilitado de entrada. Confirmado RED: `corepack pnpm test -- CabeceraOrdenCompra` (desde
+  `frontend/`) → `Failed to resolve import "./CabeceraOrdenCompra"` (el componente no existía
+  todavía), corrida antes de 7.5.
+- [x] 7.2 [RED] Creado
+  `frontend/src/features/validar-extraccion/components/EntregasEditor.test.tsx` (3 tests, mismo
+  patrón de arnés): con 1 renglón (`cantidad: '100'`) y desglose manual activado, `40+40` en 2
+  entregas produce el mensaje **literal** `'renglón 1: la suma de las entregas (80) no coincide con
+  la cantidad del renglón (100)'` — copiado carácter a carácter del f-string real de
+  `_validar_orden_compra_override` (`services/presupuestacion/extraccion/service.py:677-680`, leído
+  antes de escribir el test) — y deshabilita "Confirmar entregas"; sin desglose manual (solo cantidad
+  de entregas = 3), el bloque `data-testid="reparto-automatico"` muestra `'34 / 33 / 33'` (reparto
+  parejo con resto al frente, D8) y el botón queda habilitado; con desglose manual correcto (`60+40`)
+  también queda habilitado. Confirmado RED: `corepack pnpm test -- EntregasEditor` →
+  `Failed to resolve import "./EntregasEditor"`, corrida antes de 7.6.
+- [x] 7.3 [RED] Creado `frontend/src/features/carga-documentos/components/FormCard.test.tsx` (4
+  tests; no existía ningún test de este componente antes de este batch): con `tipo='ordenes'` (tras
+  clickear la pestaña) el `<input type="file">` real del DOM tiene `.multiple === true`; con
+  `tipo='licitaciones'` (default) `.multiple === false`; con 3 archivos, `procesarDocumento` se llama
+  3 veces **en secuencia real** (aserción fuerte: un array `orden` que registra
+  `start:<archivo>`/`end:<archivo>` con un `await Promise.resolve()` entre medio, confirmando
+  `['start:a.pdf','end:a.pdf','start:b.pdf','end:b.pdf','start:c.pdf','end:c.pdf']` — si fuera en
+  paralelo los 3 `start` aparecerían antes que cualquier `end`) y los 3 llevan el **mismo**
+  `grupoId` (`crypto.randomUUID()` mockeado con `vi.spyOn`); un archivo que rechaza con un error que
+  incluye "409" no aborta el tercero — los 3 `procesarDocumento` se invocan igual y el resultado por
+  archivo se ve reflejado en la lista de resultados (`a.pdf`/`c.pdf` con "procesado correctamente",
+  `duplicado.pdf` con el mensaje de error conteniendo "409"). Confirmado RED:
+  `corepack pnpm test -- FormCard` → los 4 tests fallan porque `TIPO_OPTIONS` marcaba `ordenes` como
+  `disabled` (el botón de tab quedaba deshabilitado, sin poder clickearlo) y el input no tenía
+  `multiple` condicional ni `grupoId`/secuenciación — corrida antes de 7.8.
+- [x] 7.4 [RED] Creado
+  `frontend/src/features/validar-extraccion/ValidarExtraccionListado.test.tsx` (6 tests): 3 unitarios
+  sobre un guard puro exportado `puedeAgruparSeleccion()` (deshabilitado con <2 filas, deshabilitado
+  con tipos mixtos, habilitado con 2+ `orden_compra`) + 3 de integración con la tabla real: "Agrupar
+  seleccionadas" arranca deshabilitado y se habilita al tildar 2 checkboxes `orden_compra`; las filas
+  `licitacion` no tienen checkbox (`queryByLabelText` ausente — refuerza que "tipos mixtos" es
+  defensivo, la UI ya no lo permite); tras agrupar (mock de `agruparExtracciones`), ambas filas
+  muestran el texto "Grupo" y "Desagrupar" quedaba deshabilitado hasta reseleccionar esas mismas 2
+  filas, momento en que se habilita, se ejecuta y el indicador desaparece. **Nota de diseño
+  encontrada en este batch, documentada acá y en 7.9/7.10**: `GET /extracciones` (`ExtraccionResumen`,
+  Phase 1-3) no expone `grupo_id` — ni en el modelo pydantic ni en el `select` de
+  `repository.py::listar_extracciones` (verificado leyendo el código real, no asumido) — así que el
+  indicador de grupo y la habilitación de "Desagrupar" se resuelven con estado en memoria
+  (`gruposLocales`, poblado por las propias respuestas de `agruparExtracciones`/
+  `desagruparExtracciones` de esta sesión), no con un dato persistido que hoy el endpoint no
+  devuelve; extender el backend está fuera del alcance frontend-only de esta fase. Confirmado RED:
+  `corepack pnpm test -- ValidarExtraccionListado` → `Failed to resolve import` para
+  `puedeAgruparSeleccion`/`agruparExtracciones`/`desagruparExtracciones` (nada de esto existía
+  todavía), corrida antes de 7.9-7.11.
+- [x] 7.5 [GREEN] Creado
+  `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.tsx`: cabecera editable
+  (`numero_oc`, `fecha_emision`, `direccion_entrega` — los 3 campos que integran `OrdenCompraOverride`)
+  precargada con `valorMasFrecuente()` (espejo de `_valor_mas_frecuente`: empate → primer miembro) a
+  partir de `representativasPorMiembro()` (espejo de `_filas_representativas_por_miembro`: primera
+  fila por `_extraction_id`); bloqueo **solo** por `numero_oc` (`hayDesacuerdoNumeroOc &&
+  !numeroOcEditado` — cualquier edición explícita del campo resuelve el bloqueo, sin importar el
+  valor final, que es justo el comportamiento pedido "editarlo a un valor único lo habilita"); aviso
+  no bloqueante para el resto de `_CAMPOS_CABECERA_ADVERTENCIA` real del backend
+  (`razon_social_cliente`, `cuit_cliente`, `fecha_emision`, `direccion_entrega`,
+  `cantidad_entregas` — leídos de `service.py:408-414` antes de escribir el componente, un campo más
+  que el listado literal de la tarea 7.1). Reporta `(cabecera, bloqueado)` vía `onCambio` en cada
+  cambio (mismo contrato callback-driven que `OrdenCompraSelector::onClienteConfirmado`), para que
+  Phase 8 lo cablee al "Confirmar OC" real sin reescribir este componente.
+- [x] 7.6 [GREEN] Creado
+  `frontend/src/features/validar-extraccion/components/EntregasEditor.tsx`: input de cantidad de
+  entregas (redimensiona arrays de plazos/desgloses), checkbox "Desglosar cantidad por línea
+  manualmente" (desactivado por default → reparto automático), `repartirCantidad()` en TypeScript
+  como **espejo literal** de `repartir_cantidad` (D8, `service.py:585-604`: entero → primeras `resto`
+  entregas `base+1`, resto `base`; decimal → primeras N-1 truncadas a centésimos, la última se lleva
+  el resto) usado para la vista previa `data-testid="reparto-automatico"`; con desglose manual,
+  inputs por `entrega × renglón` (`aria-label="entrega N renglón P"`) y validación en vivo que arma
+  el mensaje de error **carácter a carácter igual** al f-string real de
+  `_validar_orden_compra_override` (`service.py:677-680`) por cada renglón cuya suma no coincide.
+  Reporta `(entregas: EntregaPlanEditable[], bloqueado)` vía `onCambio`, con
+  `cantidades_por_posicion: null` cuando el modo es automático (mismo contrato que `EntregaPlanIn`
+  del backend, D8).
+- [x] 7.7 [GREEN] Modificado `frontend/src/lib/api/extraccion.ts`: `DocumentoReciente.document_type`
+  suma `'orden_compra'`; `ProcesarPayload.grupoId?: string`; `procesarDocumento` agrega
+  `formData.append('grupo_id', grupoId)` solo si viene (mismo patrón condicional que
+  `licitacion_id`/`cliente_id` ya existentes en la función).
+- [x] 7.8 [GREEN] Modificado `frontend/src/features/carga-documentos/components/FormCard.tsx`:
+  quitado `disabled: true` de la opción `ordenes` en `TIPO_OPTIONS` y todo el bloque condicional del
+  badge "Próximamente" (los botones de tab ya no reciben `disabled`/`title`); estado `archivo: File |
+  null` reemplazado por `archivos: File[]`; `<input type="file" multiple={tipo === 'ordenes'}>`;
+  nueva función `procesarMultiple()` que genera `crypto.randomUUID()` **solo** cuando `tipo ===
+  'ordenes' && archivos.length > 1` (con 1 solo archivo `orden_compra` no hace falta grupo — D13:
+  `grupo_id IS NULL` ya se comporta como un archivo suelto) y llama `procesarDocumento` en un `for
+  ...of` con `await` secuencial, capturando cada error por archivo en vez de dejar que aborte el
+  `Promise.all`; `esperarNuevoDocumento` ahora recibe `cantidadEsperada` (antes hardcodeado a 1
+  implícito vía `> countAntes`) y espera `>= countAntes + cantidadEsperada`; `handleFiles()` limita a
+  1 archivo cuando `tipo !== 'ordenes'` aunque el usuario arrastre varios; nueva función
+  `cambiarTipo()` limpia `archivos`/el input/la mutación al cambiar de pestaña (antes no hacía falta
+  porque `ordenes` estaba deshabilitado). Resultado de la mutación pasa de un mensaje único a una
+  lista `resultado.archivo: OK|error` por archivo.
+- [x] 7.9 [GREEN] Modificado
+  `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`: estado
+  `seleccionados: Set<string>` + `gruposLocales: Record<string,string>` (ver nota de diseño de 7.4);
+  exportada `puedeAgruparSeleccion()` como guard puro (≥2 filas + mismo `document_type`); 2
+  `useMutation` (`agruparExtracciones`/`desagruparExtracciones`) que actualizan `gruposLocales` y
+  limpian la selección en `onSuccess`; botón "Agrupar seleccionadas como una sola OC" habilitado por
+  el guard sobre `filasSeleccionadas`; botón "Desagrupar" habilitado cuando **todas** las filas
+  seleccionadas (≥1) ya están en `gruposLocales`.
+- [x] 7.10 [GREEN] Modificado
+  `frontend/src/features/validar-extraccion/components/PendientesTable.tsx`: `ETIQUETA_TIPO` **no
+  tocado** (confirmado con `grep` antes y después del cambio); nuevas props opcionales
+  `seleccionados`/`onAlternarSeleccion`/`gruposLocales`; columna de checkbox nueva al inicio de la
+  fila, renderizada **solo** cuando `document_type === 'orden_compra'` (este listado ya filtra
+  `validado=false` en la query de `ValidarExtraccionListado`, así que no hace falta re-chequear
+  `validado` acá); badge "Grupo" junto al nombre de archivo cuando `gruposLocales[extraccion.id]`
+  existe.
+- [x] 7.11 [GREEN] Agregado a `frontend/src/lib/api/extracciones.ts`: `MiembroGrupo` (espejo de
+  `MiembroGrupo` pydantic), `agruparExtracciones(extractionIds)` (`POST /extracciones/agrupar`,
+  mismo body `{extraction_ids}` que `AgruparExtraccionesRequest` real), `desagruparExtracciones(ids)`
+  (`POST /extracciones/desagrupar`, 204 sin cuerpo — `presupuestacionFetch` ya maneja body vacío con
+  `.json().catch(() => null)`); `FilasExtraccionOut` extendida con `grupo_id?`, `miembros?:
+  MiembroGrupo[]`, `advertencias_cabecera?: string[]` (opcionales para no romper los usos existentes
+  de licitación/comparativa que no los mandan) — **sin** `modo_fusion_sugerido`, confirmado que no se
+  agregó ningún campo con ese nombre.
+- [x] 7.12 [REFACTOR] `cd frontend && corepack pnpm test -- CabeceraOrdenCompra EntregasEditor
+  FormCard ValidarExtraccionListado` → **165 passed** (los 4 archivos nuevos/afectados, GREEN
+  confirmado tras 7.5-7.11: 4+3+4+6 = 17 tests nuevos sobre 148 preexistentes). Suite completa
+  `corepack pnpm test` → **165 passed, 0 regresiones**. `corepack pnpm build` (`tsc -b && vite build`)
+  → sin errores de tipo, build completo en 1.37s; `frontend/src/routeTree.gen.ts` volvió a
+  reordenarse como efecto lateral del build (mismo hallazgo que PR6) — revertido con `git checkout
+  --` antes de commitear. **Prueba manual contra el backend real de Phases 2/4, no alcanzada**: mismo
+  motivo que 6.6 — este batch de `sdd-apply` corre sin navegador ni sesión interactiva, no hay forma
+  de levantar `pnpm --filter frontend dev` y subir 3 archivos a mano desde este entorno; el propio
+  prompt de esta fase contempla explícitamente esta posibilidad. Queda pendiente como verificación
+  manual humana antes de mergear PR7, o como parte del flujo end-to-end de la tarea 8.7.
 
 ## Phase 8: Frontend — Wiring final (`ValidarExtraccionDetalle`, `useFilasEditables`)
 
