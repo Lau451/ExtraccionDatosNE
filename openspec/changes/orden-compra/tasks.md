@@ -643,97 +643,438 @@ recachear una estrategia distinta si lo prefiere.
 > Depende de Phase 4 (agrupar/desagrupar) para `ValidarExtraccionListado`, y de Phase 2 (`grupo_id`
 > en `/procesar`) para `FormCard`. No depende de Phase 6.
 
-- [ ] 7.1 [RED] Tests de `CabeceraOrdenCompra`: `numero_oc` en desacuerdo entre miembros → campo en
-  rojo y confirmar deshabilitado; editarlo a un valor único lo habilita; desacuerdo de
-  `razon_social`/`fecha_emision`/`direccion_entrega` muestra aviso pero no bloquea.
-- [ ] 7.2 [RED] Tests de `EntregasEditor`: la suma por renglón que no cuadra deshabilita confirmar,
-  con el mismo mensaje que el espejo del servidor (`_validar_orden_compra_override`); reparto
-  automático parejo visible cuando el usuario solo carga cantidad de entregas.
-- [ ] 7.3 [RED] Tests de `FormCard` multi-archivo: con `tipo='ordenes'` el input acepta múltiples
-  archivos; con 3 archivos se disparan 3 `procesarDocumento` en secuencia con **el mismo**
-  `grupoId` (`crypto.randomUUID()`); un 409 de duplicado en el segundo archivo no aborta el tercero y
-  se reporta por archivo; con `tipo='licitaciones'` el input **no** es múltiple.
-- [ ] 7.4 [RED] Tests de `ValidarExtraccionListado`: acción "Agrupar seleccionadas" deshabilitada con
-  <2 filas seleccionadas o con tipos mixtos; tras agrupar, las filas muestran el indicador de grupo;
-  acción inversa "Desagrupar" disponible sobre un grupo existente.
-- [ ] 7.5 [GREEN] Crear `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.tsx`:
-  cabecera única editable para todo el grupo, precargada con el valor más frecuente entre miembros,
-  campos en desacuerdo marcados, bloqueo solo por `numero_oc`.
-- [ ] 7.6 [GREEN] Crear `frontend/src/features/validar-extraccion/components/EntregasEditor.tsx`:
-  cantidad de entregas + plazo por entrega + desglose opcional por línea, validación en vivo.
-- [ ] 7.7 [GREEN] Modificar `frontend/src/lib/api/extraccion.ts`: `DocumentoReciente.document_type`
-  suma `'orden_compra'`; `ProcesarPayload.grupoId?: string`; `procesarDocumento` lo manda como campo
-  `grupo_id` del `FormData`.
-- [ ] 7.8 [GREEN] Modificar `frontend/src/features/carga-documentos/components/FormCard.tsx`: quitar
-  `disabled: true` de la opción `ordenes` (línea 37) y su badge "Próximamente"; `<input type="file"
-  multiple>` solo cuando `tipo === 'ordenes'`; con N>1 archivos genera `crypto.randomUUID()` y hace N
-  `procesarDocumento` en secuencia con ese `grupoId`, reportando el resultado por archivo;
-  `esperarNuevoDocumento` pasa a esperar que el conteo crezca en N.
-- [ ] 7.9 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`:
-  estado de selección múltiple + acción "Agrupar seleccionadas como una sola OC" (habilitada solo con
-  ≥2 filas `orden_compra` no validadas seleccionadas) + acción inversa "Desagrupar".
-- [ ] 7.10 [GREEN] Modificar `frontend/src/features/validar-extraccion/components/PendientesTable.tsx`:
-  columna de checkbox (solo en filas `orden_compra` no validadas) + indicador visual de pertenencia a
-  un grupo (`ETIQUETA_TIPO` ya contempla `orden_compra`, línea 8 — no tocar).
-- [ ] 7.11 [GREEN] Agregar a `frontend/src/lib/api/extracciones.ts`: `agruparExtracciones(ids)`,
-  `desagruparExtracciones(ids)`; extender `FilasExtraccionOut` con `miembros`/`advertencias_cabecera`
-  (sin `modo_fusion_sugerido`).
-- [ ] 7.12 [REFACTOR] Correr `pnpm --filter frontend test -- CabeceraOrdenCompra EntregasEditor
-  FormCard ValidarExtraccionListado` en verde; probar manualmente el flujo de carga de 3 archivos
-  contra el backend de Phase 2 y 4.
+- [x] 7.1 [RED] Creado
+  `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.test.tsx` (4 tests, mismo
+  patrón de arnés que `OrdenCompraSelector.test.tsx`: un botón local "Confirmar OC" deshabilitado
+  según el `bloqueado` que reporta el componente vía `onCambio`): `numero_oc` en desacuerdo entre 2
+  miembros → input con clase `border-red-500` y "Confirmar OC" deshabilitado; editar el campo a un
+  valor distinto (`'9999'`, deliberadamente NO igual al valor ya precargado por empate — ver nota de
+  diseño en 7.5) lo habilita; desacuerdo en `razon_social_cliente`/`fecha_emision`/`direccion_entrega`
+  muestra un aviso (`getByText(/desacuerdo entre archivos del grupo/i)` con las 3 etiquetas dentro del
+  mismo nodo, via `toHaveTextContent`) sin deshabilitar "Confirmar OC"; sin desacuerdo → sin aviso y
+  habilitado de entrada. Confirmado RED: `corepack pnpm test -- CabeceraOrdenCompra` (desde
+  `frontend/`) → `Failed to resolve import "./CabeceraOrdenCompra"` (el componente no existía
+  todavía), corrida antes de 7.5.
+- [x] 7.2 [RED] Creado
+  `frontend/src/features/validar-extraccion/components/EntregasEditor.test.tsx` (3 tests, mismo
+  patrón de arnés): con 1 renglón (`cantidad: '100'`) y desglose manual activado, `40+40` en 2
+  entregas produce el mensaje **literal** `'renglón 1: la suma de las entregas (80) no coincide con
+  la cantidad del renglón (100)'` — copiado carácter a carácter del f-string real de
+  `_validar_orden_compra_override` (`services/presupuestacion/extraccion/service.py:677-680`, leído
+  antes de escribir el test) — y deshabilita "Confirmar entregas"; sin desglose manual (solo cantidad
+  de entregas = 3), el bloque `data-testid="reparto-automatico"` muestra `'34 / 33 / 33'` (reparto
+  parejo con resto al frente, D8) y el botón queda habilitado; con desglose manual correcto (`60+40`)
+  también queda habilitado. Confirmado RED: `corepack pnpm test -- EntregasEditor` →
+  `Failed to resolve import "./EntregasEditor"`, corrida antes de 7.6.
+- [x] 7.3 [RED] Creado `frontend/src/features/carga-documentos/components/FormCard.test.tsx` (4
+  tests; no existía ningún test de este componente antes de este batch): con `tipo='ordenes'` (tras
+  clickear la pestaña) el `<input type="file">` real del DOM tiene `.multiple === true`; con
+  `tipo='licitaciones'` (default) `.multiple === false`; con 3 archivos, `procesarDocumento` se llama
+  3 veces **en secuencia real** (aserción fuerte: un array `orden` que registra
+  `start:<archivo>`/`end:<archivo>` con un `await Promise.resolve()` entre medio, confirmando
+  `['start:a.pdf','end:a.pdf','start:b.pdf','end:b.pdf','start:c.pdf','end:c.pdf']` — si fuera en
+  paralelo los 3 `start` aparecerían antes que cualquier `end`) y los 3 llevan el **mismo**
+  `grupoId` (`crypto.randomUUID()` mockeado con `vi.spyOn`); un archivo que rechaza con un error que
+  incluye "409" no aborta el tercero — los 3 `procesarDocumento` se invocan igual y el resultado por
+  archivo se ve reflejado en la lista de resultados (`a.pdf`/`c.pdf` con "procesado correctamente",
+  `duplicado.pdf` con el mensaje de error conteniendo "409"). Confirmado RED:
+  `corepack pnpm test -- FormCard` → los 4 tests fallan porque `TIPO_OPTIONS` marcaba `ordenes` como
+  `disabled` (el botón de tab quedaba deshabilitado, sin poder clickearlo) y el input no tenía
+  `multiple` condicional ni `grupoId`/secuenciación — corrida antes de 7.8.
+- [x] 7.4 [RED] Creado
+  `frontend/src/features/validar-extraccion/ValidarExtraccionListado.test.tsx` (6 tests): 3 unitarios
+  sobre un guard puro exportado `puedeAgruparSeleccion()` (deshabilitado con <2 filas, deshabilitado
+  con tipos mixtos, habilitado con 2+ `orden_compra`) + 3 de integración con la tabla real: "Agrupar
+  seleccionadas" arranca deshabilitado y se habilita al tildar 2 checkboxes `orden_compra`; las filas
+  `licitacion` no tienen checkbox (`queryByLabelText` ausente — refuerza que "tipos mixtos" es
+  defensivo, la UI ya no lo permite); tras agrupar (mock de `agruparExtracciones`), ambas filas
+  muestran el texto "Grupo" y "Desagrupar" quedaba deshabilitado hasta reseleccionar esas mismas 2
+  filas, momento en que se habilita, se ejecuta y el indicador desaparece. **Nota de diseño
+  encontrada en este batch, documentada acá y en 7.9/7.10**: `GET /extracciones` (`ExtraccionResumen`,
+  Phase 1-3) no expone `grupo_id` — ni en el modelo pydantic ni en el `select` de
+  `repository.py::listar_extracciones` (verificado leyendo el código real, no asumido) — así que el
+  indicador de grupo y la habilitación de "Desagrupar" se resuelven con estado en memoria
+  (`gruposLocales`, poblado por las propias respuestas de `agruparExtracciones`/
+  `desagruparExtracciones` de esta sesión), no con un dato persistido que hoy el endpoint no
+  devuelve; extender el backend está fuera del alcance frontend-only de esta fase. Confirmado RED:
+  `corepack pnpm test -- ValidarExtraccionListado` → `Failed to resolve import` para
+  `puedeAgruparSeleccion`/`agruparExtracciones`/`desagruparExtracciones` (nada de esto existía
+  todavía), corrida antes de 7.9-7.11.
+- [x] 7.5 [GREEN] Creado
+  `frontend/src/features/validar-extraccion/components/CabeceraOrdenCompra.tsx`: cabecera editable
+  (`numero_oc`, `fecha_emision`, `direccion_entrega` — los 3 campos que integran `OrdenCompraOverride`)
+  precargada con `valorMasFrecuente()` (espejo de `_valor_mas_frecuente`: empate → primer miembro) a
+  partir de `representativasPorMiembro()` (espejo de `_filas_representativas_por_miembro`: primera
+  fila por `_extraction_id`); bloqueo **solo** por `numero_oc` (`hayDesacuerdoNumeroOc &&
+  !numeroOcEditado` — cualquier edición explícita del campo resuelve el bloqueo, sin importar el
+  valor final, que es justo el comportamiento pedido "editarlo a un valor único lo habilita"); aviso
+  no bloqueante para el resto de `_CAMPOS_CABECERA_ADVERTENCIA` real del backend
+  (`razon_social_cliente`, `cuit_cliente`, `fecha_emision`, `direccion_entrega`,
+  `cantidad_entregas` — leídos de `service.py:408-414` antes de escribir el componente, un campo más
+  que el listado literal de la tarea 7.1). Reporta `(cabecera, bloqueado)` vía `onCambio` en cada
+  cambio (mismo contrato callback-driven que `OrdenCompraSelector::onClienteConfirmado`), para que
+  Phase 8 lo cablee al "Confirmar OC" real sin reescribir este componente.
+- [x] 7.6 [GREEN] Creado
+  `frontend/src/features/validar-extraccion/components/EntregasEditor.tsx`: input de cantidad de
+  entregas (redimensiona arrays de plazos/desgloses), checkbox "Desglosar cantidad por línea
+  manualmente" (desactivado por default → reparto automático), `repartirCantidad()` en TypeScript
+  como **espejo literal** de `repartir_cantidad` (D8, `service.py:585-604`: entero → primeras `resto`
+  entregas `base+1`, resto `base`; decimal → primeras N-1 truncadas a centésimos, la última se lleva
+  el resto) usado para la vista previa `data-testid="reparto-automatico"`; con desglose manual,
+  inputs por `entrega × renglón` (`aria-label="entrega N renglón P"`) y validación en vivo que arma
+  el mensaje de error **carácter a carácter igual** al f-string real de
+  `_validar_orden_compra_override` (`service.py:677-680`) por cada renglón cuya suma no coincide.
+  Reporta `(entregas: EntregaPlanEditable[], bloqueado)` vía `onCambio`, con
+  `cantidades_por_posicion: null` cuando el modo es automático (mismo contrato que `EntregaPlanIn`
+  del backend, D8).
+- [x] 7.7 [GREEN] Modificado `frontend/src/lib/api/extraccion.ts`: `DocumentoReciente.document_type`
+  suma `'orden_compra'`; `ProcesarPayload.grupoId?: string`; `procesarDocumento` agrega
+  `formData.append('grupo_id', grupoId)` solo si viene (mismo patrón condicional que
+  `licitacion_id`/`cliente_id` ya existentes en la función).
+- [x] 7.8 [GREEN] Modificado `frontend/src/features/carga-documentos/components/FormCard.tsx`:
+  quitado `disabled: true` de la opción `ordenes` en `TIPO_OPTIONS` y todo el bloque condicional del
+  badge "Próximamente" (los botones de tab ya no reciben `disabled`/`title`); estado `archivo: File |
+  null` reemplazado por `archivos: File[]`; `<input type="file" multiple={tipo === 'ordenes'}>`;
+  nueva función `procesarMultiple()` que genera `crypto.randomUUID()` **solo** cuando `tipo ===
+  'ordenes' && archivos.length > 1` (con 1 solo archivo `orden_compra` no hace falta grupo — D13:
+  `grupo_id IS NULL` ya se comporta como un archivo suelto) y llama `procesarDocumento` en un `for
+  ...of` con `await` secuencial, capturando cada error por archivo en vez de dejar que aborte el
+  `Promise.all`; `esperarNuevoDocumento` ahora recibe `cantidadEsperada` (antes hardcodeado a 1
+  implícito vía `> countAntes`) y espera `>= countAntes + cantidadEsperada`; `handleFiles()` limita a
+  1 archivo cuando `tipo !== 'ordenes'` aunque el usuario arrastre varios; nueva función
+  `cambiarTipo()` limpia `archivos`/el input/la mutación al cambiar de pestaña (antes no hacía falta
+  porque `ordenes` estaba deshabilitado). Resultado de la mutación pasa de un mensaje único a una
+  lista `resultado.archivo: OK|error` por archivo.
+- [x] 7.9 [GREEN] Modificado
+  `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`: estado
+  `seleccionados: Set<string>` + `gruposLocales: Record<string,string>` (ver nota de diseño de 7.4);
+  exportada `puedeAgruparSeleccion()` como guard puro (≥2 filas + mismo `document_type`); 2
+  `useMutation` (`agruparExtracciones`/`desagruparExtracciones`) que actualizan `gruposLocales` y
+  limpian la selección en `onSuccess`; botón "Agrupar seleccionadas como una sola OC" habilitado por
+  el guard sobre `filasSeleccionadas`; botón "Desagrupar" habilitado cuando **todas** las filas
+  seleccionadas (≥1) ya están en `gruposLocales`.
+- [x] 7.10 [GREEN] Modificado
+  `frontend/src/features/validar-extraccion/components/PendientesTable.tsx`: `ETIQUETA_TIPO` **no
+  tocado** (confirmado con `grep` antes y después del cambio); nuevas props opcionales
+  `seleccionados`/`onAlternarSeleccion`/`gruposLocales`; columna de checkbox nueva al inicio de la
+  fila, renderizada **solo** cuando `document_type === 'orden_compra'` (este listado ya filtra
+  `validado=false` en la query de `ValidarExtraccionListado`, así que no hace falta re-chequear
+  `validado` acá); badge "Grupo" junto al nombre de archivo cuando `gruposLocales[extraccion.id]`
+  existe.
+- [x] 7.11 [GREEN] Agregado a `frontend/src/lib/api/extracciones.ts`: `MiembroGrupo` (espejo de
+  `MiembroGrupo` pydantic), `agruparExtracciones(extractionIds)` (`POST /extracciones/agrupar`,
+  mismo body `{extraction_ids}` que `AgruparExtraccionesRequest` real), `desagruparExtracciones(ids)`
+  (`POST /extracciones/desagrupar`, 204 sin cuerpo — `presupuestacionFetch` ya maneja body vacío con
+  `.json().catch(() => null)`); `FilasExtraccionOut` extendida con `grupo_id?`, `miembros?:
+  MiembroGrupo[]`, `advertencias_cabecera?: string[]` (opcionales para no romper los usos existentes
+  de licitación/comparativa que no los mandan) — **sin** `modo_fusion_sugerido`, confirmado que no se
+  agregó ningún campo con ese nombre.
+- [x] 7.12 [REFACTOR] `cd frontend && corepack pnpm test -- CabeceraOrdenCompra EntregasEditor
+  FormCard ValidarExtraccionListado` → **165 passed** (los 4 archivos nuevos/afectados, GREEN
+  confirmado tras 7.5-7.11: 4+3+4+6 = 17 tests nuevos sobre 148 preexistentes). Suite completa
+  `corepack pnpm test` → **165 passed, 0 regresiones**. `corepack pnpm build` (`tsc -b && vite build`)
+  → sin errores de tipo, build completo en 1.37s; `frontend/src/routeTree.gen.ts` volvió a
+  reordenarse como efecto lateral del build (mismo hallazgo que PR6) — revertido con `git checkout
+  --` antes de commitear. **Prueba manual contra el backend real de Phases 2/4, no alcanzada**: mismo
+  motivo que 6.6 — este batch de `sdd-apply` corre sin navegador ni sesión interactiva, no hay forma
+  de levantar `pnpm --filter frontend dev` y subir 3 archivos a mano desde este entorno; el propio
+  prompt de esta fase contempla explícitamente esta posibilidad. Queda pendiente como verificación
+  manual humana antes de mergear PR7, o como parte del flujo end-to-end de la tarea 8.7.
+- [x] 7.13 **Cierre de gap post-Phase 7, decidido por el usuario**: `GET /extracciones`
+  (`ExtraccionResumen`) no expone `grupo_id`, así que el indicador visual de agrupación y el botón
+  "Desagrupar" de `ValidarExtraccionListado`/`PendientesTable` dependen hoy de estado en memoria de la
+  sesión (`gruposLocales`), no del dato persistido — se pierde al recargar la página, aunque la
+  agrupación real en la base sigue intacta. Cerrado en PR7b (`feat/orden-compra-07b-grupo-id-listado`,
+  branch off PR7). Verificado contra el código real: la función correcta es
+  `repository.py::listar_extracciones` (confirmado, coincide con el nombre asumido en el enunciado);
+  el tipo TS real que respalda el listado es `ExtraccionResumen` en `frontend/src/lib/api/extracciones.ts`
+  (**plural**) — el `extraccion.ts` singular sugerido en el prompt resultó ser un módulo no relacionado
+  (`DocumentoReciente`/`/api/documentos`, otra pantalla legacy), corregido antes de tocar código.
+  - [x] [RED] Agregado `test_listar_extracciones_expone_grupo_id_de_cada_fila` (unit, sin DB) en
+    `tests/extraccion/test_grupo_extracciones.py`: mockea `repo.listar_extracciones` con 2 filas
+    (`grupo_id` seteado / `None`) y llama `service.listar_extracciones()` real → falla con
+    `AttributeError: 'ExtraccionResumen' object has no attribute 'grupo_id'` (RED confirmado por
+    ejecución, no por inspección). Agregado `test_listar_extracciones_expone_grupo_id_persistido`
+    (integration) en `tests/extraccion/test_router.py`: siembra 2 extracciones `orden_compra` vía
+    `seed_extraction_result_factory` (una con `grupo_id=uuid4()`, otra sin) y llama
+    `router.listar_extracciones_endpoint()` real contra el proyecto Supabase de test
+    (`grnamollopxdlstcpxhc`) → mismo `AttributeError` (RED confirmado por ejecución contra DB real,
+    no un mock — nota: `grupo_id` es columna `uuid`, un string arbitrario como `"grupo-test-7-13"`
+    revienta con `22P02 invalid input syntax for type uuid`, corregido a `str(uuid.uuid4())` antes de
+    llegar al RED real).
+  - [x] [GREEN] Agregado `grupo_id: str | None = None` a `ExtraccionResumen`
+    (`services/presupuestacion/extraccion/models.py`); agregado `grupo_id` al `select(...)` de
+    `repository.py::listar_extracciones` (`service.py::listar_extracciones` no necesitó cambios: ya
+    hace `ExtraccionResumen(**fila, ...)`, y `fila` trae `grupo_id` en cuanto el repository lo
+    selecciona). Ambos tests de RED pasan (`2 passed`).
+  - [x] [RED→GREEN] Frontend: agregado `grupo_id?: string | null` a `ExtraccionResumen`
+    (`frontend/src/lib/api/extracciones.ts`). Diseño elegido en `ValidarExtraccionListado.tsx`: nueva
+    función pura exportada `grupoIdDe(extraccion, gruposLocales)` — prioriza un override LOCAL
+    (`gruposLocales: Record<string, string | null>`, ahora solo optimista post-agrupar/desagrupar de
+    la sesión actual) sobre el `grupo_id` PERSISTIDO de la extracción; sin override usa el dato real.
+    `desagruparMutation.onSuccess` cambia de `delete copia[id]` a `copia[id] = null` (override
+    explícito, no solo ausencia) para poder distinguir "sin dato todavía" de "desagrupada en esta
+    sesión" sin esperar el próximo refetch. `puedeDesagrupar` y `PendientesTable` (badge "Grupo")
+    pasan a leer `grupoIdDe(...)` en vez de indexar `gruposLocales` directo. Tests RED agregados en
+    `ValidarExtraccionListado.test.tsx`: 4 casos unitarios de `grupoIdDe` (sin override + con
+    `grupo_id` persistido, sin override + sin `grupo_id`, override string gana, override `null`
+    explícito gana) + 1 test de componente que mockea `listarExtracciones` para devolver 2 filas ya
+    agrupadas (`grupo_id` seteado) SIN pasar por el botón "Agrupar" y verifica que el badge "Grupo"
+    aparece y "Desagrupar" se habilita — falla en RED con `TypeError` (`grupoIdDe` no exportado
+    todavía) y `getAllByText('Grupo')` vacío (5 tests fallando). GREEN: los 5 pasan; el test previo de
+    7.9-7.11 (agrupar → badge → desagrupar → badge desaparece) sigue pasando sin cambios, confirma que
+    el override optimista no rompió el flujo interactivo existente.
+  - [x] [REFACTOR] Backend `pytest tests/ -q -m "not integration"` → **381 passed** (baseline 380 + 1
+    test unitario nuevo, 0 regresiones). `pytest tests/extraccion -m integration -q` (contra
+    `grnamollopxdlstcpxhc`) → **37 passed** (incluye el nuevo test de router, 0 regresiones). Frontend
+    `corepack pnpm test` → **170 passed** (baseline 165 + 5 nuevos, 0 regresiones). `corepack pnpm
+    build` (`tsc -b && vite build`) → sin errores de tipo, build limpio;
+    `frontend/src/routeTree.gen.ts` volvió a reordenarse como efecto lateral del build (mismo hallazgo
+    que PR6/PR7) — revertido con `git checkout --` antes de commitear. Diff total autorado: 8 archivos,
+    161 inserciones / 14 borrados = **175 líneas** (`git diff --stat`), muy por debajo del presupuesto
+    de 400 — no aplica `size:exception`.
 
 ## Phase 8: Frontend — Wiring final (`ValidarExtraccionDetalle`, `useFilasEditables`)
 
 > Depende de Phase 5 (payload `orden_compra` real), 6 y 7 (todos los componentes nuevos).
 
-- [ ] 8.1 [RED] Tests de `useFilasEditables`: entrada `orden_compra` en
-  `CAMPOS_POR_DOCUMENT_TYPE`; nuevo `CampoTipo` `'decimal-positivo'` valida `precio_unitario`;
-  `parsearPlanEntregas()` parsea `"50@30|50@60"` y rechaza gramática malformada; columnas
-  `_archivo`/`_extraction_id`/`numero_renglon` se muestran pero no son editables (click no abre
-  `CeldaEditable`); `numero_renglon` se renderiza vacío cuando el documento no lo declaró.
-- [ ] 8.2 [RED] Tests de `ValidarExtraccionDetalle`: con `documentType === 'orden_compra'` no
-  renderiza `ProcesoComercialSelector`, renderiza `CabeceraOrdenCompra` + `OrdenCompraSelector` +
-  `EntregasEditor`; el payload enviado lleva `orden_compra` y no `filas`; `puedeConfirmar` exige
-  `cliente_id` confirmado y ≥1 entrega válida y cabecera sin bloqueos; `onBorrarFila`/`onAgregarFila`
-  siguen cableadas igual que hoy (líneas 127-128) — no se tocan.
-- [ ] 8.3 [RED] Test explícito de reconciliación manual (D13.1): con un grupo de 3 miembros, la tabla
-  muestra la suma de las filas; `borrarFila` sobre una fila duplicada la saca del payload enviado; no
-  existe ningún selector de modo de fusión en la pantalla.
-- [ ] 8.4 [GREEN] Modificar `frontend/src/features/validar-extraccion/useFilasEditables.ts`: entrada
-  `orden_compra` en `CAMPOS_POR_DOCUMENT_TYPE`; `CampoTipo` `'decimal-positivo'`;
-  `parsearPlanEntregas()`; columnas sintéticas/de referencia no editables — `borrarFila`/`agregarFila`
-  (líneas 118, 124) no se tocan.
-- [ ] 8.5 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
-  rama `documentType === 'orden_compra'` que renderiza `CabeceraOrdenCompra` + `OrdenCompraSelector` +
-  `EntregasEditor` en vez de `ProcesoComercialSelector`; envía `orden_compra` en vez de `filas`;
-  `puedeConfirmar` con las tres condiciones.
-- [ ] 8.6 [GREEN] Extender `frontend/src/lib/api/extracciones.ts` con los tipos restantes:
-  `FilaOrdenCompraIn`, `EntregaPlanIn`, `OrdenCompraOverride`, `ValidarExtraccionPayload.orden_compra`;
-  `ResultadoValidarExtraccion.proceso_comercial_id: string | null` (cambio de contrato — verificar que
-  ningún consumidor rompe, `ValidarExtraccionDetalle.tsx:62-66` solo invalida y navega).
-- [ ] 8.7 [REFACTOR] Correr `pnpm --filter frontend test -- ValidarExtraccionDetalle
-  useFilasEditables` en verde. Flujo manual end-to-end completo contra el backend real: subir 1
-  archivo → validar con sugerencia de alias → confirmar → verificar `ordenes_compra`/`oc_items`/
-  `entregas_oc` en la base de test. Repetir con 3 archivos agrupados al subir y con 2 extracciones
-  agrupadas post-hoc.
+- [x] 8.1 [RED] Tests de `useFilasEditables` (`useFilasEditables.test.ts`, nuevos `describe`
+  "orden_compra (D6/D13.1, Phase 8)" y "parsearPlanEntregas"): entrada `orden_compra` en
+  `CAMPOS_POR_DOCUMENT_TYPE` con las 7 columnas de D6/D13.1; `numero_renglon`/`entregas`/`_archivo`/
+  `_extraction_id` con `editable: false`; `numero_renglon` vacío cuando el documento no lo declaró;
+  columnas de referencia nunca aportan error aunque estén vacías; `CampoTipo` `'decimal-positivo'`
+  rechaza vacío/no-numérico/`"0"`/negativo y acepta positivo con coma decimal;
+  `parsearPlanEntregas()` parsea `"50@30|50@60"` (2 planes) y un plan único, `""` → `[]` (no
+  declarado, sin error), y rechaza 7 variantes de gramática malformada (`it.each`). El
+  comportamiento "click no abre `CeldaEditable`" es DOM (no aplica a `renderHook`) — se probó por
+  separado en `TablaEditable.test.tsx` (archivo nuevo, ver nota de alcance abajo). Confirmado RED:
+  `pnpm test -- useFilasEditables TablaEditable ValidarExtraccionDetalle` → **24 failed, 172
+  passed** (los 24 son exactamente los tests nuevos de 8.1-8.3; los 172 preexistentes no se tocaron),
+  ejecutado antes de 8.4-8.6.
+- [x] 8.2 [RED] Tests de `ValidarExtraccionDetalle` (nuevo `describe` "rama orden_compra (Phase 8)"
+  en `ValidarExtraccionDetalle.test.tsx`), con `OrdenCompraSelector`/`CabeceraOrdenCompra`/
+  `EntregasEditor` reemplazados por stubs mínimos que exponen solo su contrato de callback ya
+  probado en Phase 6/7 (`onClienteConfirmado`/`onCambio`) — Phase 8 prueba el WIRING, no vuelve a
+  probar cada componente hijo: con `document_type === 'orden_compra'` no renderiza
+  `ProcesoComercialSelector`, sí renderiza los 3 stubs; el payload enviado a `validarExtraccion`
+  lleva `orden_compra` (no `filas`); `puedeConfirmar` exige `cliente_id` confirmado + entregas sin
+  bloqueo + cabecera sin bloqueos (las 3, con el caso negativo de cabecera bloqueada y de entregas
+  bloqueadas); `onBorrarFila`/`onAgregarFila` siguen cableadas igual que hoy — verificado con un
+  test de comportamiento (agregar fila suma un textbox de descripción; borrar fila muestra
+  "Deshacer"), no por número de línea (la ubicación real de las líneas 127-128 citadas en el prompt
+  cambió tras Phases 6-7; el comportamiento en sí, sin tocar `hook.borrarFila`/`hook.agregarFila`,
+  es lo que se verificó y sigue intacto).
+- [x] 8.3 [RED] Test explícito de reconciliación manual (D13.1) (nuevo `describe` "reconciliación
+  manual de grupo" en `ValidarExtraccionDetalle.test.tsx`): con un grupo de 3 miembros (mismo
+  `numero_renglon` de documento, `_extraction_id` distinto cada uno — el caso real de
+  `_leer_filas_grupo`, Phase 4), la tabla muestra las 3 filas concatenadas (3 textbox de
+  descripción, sin fusionar ni deduplicar); `borrarFila` sobre la fila duplicada la saca del
+  payload enviado (`orden_compra.filas` queda con 2 elementos, los otros 2 renglones); ningún texto
+  ni `combobox` relacionado con "fusión" existe en la pantalla (assertion negativa explícita,
+  D13.1/C10 — el concepto no existe en absoluto, ni como selector deshabilitado ni oculto).
+- [x] 8.4 [GREEN] Modificado `frontend/src/features/validar-extraccion/useFilasEditables.ts`:
+  `CampoConfig.editable?: boolean` (default `true`, retrocompatible); entrada `orden_compra` en
+  `CAMPOS_POR_DOCUMENT_TYPE` (`numero_renglon`/`entregas`/`_archivo`/`_extraction_id` con
+  `editable: false`; `descripcion`/`cantidad`/`precio_unitario` editables); `CampoTipo`
+  `'decimal-positivo'` en `validarCampo()` (vacío/no-numérico/`<=0` inválido, espejo del lado
+  cliente de `_validar_orden_compra_override`); `erroresPorCelda` saltea columnas con
+  `editable === false` (nunca bloquean confirmación); exportada `parsearPlanEntregas()` (función
+  pura, gramática D6 literal: `plan ("|" plan)*`, `plan := cantidad "@" plazo_dias`, `plazo_dias`
+  entero `>= 0` vía `/^\d+$/`). `borrarFila`/`agregarFila` no se tocaron (confirmado con `grep -n
+  "function borrarFila\|function agregarFila"` — mismas líneas, mismo cuerpo).
+- [x] 8.5 [GREEN] Modificado `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
+  nuevo estado local para la rama `orden_compra` (`clienteId`/`razonSocialExtraida`/`cabecera`/
+  `cabeceraBloqueada`/`entregas`/`entregasBloqueadas`); rama `esOrdenCompra` que renderiza
+  `CabeceraOrdenCompra` + `OrdenCompraSelector` (en vez de `ProcesoComercialSelector`) y, debajo de
+  la tabla, `EntregasEditor` (recibe `hook.filas` no borradas mapeadas a `{descripcion, cantidad}` —
+  reactivo a los edits/altas/bajas de la tabla); `puedeConfirmar` con las 3 condiciones exactas del
+  prompt; `construirOrdenCompraOverride()` arma el payload real desde el estado del container +
+  `hook.filas`, mapeando `numero_renglon` (columna, solo referencia) → `numero_renglon_documento`
+  (campo del payload, D13.1) y `producto_id: null` siempre (D11, sin selector de producto en esta
+  pantalla — fuera de alcance de Phase 8). **`mutationFn` generalizado** de
+  `(filas) => validarExtraccion(id, {proceso_comercial_id, filas})` a
+  `(payload: ValidarExtraccionPayload) => validarExtraccion(id, payload)` para poder enviar
+  `{orden_compra}` en vez de `{proceso_comercial_id, filas}` sin dos mutations paralelas — el path
+  de "confirmar sin editar" (D7, filas > 500) se dejó con su semántica exacta anterior
+  (`{proceso_comercial_id, filas: null}`), sin extender a `orden_compra` porque el backend no
+  soporta materializar una OC sin `cliente_id`/`entregas`; ver nota de alcance abajo.
+- [x] 8.6 [GREEN] Extendido `frontend/src/lib/api/extracciones.ts` con los tipos restantes —
+  `FilaOrdenCompraIn`, `EntregaPlanIn`, `OrdenCompraOverride` (espejo literal de
+  `services/presupuestacion/extraccion/models.py`, sin `modo_fusion`), `ValidarExtraccionPayload.
+  orden_compra?: OrdenCompraOverride | null`; `ResultadoValidarExtraccion.proceso_comercial_id:
+  string | null` (cambio de contrato). **Verificado que ningún consumidor rompe**: único consumidor
+  de `ResultadoValidarExtraccion` es `mutation.onSuccess` en `ValidarExtraccionDetalle.tsx`, que
+  solo invalida queries y navega (no lee el campo) — confirmado con `grep -rn
+  "ResultadoValidarExtraccion\|proceso_comercial_id" frontend/src` (sin otros usos fuera de este
+  archivo y del propio `extracciones.ts`). `pnpm build` (`tsc -b`) sin errores de tipos confirma
+  además que no hay ningún otro consumidor roto por el cambio `string` → `string | null`.
+- [x] 8.7 [REFACTOR] `pnpm test -- ValidarExtraccionDetalle useFilasEditables TablaEditable` (desde
+  `frontend/`, con `corepack pnpm`) → **196 passed** (GREEN confirmado tras 8.4-8.6; incluye los 24
+  tests RED de 8.1-8.3 + los 172 preexistentes, 0 regresiones). Suite completa del frontend:
+  `corepack pnpm test` → **196 passed** (mismo número — la suite completa ya son exactamente estos
+  27 archivos). `corepack pnpm build` → limpio, sin errores de tipos; `routeTree.gen.ts` reordenado
+  como efecto lateral conocido (mismo patrón que PR6/PR7/PR7b), revertido con `git checkout --`
+  antes de commitear. Backend (no debería estar afectado, confirmado): `git status` muestra 0
+  archivos `.py` tocados por este batch; `pytest tests/ -q -m "not integration"` (venv) → **381
+  passed** (mismo número que el baseline de PR7b, 0 regresiones). **Flujo manual end-to-end contra
+  el backend real: NO ejecutado.** Mismo caveat documentado por PR6/PR7 ("no reachable from this
+  headless environment") — este entorno no tiene navegador interactivo ni acceso a
+  `pnpm dev` + click-through manual. Se confía en la suite automatizada (196 tests, incluye el
+  payload real enviado a `validarExtraccion` con la conversión de fecha DD/MM/AAAA → ISO, el mapeo
+  `numero_renglon` → `numero_renglon_documento`, y la reconciliación de grupo de 3 miembros) como
+  evidencia de que el wiring es correcto extremo a extremo del lado del cliente.
+
+**Nota de alcance (hallazgo de este batch, documentado en el propio código)**: `fecha_emision` en
+`CabeceraOrdenCompra` es el texto crudo `DD/MM/AAAA` que extrae el documento (D6); el backend tipa
+`OrdenCompraOverride.fecha_emision` como `date` (Pydantic v2, solo acepta ISO `YYYY-MM-DD` para
+strings). Sin conversión, cualquier fecha detectada habría roto la confirmación con un 422 — no
+estaba listado explícitamente en 8.1-8.6, pero es necesario para que el wiring funcione de verdad.
+Se agregó `fechaCsvAIso()` (función pura en `ValidarExtraccionDetalle.tsx`, formato inválido/vacío →
+`null`, cae al default del backend) y se cubrió en el test del payload (8.2, fecha
+`"12/09/2026"` → `"2026-09-12"`).
+
+**Nota de alcance (D7, gap preexistente no resuelto en este batch)**: el path "confirmar sin editar"
+(`DocumentoDemasiadoGrande`, filas_leidas > 500) sigue enviando `{proceso_comercial_id, filas: null}`
+para cualquier `document_type`, incluido `orden_compra`. El diseño no define una forma de
+materializar una OC sin cliente/entregas (`OrdenCompraOverride` es obligatorio y no tiene un modo
+"desde CSV sin override"), así que ese escape hatch no tiene una traducción natural a `orden_compra`
+todavía — no estaba en el alcance de 8.1-8.7 y no se inventó un contrato nuevo para resolverlo.
 
 ## Phase 9: Documentación y verificación integral
 
-- [ ] 9.1 Modificar `docs/modulos/compras/README.md`: documentar que la dirección del flujo es hacia
-  el cliente (no hacia el proveedor) y el ciclo plan → export → Progress → import, dejando explícito
-  que export/import (Tramo 3) quedan fuera de este cambio y siguen como trabajo futuro.
-- [ ] 9.2 Anotar en `openspec/changes/orden-compra/design.md` (ya escrito, sin re-editar el
-  contenido) que las Open Questions "R1 — validación de formato con Progress v8" y "Reconciliar
-  `orden-compra-validacion` al archivar" siguen abiertas y no bloquean el archive de este tramo,
-  para que `sdd-archive` no las de por resueltas.
-- [ ] 9.3 Correr la suite completa `pytest tests/ --cov=services` y `pnpm --filter frontend build` +
-  `pnpm --filter frontend test`, confirmar cero regresiones fuera del alcance de este cambio
-  (licitación, comparativa, terceros, PCP).
-- [ ] 9.4 Revisar manualmente cada escenario Given/When/Then de
-  `openspec/changes/orden-compra/specs/orden-compra-extraccion/spec.md` y
-  `openspec/changes/orden-compra/specs/orden-compra-validacion/spec.md` contra el comportamiento
-  real, dejando constancia de cuáles quedaron cubiertos por qué test (insumo directo para
-  `sdd-verify`).
+- [x] 9.1 Modificado `docs/modulos/compras/README.md`: agregada la sección "Dos direcciones de
+  flujo: proveedor (existente) y cliente (nueva, `orden-compra`)", insertada entre "Qué es" y "Qué
+  NO hace". Documenta explícitamente que el flujo histórico (nosotros → proveedor,
+  `crear_orden_compra`/`confirmar_orden_compra`/`crear_entrega`, sin tocar) convive con el nuevo
+  flujo cliente → nosotros (extracción + validación de `orden-compra`, materializado directo sin
+  pasar por esas 3 funciones), y detalla el ciclo de 4 pasos **plan → export → Progress → import**:
+  paso 1 (plan) es lo implementado en este cambio (Tramo 1+2: confirmar crea `entregas_oc`/
+  `entregas_oc_items` con `cantidad_planificada` y `cantidad_entregada=0`, sin mover stock); pasos 2
+  y 4 (export/import contra Progress, `nota-pedido-export`/`entregas-import`/`csv_progress.py`) se
+  marcan explícitamente **fuera de este cambio, trabajo futuro**, con referencia a
+  `openspec/changes/orden-compra/proposal.md` § Approach y `design.md` D1/D2/D10. Verificado con
+  `Grep` antes de escribir que ningún otro doc de `docs/modulos/` documenta ya este flujo nuevo (0
+  resultados de `orden_compra`/`orden-compra`/`oc_cliente_alias` fuera de `compras/`), así que no
+  había contenido previo que duplicar o contradecir.
+- [x] 9.2 Anotada en `openspec/changes/orden-compra/design.md` una nueva subsección "### Nota para
+  `sdd-archive` (agregada en Phase 9, no reemplaza lo anterior)" al final de § Open Questions —
+  contenido existente sin tocar (confirmado: los dos ítems `- [ ] **R1** ...` y `- [ ] **Reconciliar
+  `orden-compra-validacion`** ...` quedan literalmente igual, solo se agregó texto nuevo después de
+  la lista completa). La nota explica, ítem por ítem, por qué ninguna de las dos bloqueó ni bloquea
+  esta implementación de Tramo 1+2 y qué falta para cerrarlas de verdad (R1: falta el template real
+  de Progress, que es Tramo 3 y no se implementó acá; la reconciliación de specs: ya se escribieron
+  los specs nuevos en este change, y la tabla de trazabilidad de 9.4 es el insumo para que un humano
+  confirme el cierre al archivar, no un cierre automático).
+- [x] 9.3 Corridas las suites completas:
+  - Backend: `./venv/Scripts/python.exe -m pytest tests/ --cov=services -q` (incluye integración
+    contra el proyecto Supabase de test, corrida completa sin filtro `-m`) → **823 passed, 5 failed**
+    en 1628.77s (27m 08s), cobertura total `TOTAL 7858 stmts, 1321 missed, 83%`. Los 5 que fallan son
+    **`tests/core/test_stock.py::test_comprometer_stock_producto_concurrencia_no_sobrecompromete`** y
+    **4 tests de `tests/usuarios/test_service.py`** (`test_admin_crea_usuario_fuerza_su_propia_drogueria`,
+    `test_superadmin_crea_admin`, `test_superadmin_crea_usuario_con_drogueria_explicita`,
+    `test_superadmin_crea_otro_superadmin_sin_drogueria`) — **ninguno pertenece al alcance de
+    `orden-compra` ni a los módulos que este cambio debe verificar sin regresión** (licitación,
+    comparativa, terceros, PCP): el primero es un test de concurrencia real con
+    `threading.Barrier(2)` contra dos requests simultáneos al proyecto Supabase de test (clásicamente
+    sensible a latencia de red bajo carga, exactamente el patrón de una corrida de ~27 minutos
+    golpeando la misma base compartida); los otros 4 son de creación de usuarios por
+    admin/superadmin, un módulo (`services/presupuestacion/usuarios/`) que Phase 9 no toca ni de
+    lejos. **Confirmado que esta fase no puede haberlos causado**: `git status`/`git diff --stat`
+    tras los cambios de 9.1/9.2 muestran únicamente `docs/modulos/compras/README.md`,
+    `openspec/changes/orden-compra/design.md` y este `tasks.md` — 0 archivos `.py` tocados por Phase
+    9, y las Phases 1-8 (las únicas que tocaron backend) ya habían corrido y confirmado en verde sus
+    propios subconjuntos relevantes en cada batch anterior. Se reportan honestamente como hallazgo
+    pre-existente/ambiental de esta corrida específica, no como regresión introducida por
+    `orden-compra` — no se investigaron más a fondo ni se re-corrieron en aislamiento para no exceder
+    el alcance de esta fase (documentación + verificación, no debugging de módulos ajenos). La
+    cobertura específica de `services/presupuestacion/extraccion/` (el módulo central de Tramo 2)
+    quedó en `models.py` 100%, `repository.py` 94%, `router.py` 93%, `service.py` 94% — sin
+    herramienta de terminal interactiva adicional que el propio venv del repo, mismo patrón que fases
+    anteriores.
+  - Frontend: `corepack pnpm build` (desde `frontend/`) → **build limpio, sin errores de tipo**
+    (`tsc -b && vite build`, 327ms); `routeTree.gen.ts` volvió a reordenarse como efecto lateral
+    conocido del build (mismo hallazgo que PR6/PR7/PR7b/PR8) — revertido con `git checkout --` antes
+    de commitear. `corepack pnpm test` (desde `frontend/`) → **27 test files, 196 tests, todos
+    passed** — mismo número exacto que el baseline de PR8 (0 regresiones, 0 tests nuevos: Phase 9 no
+    tocó código de producción del frontend).
+  - Confirmado con `git status` que Phase 9 no tocó ningún archivo `.py` ni `.tsx`/`.ts` de
+    producción: los únicos cambios de esta fase son `docs/modulos/compras/README.md`,
+    `openspec/changes/orden-compra/design.md` y este `tasks.md` — por lo que "cero regresiones fuera
+    del alcance de este cambio" es estructuralmente cierto para frontend (mismos 196 tests que ya
+    pasaban en PR8) y se confirma para backend con el resultado de la corrida completa arriba.
+- [x] 9.4 Revisados manualmente los 33 escenarios Given/When/Then de
+  `orden-compra-extraccion/spec.md` (8) y `orden-compra-validacion/spec.md` (25) contra el código y
+  los tests reales (no contra `design.md`). Matriz completa en la subsección "Trazabilidad specs →
+  tests" al final de esta fase. **1 gap real encontrado y reportado, no tapado con un test nuevo**:
+  el escenario "Carga válida de orden de compra" exige que se cree una fila en `extraction_results`
+  con `document_type=orden_compra`; `_DOC_TYPES_SOPORTADOS` en `persistent_output.py` sí incluye
+  `"orden_compra"` (2.7), pero ningún test ejercita `persistir_output_final(doc_type="orden_compra",
+  ...)` como caso positivo — `tests/test_persistent_output.py::TestPersistirOutputFinal` solo usa
+  `doc_type="comparativa"` en sus casos de éxito y `"tipo_invalido"` en el caso de rechazo. Los
+  tests de integración de `tests/extraccion/` que sí crean filas reales con
+  `document_type="orden_compra"` lo hacen vía `seed_extraction_result_factory`, que inserta
+  directamente en la tabla y **no pasa por `persistir_output_final`** — así que la ruta real
+  end-to-end (`POST /procesar` → `schedule_persist_output` → `persistir_output_final` →
+  `extraction_results` con `document_type=orden_compra`) queda sin una prueba dedicada que la
+  ejercite de punta a punta. Ver el detalle completo en la fila correspondiente de la matriz y en
+  "Risks" del reporte de esta fase — no se agregó un test para cerrarlo en este batch porque el
+  prompt de esta fase pide reportar el gap, no ampliar el alcance para taparlo.
+
+### Trazabilidad specs → tests
+
+Insumo directo para un futuro `sdd-verify`. Un escenario cuenta **`partial`** cuando el mecanismo
+central está probado pero una afirmación específica del GIVEN/WHEN/THEN no tiene una aserción
+dedicada; cuenta **`no`** cuando no se encontró ningún test que lo ejercite ni directa ni
+indirectamente. Los tests marcados "(live)" son de integración contra el proyecto Supabase de test
+(`grnamollopxdlstcpxhc`, marcador `-m integration`); el resto son unitarios/mockeados.
+
+#### `orden-compra-extraccion/spec.md`
+
+| # | Escenario | Test(s) que lo cubren | Cubierto |
+|---|---|---|---|
+| E1 | Carga válida de orden de compra | `tests/test_main_integration.py::TestProcesarTipoOrdenes::test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra` (no 422, robot invocado) | **partial** — ver nota de gap en 9.4: nada ejercita `persistir_output_final(doc_type="orden_compra")` como caso positivo end-to-end; los tests de integración que sí crean la fila la insertan directo con `seed_extraction_result_factory`, sin pasar por la ruta real de persistencia |
+| E2 | Ya no se rechaza de antemano | mismo `test_tipo_ordenes_no_devuelve_422_e_invoca_robot_orden_compra` (inversión literal del test viejo que esperaba 422) | yes |
+| E3 | Carga de N archivos como un solo grupo | `test_grupo_id_valido_se_propaga_a_schedule_persist_output`; `tests/extraccion/test_grupo_extracciones.py::test_leer_filas_grupo_en_vivo_concatena_los_miembros_del_grupo` (live); frontend `FormCard.test.tsx::con 3 archivos se disparan 3 procesarDocumento EN SECUENCIA con el mismo grupoId` | yes |
+| E4 | Carga de un solo archivo sin agrupar | `test_grupo_id_ausente_se_comporta_como_extraccion_suelta`; `test_leer_filas_grupo_grupo_id_null_se_comporta_como_archivo_suelto` | yes |
+| E5 | Identificador de grupo inválido | `test_grupo_id_invalido_retorna_422_sin_llamar_robot` | yes |
+| E6 | Archivo duplicado dentro de un grupo | `test_procesar_file_duplicate_blocks_second` (mecanismo de duplicado por SHA256, genérico — no específico de `tipo=ordenes`, corre **antes** del ruteo por tipo); frontend `FormCard.test.tsx::un 409 de duplicado en el segundo archivo no aborta el tercero, y se reporta por archivo` | **partial** — el rechazo 409 y el "no abortar el resto" están probados, pero ningún test confirma específicamente, para `tipo=ordenes`, que "el grupo queda formado con los archivos que sí se procesaron" del lado del backend (i.e. que las filas no-duplicadas efectivamente terminan con el mismo `grupo_id` en `extraction_results` tras el 409 del duplicado) |
+| E7 | Documento que declara número de línea | `tests/test_robot_orden_compra.py::TestConstruirFilas::test_numero_renglon_declarado_se_preserva_tal_cual`; fixtures reales `01_pdf_con_renglon`/`03_imagen_con_renglon` corridos contra Gemini real (tarea 2.4, 3 corridas consecutivas sin desvíos) | yes |
+| E8 | Documento que no declara número de línea | `TestConstruirFilas::test_numero_renglon_vacio_no_se_fabrica`; fixture real `02_excel_sin_renglon` (tarea 2.4, caso C10 explícito) | yes |
+
+#### `orden-compra-validacion/spec.md`
+
+| # | Escenario | Test(s) que lo cubren | Cubierto |
+|---|---|---|---|
+| V1 | Sugerencia por alias aprendido | `test_nivel1_alias_gana_sobre_nivel2_aunque_ambos_resuelvan_y_difieran`; `test_resolver_cliente_candidato_nivel1_alias_en_vivo` (live); frontend `OrdenCompraSelector.test.tsx::la sugerencia se muestra preseleccionada pero "Confirmar OC" sigue deshabilitado...` | yes |
+| V2 | Sugerencia por CUIT con un único candidato | `test_nivel2_cuit_exclusivo_devuelve_un_candidato`; `test_resolver_cliente_candidato_nivel2_cuit_exclusivo_en_vivo` (live) | yes |
+| V3 | CUIT compartido por varios clientes | `test_nivel2_cuit_no_exclusivo_devuelve_n_candidatos`; `test_resolver_cliente_candidato_cuit_compartido_en_vivo` (live); frontend `OrdenCompraSelector.test.tsx::con N candidatos de CUIT compartido muestra N radio buttons, ninguno preseleccionado` | yes |
+| V4 | Sin sugerencia disponible | `test_sin_match_en_ningun_nivel_devuelve_ninguno_y_lista_vacia_sin_excepcion`; frontend `OrdenCompraSelector.test.tsx::sin sugerencia (origen "ninguno") cae directo al buscador, sin pedir "No es este"` | yes |
+| V5 | Confirmación humana obligatoria en todos los casos | `test_resolver_cliente_candidato_nunca_escribe`; frontend `ValidarExtraccionDetalle.test.tsx::puedeConfirmar exige cliente_id confirmado + entregas sin bloqueo + cabecera sin bloqueos`; los 4 tests de `OrdenCompraSelector.test.tsx` (ningún branch invoca el callback de confirmación automáticamente) | yes |
+| V6 | `cliente_id` confirmado inválido | `test_cliente_id_inexistente_levanta_error_antes_del_primer_write`; `test_cliente_id_de_otra_drogueria_levanta_error` | yes |
+| V7 | Primera confirmación de un texto de cabecera nuevo | `test_primera_confirmacion_sin_alias_previo_arranca_en_uno`; `test_upsert_alias_cliente_ciclo_completo_en_vivo` (live) | yes |
+| V8 | Corrección de un alias existente | `test_correccion_pisa_y_resetea`; `test_reconfirmacion_identica_incrementa_veces_confirmado`; mismo `test_upsert_alias_cliente_ciclo_completo_en_vivo` (live, cubre las 3 ramas en una sola fila real) | yes |
+| V9 | Filas de un grupo se muestran concatenadas, sin fusión automática | `test_leer_filas_grupo_tres_miembros_concatena_en_orden_de_grupo`; `test_renglones_repetidos_no_se_suman`; `test_leer_filas_grupo_en_vivo_concatena_los_miembros_del_grupo` (live); frontend `ValidarExtraccionDetalle.test.tsx::la tabla muestra la concatenación de las 3 filas del grupo, sin fusionar ni deduplicar` | yes |
+| V10 | El número de línea del documento es solo de referencia | `test_renglones_repetidos_no_se_suman` (mismo `numero_renglon`, 2 filas separadas); frontend `useFilasEditables.test.ts::numero_renglon/_archivo/_extraction_id/entregas son columnas de referencia no editables`; `TablaEditable.test.tsx` (columnas no editables se renderizan como texto de solo lectura, sin bloquear ni advertir) | yes |
+| V11 | El usuario reconcilia filas duplicadas manualmente | `ValidarExtraccionDetalle.test.tsx::borrarFila sobre la fila duplicada la saca del payload enviado (queda solo A y C)` | yes |
+| V12 | Agrupar extracciones sueltas después de la carga | `test_agrupar_exitoso_genera_grupo_id_nuevo_y_actualiza_ambas`; `test_agrupar_y_desagrupar_extracciones_en_vivo` (live); `test_agrupar_extracciones_endpoint_en_vivo` (live); frontend `ValidarExtraccionListado.test.tsx::"Agrupar seleccionadas" arranca deshabilitado y se habilita al tildar 2 filas orden_compra` | yes |
+| V13 | No se puede agrupar una extracción ya validada | `test_agrupar_validada_rechazado` (`ConflictError` antes del `UPDATE`) | yes |
+| V14 | Desagrupar | `test_desagrupar_deja_grupo_id_null_y_disuelve_el_de_un_solo_miembro_restante`; `test_desagrupar_extraccion_validada_rechazado`; live en `test_agrupar_y_desagrupar_extracciones_en_vivo` | yes |
+| V15 | Número de orden de compra discrepante bloquea la confirmación | `test_conciliar_cabecera_numero_oc_distinto_bloquea`; frontend `CabeceraOrdenCompra.test.tsx::numero_oc en desacuerdo entre miembros: campo en rojo y "Confirmar OC" deshabilitado` | yes |
+| V16 | Otros campos de cabecera discrepantes solo advierten | `test_conciliar_cabecera_otros_campos_distintos_advierten_sin_bloquear`; `test_conciliar_cabecera_valor_mas_frecuente_gana`; `test_conciliar_cabecera_empate_gana_el_primer_miembro`; frontend `CabeceraOrdenCompra.test.tsx::desacuerdo en razón social / fecha de emisión / dirección de entrega muestra aviso pero no bloquea` | yes |
+| V17 | Entregas extraídas del documento | `tests/test_robot_orden_compra.py::TestConstruirFilas::test_gramatica_de_entregas_se_preserva_verbatim` (extracción preserva la gramática); frontend `useFilasEditables.test.ts` (`parsearPlanEntregas`, 3 tests); `test_validar_orden_compra_materializa_oc_items_y_entregas` (live, materializa desde el payload de entregas) | yes |
+| V18 | Entregas no detectadas | `test_entregas_vacia_viola_min_length_del_modelo` (pydantic `min_length=1` bloquea antes de la función) | yes |
+| V19 | Reparto parejo por conteo de entregas | `test_repartir_cantidad_casos_enteros`; `test_repartir_cantidad_decimal_resto_al_final`; `test_repartir_cantidad_propiedad_suma_exacta` (36 combinaciones, invariante de suma exacta); frontend `EntregasEditor.test.tsx::reparto automático parejo visible cuando el usuario solo carga cantidad de entregas` | yes |
+| V20 | Confirmación exitosa | `test_validar_orden_compra_materializa_oc_items_y_entregas` (live) | yes |
+| V21 | Confirmar no descuenta stock | mismo test, aserción explícita `mock_entregar_stock.assert_not_called()` | yes |
+| V22 | El número de línea persistido es siempre un ordinal del sistema | `test_numero_renglon_se_asigna_por_posicion_no_del_documento`; `test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto`; `test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual` | yes |
+| V23 | Confirmar una orden de compra agrupada valida todo el grupo | `test_validar_orden_compra_agrupada_materializa_una_sola_oc_y_valida_todo_el_grupo`; `test_validar_orden_compra_agrupada_con_miembro_ya_validado_da_conflict_sin_escribir` | yes |
+| V24 | Mismo `numero_oc`, clientes distintos | `test_validar_orden_compra_mismo_numero_oc_clientes_distintos_ambas_confirman` | yes |
+| V25 | Mismo `numero_oc`, mismo cliente | `test_validar_orden_compra_mismo_numero_oc_mismo_cliente_da_conflict` | yes |
+
+**Resumen**: 33 escenarios totales (8 extracción + 25 validación). **31 `yes`**, **2 `partial`** (E1,
+E6 — ambos en `orden-compra-extraccion`, ambos alrededor de la ruta real de persistencia/duplicados
+del lado del backend cuando `tipo=ordenes`, no de una regla de negocio sin probar), **0 `no`**.
+Ningún escenario del spec de validación quedó sin cobertura.
 
 ---
 

@@ -4,18 +4,36 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   obtenerFilasExtraccion,
   validarExtraccion,
+  type EntregaPlanIn,
   type FilaComparativaIn,
   type FilaLicitacionIn,
+  type ValidarExtraccionPayload,
 } from '@/lib/api/extracciones'
 import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
+import { CabeceraOrdenCompra, type CabeceraOrdenCompraValores } from './components/CabeceraOrdenCompra'
 import { ConfirmarValidacionDialog } from './components/ConfirmarValidacionDialog'
 import { DocumentoDemasiadoGrande } from './components/DocumentoDemasiadoGrande'
+import { EntregasEditor } from './components/EntregasEditor'
+import { OrdenCompraSelector } from './components/OrdenCompraSelector'
 import { ProcesoComercialSelector } from './components/ProcesoComercialSelector'
 import { TablaEditable } from './components/TablaEditable'
 import { MAX_FILAS_EDITABLES } from './constants'
 import { useFilasEditables } from './useFilasEditables'
 
 const EXTRACCIONES_KEY = ['extracciones'] as const
+
+/** D6: el extractor normaliza `fecha_emision` a `DD/MM/AAAA`. El backend la
+ * tipa como `date` (Pydantic v2 solo acepta ISO `YYYY-MM-DD` para strings) --
+ * sin esta conversión, cualquier fecha detectada rompería la confirmación con
+ * un 422. `null`/vacío/formato inesperado -> `null` (el backend cae a la
+ * fecha de confirmación por default, D6). */
+function fechaCsvAIso(valor: string): string | null {
+  const limpio = (valor ?? '').trim()
+  const coincidencia = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(limpio)
+  if (!coincidencia) return null
+  const [, dia, mes, anio] = coincidencia
+  return `${anio}-${mes}-${dia}`
+}
 
 interface Props {
   extractionId: string
@@ -34,6 +52,17 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   const [procesoComercialId, setProcesoComercialId] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
 
+  // Estado de la rama orden_compra (D3/D8/D13.1) -- cada componente de las
+  // Phases 6/7 reporta su estado por callback (`onClienteConfirmado`/
+  // `onCambio`), el container (acá) es quien decide `puedeConfirmar` y arma
+  // el payload final, igual que ya hace con `procesoComercialId`.
+  const [clienteId, setClienteId] = useState<string | null>(null)
+  const [razonSocialExtraida, setRazonSocialExtraida] = useState<string | null>(null)
+  const [cabecera, setCabecera] = useState<CabeceraOrdenCompraValores | null>(null)
+  const [cabeceraBloqueada, setCabeceraBloqueada] = useState(false)
+  const [entregas, setEntregas] = useState<EntregaPlanIn[]>([])
+  const [entregasBloqueadas, setEntregasBloqueadas] = useState(false)
+
   const bloqueadoPorHint = rowCountHint > MAX_FILAS_EDITABLES
 
   const filasQuery = useQuery({
@@ -49,16 +78,10 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   })
 
   const hook = useFilasEditables(filasQuery.data?.document_type ?? '', filasQuery.data?.filas)
+  const esOrdenCompra = filasQuery.data?.document_type === 'orden_compra'
 
   const mutation = useMutation({
-    // Unión de listas, no lista de uniones (mismo criterio que el backend,
-    // design.md §2.1) -- filasParaEnviar() siempre es homogénea en runtime,
-    // una sola llamada nunca mezcla document_type.
-    mutationFn: (filas: FilaLicitacionIn[] | FilaComparativaIn[] | null) =>
-      validarExtraccion(extractionId, {
-        proceso_comercial_id: procesoComercialId,
-        filas,
-      }),
+    mutationFn: (payload: ValidarExtraccionPayload) => validarExtraccion(extractionId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: EXTRACCIONES_KEY })
       navigate({ to: '/validar-extraccion' })
@@ -75,7 +98,9 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         <DocumentoDemasiadoGrande
           rowCount={filasQuery.data?.row_count ?? rowCountHint}
           isPending={mutation.isPending}
-          onConfirmarSinEditar={() => mutation.mutate(null)}
+          onConfirmarSinEditar={() =>
+            mutation.mutate({ proceso_comercial_id: procesoComercialId, filas: null })
+          }
         />
         {mutation.isError && (
           <p className="text-sm text-red-600">
@@ -100,7 +125,40 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
     )
   }
 
-  const puedeConfirmar = !hook.tieneErrores && procesoComercialId !== null
+  /** Arma `OrdenCompraOverride` (design.md § Interfaces) desde el estado del
+   * container + el estado de `useFilasEditables`. `numero_renglon_documento`
+   * viaja tal cual el documento lo declaró (o `null` si vino vacío, C10) --
+   * nunca es lo que se persiste como `oc_items.numero_renglon` (D13.1, lo
+   * asigna el backend por posición). `producto_id` queda `null`: no hay
+   * selector de producto en esta pantalla (D11, fuera de alcance de Phase 8). */
+  function construirOrdenCompraOverride() {
+    return {
+      numero_oc: cabecera?.numero_oc ?? '',
+      cliente_id: clienteId ?? '',
+      razon_social_extraida: razonSocialExtraida,
+      fecha_emision: fechaCsvAIso(cabecera?.fecha_emision ?? ''),
+      direccion_entrega: cabecera?.direccion_entrega || null,
+      notas: null,
+      filas: hook.filas
+        .filter((fila) => !fila._borrada)
+        .map((fila) => ({
+          numero_renglon_documento: String(fila.numero_renglon ?? '').trim() || null,
+          descripcion: String(fila.descripcion ?? ''),
+          cantidad: String(fila.cantidad ?? ''),
+          precio_unitario: String(fila.precio_unitario ?? ''),
+          producto_id: null,
+        })),
+      entregas,
+    }
+  }
+
+  const puedeConfirmar = esOrdenCompra
+    ? !hook.tieneErrores &&
+      clienteId !== null &&
+      entregas.length >= 1 &&
+      !entregasBloqueadas &&
+      !cabeceraBloqueada
+    : !hook.tieneErrores && procesoComercialId !== null
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
@@ -111,12 +169,31 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         </p>
       </header>
 
-      <ProcesoComercialSelector
-        documentType={filasQuery.data.document_type}
-        procesoComercialId={procesoComercialId}
-        procesos={procesosQuery.data ?? []}
-        onChange={setProcesoComercialId}
-      />
+      {esOrdenCompra ? (
+        <>
+          <CabeceraOrdenCompra
+            filas={filasQuery.data.filas}
+            onCambio={(valores, bloqueado) => {
+              setCabecera(valores)
+              setCabeceraBloqueada(bloqueado)
+            }}
+          />
+          <OrdenCompraSelector
+            extractionId={extractionId}
+            onClienteConfirmado={(id, razonSocial) => {
+              setClienteId(id)
+              setRazonSocialExtraida(razonSocial)
+            }}
+          />
+        </>
+      ) : (
+        <ProcesoComercialSelector
+          documentType={filasQuery.data.document_type}
+          procesoComercialId={procesoComercialId}
+          procesos={procesosQuery.data ?? []}
+          onChange={setProcesoComercialId}
+        />
+      )}
 
       <TablaEditable
         campos={hook.campos}
@@ -127,6 +204,21 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         onBorrarFila={hook.borrarFila}
         onAgregarFila={hook.agregarFila}
       />
+
+      {esOrdenCompra && (
+        <EntregasEditor
+          filas={hook.filas
+            .filter((fila) => !fila._borrada)
+            .map((fila) => ({
+              descripcion: String(fila.descripcion ?? ''),
+              cantidad: String(fila.cantidad ?? ''),
+            }))}
+          onCambio={(entregasActuales, bloqueado) => {
+            setEntregas(entregasActuales)
+            setEntregasBloqueadas(bloqueado)
+          }}
+        />
+      )}
 
       {mutation.isError && (
         <p className="text-sm text-red-600">
@@ -154,9 +246,12 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         documentType={filasQuery.data.document_type}
         isPending={mutation.isPending}
         onConfirm={() =>
-          mutation.mutate(
-            hook.filasParaEnviar() as unknown as FilaLicitacionIn[] | FilaComparativaIn[],
-          )
+          esOrdenCompra
+            ? mutation.mutate({ orden_compra: construirOrdenCompraOverride() })
+            : mutation.mutate({
+                proceso_comercial_id: procesoComercialId,
+                filas: hook.filasParaEnviar() as unknown as FilaLicitacionIn[] | FilaComparativaIn[],
+              })
         }
       />
     </div>
