@@ -434,6 +434,76 @@ def _extract_native_pdf(filepath: Path) -> str:
     return result
 
 
+def _extract_native_pdf_orden_compra(filepath: Path) -> str:
+    """Extract text from a native PDF, dedicated to orden_compra documents.
+
+    Deliberately separate from `_extract_native_pdf` (used by licitación and
+    comparativa) — real client purchase orders have a different shape:
+    free-text header (cliente, CUIT, número de orden, fecha) mixed with a
+    small line-items table on the SAME page, often printed from a web system
+    with no visible table borders. `_extract_native_pdf` drops a page's free
+    text entirely whenever pdfplumber finds ANY table on it, which silently
+    loses that header on real OC documents. This function never does that:
+
+    1. `page.extract_text()` is always extracted, for every page — the table
+       (if any) is appended as enrichment, never as a replacement.
+    2. Table detection tries the default (lines/lines) strategy first. If
+       that yields at most 1 row (no real data rows — common when a
+       browser-printed PDF has no ruled column/row borders), it retries with
+       `vertical_strategy="text"` / `horizontal_strategy="lines"` before
+       giving up. Verified empirically against a real border-less OC PDF:
+       the default strategy detects only the header row; text/lines detects
+       the header AND both data rows (text/text over-splits the whole page
+       into unrelated cells, since there is no table region to bound it —
+       lines still exist above/below the table even though the borders
+       between columns don't).
+    3. Failing both strategies is not an error: the free text already
+       captured in step 1 has the full information; the table is optional
+       support only.
+
+    No `_distribute_brands` or any other comparativa-specific logic.
+
+    Raises RuntimeError if pdfplumber is not installed.
+    """
+    if not PDFPLUMBER_AVAILABLE:
+        raise RuntimeError("pdfplumber is not installed")
+
+    parts: list[str] = []
+
+    with pdfplumber.open(str(filepath)) as pdf:
+        page_count = len(pdf.pages)
+        for page_num, page in enumerate(pdf.pages, start=1):
+            text = page.extract_text()
+            if text and text.strip():
+                parts.append(text.strip())
+
+            merged_tables = [
+                merged for table in page.extract_tables()
+                if len(merged := _merge_fragmented_rows(table)) > 1
+            ]
+            if not merged_tables:
+                alt_tables = page.extract_tables(table_settings={
+                    "vertical_strategy": "text",
+                    "horizontal_strategy": "lines",
+                })
+                merged_tables = [
+                    merged for table in alt_tables
+                    if len(merged := _merge_fragmented_rows(table)) > 1
+                ]
+
+            for merged in merged_tables:
+                md = _rows_to_markdown(merged)
+                if md:
+                    parts.append(md)
+
+    result = "\n\n".join(parts)
+    logger.info(
+        "pipeline=native_pdf_orden_compra file=%s pages=%d chars=%d",
+        filepath.name, page_count, len(result),
+    )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Private parsers
 # ---------------------------------------------------------------------------
@@ -584,6 +654,89 @@ def _parse_pdf(filepath: Path) -> str:
     except Exception as exc:
         logger.warning("Docling failed for %s, falling back to Vision: %s", filepath.name, exc)
         logger.info("pipeline=vision_fallback file=%s", filepath.name)
+        return _parse_image(filepath)
+
+    finally:
+        gc.collect()
+        for temp_file in temp_files:
+            try:
+                temp_file.unlink()
+                logger.debug("Cleaned up temporary chunk: %s", temp_file.name)
+            except Exception as cleanup_exc:
+                logger.warning("Failed to clean up chunk %s: %s", temp_file.name, cleanup_exc)
+
+
+def _parse_pdf_orden_compra(filepath: Path) -> str:
+    """Parse a PDF file to Markdown, dedicated to orden_compra documents.
+
+    Same fallback pipeline SHAPE as `_parse_pdf` (native → Docling → Vision) —
+    only the "native" step differs, via `_extract_native_pdf_orden_compra()`
+    instead of the shared `_extract_native_pdf()`. See that function's
+    docstring for why orden_compra needs its own native-extraction logic.
+    """
+    if not DOCLING_AVAILABLE:
+        logger.warning("docling not available, routing PDF to Gemini Vision: %s", filepath.name)
+        return _parse_image(filepath)
+
+    scanned = is_scanned_pdf(filepath)
+
+    if not scanned:
+        if PDFPLUMBER_AVAILABLE:
+            try:
+                result = _extract_native_pdf_orden_compra(filepath)
+                if result.strip():
+                    return result
+                logger.warning(
+                    "pdfplumber returned empty result for %s, falling back to Docling",
+                    filepath.name,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "pdfplumber failed for %s (%s), falling back to Docling",
+                    filepath.name,
+                    exc,
+                )
+        pipeline_label = "docling_native_fallback_orden_compra"
+    else:
+        pipeline_label = "docling_scanned_orden_compra"
+
+    temp_files: list[Path] = []
+    try:
+        chunks = _split_pdf_by_pages(filepath, pages_per_chunk=15)
+        files_to_process = chunks if chunks else [filepath]
+        temp_files = chunks
+
+        all_markdown: list[str] = []
+        for idx, chunk_path in enumerate(files_to_process, start=1):
+            try:
+                chunk_result = _docling_convert(chunk_path, lightweight=True)
+                chunk_text = chunk_result.document.export_to_markdown()
+                all_markdown.append(chunk_text)
+                logger.info(
+                    "Parsed PDF chunk %d/%d via docling (%d chars)",
+                    idx,
+                    len(files_to_process),
+                    len(chunk_text),
+                )
+            except Exception as chunk_exc:
+                logger.warning("Docling chunk %d failed, using Vision: %s", idx, chunk_exc)
+                chunk_text = _parse_image(chunk_path)
+                all_markdown.append(chunk_text)
+            gc.collect()
+
+        text = "\n\n".join(all_markdown)
+        logger.info(
+            "pipeline=%s file=%s chunks=%d chars=%d",
+            pipeline_label,
+            filepath.name,
+            len(files_to_process),
+            len(text),
+        )
+        return text
+
+    except Exception as exc:
+        logger.warning("Docling failed for %s, falling back to Vision: %s", filepath.name, exc)
+        logger.info("pipeline=vision_fallback_orden_compra file=%s", filepath.name)
         return _parse_image(filepath)
 
     finally:
@@ -768,4 +921,67 @@ def parse_document(filepath: Path) -> str:
     result = result.replace("\r\n", "\n")
 
     logger.info("Successfully parsed: %s", filepath.name)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# orden_compra-dedicated router table and public entry point
+#
+# Deliberate duplication of parse_document()'s routing/error-handling shape
+# (same precedent as robot_orden_compra.py existing as its own module instead
+# of reusing robot_comparativas.py) — orden_compra gets its own PDF path
+# (_parse_pdf_orden_compra) without touching parse_document()/_EXTENSION_ROUTER
+# or anything licitación/comparativa depend on. Every non-PDF format reuses
+# the exact same handlers as parse_document().
+# ---------------------------------------------------------------------------
+
+_EXTENSION_ROUTER_ORDEN_COMPRA: dict[str, Callable[[Path], str]] = {
+    **_EXTENSION_ROUTER,
+    ".pdf": _parse_pdf_orden_compra,
+}
+
+
+def parse_document_orden_compra(filepath: Path) -> str:
+    """Parse a document of any supported format to Markdown — orden_compra entry point.
+
+    Same public contract as `parse_document()` (see its docstring for the
+    full contract: exceptions, guarantees, side effects). The only behavioral
+    difference is PDF routing: `.pdf` files go through `_parse_pdf_orden_compra`
+    (native step = `_extract_native_pdf_orden_compra`, which never drops a
+    page's free text just because a table was also found on it — see that
+    function's docstring for the real-document bug this fixes). Every other
+    extension routes to the exact same handler as `parse_document()`.
+
+    Args:
+        filepath: Path to the document file. Must exist on disk.
+
+    Returns:
+        Markdown-formatted string representation of document content.
+
+    Raises:
+        FileNotFoundError: If filepath does not exist on disk.
+        UnsupportedFormatError: If file extension is not in the supported set.
+        ParserError: If the underlying parser fails.
+    """
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
+
+    ext = filepath.suffix.lower()
+    handler = _EXTENSION_ROUTER_ORDEN_COMPRA.get(ext)
+
+    if handler is None:
+        raise UnsupportedFormatError(ext)
+
+    logger.info("Parsing document (orden_compra): %s (format: %s)", filepath.name, ext)
+
+    try:
+        result = handler(filepath)
+    except (UnsupportedFormatError, ParserError):
+        raise
+    except Exception as exc:
+        raise ParserError(filepath, exc) from exc
+
+    result = result.replace("\r\n", "\n")
+
+    logger.info("Successfully parsed (orden_compra): %s", filepath.name)
     return result

@@ -34,7 +34,7 @@ from google.genai import types
 from services.extraccion.config import get_next_client, get_output_dir, get_processed_dir, generate_with_fallback
 from services.extraccion.robot import obtener_cliente, nombre_unico
 from services.extraccion.gemini_errors import handle_gemini_errors, GeminiTruncationError
-from services.extraccion.parsers import parse_document
+from services.extraccion.parsers import parse_document_orden_compra
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +292,11 @@ def procesar_orden_compra(
     """Process a client purchase-order document into a flat D6 CSV.
 
     Pipeline:
-      1. Parse document to Markdown via parse_document() (parser router, sin cambios).
+      1. Parse document to Markdown via parse_document_orden_compra() — usa el
+         path de extracción de PDF dedicado a orden_compra (nunca descarta el
+         texto libre de una página por tener una tabla; ver docstring de
+         _extract_native_pdf_orden_compra en parsers.py). No comparte el paso
+         PDF-nativo con licitación/comparativa (parse_document()).
       2. Single Gemini JSON call: cabecera + renglones (_llamar_gemini_orden_compra).
       3. Transform: _construir_filas() (pura) repite cabecera por renglón, preserva
          numero_renglon tal cual (nunca lo fabrica — C10).
@@ -332,7 +336,7 @@ def procesar_orden_compra(
         cliente,
     )
 
-    markdown = parse_document(ruta_archivo)
+    markdown = parse_document_orden_compra(ruta_archivo)
     logger.info("Document parsed to Markdown (%d chars)", len(markdown))
 
     prompt_efectivo = (

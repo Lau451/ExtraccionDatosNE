@@ -2,7 +2,7 @@
 Tests unitarios para services/extraccion/robot_orden_compra.py — Tramo 1 (extracción).
 
 Mockean la llamada a Gemini (`_llamar_gemini_orden_compra`) y el parseo de documento
-(`parse_document`) para ejercitar `procesar_orden_compra()` de punta a punta sin red,
+(`parse_document_orden_compra`) para ejercitar `procesar_orden_compra()` de punta a punta sin red,
 y prueban `_construir_filas()` como función pura sin ningún mock (0 mocks — transformación
 de datos, ver strict-tdd.md § Mock Hygiene Rules / Extract-Before-Mock Rule).
 
@@ -149,7 +149,7 @@ class TestProcesarOrdenCompra:
         origen.write_bytes(b"%PDF-1.4 contenido de prueba")
 
         mocker.patch(
-            "services.extraccion.robot_orden_compra.parse_document",
+            "services.extraccion.robot_orden_compra.parse_document_orden_compra",
             return_value="markdown de prueba",
         )
         mocker.patch(
@@ -189,7 +189,7 @@ class TestProcesarOrdenCompra:
         origen.write_bytes(b"PK\x03\x04 contenido xlsx de prueba")
 
         mocker.patch(
-            "services.extraccion.robot_orden_compra.parse_document",
+            "services.extraccion.robot_orden_compra.parse_document_orden_compra",
             return_value="markdown de prueba",
         )
         mocker.patch(
@@ -229,7 +229,7 @@ class TestProcesarOrdenCompra:
         datos_vacios["renglones"] = []
 
         mocker.patch(
-            "services.extraccion.robot_orden_compra.parse_document",
+            "services.extraccion.robot_orden_compra.parse_document_orden_compra",
             return_value="markdown de prueba",
         )
         mocker.patch(
