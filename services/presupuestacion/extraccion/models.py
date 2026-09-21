@@ -46,7 +46,13 @@ class FilaOrdenCompraIn(BaseModel):
 
 
 class EntregaPlanIn(BaseModel):
-    """Una entrega del plan de una orden de compra (D8)."""
+    """Una entrega del plan de una orden de compra (D8).
+
+    Ajuste post-shipping (2026-09-21): ya NO viaja en `OrdenCompraOverride` --
+    la división en entregas se sacó del flujo de confirmación de OC y se
+    mueve a una fase futura de matching contra presupuesto, todavía sin
+    diseñar (bloqueada por Sistemas). Se conserva esta clase sin usar porque
+    esa fase futura la va a reusar tal cual."""
 
     model_config = ConfigDict(extra="forbid")
     numero_entrega: int
@@ -75,7 +81,6 @@ class OrdenCompraOverride(BaseModel):
     direccion_entrega: str | None = None
     notas: str | None = None
     filas: list[FilaOrdenCompraIn]
-    entregas: list[EntregaPlanIn] = Field(min_length=1)
 
 
 class ValidarExtraccionRequest(BaseModel):
@@ -94,7 +99,10 @@ class ResultadoValidarExtraccion(BaseModel):
     comparativa_id: str | None = None
     reemplazo_version_anterior: bool = False
     orden_compra_id: str | None = None  # NUEVO
-    entregas_creadas: int = 0  # NUEVO
+    # Siempre 0 desde el ajuste post-shipping (2026-09-21): la materialización
+    # de entregas se sacó del flujo de confirmación. Se conserva el campo (en
+    # vez de sacarlo) para no romper el contrato de API sin necesidad.
+    entregas_creadas: int = 0
     renglones_sin_producto: int = 0  # NUEVO (D11)
     extracciones_validadas: int = 1  # NUEVO (D13) -- miembros del grupo marcados
 

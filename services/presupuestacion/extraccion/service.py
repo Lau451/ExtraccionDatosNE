@@ -2,7 +2,7 @@ import csv
 import logging
 import re
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 
@@ -626,58 +626,12 @@ def _validar_orden_compra_override(
             "pertenece a otra droguería"
         )
 
-    n_filas = len(override.filas)
     for posicion, fila in enumerate(override.filas, start=1):
         if _a_decimal(fila.precio_unitario) is None:
             errores.append(
                 f"renglón {posicion}: 'precio_unitario' no es un número válido "
                 f"(\"{fila.precio_unitario}\")"
             )
-
-    # D8 -- solo se valida la suma del desglose manual cuando el usuario cargó
-    # cantidades_por_posicion en AL MENOS una entrega. Si ninguna entrega trae
-    # desglose, el reparto es automático (repartir_cantidad) y no hay nada que
-    # verificar acá: la suma es exacta por construcción.
-    modo_manual = any(entrega.cantidades_por_posicion is not None for entrega in override.entregas)
-    if modo_manual:
-        for entrega_numero, entrega in enumerate(override.entregas, start=1):
-            if entrega.cantidades_por_posicion is None:
-                continue
-            for clave in entrega.cantidades_por_posicion:
-                try:
-                    posicion = int(clave)
-                except ValueError:
-                    errores.append(
-                        f"entrega {entrega_numero}: clave de posición inválida (\"{clave}\")"
-                    )
-                    continue
-                if posicion < 1 or posicion > n_filas:
-                    errores.append(
-                        f"entrega {entrega_numero}: la posición {posicion} está fuera de "
-                        f"rango (1..{n_filas})"
-                    )
-
-        for posicion, fila in enumerate(override.filas, start=1):
-            clave = str(posicion)
-            suma = Decimal("0")
-            for entrega in override.entregas:
-                valor_bruto = (entrega.cantidades_por_posicion or {}).get(clave)
-                if valor_bruto is None:
-                    continue
-                valor = _a_decimal(valor_bruto)
-                if valor is None:
-                    errores.append(
-                        f"renglón {posicion}: cantidad de entrega inválida (\"{valor_bruto}\")"
-                    )
-                    continue
-                suma += valor
-
-            cantidad_fila = _a_decimal(fila.cantidad)
-            if cantidad_fila is not None and suma != cantidad_fila:
-                errores.append(
-                    f"renglón {posicion}: la suma de las entregas ({suma}) no coincide con "
-                    f"la cantidad del renglón ({cantidad_fila})"
-                )
 
     if errores:
         detalle = "; ".join(errores[:10])
@@ -693,17 +647,24 @@ def _materializar_orden_compra(
     usuario_id: str,
     override: OrdenCompraOverride,
 ) -> tuple[str, int, int, int]:
-    """D1/D7/D8/D13.1 -- inserta ordenes_compra/oc_items/entregas_oc/
-    entregas_oc_items a partir de las filas YA reconciliadas por el usuario
-    (filas concatenadas del grupo, editadas/borradas por el operador).
+    """D1/D7/D13.1 -- inserta ordenes_compra/oc_items a partir de las filas YA
+    reconciliadas por el usuario (filas concatenadas del grupo, editadas/
+    borradas por el operador).
 
     `numero_renglon` se asigna por POSICIÓN 1..N sobre `override.filas`,
     descartando por completo `numero_renglon_documento` (D13.1). NUNCA llama
     a `stock.entregar_stock_producto` -- invariante duro del spec ("confirmar
     no descuenta stock").
 
+    Ajuste post-shipping (2026-09-21): ya NO crea `entregas_oc`/
+    `entregas_oc_items` -- esa división se movió a una fase futura de
+    matching contra presupuesto, todavía sin diseñar. `cantidad_entregas` no
+    se setea explícito: la columna tiene `DEFAULT 1` (docs/schema/
+    extractor_final.sql).
+
     Devuelve (orden_compra_id, filas_creadas, entregas_creadas,
-    renglones_sin_producto).
+    renglones_sin_producto) -- `entregas_creadas` siempre 0, se conserva en
+    la tupla para no tocar la firma sin necesidad.
     """
     fila_oc: dict[str, Any] = {
         "cliente_id": override.cliente_id,
@@ -712,7 +673,6 @@ def _materializar_orden_compra(
         "extraction_id": extraction["id"],  # el ancla del grupo (D13.1 § Confirmación)
         "numero_oc": override.numero_oc,
         "estado": "emitida",  # D4 -- nace emitida, no pendiente
-        "cantidad_entregas": len(override.entregas),
         "items_cantidad": len(override.filas),
         "fecha_emision": override.fecha_emision.isoformat() if override.fecha_emision else None,
         "direccion_entrega": override.direccion_entrega,
@@ -732,7 +692,7 @@ def _materializar_orden_compra(
     # siguen son llamadas REST separadas, sin transacción (limitación de
     # PostgREST -- una RPC real está fuera de alcance de este fix puntual).
     # Si cualquiera de ellas falla, la fila de `ordenes_compra` ya insertada
-    # quedaría huérfana (sin oc_items/entregas_oc) y bloquearía un reintento
+    # quedaría huérfana (sin oc_items) y bloquearía un reintento
     # futuro vía `uq_oc_por_cliente` con un conflicto que no tiene nada que
     # ver con la causa real. Compensación manual: ante cualquier excepción acá
     # adentro, borrar esa fila y relanzar la excepción original.
@@ -769,7 +729,6 @@ def _materializar_orden_compra(
                 }
             )
         items_creados = repo.insertar_oc_items(client, filas_items)
-        item_id_por_posicion = {item["numero_renglon"]: item["id"] for item in items_creados}
 
         registrar_evento_ciclo_vida(
             client,
@@ -792,65 +751,11 @@ def _materializar_orden_compra(
             usuario_id=usuario_id,
             batch_id=str(uuid.uuid4()),
         )
-
-        fecha_base = override.fecha_emision or date.today()
-        modo_manual = any(
-            entrega.cantidades_por_posicion is not None for entrega in override.entregas
-        )
-
-        # Reparto automático (D8): se calcula UNA vez por renglón, sobre TODAS las
-        # entregas, cuando ninguna entrega trae desglose manual.
-        reparto_automatico: dict[int, list[Decimal]] = {}
-        if not modo_manual:
-            for posicion, fila in enumerate(override.filas, start=1):
-                cantidad_decimal = _a_decimal(fila.cantidad) or Decimal("0")
-                reparto_automatico[posicion] = repartir_cantidad(
-                    cantidad_decimal, len(override.entregas)
-                )
-
-        entregas_creadas = 0
-        for indice_entrega, entrega in enumerate(override.entregas):
-            fecha_entrega_planificada = (
-                fecha_base + timedelta(days=entrega.plazo_dias)
-                if entrega.plazo_dias is not None
-                else None
-            )
-            fila_entrega = {
-                "orden_compra_id": orden_compra_id,
-                "drogueria_id": drogueria_id,
-                "numero_entrega": entrega.numero_entrega,
-                "fecha_entrega_planificada": (
-                    fecha_entrega_planificada.isoformat() if fecha_entrega_planificada else None
-                ),
-                "estado": "pendiente",
-                "cantidad_items": len(override.filas),
-            }
-            entrega_creada = repo.crear_entrega_oc(client, fila_entrega)
-            entregas_creadas += 1
-
-            filas_entrega_items = []
-            for posicion in range(1, len(override.filas) + 1):
-                if modo_manual:
-                    valor_bruto = (entrega.cantidades_por_posicion or {}).get(str(posicion), "0")
-                    cantidad_planificada = _a_decimal(valor_bruto) or Decimal("0")
-                else:
-                    cantidad_planificada = reparto_automatico[posicion][indice_entrega]
-                filas_entrega_items.append(
-                    {
-                        "entrega_oc_id": entrega_creada["id"],
-                        "drogueria_id": drogueria_id,
-                        "oc_item_id": item_id_por_posicion[posicion],
-                        "cantidad_planificada": str(cantidad_planificada),
-                        "cantidad_entregada": "0",
-                        "cantidad_rechazada": "0",
-                    }
-                )
-            repo.insertar_entregas_oc_items(client, filas_entrega_items)
     except Exception:
         repo.borrar_orden_compra(client, orden_compra_id=orden_compra_id)
         raise
 
-    return orden_compra_id, len(items_creados), entregas_creadas, renglones_sin_producto
+    return orden_compra_id, len(items_creados), 0, renglones_sin_producto
 
 
 def _validar_y_materializar_orden_compra(

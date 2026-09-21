@@ -3,13 +3,11 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import ValidationError as PydanticValidationError
 
 from services.presupuestacion.core.exceptions import ValidationError
 from services.presupuestacion.extraccion import repository as repo
 from services.presupuestacion.extraccion import service
 from services.presupuestacion.extraccion.models import (
-    EntregaPlanIn,
     FilaOrdenCompraIn,
     OrdenCompraOverride,
 )
@@ -34,12 +32,6 @@ def _fila(
         precio_unitario=precio,
         producto_id=producto_id,
     )
-
-
-def _entrega(
-    *, numero: int = 1, plazo: int | None = None, cantidades: dict[str, str] | None = None
-) -> EntregaPlanIn:
-    return EntregaPlanIn(numero_entrega=numero, plazo_dias=plazo, cantidades_por_posicion=cantidades)
 
 
 def _cliente(*, drogueria_id: str = "d1", activo: bool = True) -> dict:
@@ -101,53 +93,12 @@ def test_repartir_cantidad_entregas_menor_a_uno_levanta_value_error():
 # =============================================================================
 
 
-def test_entregas_vacia_viola_min_length_del_modelo():
-    # D7: `entregas: list[EntregaPlanIn]` con min_length=1 -- rechazado por
-    # pydantic al construir el modelo, ni siquiera llega a _validar_orden_compra_override.
-    with pytest.raises(PydanticValidationError):
-        OrdenCompraOverride(
-            numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()], entregas=[]
-        )
-
-
-def test_entregas_no_vacia_sin_desglose_valido_no_coincide_con_cantidad(monkeypatch):
-    # Lista no vacía, pero el desglose manual cargado no suma la cantidad del renglón.
-    monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: _cliente())
-    override = OrdenCompraOverride(
-        numero_oc="OC-1",
-        cliente_id="cli-1",
-        filas=[_fila(cantidad="10")],
-        entregas=[_entrega(numero=1, cantidades={"1": "3"})],
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
-    assert "renglón 1" in str(excinfo.value)
-
-
-def test_suma_de_entregas_por_linea_distinta_de_cantidad_levanta_error(monkeypatch):
-    monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: _cliente())
-    override = OrdenCompraOverride(
-        numero_oc="OC-1",
-        cliente_id="cli-1",
-        filas=[_fila(cantidad="100")],
-        entregas=[
-            _entrega(numero=1, cantidades={"1": "40"}),
-            _entrega(numero=2, cantidades={"1": "40"}),
-        ],
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
-    assert "no coincide" in str(excinfo.value)
-
-
 def test_precio_vacio_bloquea_confirmacion(monkeypatch):
     # Threat-matrix: un documento sin precio_unitario detectable NO bloquea la
     # extracción (D6 -- el CSV puede traerlo vacío), pero el editor SÍ lo
     # exige antes de confirmar.
     monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: _cliente())
-    override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila(precio="")], entregas=[_entrega()]
-    )
+    override = OrdenCompraOverride(numero_oc="OC-1", cliente_id="cli-1", filas=[_fila(precio="")])
     with pytest.raises(ValidationError) as excinfo:
         service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
     assert "precio_unitario" in str(excinfo.value)
@@ -159,32 +110,16 @@ def test_precio_unitario_no_numerico_levanta_error(monkeypatch):
         numero_oc="OC-1",
         cliente_id="cli-1",
         filas=[_fila(precio="no-es-un-numero")],
-        entregas=[_entrega()],
     )
     with pytest.raises(ValidationError) as excinfo:
         service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
     assert "precio_unitario" in str(excinfo.value)
 
 
-def test_clave_de_cantidades_por_posicion_fuera_de_rango(monkeypatch):
-    monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: _cliente())
-    override = OrdenCompraOverride(
-        numero_oc="OC-1",
-        cliente_id="cli-1",
-        filas=[_fila(cantidad="10")],  # 1 sola fila -> rango válido es solo "1"
-        entregas=[_entrega(numero=1, cantidades={"5": "10"})],
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
-    assert "fuera de rango" in str(excinfo.value)
-
-
 def test_cliente_id_inexistente_levanta_error_antes_del_primer_write(monkeypatch):
     mock_buscar = MagicMock(return_value=None)
     monkeypatch.setattr(repo, "buscar_cliente_por_id", mock_buscar)
-    override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="no-existe", filas=[_fila()], entregas=[_entrega()]
-    )
+    override = OrdenCompraOverride(numero_oc="OC-1", cliente_id="no-existe", filas=[_fila()])
     with pytest.raises(ValidationError) as excinfo:
         service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
     assert "cliente" in str(excinfo.value)
@@ -193,9 +128,7 @@ def test_cliente_id_inexistente_levanta_error_antes_del_primer_write(monkeypatch
 
 def test_cliente_id_de_otra_drogueria_levanta_error(monkeypatch):
     monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: _cliente(drogueria_id="otra"))
-    override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()], entregas=[_entrega()]
-    )
+    override = OrdenCompraOverride(numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()])
     with pytest.raises(ValidationError) as excinfo:
         service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
     assert "cliente" in str(excinfo.value)
@@ -204,20 +137,22 @@ def test_cliente_id_de_otra_drogueria_levanta_error(monkeypatch):
 def test_validar_override_acumula_errores_de_multiples_problemas_en_un_solo_422(monkeypatch):
     # Mismo patrón que test_validar_filas_override_acumula_errores_de_multiples_filas
     # (existente, licitación/comparativa) -- todos los errores en un solo ValidationError.
+    # Ajuste post-shipping (2026-09-21): ya no hay un tercer tipo de error (el
+    # de entregas) para acumular -- queda cliente + precio_unitario en 2 filas.
     monkeypatch.setattr(repo, "buscar_cliente_por_id", lambda client, **kw: None)
     override = OrdenCompraOverride(
         numero_oc="OC-1",
         cliente_id="no-existe",
-        filas=[_fila(precio="")],
-        entregas=[_entrega(numero=1, cantidades={"9": "10"})],
+        filas=[_fila(precio=""), _fila(precio="no-es-un-numero")],
     )
     with pytest.raises(ValidationError) as excinfo:
         service._validar_orden_compra_override(MagicMock(), drogueria_id="d1", override=override)
 
     mensaje = str(excinfo.value)
     assert "cliente" in mensaje
+    assert "renglón 1" in mensaje
+    assert "renglón 2" in mensaje
     assert "precio_unitario" in mensaje
-    assert "fuera de rango" in mensaje
 
 
 def test_no_existe_validacion_de_numero_renglon_duplicado():
@@ -248,8 +183,6 @@ def _preparar_mocks_materializacion(monkeypatch):
 
     monkeypatch.setattr(repo, "crear_orden_compra", lambda client, fila: {"id": "oc-1"})
     monkeypatch.setattr(repo, "insertar_oc_items", _fake_insertar_oc_items)
-    monkeypatch.setattr(repo, "crear_entrega_oc", lambda client, fila: {"id": "entrega-1"})
-    monkeypatch.setattr(repo, "insertar_entregas_oc_items", lambda client, filas: filas)
     monkeypatch.setattr(service, "registrar_evento_ciclo_vida", lambda *a, **kw: None)
     monkeypatch.setattr(service, "registrar_cambio", lambda *a, **kw: None)
     return items_insertados
@@ -263,8 +196,7 @@ def test_numero_renglon_se_asigna_por_posicion_no_del_documento(monkeypatch):
         _fila(numero_doc=None, cantidad="30"),
     ]
     override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=filas, entregas=[_entrega(numero=1)]
-    )
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas    )
 
     service._materializar_orden_compra(
         MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
@@ -277,8 +209,7 @@ def test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto(monkeypat
     items_insertados = _preparar_mocks_materializacion(monkeypatch)
     filas = [_fila(numero_doc="5", cantidad="10"), _fila(numero_doc="5", cantidad="20")]
     override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=filas, entregas=[_entrega(numero=1)]
-    )
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas    )
 
     service._materializar_orden_compra(
         MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
@@ -295,8 +226,7 @@ def test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual(monkeypatch):
         _fila(numero_doc=None, cantidad="30"),
     ]
     override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=filas, entregas=[_entrega(numero=1)]
-    )
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas    )
 
     service._materializar_orden_compra(
         MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
@@ -325,8 +255,7 @@ def test_precio_unitario_con_coma_se_convierte_a_punto_antes_del_insert(monkeypa
     items_insertados = _preparar_mocks_materializacion(monkeypatch)
     filas = [_fila(cantidad="10,5", precio="890,75")]
     override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=filas, entregas=[_entrega(numero=1)]
-    )
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas    )
 
     service._materializar_orden_compra(
         MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
@@ -345,6 +274,31 @@ def test_precio_unitario_con_coma_se_convierte_a_punto_antes_del_insert(monkeypa
 # =============================================================================
 
 
+def test_materializar_orden_compra_ya_no_crea_entregas(monkeypatch):
+    # Ajuste post-shipping (2026-09-21): la división en entregas se saca del
+    # flujo de confirmación de OC -- se mueve a una fase futura de
+    # matching+entregas, todavía sin diseñar. _materializar_orden_compra deja
+    # de llamar a crear_entrega_oc/insertar_entregas_oc_items por completo.
+    items_insertados = _preparar_mocks_materializacion(monkeypatch)
+    mock_crear_entrega = MagicMock()
+    mock_insertar_entregas_items = MagicMock()
+    monkeypatch.setattr(repo, "crear_entrega_oc", mock_crear_entrega)
+    monkeypatch.setattr(repo, "insertar_entregas_oc_items", mock_insertar_entregas_items)
+
+    override = OrdenCompraOverride(
+        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila(cantidad="10")]
+    )
+
+    resultado = service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    mock_crear_entrega.assert_not_called()
+    mock_insertar_entregas_items.assert_not_called()
+    assert resultado[2] == 0  # entregas_creadas siempre 0
+    assert [f["numero_renglon"] for f in items_insertados] == [1]
+
+
 def test_falla_en_insertar_oc_items_borra_la_orden_compra_huerfana(monkeypatch):
     _preparar_mocks_materializacion(monkeypatch)
 
@@ -357,8 +311,7 @@ def test_falla_en_insertar_oc_items_borra_la_orden_compra_huerfana(monkeypatch):
     monkeypatch.setattr(repo, "insertar_oc_items", _falla)
 
     override = OrdenCompraOverride(
-        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()], entregas=[_entrega(numero=1)]
-    )
+        numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()]    )
 
     with pytest.raises(RuntimeError, match="insert de oc_items falló"):
         service._materializar_orden_compra(

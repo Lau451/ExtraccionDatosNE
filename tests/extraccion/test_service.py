@@ -16,7 +16,6 @@ from services.presupuestacion.core.exceptions import (
 )
 from services.presupuestacion.extraccion import repository as repo
 from services.presupuestacion.extraccion.models import (
-    EntregaPlanIn,
     FilaOrdenCompraIn,
     OrdenCompraOverride,
 )
@@ -410,7 +409,7 @@ def test_validar_no_pisa_proceso_comercial_id_ya_vinculado(
 
 
 @pytest.mark.integration
-def test_validar_orden_compra_materializa_oc_items_y_entregas(
+def test_validar_orden_compra_materializa_oc_items_sin_crear_entregas(
     service_client,
     seed_drogueria,
     seed_proceso_comercial,
@@ -419,6 +418,10 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
     seed_cliente_factory,
     monkeypatch,
 ):
+    # Ajuste post-shipping (2026-09-21): invertido -- ANTES este test
+    # confirmaba que _materializar_orden_compra creaba entregas_oc/
+    # entregas_oc_items; ahora confirma lo contrario (esa división se movió a
+    # una fase futura de matching contra presupuesto, todavía sin diseñar).
     cliente = seed_cliente_factory("Hospital San Roque")
     extraction = seed_extraction_result_factory(
         "orden_compra",
@@ -440,7 +443,6 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
                 numero_renglon_documento="2", descripcion="Amoxicilina", cantidad="20", precio_unitario="80"
             ),
         ],
-        entregas=[EntregaPlanIn(numero_entrega=1)],
     )
     mock_entregar_stock = MagicMock()
     monkeypatch.setattr(stock, "entregar_stock_producto", mock_entregar_stock)
@@ -456,7 +458,7 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
     assert resultado.document_type == "orden_compra"
     assert resultado.proceso_comercial_id is None
     assert resultado.filas_creadas == 2
-    assert resultado.entregas_creadas == 1
+    assert resultado.entregas_creadas == 0
     assert resultado.orden_compra_id is not None
     assert resultado.extracciones_validadas == 1
 
@@ -474,6 +476,9 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
     assert oc["proceso_comercial_id"] is None
     assert oc["cliente_id"] == cliente["cliente_id"]
     assert oc["extraction_id"] == extraction["id"]
+    # cantidad_entregas ya NO se setea explícito -- queda en 1 por el
+    # DEFAULT de la columna (docs/schema/extractor_final.sql), no porque se
+    # haya creado ninguna entrega.
     assert oc["cantidad_entregas"] == 1
 
     items = (
@@ -493,23 +498,19 @@ def test_validar_orden_compra_materializa_oc_items_y_entregas(
         .execute()
         .data
     )
-    assert len(entregas) == 1
-    assert entregas[0]["estado"] == "pendiente"
+    assert entregas == []
 
+    # entregas_oc_items no tiene orden_compra_id propio (FK vía entrega_oc_id
+    # -> entregas_oc.orden_compra_id) -- se filtra por los oc_item_id recién
+    # creados, que es lo único que podría referenciar una entrega huérfana.
     entrega_items = (
         service_client.table("entregas_oc_items")
         .select("*")
-        .eq("entrega_oc_id", entregas[0]["id"])
+        .in_("oc_item_id", [item["id"] for item in items])
         .execute()
         .data
     )
-    # Una sola entrega -> repartir_cantidad(cantidad, 1) = [cantidad] entera para
-    # cada renglón; la suma total planificada = 10 + 20.
-    total_planificado = sum(Decimal(str(ei["cantidad_planificada"])) for ei in entrega_items)
-    assert total_planificado == Decimal("30")
-    for ei in entrega_items:
-        assert Decimal(str(ei["cantidad_entregada"])) == Decimal("0")
-        assert Decimal(str(ei["cantidad_rechazada"])) == Decimal("0")
+    assert entrega_items == []
 
     extraction_final = (
         service_client.table("extraction_results")
@@ -563,7 +564,6 @@ def test_validar_orden_compra_precio_unitario_con_coma_no_crashea(
                 precio_unitario="890,75",
             ),
         ],
-        entregas=[EntregaPlanIn(numero_entrega=1)],
     )
     monkeypatch.setattr(stock, "entregar_stock_producto", MagicMock())
 
@@ -630,7 +630,6 @@ def test_validar_orden_compra_falla_en_items_no_deja_orden_huerfana(
                 precio_unitario="150",
             ),
         ],
-        entregas=[EntregaPlanIn(numero_entrega=1)],
     )
     monkeypatch.setattr(stock, "entregar_stock_producto", MagicMock())
 
@@ -688,7 +687,6 @@ def test_validar_orden_compra_agrupada_materializa_una_sola_oc_y_valida_todo_el_
             FilaOrdenCompraIn(descripcion="Gasa", cantidad="5", precio_unitario="10"),
             FilaOrdenCompraIn(descripcion="Alcohol", cantidad="3", precio_unitario="20"),
         ],
-        entregas=[EntregaPlanIn(numero_entrega=1)],
     )
 
     resultado = validar_extraccion(
@@ -756,7 +754,6 @@ def test_validar_orden_compra_agrupada_con_miembro_ya_validado_da_conflict_sin_e
         numero_oc="OC-GRUPO-2",
         cliente_id=cliente["cliente_id"],
         filas=[FilaOrdenCompraIn(descripcion="X", cantidad="1", precio_unitario="1")],
-        entregas=[EntregaPlanIn(numero_entrega=1)],
     )
 
     with pytest.raises(ConflictError):
@@ -798,8 +795,7 @@ def test_validar_orden_compra_mismo_numero_oc_clientes_distintos_ambas_confirman
             numero_oc="OC-DUP-1",
             cliente_id=cliente["cliente_id"],
             filas=[FilaOrdenCompraIn(descripcion="Item", cantidad="1", precio_unitario="1")],
-            entregas=[EntregaPlanIn(numero_entrega=1)],
-        )
+            )
 
         resultado = validar_extraccion(
             service_client,
@@ -838,8 +834,7 @@ def test_validar_orden_compra_mismo_numero_oc_mismo_cliente_da_conflict(
             numero_oc="OC-DUP-2",
             cliente_id=cliente["cliente_id"],
             filas=[FilaOrdenCompraIn(descripcion="Item", cantidad="1", precio_unitario="1")],
-            entregas=[EntregaPlanIn(numero_entrega=1)],
-        )
+            )
 
     validar_extraccion(
         service_client,
