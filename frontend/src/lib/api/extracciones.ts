@@ -67,9 +67,13 @@ export interface FilaOrdenCompraIn {
   producto_id: string | null
 }
 
-/** Espejo literal de `EntregaPlanIn` (design.md § Interfaces). La clave de
- * `cantidades_por_posicion` es la posición 1-based en `OrdenCompraOverride.filas`
- * -- la misma que se va a asignar como `numero_renglon` (D13.1). */
+/** Espejo literal de `EntregaPlanIn` (services/presupuestacion/extraccion/models.py).
+ * Ajuste post-shipping (2026-09-21): ya NO viaja en `OrdenCompraOverride` -- la
+ * división en entregas se sacó del flujo de confirmación de OC y se mueve a una
+ * fase futura de matching contra presupuesto, todavía sin diseñar. Se conserva
+ * esta interfaz sin usar (igual que su espejo Pydantic) porque esa fase futura
+ * la va a reusar tal cual -- ver también `EntregasEditor.tsx`, que no la
+ * importa (define su propio tipo local `EntregaPlanEditable`). */
 export interface EntregaPlanIn {
   numero_entrega: number
   plazo_dias: number | null
@@ -78,7 +82,8 @@ export interface EntregaPlanIn {
 
 /** Espejo literal de `OrdenCompraOverride` (design.md § Interfaces). Sin
  * `modo_fusion`: D13.1 elimina ese concepto por completo -- las filas del
- * grupo se concatenan siempre y el usuario reconcilia editando. */
+ * grupo se concatenan siempre y el usuario reconcilia editando. Sin
+ * `entregas` (ajuste post-shipping 2026-09-21, ver `EntregaPlanIn` arriba). */
 export interface OrdenCompraOverride {
   numero_oc: string
   cliente_id: string
@@ -87,7 +92,6 @@ export interface OrdenCompraOverride {
   direccion_entrega: string | null
   notas: string | null
   filas: FilaOrdenCompraIn[]
-  entregas: EntregaPlanIn[]
 }
 
 export interface ValidarExtraccionPayload {

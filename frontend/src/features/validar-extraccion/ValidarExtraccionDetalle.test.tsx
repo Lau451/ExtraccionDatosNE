@@ -74,32 +74,6 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
   },
 }))
 
-vi.mock('./components/EntregasEditor', () => ({
-  EntregasEditor: ({
-    onCambio,
-  }: {
-    onCambio: (
-      entregas: { numero_entrega: number; plazo_dias: number | null; cantidades_por_posicion: null }[],
-      bloqueado: boolean,
-    ) => void
-  }) => {
-    // Espeja el default real de EntregasEditor: 1 entrega automática, sin
-    // bloqueo, reportada apenas se monta (mismo patrón que el componente real).
-    useEffect(() => {
-      onCambio([{ numero_entrega: 1, plazo_dias: null, cantidades_por_posicion: null }], false)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-    return (
-      <div>
-        <p>entregas-editor-stub</p>
-        <button type="button" onClick={() => onCambio([], true)}>
-          stub-entregas-bloqueadas
-        </button>
-      </div>
-    )
-  },
-}))
-
 import { obtenerFilasExtraccion, validarExtraccion } from '@/lib/api/extracciones'
 
 function renderConQueryClient(ui: React.ReactElement) {
@@ -194,13 +168,21 @@ describe('ValidarExtraccionDetalle — gate de tamaño (D7)', () => {
 
 // Phase 8 (D7/D13/D13.1) — wiring final: rama document_type === 'orden_compra'.
 describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
-  it('no renderiza ProcesoComercialSelector; renderiza CabeceraOrdenCompra + OrdenCompraSelector + EntregasEditor', async () => {
+  it('no renderiza ProcesoComercialSelector ni EntregasEditor; renderiza CabeceraOrdenCompra + OrdenCompraSelector', async () => {
+    // Ajuste post-shipping (2026-09-21): la división en entregas se saca del
+    // flujo de confirmación de OC -- EntregasEditor ya NO se renderiza acá
+    // (se mueve a una fase futura de matching, todavía sin diseñar). El
+    // componente y sus tests propios (EntregasEditor.test.tsx) se conservan
+    // sin tocar, solo se deja de invocar desde esta pantalla.
     mockFilasOrdenCompra([FILA_OC()])
     renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
 
     await screen.findByText('cabecera-orden-compra-stub')
     expect(screen.getByText('orden-compra-selector-stub')).toBeInTheDocument()
-    expect(screen.getByText('entregas-editor-stub')).toBeInTheDocument()
+    // EntregasEditor.tsx ya NO está mockeado en este archivo (se sacó el
+    // vi.mock) -- si el componente real se siguiera renderizando acá, su
+    // label "Cantidad de entregas" aparecería en el DOM.
+    expect(screen.queryByText(/cantidad de entregas/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/proceso comercial/i)).not.toBeInTheDocument()
   })
 
@@ -219,20 +201,20 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
     expect(screen.getByRole('button', { name: /^deshacer borrado de fila 1$/i })).toBeInTheDocument()
   })
 
-  it('puedeConfirmar exige cliente_id confirmado + entregas sin bloqueo + cabecera sin bloqueos', async () => {
+  it('puedeConfirmar exige cliente_id confirmado + cabecera sin bloqueos (ya no depende de entregas)', async () => {
     mockFilasOrdenCompra([FILA_OC()])
     renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
 
     await screen.findByText('cabecera-orden-compra-stub')
     const botonConfirmar = screen.getByRole('button', { name: /^confirmar validación$/i })
 
-    // Cabecera y entregas ya se auto-reportaron sin bloqueo al montar (mismo
-    // comportamiento del componente real) -- solo falta el cliente.
+    // Cabecera ya se auto-reportó sin bloqueo al montar (mismo comportamiento
+    // del componente real) -- solo falta el cliente.
     expect(botonConfirmar).toBeDisabled()
 
     await confirmarCliente()
-    // Las 3 condiciones están cumplidas: cliente confirmado, entregas sin
-    // bloqueo, cabecera sin bloqueos.
+    // Las 2 condiciones están cumplidas: cliente confirmado, cabecera sin
+    // bloqueos -- ya no hay una tercera condición de entregas.
     await waitFor(() => expect(botonConfirmar).not.toBeDisabled())
 
     // Si la cabecera pasa a bloqueada (p. ej. numero_oc en desacuerdo sin
@@ -241,22 +223,7 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
     expect(botonConfirmar).toBeDisabled()
   })
 
-  it('con entregas bloqueadas (suma de desglose manual no cuadra), puedeConfirmar es false', async () => {
-    mockFilasOrdenCompra([FILA_OC()])
-    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
-
-    await screen.findByText('cabecera-orden-compra-stub')
-    await confirmarCliente()
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
-    )
-
-    fireEvent.click(screen.getByText('stub-entregas-bloqueadas'))
-
-    expect(screen.getByRole('button', { name: /^confirmar validación$/i })).toBeDisabled()
-  })
-
-  it('el payload enviado a validarExtraccion lleva orden_compra (fecha ISO, cliente, filas, entregas) y no filas', async () => {
+  it('el payload enviado a validarExtraccion lleva orden_compra (fecha ISO, cliente, filas) sin entregas ni filas', async () => {
     mockFilasOrdenCompra([FILA_OC()])
     renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
 
@@ -278,8 +245,8 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
       razon_social_extraida: 'HOSPITAL CENTRAL',
       fecha_emision: '2026-09-12', // D6: DD/MM/AAAA en el documento -> ISO para el backend
       direccion_entrega: 'Av. Siempreviva 742',
-      entregas: [{ numero_entrega: 1, plazo_dias: null, cantidades_por_posicion: null }],
     })
+    expect(payload.orden_compra).not.toHaveProperty('entregas')
     expect(payload.orden_compra?.filas).toEqual([
       {
         numero_renglon_documento: '1',

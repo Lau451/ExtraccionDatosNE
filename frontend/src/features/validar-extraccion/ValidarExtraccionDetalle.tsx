@@ -4,7 +4,6 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   obtenerFilasExtraccion,
   validarExtraccion,
-  type EntregaPlanIn,
   type FilaComparativaIn,
   type FilaLicitacionIn,
   type ValidarExtraccionPayload,
@@ -13,7 +12,6 @@ import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
 import { CabeceraOrdenCompra, type CabeceraOrdenCompraValores } from './components/CabeceraOrdenCompra'
 import { ConfirmarValidacionDialog } from './components/ConfirmarValidacionDialog'
 import { DocumentoDemasiadoGrande } from './components/DocumentoDemasiadoGrande'
-import { EntregasEditor } from './components/EntregasEditor'
 import { OrdenCompraSelector } from './components/OrdenCompraSelector'
 import { ProcesoComercialSelector } from './components/ProcesoComercialSelector'
 import { TablaEditable } from './components/TablaEditable'
@@ -60,8 +58,6 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   const [razonSocialExtraida, setRazonSocialExtraida] = useState<string | null>(null)
   const [cabecera, setCabecera] = useState<CabeceraOrdenCompraValores | null>(null)
   const [cabeceraBloqueada, setCabeceraBloqueada] = useState(false)
-  const [entregas, setEntregas] = useState<EntregaPlanIn[]>([])
-  const [entregasBloqueadas, setEntregasBloqueadas] = useState(false)
 
   const bloqueadoPorHint = rowCountHint > MAX_FILAS_EDITABLES
 
@@ -148,16 +144,11 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
           precio_unitario: String(fila.precio_unitario ?? ''),
           producto_id: null,
         })),
-      entregas,
     }
   }
 
   const puedeConfirmar = esOrdenCompra
-    ? !hook.tieneErrores &&
-      clienteId !== null &&
-      entregas.length >= 1 &&
-      !entregasBloqueadas &&
-      !cabeceraBloqueada
+    ? !hook.tieneErrores && clienteId !== null && !cabeceraBloqueada
     : !hook.tieneErrores && procesoComercialId !== null
 
   return (
@@ -204,21 +195,6 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         onBorrarFila={hook.borrarFila}
         onAgregarFila={hook.agregarFila}
       />
-
-      {esOrdenCompra && (
-        <EntregasEditor
-          filas={hook.filas
-            .filter((fila) => !fila._borrada)
-            .map((fila) => ({
-              descripcion: String(fila.descripcion ?? ''),
-              cantidad: String(fila.cantidad ?? ''),
-            }))}
-          onCambio={(entregasActuales, bloqueado) => {
-            setEntregas(entregasActuales)
-            setEntregasBloqueadas(bloqueado)
-          }}
-        />
-      )}
 
       {mutation.isError && (
         <p className="text-sm text-red-600">

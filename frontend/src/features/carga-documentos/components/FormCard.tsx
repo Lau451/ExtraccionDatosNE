@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import clsx from 'clsx'
 import {
   listarClientes,
   listarDocumentosRecientes,
   procesarDocumento,
+  type DocumentoReciente,
   type ProcesarResultado,
   type TipoDocumento,
 } from '@/lib/api/extraccion'
@@ -26,15 +28,18 @@ async function esperarNuevoDocumento(
   queryClient: ReturnType<typeof useQueryClient>,
   countAntes: number,
   cantidadEsperada: number,
-) {
+): Promise<DocumentoReciente[]> {
+  let ultimaLista: DocumentoReciente[] = []
   for (let intento = 0; intento < 6; intento++) {
     const data = await queryClient.fetchQuery({
       queryKey: RECIENTES_KEY,
       queryFn: () => listarDocumentosRecientes(),
     })
-    if (data.documentos.length >= countAntes + cantidadEsperada) return
+    ultimaLista = data.documentos
+    if (data.documentos.length >= countAntes + cantidadEsperada) return ultimaLista
     await esperar(600)
   }
+  return ultimaLista
 }
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
@@ -100,6 +105,7 @@ export function FormCard() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })
 
@@ -109,12 +115,28 @@ export function FormCard() {
       const countAntes = queryClient.getQueryData<{ documentos: unknown[] }>(RECIENTES_KEY)
         ?.documentos.length ?? 0
       const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
-      await esperarNuevoDocumento(queryClient, countAntes, archivos.length)
-      return resultados
+      const documentos = await esperarNuevoDocumento(queryClient, countAntes, archivos.length)
+      return { resultados, documentos }
     },
-    onSuccess: () => {
+    onSuccess: ({ resultados, documentos }) => {
       setArchivos([])
       if (fileInputRef.current) fileInputRef.current.value = ''
+
+      // D13.1/UX (ajuste post-shipping 2026-09-21) -- carga de orden_compra
+      // exitosa (1 o N archivos agrupados) navega directo a la pantalla de
+      // validación, sin que el usuario tenga que ir a buscarla a mano.
+      // Licitación/comparativa NO cambian (se quedan en "Carga de
+      // documentos", como hoy). Si algún archivo del lote falló, no se
+      // navega -- se deja el reporte de error por archivo ya existente.
+      const todosOk = resultados.length > 0 && resultados.every((resultado) => resultado.ok)
+      const extraccion = documentos[0]
+      if (tipo === 'ordenes' && todosOk && extraccion?.id) {
+        navigate({
+          to: '/validar-extraccion/$extractionId',
+          params: { extractionId: extraccion.id },
+          search: { rowCount: extraccion.row_count },
+        })
+      }
     },
   })
 
@@ -224,7 +246,7 @@ export function FormCard() {
 
         {mutation.isSuccess && (
           <ul className="space-y-1 text-sm">
-            {mutation.data?.map((resultado) => (
+            {mutation.data?.resultados.map((resultado) => (
               <li key={resultado.archivo} className={resultado.ok ? 'text-emerald-600' : 'text-red-600'}>
                 {resultado.archivo}: {resultado.ok ? 'procesado correctamente' : resultado.error}
               </li>
