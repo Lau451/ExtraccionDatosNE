@@ -1,8 +1,13 @@
-"""Unit tests (sin red) para services.terceros.identidad.service.listar_terceros_paginado:
-paginado y filtro de rol son lógica pura de Python sobre lo que ya trajo el
-repository, así que se prueban con un `repo.listar_terceros` mockeado en vez
-de pegarle a la DB real (esa parte -- el filtro `q` contra Postgres -- ya la
-cubren los tests de integración de test_service.py)."""
+"""Unit tests (sin red) para services.terceros.identidad.service.listar_terceros_paginado.
+
+Desde el fix de paginación/rol 100% server-side (odd/tasks/
+terceros-listado-paginacion-y-rol.md), esta función es un wrapper fino sobre
+repo.listar_terceros_paginado -- esa función arma la query real contra
+PostgREST y ahí es donde vive la lógica de paginado y filtro de rol (probada
+sin red en tests/terceros/identidad/test_repository.py, y contra Postgres
+real en tests/terceros/identidad/test_service.py). Acá solo se prueba que el
+service reenvía los parámetros correctos al repository y aplica
+`_con_flags_de_rol` sobre lo que devuelve."""
 
 from typing import Any
 
@@ -21,111 +26,99 @@ def _tercero(id_: str, *, cliente: bool = False, proveedor: bool = False) -> dic
 
 
 @pytest.fixture
-def repo_listar_terceros_mock(monkeypatch: pytest.MonkeyPatch):
+def repo_listar_terceros_paginado_mock(monkeypatch: pytest.MonkeyPatch):
     llamadas: list[dict[str, Any]] = []
 
-    def _fake(client, *, drogueria_id, activo=None, q=None):
-        llamadas.append({"drogueria_id": drogueria_id, "activo": activo, "q": q})
-        return _fake.filas
+    def _fake(
+        client,
+        *,
+        drogueria_id,
+        activo=None,
+        q=None,
+        filtro_rol="todos",
+        page=1,
+        page_size=50,
+    ):
+        llamadas.append(
+            {
+                "drogueria_id": drogueria_id,
+                "activo": activo,
+                "q": q,
+                "filtro_rol": filtro_rol,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+        return _fake.filas, _fake.total
 
     _fake.filas = []
-    monkeypatch.setattr(service.repo, "listar_terceros", _fake)
+    _fake.total = 0
+    monkeypatch.setattr(service.repo, "listar_terceros_paginado", _fake)
     return _fake, llamadas
 
 
-def test_pagina_el_resultado_ya_traido_del_repository(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [_tercero(f"id-{i}") for i in range(25)]
-
-    items, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", page=2, page_size=10
-    )
-
-    assert total == 25
-    assert [i["id"] for i in items] == [f"id-{i}" for i in range(10, 20)]
-
-
-def test_ultima_pagina_parcial_no_rompe(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [_tercero(f"id-{i}") for i in range(25)]
-
-    items, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", page=3, page_size=10
-    )
-
-    assert total == 25
-    assert [i["id"] for i in items] == [f"id-{i}" for i in range(20, 25)]
-
-
-def test_pagina_fuera_de_rango_devuelve_vacio_no_error(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [_tercero(f"id-{i}") for i in range(5)]
-
-    items, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", page=99, page_size=10
-    )
-
-    assert total == 5
-    assert items == []
-
-
-def test_filtro_rol_clientes_excluye_los_que_tambien_son_proveedores(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [
-        _tercero("solo-cliente", cliente=True),
-        _tercero("solo-proveedor", proveedor=True),
-        _tercero("ambos", cliente=True, proveedor=True),
-        _tercero("sin-rol"),
-    ]
-
-    items, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", filtro_rol="clientes", page=1, page_size=10
-    )
-
-    assert total == 1
-    assert [i["id"] for i in items] == ["solo-cliente"]
-
-
-def test_filtro_rol_ambos_solo_deja_los_que_tienen_los_dos_roles(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [
-        _tercero("solo-cliente", cliente=True),
-        _tercero("ambos", cliente=True, proveedor=True),
-    ]
-
-    items, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", filtro_rol="ambos", page=1, page_size=10
-    )
-
-    assert total == 1
-    assert [i["id"] for i in items] == ["ambos"]
-
-
-def test_total_refleja_el_filtro_de_rol_no_el_total_sin_filtrar(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
-    fake.filas = [_tercero(f"id-{i}", cliente=(i % 2 == 0)) for i in range(10)]
-
-    _, total = service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", filtro_rol="clientes", page=1, page_size=3
-    )
-
-    assert total == 5
-
-
-def test_reenvia_q_y_activo_al_repository(repo_listar_terceros_mock):
-    fake, llamadas = repo_listar_terceros_mock
+def test_reenvia_todos_los_parametros_al_repository(repo_listar_terceros_paginado_mock):
+    fake, llamadas = repo_listar_terceros_paginado_mock
     fake.filas = []
+    fake.total = 0
 
     service.listar_terceros_paginado(
-        client=object(), drogueria_id="drog-1", activo=False, q="hospital", page=1, page_size=10
+        client=object(),
+        drogueria_id="drog-1",
+        activo=False,
+        q="hospital",
+        filtro_rol="clientes",
+        page=2,
+        page_size=10,
     )
 
-    assert llamadas == [{"drogueria_id": "drog-1", "activo": False, "q": "hospital"}]
+    assert llamadas == [
+        {
+            "drogueria_id": "drog-1",
+            "activo": False,
+            "q": "hospital",
+            "filtro_rol": "clientes",
+            "page": 2,
+            "page_size": 10,
+        }
+    ]
 
 
-def test_items_devueltos_incluyen_flags_de_rol(repo_listar_terceros_mock):
-    fake, _ = repo_listar_terceros_mock
+def test_usa_los_defaults_esperados_cuando_no_se_pasan_parametros(
+    repo_listar_terceros_paginado_mock,
+):
+    fake, llamadas = repo_listar_terceros_paginado_mock
+
+    service.listar_terceros_paginado(client=object(), drogueria_id="drog-1")
+
+    assert llamadas == [
+        {
+            "drogueria_id": "drog-1",
+            "activo": True,
+            "q": None,
+            "filtro_rol": "todos",
+            "page": 1,
+            "page_size": 50,
+        }
+    ]
+
+
+def test_devuelve_el_total_tal_como_lo_da_el_repository(repo_listar_terceros_paginado_mock):
+    fake, _ = repo_listar_terceros_paginado_mock
+    fake.filas = [_tercero("id-1")]
+    fake.total = 5541
+
+    _, total = service.listar_terceros_paginado(client=object(), drogueria_id="drog-1")
+
+    assert total == 5541
+
+
+def test_items_devueltos_incluyen_flags_de_rol_y_no_los_arrays_crudos(
+    repo_listar_terceros_paginado_mock,
+):
+    fake, _ = repo_listar_terceros_paginado_mock
     fake.filas = [_tercero("id-1", cliente=True, proveedor=True)]
+    fake.total = 1
 
     items, _ = service.listar_terceros_paginado(client=object(), drogueria_id="drog-1")
 
@@ -133,3 +126,14 @@ def test_items_devueltos_incluyen_flags_de_rol(repo_listar_terceros_mock):
     assert items[0]["tiene_rol_proveedor"] is True
     assert "clientes" not in items[0]
     assert "proveedores" not in items[0]
+
+
+def test_items_sin_ningun_rol_traen_flags_en_false(repo_listar_terceros_paginado_mock):
+    fake, _ = repo_listar_terceros_paginado_mock
+    fake.filas = [_tercero("id-1")]
+    fake.total = 1
+
+    items, _ = service.listar_terceros_paginado(client=object(), drogueria_id="drog-1")
+
+    assert items[0]["tiene_rol_cliente"] is False
+    assert items[0]["tiene_rol_proveedor"] is False

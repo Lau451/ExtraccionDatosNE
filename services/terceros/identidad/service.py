@@ -69,18 +69,6 @@ def listar_terceros(
 FiltroRol = Literal["todos", "clientes", "proveedores", "ambos"]
 
 
-def _coincide_filtro_rol(fila: dict[str, Any], filtro_rol: FiltroRol) -> bool:
-    tiene_cliente = bool(fila.get("clientes"))
-    tiene_proveedor = bool(fila.get("proveedores"))
-    if filtro_rol == "clientes":
-        return tiene_cliente and not tiene_proveedor
-    if filtro_rol == "proveedores":
-        return tiene_proveedor and not tiene_cliente
-    if filtro_rol == "ambos":
-        return tiene_cliente and tiene_proveedor
-    return True
-
-
 def listar_terceros_paginado(
     client: Client,
     *,
@@ -91,20 +79,22 @@ def listar_terceros_paginado(
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[dict[str, Any]], int]:
-    # El filtro de rol depende de si el tercero tiene fila en `clientes`/
-    # `proveedores` -- eso no es expresable como un filtro PostgREST simple
-    # sobre `terceros` (haría falta un "no existe" sobre un embed, que
-    # supabase-py no ofrece), así que se aplica acá en Python sobre lo que
-    # ya trajo paginado internamente el repository (D: bug de truncado en
-    # 1000 filas). `total` es el conteo POST-filtro de rol, para que la
-    # paginación del listado coincida con lo que el usuario realmente ve.
-    filas = repo.listar_terceros(client, drogueria_id=drogueria_id, activo=activo, q=q)
-    if filtro_rol != "todos":
-        filas = [f for f in filas if _coincide_filtro_rol(f, filtro_rol)]
-    total = len(filas)
-    inicio = (page - 1) * page_size
-    pagina = filas[inicio : inicio + page_size]
-    return [_con_flags_de_rol(fila) for fila in pagina], total
+    # Paginación y filtro de rol son 100% server-side desde acá -- ver el
+    # comentario largo en repository.listar_terceros_paginado para el porqué
+    # (incluye la investigación de si postgrest-py podía expresar el filtro
+    # de rol como query). `total` viene del `count="exact"` que ya calculó
+    # PostgREST en la misma respuesta, no de `len()` sobre una lista traída
+    # entera a Python.
+    filas, total = repo.listar_terceros_paginado(
+        client,
+        drogueria_id=drogueria_id,
+        activo=activo,
+        q=q,
+        filtro_rol=filtro_rol,
+        page=page,
+        page_size=page_size,
+    )
+    return [_con_flags_de_rol(fila) for fila in filas], total
 
 
 def obtener_tercero(

@@ -172,6 +172,47 @@ def test_listar_terceros_paginado_pagina_contra_postgres_real(
     assert {f["id"] for f in primera_pagina}.isdisjoint({f["id"] for f in segunda_pagina})
 
 
+@pytest.mark.integration
+def test_listar_terceros_paginado_filtro_rol_es_inclusivo_contra_postgres_real(
+    service_client, seed_drogueria, seed_tercero_factory
+):
+    """Bug preexistente (odd/tasks/terceros-listado-paginacion-y-rol.md):
+    filtrar por rol='clientes' (o 'proveedores') usaba a excluir a un tercero
+    que también tenía el otro rol. Esto prueba en vivo, contra PostgREST real,
+    que el embed `!inner` server-side es inclusivo: el tercero con ambos
+    roles tiene que aparecer filtrando por cualquiera de los dos."""
+    ambos = seed_tercero_factory(razon_social="Ambos Roles Paginado SA")
+    asignar_rol_cliente(
+        service_client,
+        tercero_id=ambos["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ClienteRolCreate(),
+    )
+    asignar_rol_proveedor(
+        service_client,
+        tercero_id=ambos["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ProveedorRolCreate(),
+    )
+
+    items_clientes, total_clientes = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], filtro_rol="clientes"
+    )
+    items_proveedores, total_proveedores = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], filtro_rol="proveedores"
+    )
+    items_ambos, total_ambos = listar_terceros_paginado(
+        service_client, drogueria_id=seed_drogueria["id"], filtro_rol="ambos"
+    )
+
+    assert ambos["id"] in {i["id"] for i in items_clientes}
+    assert ambos["id"] in {i["id"] for i in items_proveedores}
+    assert ambos["id"] in {i["id"] for i in items_ambos}
+    assert total_clientes >= 1
+    assert total_proveedores >= 1
+    assert total_ambos >= 1
+
+
 # ---------------------------------------------------------------------------
 # 3.6 / 3.7 / 3.8 — asignación de roles
 # ---------------------------------------------------------------------------

@@ -67,6 +67,58 @@ def listar_terceros(
     return filas
 
 
+def listar_terceros_paginado(
+    client: Client,
+    *,
+    drogueria_id: str,
+    activo: bool | None = None,
+    q: str | None = None,
+    filtro_rol: str = "todos",
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    # Fix de paginación real + filtro de rol server-side (D, odd/tasks/
+    # terceros-listado-paginacion-y-rol.md). Antes esta función no existía: el
+    # listado paginado armaba TODO en Python sobre `listar_terceros` (loop de
+    # a 1000 + slice), y el filtro de rol también se aplicaba en Python porque
+    # la semántica vieja de `_coincide_filtro_rol` era excluyente ("cliente Y
+    # NO proveedor") -- eso sí requiere un anti-join ("no existe" sobre un
+    # embed) que ni PostgREST ni postgrest-py exponen como filtro simple.
+    #
+    # Al arreglar ese bug de exclusividad (service.py: ahora "clientes"/
+    # "proveedores" son chequeos de presencia, sin el "AND NOT"), el filtro de
+    # rol pasó a ser expresable 100% server-side: un tercero "tiene" el rol si
+    # el embed devuelve al menos una fila, y eso es exactamente lo que hace un
+    # embed `!inner` de PostgREST (fuerza INNER JOIN, así que solo matchean
+    # filas con al menos una fila relacionada). Confirmado leyendo el código
+    # instalado de postgrest-py 2.30.0: `!inner` es sintaxis PostgREST cruda
+    # que se pasa tal cual dentro del string de `.select()` -- no depende de
+    # ningún método nuevo de la librería, así que no hacía falta "una forma
+    # especial" de expresarlo, solo dejar de necesitar la negación.
+    termino = _sanitizar_termino_or(q) if q else None
+    embed_clientes = "clientes!inner(id)" if filtro_rol in ("clientes", "ambos") else "clientes(id)"
+    embed_proveedores = (
+        "proveedores!inner(id)" if filtro_rol in ("proveedores", "ambos") else "proveedores(id)"
+    )
+    query = (
+        client.table("terceros")
+        .select(f"*, {embed_clientes}, {embed_proveedores}", count="exact")
+        .eq("drogueria_id", drogueria_id)
+        .is_("deleted_at", None)
+    )
+    if activo is not None:
+        query = query.eq("activo", activo)
+    if termino:
+        query = query.or_(
+            f"razon_social.ilike.%{termino}%,"
+            f"cuit.ilike.%{termino}%,"
+            f"codigo_interno.ilike.%{termino}%"
+        )
+    inicio = (page - 1) * page_size
+    resultado = query.order("razon_social").range(inicio, inicio + page_size - 1).execute()
+    return resultado.data, resultado.count or 0
+
+
 def crear_tercero(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("terceros").insert(fila).execute().data[0]
 
