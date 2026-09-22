@@ -105,6 +105,124 @@ def listar_presupuesto_items_por_precio(
     return items
 
 
+def listar_oc_items_completos(client: Client, *, orden_compra_id: str) -> list[dict[str, Any]]:
+    """Todas las columnas que la pantalla de matching necesita del lado de la
+    OC (Phase 3, D4/D8/D9): el vínculo, su origen, y la auditoría de
+    confirmación, ordenados por numero_renglon para una respuesta estable."""
+    return (
+        client.table("oc_items")
+        .select(
+            "id, orden_compra_id, drogueria_id, numero_renglon, descripcion, cantidad, "
+            "precio_unitario, producto_id, presupuesto_item_id, vinculo_descartado, "
+            "vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
+        )
+        .eq("orden_compra_id", orden_compra_id)
+        .order("numero_renglon")
+        .execute()
+        .data
+    )
+
+
+def buscar_oc_item(client: Client, *, oc_item_id: str) -> dict[str, Any] | None:
+    resultado = (
+        client.table("oc_items")
+        .select(
+            "id, orden_compra_id, drogueria_id, numero_renglon, descripcion, cantidad, "
+            "precio_unitario, producto_id, presupuesto_item_id, vinculo_descartado, "
+            "vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
+        )
+        .eq("id", oc_item_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def buscar_presupuesto_item_con_drogueria(
+    client: Client, *, presupuesto_item_id: str, drogueria_id: str
+) -> dict[str, Any] | None:
+    """Ownership acotado a la droguería (D12): un presupuesto_item de OTRA
+    droguería ni siquiera aparece acá -- el caller lo traduce a NotFoundError,
+    nunca a 403 (D13: no confirmar la existencia de un recurso ajeno)."""
+    resultado = (
+        client.table("presupuesto_items")
+        .select(
+            "id, presupuesto_id, item_proceso_id, producto_id, precio_unitario, "
+            "cantidad_ofertada, excluido"
+        )
+        .eq("id", presupuesto_item_id)
+        .eq("drogueria_id", drogueria_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def listar_presupuesto_items_por_ids(
+    client: Client, *, presupuesto_item_ids: list[str]
+) -> list[dict[str, Any]]:
+    """Usada para resolver el presupuesto de los vínculos YA confirmados de
+    una OC (D8, invariante duro). Troceado en lotes de 200 (D3)."""
+    if not presupuesto_item_ids:
+        return []
+    items: list[dict[str, Any]] = []
+    for lote in _en_lotes(presupuesto_item_ids):
+        resultado = (
+            client.table("presupuesto_items")
+            .select("id, presupuesto_id, item_proceso_id, producto_id, precio_unitario, excluido")
+            .in_("id", lote)
+            .execute()
+        )
+        items.extend(resultado.data)
+    return items
+
+
+def listar_items_proceso_por_ids(client: Client, *, item_proceso_ids: list[str]) -> list[dict[str, Any]]:
+    """Descripción + producto_id de respaldo (C5), para la columna izquierda
+    completa y para la herencia de producto_id (D6). Troceado en lotes de 200."""
+    if not item_proceso_ids:
+        return []
+    items: list[dict[str, Any]] = []
+    for lote in _en_lotes(item_proceso_ids):
+        resultado = (
+            client.table("items_proceso")
+            .select("id, numero_renglon, descripcion, producto_id")
+            .in_("id", lote)
+            .execute()
+        )
+        items.extend(resultado.data)
+    return items
+
+
+def listar_oc_items_por_presupuesto_item_ids(
+    client: Client, *, drogueria_id: str, presupuesto_item_ids: list[str]
+) -> list[dict[str, Any]]:
+    """Aviso N:1 (D5): alcance TODA la droguería, no solo la OC en pantalla --
+    el mismo presupuesto puede consumirse desde dos OC distintas del mismo
+    cliente. Usa idx_oci_presupuesto_item. Troceado en lotes de 200."""
+    if not presupuesto_item_ids:
+        return []
+    items: list[dict[str, Any]] = []
+    for lote in _en_lotes(presupuesto_item_ids):
+        resultado = (
+            client.table("oc_items")
+            .select("id, orden_compra_id, presupuesto_item_id, cantidad")
+            .eq("drogueria_id", drogueria_id)
+            .in_("presupuesto_item_id", lote)
+            .execute()
+        )
+        items.extend(resultado.data)
+    return items
+
+
+def actualizar_oc_item(client: Client, *, oc_item_id: str, campos: dict[str, Any]) -> dict[str, Any]:
+    """El ÚNICO write de todo el módulo de vinculación (D4/D13): confirmar,
+    deshacer y descartar son, cada uno, un solo UPDATE sobre esta fila. Corre
+    con el USER client -- oci_upd ya permite UPDATE a _ROLES_MATCHING (C3),
+    sin necesidad de service client."""
+    return client.table("oc_items").update(campos).eq("id", oc_item_id).execute().data[0]
+
+
 def buscar_numeros_presupuesto_legacy(
     client_service: Client, *, presupuesto_ids: list[str]
 ) -> dict[str, str]:

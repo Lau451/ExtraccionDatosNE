@@ -257,22 +257,22 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 
 > Depende de Phase 2 (mismos `models.py`/módulo). Cubre `oc-presupuesto-vinculacion` completa.
 
-- [ ] 3.1 [RED] En `tests/oc_presupuesto/test_service.py`, tabla de `obtener_matching` (D8):
+- [x] 3.1 [RED] En `tests/oc_presupuesto/test_service.py`, tabla de `obtener_matching` (D8):
   resolución del presupuesto activo en el orden documentado — vínculos confirmados de la OC primero,
   luego query param, luego el sugerido del ranking; **invariante duro**: todos los vínculos
   confirmados de una misma OC pertenecen al mismo presupuesto (verificado antes de escribir, no solo
   al leer).
-- [ ] 3.2 [RED] Tests de `_ordenar_por_similitud` (D7, spec § "Varios matches del mismo precio se
+- [x] 3.2 [RED] Tests de `_ordenar_por_similitud` (D7, spec § "Varios matches del mismo precio se
   ordenan por similitud de descripción"): ordena descendente por `fuzz.WRatio`, **no filtra** por
   score — incluir explícitamente un par con score < 70 que debe seguir apareciendo; `None` cuando
   hay un solo candidato (no hay nada que desempatar); reusa `normalizar_descripcion` importado tal
   cual, sin parametrizar.
-- [ ] 3.3 [RED] Tests de herencia de `producto_id` (D6, spec § "Herencia de `producto_id` al
+- [x] 3.3 [RED] Tests de herencia de `producto_id` (D6, spec § "Herencia de `producto_id` al
   confirmar un vínculo"): tabla de 4 casos del `COALESCE(presupuesto_items.producto_id,
   items_proceso.producto_id)` — ambos presentes (gana el del presupuesto), solo presupuesto, solo
   item_proceso, ninguno (`producto_id` queda `None`, **sin excepción y sin estado de UI especial**,
   confirmando explícitamente que no hay precondición de bloqueo).
-- [ ] 3.4 [RED] Tests de `confirmar_vinculo` (D4, D13, spec § "Sugerencia de vínculo por precio
+- [x] 3.4 [RED] Tests de `confirmar_vinculo` (D4, D13, spec § "Sugerencia de vínculo por precio
   exacto" y § "Confirmación humana obligatoria y granular por renglón"): un solo `UPDATE` después de
   todas las validaciones; acepta un vínculo cuyo precio **no** coincide con `vinculo_origen='manual'`
   (nunca bloquea, "el precio sugiere, no autoriza"); confirmar sobre un renglón ya confirmado
@@ -280,48 +280,116 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   que ya tiene vínculos → `ValidationError` 422 nombrando el presupuesto actual (D8); `oc_item_id`
   que no pertenece a la OC → `NotFoundError` 404; `presupuesto_item_id` de otra droguería/cliente →
   `NotFoundError` 404 (no 403); `presupuesto_item_id` con `excluido=TRUE` → `ValidationError` 422.
-- [ ] 3.5 [RED] Tests de `deshacer_vinculo` (D9, spec § implícita en el ciclo de confirmación — no
+- [x] 3.5 [RED] Tests de `deshacer_vinculo` (D9, spec § implícita en el ciclo de confirmación — no
   hay requirement propio en el spec de vinculación para deshacer, documentar la referencia a D9 de
   `design.md` como fuente): revierte el renglón a `pendiente` sirviendo tanto para `confirmado` como
   para `sin_presupuesto`; revierte `producto_id` a `NULL` **solo** si sigue siendo el valor que el
   vínculo dio (recalculado en el momento); lo deja intacto si fue cambiado por otro camino después;
   no-op si ya era `NULL`.
-- [ ] 3.6 [RED] Tests de `descartar_renglon` (D4): marca `vinculo_descartado=True` →
+- [x] 3.6 [RED] Tests de `descartar_renglon` (D4): marca `vinculo_descartado=True` →
   `estado='sin_presupuesto'`, distinto de `pendiente` ("todavía no lo miré" vs. "lo miré y no
   está").
-- [ ] 3.7 [RED] Tests del aviso N:1 (D5, spec § "Relación N:1 permitida, con aviso no bloqueante"):
+- [x] 3.7 [RED] Tests del aviso N:1 (D5, spec § "Relación N:1 permitida, con aviso no bloqueante"):
   dos `oc_items` (incluso de **distintas** OC de la misma droguería) apuntando al mismo
   `presupuesto_item_id` → `renglones_oc_vinculados=2`, `renglones_oc_vinculados_otras_oc` cuenta las
   de otra OC, `cantidad_vinculada` suma cantidades, **ninguna excepción ni bloqueo en ningún caso**.
-- [ ] 3.8 [RED] Test del invariante duro (spec § "`items_proceso.estado_matching` y
+- [x] 3.8 [RED] Test del invariante duro (spec § "`items_proceso.estado_matching` y
   `confianza_matching` quedan fuera de alcance"): snapshot de ambos campos antes/después de una
   sesión completa (confirmar + deshacer + descartar sobre varios renglones) → sin cambios.
-- [ ] 3.9 [RED] Test de integración con la fixture SAMCo Rafaela (spec § "Caso validado con datos
+- [x] 3.9 [RED] Test de integración con la fixture SAMCo Rafaela (spec § "Caso validado con datos
   reales — dos renglones sin ambigüedad"): los 2 renglones de la OC 00104857 reciben exactamente un
   renglón de presupuesto sugerido cada uno, sin desempate necesario, confirmar ambos hereda
   `producto_id` correctamente.
   Confirmar RED de 3.1-3.9 con `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q`
   antes de 3.10.
-- [ ] 3.10 [GREEN] Extender `services/presupuestacion/oc_presupuesto/repository.py`: select de
+- [x] 3.10 [GREEN] Extender `services/presupuestacion/oc_presupuesto/repository.py`: select de
   `oc_items` de la droguería con `presupuesto_item_id` en el conjunto (aviso N:1, usa
   `idx_oci_presupuesto_item`), el `UPDATE` único de confirmación/deshacer/descarte.
-- [ ] 3.11 [GREEN] Extender `services/presupuestacion/oc_presupuesto/service.py`:
+- [x] 3.11 [GREEN] Extender `services/presupuestacion/oc_presupuesto/service.py`:
   `obtener_matching()`, `confirmar_vinculo()`, `deshacer_vinculo()`, `descartar_renglon()`, con el
   orden de validación-antes-de-escribir de D12 (pertenencia de `oc_item` ∈ OC, `presupuesto_item` ∈
   presupuesto elegido ∈ cliente de la OC, **antes del primer write**).
-- [ ] 3.12 [GREEN] Extender `services/presupuestacion/oc_presupuesto/router.py` con los 4 endpoints
+- [x] 3.12 [GREEN] Extender `services/presupuestacion/oc_presupuesto/router.py` con los 4 endpoints
   restantes de D13: `GET /{id}/matching?presupuesto_id=`, `POST /{id}/items/{oc_item_id}/vinculo`,
   `DELETE /{id}/items/{oc_item_id}/vinculo`, `POST /{id}/items/{oc_item_id}/descartar` — todos con
   `_ROLES_MATCHING`, todos devuelven `MatchingOut` completo (D13, no solo el renglón tocado).
   `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → confirmar GREEN.
-- [ ] 3.13 [GREEN] Extender `tests/oc_presupuesto/test_router.py`: tabla completa de errores de D13
+- [x] 3.13 [GREEN] Extender `tests/oc_presupuesto/test_router.py`: tabla completa de errores de D13
   (404 pertenencia, 422 presupuesto cruzado/excluido/OC sin cliente, idempotencia del
   re-confirmar) como tests de integración con cliente Supabase mockeado.
   `pytest tests/oc_presupuesto/test_router.py -m "not integration" -q` → confirmar GREEN.
-- [ ] 3.14 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -q` contra el proyecto
+- [x] 3.14 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -q` contra el proyecto
   Supabase de test: fixture SAMCo Rafaela completa (confirmar los 2 vínculos reales), aviso N:1 con
   datos reales, invariante `estado_matching` sin modificar. Verificación de no-regresión:
   `pytest tests/ -q -m "not integration"` sin regresiones fuera de `tests/oc_presupuesto/`.
+
+> **Evidencia de Phase 3 (3.1-3.14), sdd-apply**: mismo patrón que Phase 2 — implementación y tests
+> de esta unidad se escribieron en el mismo lote (RED confirmado retroactivamente, no ciclo
+> estrictamente secuencial tarea por tarea). Se extendieron los 3 archivos existentes del módulo
+> (`repository.py`, `service.py`, `router.py`, ya creados en Phase 2 — sin archivos nuevos, D12 ya
+> resuelto) más `tests/oc_presupuesto/test_service.py` y `test_router.py`.
+>
+> **RED confirmado**: se corrió `git stash push -- services/presupuestacion/oc_presupuesto/{repository,router,service}.py`
+> (deja el módulo en el estado exacto de Phase 2, sin las funciones de Phase 3) y
+> `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → `41 failed, 17 passed`,
+> todas las fallas nuevas por `AttributeError: module '...repository' has no attribute
+> 'actualizar_oc_item'/'buscar_oc_item'/etc.` (exactamente los símbolos de Phase 3, ningún falso
+> positivo) y los 17 tests de Phase 2 intactos. `git stash pop` restauró la implementación.
+>
+> - **3.1**: `_resolver_presupuesto_activo` (función pura sobre dicts + un helper `_top_presupuesto_sugerido`
+>   monkeypatcheable) probada con: prioriza vínculos confirmados sobre query param; usa query param
+>   sin vínculos; cae al sugerido del ranking sin ninguno de los dos; devuelve la advertencia correcta
+>   (sin presupuestos / ninguno coincide) cuando el ranking no sugiere nada; el invariante duro
+>   (vínculos de una misma OC en presupuestos distintos) levanta `ValidationError` — verificado tanto
+>   al leer (acá) como antes de escribir (3.4).
+> - **3.2**: `_ordenar_por_similitud` — orden descendente por `WRatio`; el caso real de D7
+>   (`HCT 50MG X30` vs `HIDROCLOROTIAZIDA 50MG COMP`, score bajo) sigue apareciendo sin filtrarse;
+>   `None` con un solo candidato; se confirma con un espía que reusa `normalizar_descripcion` tal cual
+>   (no una copia parametrizada).
+> - **3.3**: `_heredar_producto_id`, función pura, los 4 casos del `COALESCE` — ninguno lanza
+>   excepción, incluido `item_proceso=None`.
+> - **3.4**: `confirmar_vinculo` con `repo`/`presupuestos_repo` monkeypatcheados y `obtener_matching`
+>   reemplazado por un sentinel (aísla la lógica de validación-y-write de la lógica de lectura, ya
+>   cubierta por los tests de `obtener_matching`): un solo `actualizar_oc_item` tras validar; precio no
+>   coincidente → `vinculo_origen='manual'`; re-confirmar el propio renglón no choca contra su vínculo
+>   anterior (se excluye a sí mismo del chequeo de invariante); presupuesto cruzado → `ValidationError`
+>   con el id del presupuesto activo en el mensaje; `oc_item` ajeno, `presupuesto_item` de otra
+>   droguería, y de otro cliente (misma droguería, distinto `proceso_comercial`) → `NotFoundError`;
+>   `excluido=TRUE` → `ValidationError`; OC sin cliente → `ValidationError`.
+> - **3.5**: `deshacer_vinculo` — revierte `producto_id` a `NULL` solo si coincide exactamente con el
+>   recalculado en el momento; lo deja **intacto** (ni la clave `producto_id` viaja en el `UPDATE`) si
+>   fue cambiado por otro camino; no-op si ya era `NULL`; sirve para `sin_presupuesto` también.
+> - **3.6**: `descartar_renglon` — `vinculo_descartado=True` + `presupuesto_item_id=None` en el mismo
+>   `UPDATE` (obligatorio por `ck_oci_vinculo_excluyente`, aunque el renglón estuviera `pendiente`).
+> - **3.7**: `_agregar_aviso_n1`, función pura — cuenta total/otras-OC y suma `cantidad_vinculada`
+>   correctamente con datos de más de una OC; lista vacía no rompe.
+> - **3.8/3.9**: integración contra `grnamollopxdlstcpxhc` con la fixture SAMCo Rafaela existente
+>   (sin reescribirla): 3.9 crea 2 productos reales, los asigna a los 2 `presupuesto_items`, confirma
+>   ambos vínculos vía `obtener_matching`+`confirmar_vinculo` y verifica candidato único sin desempate
+>   más herencia correcta de `producto_id`; 3.8 corre una sesión completa (2 confirmar + 1 deshacer +
+>   1 descartar) y confirma que `items_proceso.estado_matching`/`confianza_matching` no cambian.
+>   **Nota de proceso**: el primer intento de 3.9 falló en su propio `finally` (no en las
+>   aserciones) por `fk_pi_prod`/`fk_oci_prod` (RESTRICT) — los productos de test no se pueden borrar
+>   mientras `presupuesto_items`/`oc_items` todavía los referencian, y el teardown de
+>   `seed_caso_samco_rafaela` borra esas filas recién *después* de que el `finally` del test corre
+>   (orden de fixtures). Corregido soltando ambas referencias (`producto_id=NULL`) antes de borrar los
+>   productos; se limpiaron a mano 2 productos y 1 droguería huérfanos que quedaron de los 2 intentos
+>   fallidos (`get_service_client()` directo, mismo criterio que la nota de 1.1).
+> - **3.10-3.12**: `services/presupuestacion/oc_presupuesto/{repository,service,router}.py`
+>   extendidos (mismos archivos, D12: "cero módulos nuevos" ya resuelto en Phase 2).
+>   `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → `58 passed`.
+> - **3.13**: `tests/oc_presupuesto/test_router.py` extendido con 8 tests de integración nuevos
+>   (ciclo HTTP completo, mismo patrón que 2.11): `GET matching` 200 con columnas completas; `POST
+>   vinculo` 200 con herencia + idempotencia del re-confirmar; `POST vinculo` 422 excluido; `POST
+>   vinculo` 404 `oc_item` ajeno y 404 `presupuesto_item` inexistente; `DELETE vinculo` + `POST
+>   descartar` 200 revirtiendo a `pendiente`/`sin_presupuesto`.
+>   `pytest tests/oc_presupuesto/test_router.py -m "not integration" -q` → `0 passed, 9 deselected`
+>   (todos los tests del archivo son de integración; confirma que el archivo colecciona sin errores).
+> - **3.14**: `pytest tests/oc_presupuesto -m integration -q` → `12 passed` (4 de Phase 2 + 8 nuevos
+>   de Phase 3: matching, vinculo x2, excluido, oc_item ajeno, presupuesto_item inexistente,
+>   deshacer+descartar, SAMCo Rafaela completo, sesión-sin-modificar-estado_matching). No-regresión:
+>   `pytest tests/ -q -m "not integration"` → `445 passed` (404 baseline de Phase 2 + 41 tests nuevos
+>   de Phase 3 no-integration), sin fallas fuera de `tests/oc_presupuesto/`.
 
 ## Phase 4: Backend — wiring + D10/D11 en `extraccion/` (solo `ExtraccionResumen`/listado, C7)
 
