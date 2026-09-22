@@ -54,24 +54,17 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 
 ## Phase 1: Esquema — migración 0026 (Foundation, bloquea todo lo demás)
 
-- [ ] 1.1 **BLOQUEADO — sin herramienta.** [Verificación previa, solo lectura] Ejecutar contra el
-  proyecto Supabase de test (`grnamollopxdlstcpxhc`) las 6 verificaciones de `design.md` §
-  Migration → Verificación previa obligatoria: (a) `presupuesto_items` no tiene ya `uq_pi_id_drog`;
-  (b) `oc_items` no tiene ninguna de las 5 columnas nuevas; (c) `oc_items.drogueria_id` existe y es
-  `NOT NULL`; (d) la política `oci_upd` sigue permitiendo `UPDATE` a `admin, gerencia,
-  lider_comercial, comercial`; (e) `presupuesto_items` tiene `excluido` y `precio_unitario`
-  nullable; (f) existencia de `presupuesto_legacy_map` (no bloquea si falta). **Evidencia**: este
-  ejecutor `sdd-apply` no tuvo ningún tool `mcp__supabase__*` disponible en su lista de funciones de
-  esta invocación, pese a que `.mcp.json` del repo configura el servidor Supabase MCP contra
-  `project_ref=grnamollopxdlstcpxhc` y las instrucciones del servidor están presentes en el
-  contexto. No hay `supabase` CLI instalado (`which supabase` → vacío) ni driver Postgres directo en
-  `requirements.txt` (sin `psycopg2`/`asyncpg`), y leer `.env`/`.env.local` está bloqueado por regla
-  de denegación de la sandbox. No se puede ejecutar sin acceso a la base viva. Sin este paso, 1.4 y
-  1.5 tampoco pudieron correr. **Se hizo en su lugar**: los hechos C1-C7 de `design.md` ya fueron
-  verificados contra el esquema real en la fase de diseño (encabezado del documento: "Verificadas
-  contra el código y el esquema reales durante esta fase"), y 1.2/1.3/1.6 se transcribieron
-  literalmente de ese SQL ya verificado — el riesgo residual es solo que la base haya cambiado
-  *entre* la fase de diseño y este apply, no que el SQL esté mal derivado.
+- [x] 1.1 [Verificación previa, solo lectura] Ejecutar contra el proyecto Supabase de test
+  (`grnamollopxdlstcpxhc`) las 6 verificaciones de `design.md` § Migration → Verificación previa
+  obligatoria. **Evidencia** (ejecutado por el orquestador con `mcp__supabase__execute_sql`, tras
+  confirmar `get_project_url` = `grnamollopxdlstcpxhc.supabase.co`; el `sdd-apply` original quedó sin
+  ese tool disponible, ver nota de proceso más abajo): (a) `uq_pi_id_drog` no existía en
+  `presupuesto_items` → `[]`; (b) ninguna de las 5 columnas nuevas existía en `oc_items` → `[]`; (c)
+  `oc_items.drogueria_id` existe, `is_nullable = NO`; (d) `oci_upd` (`cmd=UPDATE`) sigue exigiendo
+  `get_rol() = ANY ('admin','gerencia','lider_comercial','comercial')` + `drogueria_id = tenant OR
+  es_superadmin()`; (e) `presupuesto_items.excluido` → `NOT NULL DEFAULT false`,
+  `precio_unitario` → nullable, sin default; (f) `to_regclass('public.presupuesto_legacy_map')` →
+  existe. Las 6 verificaciones pasaron.
 - [x] 1.2 Crear `supabase/migrations/0026_oc_vinculo_presupuesto.sql` — transcripción literal del SQL
   de `design.md` § Migration: guard de versión Postgres 15+, `ADD CONSTRAINT uq_pi_id_drog UNIQUE
   (id, drogueria_id)` en `presupuesto_items` (C2), 5 columnas aditivas en `oc_items`
@@ -88,28 +81,43 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   legítimo, § Rollback Plan de `proposal.md`). `uq_pi_id_drog` se deja (puede tener FKs futuras
   apuntándole), con la query de verificación en comentario.
   **Evidencia**: archivo creado, transcripción literal de `design.md` líneas 1134-1167, sin desvíos.
-- [ ] 1.4 **BLOQUEADO — sin herramienta.** Aplicar `0026` contra el proyecto Supabase de test (MCP
-  `apply_migration`) y verificar en vivo: `uq_pi_id_drog` existe con esa definición exacta; las 5
-  columnas nuevas en `oc_items` con sus tipos/defaults correctos; los 3 `CHECK` presentes con su
-  definición; la FK compuesta referencia `presupuesto_items (id, drogueria_id)` con `ON DELETE SET
-  NULL`; `idx_oci_presupuesto_item` existe como índice parcial (`WHERE presupuesto_item_id IS NOT
-  NULL`); `mcp__supabase__get_advisors(type: security)` sin hallazgos nuevos para `oc_items` ni
-  `presupuesto_items`. **No ejecutado**: mismo motivo que 1.1 — sin tool `mcp__supabase__*`
-  disponible en esta invocación, la migración **no fue aplicada** al proyecto de test. El archivo
-  SQL existe en disco (1.2) pero su ejecución contra la base viva queda pendiente de una invocación
-  con ese tool habilitado.
-- [ ] 1.5 **BLOQUEADO — sin herramienta.** Aplicar la down migration sobre el mismo entorno de test y
-  confirmar reversión sin error; reaplicar `0026` inmediatamente después. **No ejecutado** — depende
-  de 1.4.
+- [x] 1.4 Aplicar `0026` contra el proyecto Supabase de test (MCP `apply_migration`) y verificar en
+  vivo. **Evidencia** (orquestador, `mcp__supabase__apply_migration` → `{"success":true}`, contenido
+  idéntico al archivo de 1.2): `uq_pi_id_drog` → `UNIQUE (id, drogueria_id)` exacto; 5 columnas en
+  `oc_items` con tipo/nullable/default correctos (`presupuesto_item_id uuid NULL`,
+  `vinculo_descartado boolean NOT NULL DEFAULT false`, `vinculo_origen text NULL`,
+  `vinculo_confirmado_por uuid NULL`, `vinculo_confirmado_at timestamptz NULL`); los 3 `CHECK`
+  presentes con `pg_get_constraintdef` idéntico al SQL fuente; `fk_oci_presupuesto_item` →
+  `FOREIGN KEY (presupuesto_item_id, drogueria_id) REFERENCES presupuesto_items(id, drogueria_id) ON
+  DELETE SET NULL`; `idx_oci_presupuesto_item` → índice parcial `WHERE presupuesto_item_id IS NOT
+  NULL` confirmado. `mcp__supabase__get_advisors(type: security)`: 2 hallazgos, ambos preexistentes
+  y ajenos a esta migración (`SECURITY DEFINER` de `es_superadmin/get_drogueria_id/get_rol/
+  mismo_tenant`, y protección de contraseñas filtradas deshabilitada) — cero hallazgos nuevos sobre
+  `oc_items`/`presupuesto_items`.
+- [x] 1.5 Aplicar la down migration sobre el mismo entorno de test y confirmar reversión sin error;
+  reaplicar `0026` inmediatamente después. **Evidencia** (orquestador): down ejecutado vía
+  `mcp__supabase__execute_sql` con el contenido literal de `.down.sql` (menos el DROP de
+  `uq_pi_id_drog`, que el propio down.sql deja intacto a propósito) → sin error; verificación
+  post-revert de las 5 columnas → `[]` (limpio, ninguna residual); reaplicado `0026` completo
+  inmediatamente después → `{"success":true}`; verificación final de las 5 columnas → las 5
+  presentes. Entorno de test queda en el estado esperado para Fases 2-3.
 - [x] 1.6 Actualizar `docs/schema/extractor_final.sql`: reflejar `uq_pi_id_drog` en
   `presupuesto_items`, las 5 columnas nuevas + 3 `CHECK` + FK compuesta + índice parcial en
   `oc_items`. **Desviación respecto de la instrucción literal**: la tarea pide verificar contra la
   base viva aplicada en 1.4, no contra el snapshot (C4 del cambio padre); como 1.4 está bloqueado,
   esta transcripción se hizo directamente desde el archivo de migración de 1.2 (que sí es la fuente
   de verdad del SQL, ya validada carácter a carácter en 1.2) en vez de contra una base viva que no
-  se pudo tocar. Sigue el mismo patrón inline de comentarios `-- 0026: ...` que el archivo ya usa
-  para 0025. **Queda pendiente**: confirmar contra la base viva una vez 1.4/1.5 se completen, que el
-  snapshot no divergió de lo aplicado realmente.
+  se pudo tocar en ese momento. Sigue el mismo patrón inline de comentarios `-- 0026: ...` que el
+  archivo ya usa para 0025. **Cerrado**: 1.4 confirmó contra la base viva que el SQL aplicado es
+  carácter a carácter el mismo que este snapshot ya reflejaba — no hubo divergencia que corregir.
+
+> **Nota de proceso (1.1/1.4/1.5)**: la invocación original de `sdd-apply` para esta fase no tuvo
+> ningún tool `mcp__supabase__*` disponible en su lista de funciones (el rol `sdd-apply` no lo
+> incluye en su definición), pese a que `.mcp.json` configura el servidor contra
+> `grnamollopxdlstcpxhc`. El orquestador completó 1.1/1.4/1.5 directamente con esos tools después.
+> Vale la pena que una futura fase de backend (2-3, que si necesita escribir/leer contra Supabase
+> desde Python, no desde el MCP) confirme si tiene el mismo problema antes de asumir que puede
+> correr sus tests de integración sin intervención manual.
 
 ## Phase 2: Backend — módulo `oc_presupuesto/`, ranking de presupuestos candidatos (D2, D2.1, D3, D12)
 
