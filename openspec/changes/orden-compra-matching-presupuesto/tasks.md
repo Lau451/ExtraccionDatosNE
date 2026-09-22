@@ -125,13 +125,13 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 > en sí no las usa (lee `presupuesto_items`/`items_proceso` existentes). Cubre
 > `oc-presupuesto-candidato` completa.
 
-- [ ] 2.1 [RED] Crear `tests/oc_presupuesto/fixtures/` con el caso real ya validado end-to-end:
+- [x] 2.1 [RED] Crear `tests/oc_presupuesto/fixtures/` con el caso real ya validado end-to-end:
   cliente SAMCo Rafaela (CUIT 30-67428388-8), presupuesto `00246033` (2 renglones con
   `precio_unitario` conocido), OC real Nro 00104857 (2 renglones que matchean exacto contra esos 2).
   Reusar el patrón de fixtures/factories de `tests/extraccion/conftest.py`
   (`seed_cliente_factory`) para poder sembrar el caso en el proyecto de test y limpiarlo en
   `finally`.
-- [ ] 2.2 [RED] Crear `tests/oc_presupuesto/test_service.py` con la tabla de casos de
+- [x] 2.2 [RED] Crear `tests/oc_presupuesto/test_service.py` con la tabla de casos de
   `rankear_presupuestos_candidatos` (D2): orden por `renglones_oc_con_coincidencia DESC,
   generado_at DESC, presupuesto_id ASC`; tope de 5 candidatos aplicado **después** de ordenar;
   `presupuestos_del_cliente` cuenta el total sin filtrar (0 coincidencias sigue apareciendo con
@@ -139,52 +139,119 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   precio"); `presupuesto_sugerido_id = candidatos[0]` cuando hay candidatos, sin autoconfirmar nada
   (spec § "Selección explícita del presupuesto por el usuario", incluso con un solo candidato).
   Confirmar RED: `ModuleNotFoundError: No module named 'services.presupuestacion.oc_presupuesto'`.
-- [ ] 2.3 [RED] En el mismo archivo, casos vacíos de D2 (spec § "Estado explícito cuando el cliente
+- [x] 2.3 [RED] En el mismo archivo, casos vacíos de D2 (spec § "Estado explícito cuando el cliente
   no tiene presupuestos cargados", HTTP 200 en los 3 casos): cliente sin ningún presupuesto
   (`candidatos=[]`, `presupuestos_del_cliente=0`, advertencia A); cliente con presupuestos pero
   ninguno coincide en precio (`candidatos=[]`, `presupuestos_del_cliente=N`, advertencia B,
   **distinta** de la anterior); OC anclada por proceso comercial (`cliente_id IS NULL`) →
   `ValidationError` (422), no una respuesta vacía.
-- [ ] 2.4 [RED] Tests unitarios de la normalización de escala de precio (D3, § Testing Strategy):
+- [x] 2.4 [RED] Tests unitarios de la normalización de escala de precio (D3, § Testing Strategy):
   `Decimal("109.750").quantize(Decimal("0.01"))` produce la misma cadena que
   `Decimal("109.75")`; comparación siempre sobre `Decimal`, nunca `float`; `precio_unitario IS NULL`
   queda fuera del conjunto de filtro sin lanzar excepción; `excluido = TRUE` se excluye del conjunto
   de candidatos (C4).
-- [ ] 2.5 [RED] Test unitario del troceo de `in_()` en lotes de 200 (D3): una lista de 450 ids
+- [x] 2.5 [RED] Test unitario del troceo de `in_()` en lotes de 200 (D3): una lista de 450 ids
   produce 3 llamadas al cliente Supabase mockeado, con la concatenación de resultados intacta.
-- [ ] 2.6 [GREEN] Crear `services/presupuestacion/oc_presupuesto/__init__.py` (módulo nuevo, D12).
-- [ ] 2.7 [GREEN] Crear `services/presupuestacion/oc_presupuesto/models.py` con **todos** los modelos
+- [x] 2.6 [GREEN] Crear `services/presupuestacion/oc_presupuesto/__init__.py` (módulo nuevo, D12).
+- [x] 2.7 [GREEN] Crear `services/presupuestacion/oc_presupuesto/models.py` con **todos** los modelos
   de `design.md` § Interfaces/Contracts (se usan en Phases 2 y 3, un solo archivo): `EstadoVinculo`,
   `OrigenVinculo`, `CandidatoPresupuesto`, `PresupuestosCandidatosOut`, `RenglonPresupuesto`,
   `CandidatoVinculo`, `RenglonOrdenCompra`, `MatchingOut`, `ConfirmarVinculoRequest` (con
   `model_config = ConfigDict(extra="forbid")`). Transcripción literal de los `BaseModel` del
   diseño, sin campos adicionales.
-- [ ] 2.8 [GREEN] Crear `services/presupuestacion/oc_presupuesto/repository.py` — solo las funciones
+- [x] 2.8 [GREEN] Crear `services/presupuestacion/oc_presupuesto/repository.py` — solo las funciones
   del camino de ranking por ahora: resolución de `procesos_comerciales`/`presupuestos` del cliente
   (C6, dos pasos: `presupuestos` no tiene `cliente_id`), select de `presupuesto_items` con
   `in_(precios)` + `eq("excluido", False)` (D3, con troceo de 200 de 2.5), select de `items_proceso`
   para descripción (C5), lookup de `numero_presupuesto` vía `presupuesto_legacy_map` con el
   **service client**, acotado a los `presupuesto_id` ya autorizados (D2.1, fallback `null` si no hay
   fila).
-- [ ] 2.9 [GREEN] Crear `services/presupuestacion/oc_presupuesto/service.py` —
+- [x] 2.9 [GREEN] Crear `services/presupuestacion/oc_presupuesto/service.py` —
   `rankear_presupuestos_candidatos()`: arma el conjunto de precios de la OC, cuenta coincidencias
   por presupuesto, ordena por el criterio de D2, aplica el tope de 5, arma las dos advertencias de
   casos vacíos.
-- [ ] 2.10 [GREEN] Crear `services/presupuestacion/oc_presupuesto/router.py` con
+- [x] 2.10 [GREEN] Crear `services/presupuestacion/oc_presupuesto/router.py` con
   `_ROLES_MATCHING = ("admin", "gerencia", "lider_comercial", "comercial")` (tupla local nueva,
   desviación explícita de D12) y el endpoint `GET /ordenes-compra/{orden_compra_id}
   /presupuestos-candidatos`. Autorización por endpoint (D12): `require_roles(_ROLES_MATCHING)` →
   lectura de la OC con *user client* → `NotFoundError` si no aparece (404, no confirma existencia de
   OC de otra droguería).
   `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → confirmar GREEN.
-- [ ] 2.11 [RED→GREEN] Crear `tests/oc_presupuesto/test_router.py` con la tabla de autorización del
+- [x] 2.11 [RED→GREEN] Crear `tests/oc_presupuesto/test_router.py` con la tabla de autorización del
   endpoint: rol fuera de `_ROLES_MATCHING` → 403; OC de otra droguería (RLS) → 404; OC anclada por
   proceso comercial → 422. Confirmar RED antes de escribirlos contra el router de 2.10 (deben fallar
   por `ImportError`/`AttributeError` antes del `router.py`, pasar después).
-- [ ] 2.12 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -k candidato -q` contra el
+- [x] 2.12 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -k candidato -q` contra el
   proyecto Supabase de test (fixture SAMCo Rafaela de 2.1): el presupuesto `00246033` aparece
   primero con `renglones_oc_con_coincidencia = 2`. Verificación de no-regresión:
   `pytest tests/ -q -m "not integration"` contra el baseline previo a esta fase.
+
+> **Evidencia de Phase 2 (2.1-2.12), sdd-apply**: implementación y tests de esta unidad se
+> escribieron en el mismo lote de este batch (no ciclo RED-observado→GREEN estrictamente
+> secuencial por tarea, como sí ocurrió en Phase 1). Para no reportar RED sin haberlo visto de
+> verdad, se movió `services/presupuestacion/oc_presupuesto/` fuera del árbol una vez escrito todo
+> y se corrió `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q`: falló en la
+> colección con exactamente `ModuleNotFoundError: No module named
+> 'services.presupuestacion.oc_presupuesto'` (texto idéntico al predicho en 2.2). Se restauró el
+> módulo y se confirmó GREEN a continuación. Esto cubre el RED de 2.1-2.5 y de 2.11 (que importa
+> del mismo módulo movido).
+>
+> - **2.1**: `tests/oc_presupuesto/fixtures/samco_rafaela.py` (`sembrar`/`limpiar`, no un pytest
+>   fixture en sí) + `tests/oc_presupuesto/conftest.py::seed_caso_samco_rafaela` que lo envuelve
+>   con `try/finally`. **Desviación de dato respecto de proposal.md**: `ck_terceros_cuit` exige 11
+>   dígitos sin guiones (`docs/schema/extractor_final.sql`); el CUIT humano `30-67428388-8` de la
+>   propuesta se normalizó a `30674283888` (mismos dígitos, formato que la base exige). Sin fila en
+>   `presupuesto_legacy_map` a propósito (D2.1: cargado a mano, `numero_presupuesto` debe viajar
+>   `null`).
+> - **2.2**: `_rankear_presupuestos` (función pura, sin cliente Supabase) probada con: orden por
+>   coincidencias, desempate por `generado_at`/`id`, `None` en `precio_unitario` sin romper, conteo
+>   por renglón de OC (no por `presupuesto_item`, para no sobre-contar precios repetidos), tope de 5
+>   sin esconder al mejor, cola con puntaje 0 visible cuando hay al menos un candidato con puntaje
+>   > 0, `presupuesto_sugerido_id` nunca autoconfirma.
+> - **2.3**: `test_cliente_sin_ningun_presupuesto_devuelve_candidatos_vacio_con_advertencia_a`,
+>   `test_cliente_con_presupuestos_pero_ninguno_coincide_devuelve_candidatos_vacio_con_advertencia_b`,
+>   `test_advertencia_sin_presupuestos_es_distinta_de_advertencia_ninguno_coincide` (confirma texto
+>   de advertencia distinto entre los dos casos vacíos) y
+>   `test_oc_anclada_por_proceso_comercial_sin_cliente_levanta_validation_error`.
+> - **2.4**: `test_q2_normaliza_escala_109_750_igual_a_109_75`, `test_q2_siempre_devuelve_decimal`,
+>   `test_rankear_precio_unitario_none_en_presupuesto_item_queda_fuera_sin_romper` (función pura) y
+>   `test_listar_presupuesto_items_por_precio_excluye_excluido_true` (cliente Supabase mockeado,
+>   confirma que la query real pide `.eq("excluido", False)` -- la exclusión ocurre en Postgres, no
+>   en la función pura de ranking, así que ese caso se testea a nivel repository).
+> - **2.5**: `test_en_lotes_de_450_ids_produce_3_lotes_de_200_200_50` (función pura `_en_lotes`) +
+>   `test_listar_presupuestos_de_procesos_trocea_450_ids_en_3_llamadas_al_cliente_mockeado`
+>   (`MagicMock` con `side_effect` en `.in_()`: 450 ids → 3 llamadas de tamaño 200/200/50,
+>   `len(resultado) == 450` confirma la concatenación intacta).
+> - **2.6-2.9**: `services/presupuestacion/oc_presupuesto/{__init__,models,repository,service}.py`.
+>   `models.py` verificado carácter a carácter contra `design.md` § Interfaces/Contracts (líneas
+>   772-859), sin campos añadidos. **Desviación menor en 2.8**: el select de `items_proceso` para
+>   descripción (C5) no se incluyó todavía -- ningún endpoint de Phase 2 lo necesita
+>   (`CandidatoPresupuesto` no tiene campo de descripción, solo `nombre_proceso` de
+>   `procesos_comerciales`); queda para Phase 3 (`obtener_matching`), que sí lo necesita.
+>   `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → `17 passed`.
+> - **2.10**: `services/presupuestacion/oc_presupuesto/router.py`. **No se tocó `main.py`** a
+>   propósito -- `include_router` es task 4.1 (Phase 4), fuera del alcance de esta invocación; el
+>   test de router de 2.11 monta una `FastAPI()` descartable, mismo patrón que
+>   `tests/pcp/gestion/test_router.py`.
+> - **2.11**: `tests/oc_presupuesto/test_router.py`, 3 tests de integración
+>   (`crear_usuario_con_token` + `TestClient`, llamar al endpoint como función de Python no ejercita
+>   `Depends(require_roles(...))`). Se encontraron y corrigieron 2 bugs de datos en los propios
+>   tests durante la verificación en vivo, no en el código de producción: (a) el CUIT con guiones de
+>   2.1 violaba `ck_terceros_cuit` (11 dígitos exactos); (b) el `finally` de
+>   `test_oc_de_otra_drogueria_da_404_por_rls_sin_confirmar_su_existencia` intentaba borrar la
+>   droguería de test antes que la fila `usuarios` que la referencia (`fk_usuarios_drogueria`) --
+>   corregido borrando `usuarios` primero, mismo criterio que `tests/compras/conftest.py`.
+> - **2.12**: `pytest tests/oc_presupuesto -m integration -q` → `4 passed` (sin filtro `-k
+>   candidato`: el nombre real del test es
+>   `test_ranking_integracion_samco_rafaela_pone_el_presupuesto_primero_con_2_coincidencias`, y
+>   correr sin `-k` no pierde cobertura de los otros 3 de `test_router.py`). El test confirma:
+>   `presupuestos_del_cliente == 1`, `len(candidatos) == 1`, `candidato.presupuesto_id` =
+>   `presupuesto_id` de la fixture, `renglones_oc_con_coincidencia == 2`,
+>   `renglones_oc_totales == 2`, `numero_presupuesto is None` (D2.1, cargado a mano),
+>   `presupuesto_sugerido_id` = `presupuesto_id` de la fixture. No-regresión:
+>   `pytest tests/ -q -m "not integration"` → `404 passed` (baseline completo del proyecto,
+>   incluye las 17 unidades nuevas no-integration de `tests/oc_presupuesto`), sin fallas fuera de
+>   `tests/oc_presupuesto/`.
 
 ## Phase 3: Backend — vinculación renglón a renglón (D4-D9, D12)
 
