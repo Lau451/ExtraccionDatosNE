@@ -731,6 +731,9 @@ CREATE TABLE presupuesto_items (
     updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
     CONSTRAINT uq_pi UNIQUE (presupuesto_id, item_proceso_id),
+    -- 0026: faltaba respecto de sus hermanas (uq_pre_id_drog, uq_ip_id_drog,
+    -- uq_oc_id_drog). Objetivo de fk_oci_presupuesto_item (design.md C2/D1).
+    CONSTRAINT uq_pi_id_drog UNIQUE (id, drogueria_id),
     CONSTRAINT ck_pi_metodo CHECK (metodo_precio IS NULL OR metodo_precio IN ('mercado', 'piso_margen', 'margen_objetivo', 'manual', 'sin_precio')),
     CONSTRAINT ck_pi_origen CHECK (origen_costo IS NULL OR origen_costo IN ('costo_estandar', 'precio_especial'))
 );
@@ -1066,12 +1069,49 @@ CREATE TABLE oc_items (
     cantidad            NUMERIC(12, 2)  NOT NULL,
     precio_unitario     NUMERIC(15, 2)  NOT NULL,
     monto_total         NUMERIC(15, 2)  GENERATED ALWAYS AS (precio_unitario * cantidad) STORED,
+    -- 0026: vinculo renglon de OC <-> renglon de presupuesto (design.md D4).
+    -- El estado de 3 valores (pendiente/confirmado/sin_presupuesto) que expone
+    -- la API se DERIVA de (presupuesto_item_id, vinculo_descartado); no se
+    -- guarda como columna propia.
+    presupuesto_item_id    UUID        NULL,
+    vinculo_descartado     BOOLEAN     NOT NULL DEFAULT FALSE,
+    vinculo_origen         TEXT        NULL,
+    vinculo_confirmado_por UUID        NULL,
+    vinculo_confirmado_at  TIMESTAMPTZ NULL,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
-    CONSTRAINT uq_oci UNIQUE (orden_compra_id, numero_renglon)
+    CONSTRAINT uq_oci UNIQUE (orden_compra_id, numero_renglon),
+    -- 0026: impide que un renglon de OC quede vinculado a un renglon de
+    -- presupuesto de OTRA drogueria aunque la RLS falle. ON DELETE SET NULL:
+    -- borrar un presupuesto no puede borrar un renglon de OC real del cliente
+    -- (design.md D4).
+    CONSTRAINT fk_oci_presupuesto_item
+        FOREIGN KEY (presupuesto_item_id, drogueria_id)
+        REFERENCES presupuesto_items (id, drogueria_id) ON DELETE SET NULL,
+    -- 0026: un renglon no puede estar vinculado Y descartado a la vez.
+    CONSTRAINT ck_oci_vinculo_excluyente
+        CHECK (NOT (vinculo_descartado AND presupuesto_item_id IS NOT NULL)),
+    -- 0026: el origen existe si y solo si existe el vinculo.
+    CONSTRAINT ck_oci_vinculo_origen
+        CHECK ((presupuesto_item_id IS NULL) = (vinculo_origen IS NULL)),
+    CONSTRAINT ck_oci_vinculo_origen_val
+        CHECK (vinculo_origen IS NULL OR vinculo_origen IN ('precio_exacto', 'manual'))
 );
 
 COMMENT ON COLUMN oc_items.producto_id IS 'Link al catálogo. Cierra la trazabilidad producto → oferta → OC → entrega y permite descontar stock del producto correcto.';
+COMMENT ON COLUMN oc_items.presupuesto_item_id IS
+  'Renglon del presupuesto del que este renglon hereda producto_id. NULL = sin vinculo. N renglones de OC pueden apuntar al MISMO renglon de presupuesto (N:1 permitido y avisado, nunca bloqueado -- design.md D5). No hay tabla puente: 1:N y M:N no son casos de negocio de este cambio (design.md D4).';
+COMMENT ON COLUMN oc_items.vinculo_descartado IS
+  'TRUE = un humano afirmo que este renglon NO esta en el presupuesto elegido. Es distinto de FALSE+FK NULL, que significa "todavia no se miro". Es el unico bit que la FK no puede expresar; por eso existe esta columna y NO una columna estado de 3 valores, que duplicaria el hecho que la FK ya guarda (design.md D4).';
+COMMENT ON COLUMN oc_items.vinculo_origen IS
+  'precio_exacto = el precio del renglon coincidia exacto con el del presupuesto. manual = el humano vinculo igual, sin coincidencia de precio (legitimo: el precio sugiere, no autoriza). Se congela al confirmar porque presupuesto_items.precio_unitario es mutable y derivarlo despues daria la respuesta equivocada (design.md D4).';
+
+-- 0026 (D5): parcial -- la enorme mayoria de las filas tiene NULL y sigue
+-- teniendolo. El acceso es siempre "quien mas apunta a este renglon de
+-- presupuesto" (aviso N:1).
+CREATE INDEX idx_oci_presupuesto_item
+  ON oc_items (presupuesto_item_id)
+  WHERE presupuesto_item_id IS NOT NULL;
 
 CREATE TABLE entregas_oc (
     id                          UUID            NOT NULL DEFAULT gen_random_uuid(),
