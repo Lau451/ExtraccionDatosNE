@@ -1,24 +1,33 @@
 """Servicio de import legado de PCP (0012_pcp_extras.sql M3, design.md D8,
-spec `pcp-legacy-import`).
+spec `pcp-legacy-import`) e import legado de presupuestos (Progress, engram
+#647, odd/tasks/presupuestos-legacy-import.md).
 
 **Resolución del bloqueo original del design** (D8): el primer borrador
 asumía que `items_proceso` ya existía y que el import solo necesitaba
 *matchear* `pcp_renglones.item_proceso_id` contra filas preexistentes. Eso no
-vale para este dataset -- el sistema legado no tiene presupuestador, así que
-`procesos_comerciales`/`presupuestos`/`items_proceso` no existen todavía para
-estos PCP. `pcp.presupuesto_id`/`proceso_comercial_id` siguen siendo FKs
-`NOT NULL` (el usuario rechazó relajarlas), así que este servicio genera
-placeholders la primera vez que ve un "número de PCP", y los reusa tal cual
-en cada reimport -- toda la idempotencia vive en el par `pcp`/`pcp_legacy_map`
-(D8, sin tabla nueva; una `presupuestos_legacy_map` fue propuesta y
-rechazada por el usuario como sobre-ingeniería).
+valía para este dataset -- el sistema legado no tiene presupuestador, así que
+`procesos_comerciales`/`presupuestos`/`items_proceso` no existían todavía
+para estos PCP. D8 resolvió eso generando *placeholders* la primera vez que
+el import veía un "número de PCP", reusados tal cual en cada reimport.
+
+**Superado por T2** (odd/tasks/presupuestos-legacy-import.md, agreed design
+2026-09-24): el placeholder de D8 quedó reemplazado por el import legado de
+presupuestos (más abajo, `importar_presupuesto_legacy`), que es ahora
+mandatorio ANTES del import de PCP. El import de PCP ya NUNCA crea
+`procesos_comerciales`/`presupuestos`/`items_proceso` -- busca el
+presupuesto ya importado vía `presupuesto_legacy_map` (por
+`numero_presupuesto`) y rechaza (excepción, todo-o-nada por lote, mismo
+criterio que `_resolver_cliente_id`) cualquier PCP cuyo presupuesto no fue
+importado todavía, o cuyo renglón no existe en ese presupuesto. La
+idempotencia del PCP en sí sigue viviendo en el par `pcp`/`pcp_legacy_map`
+(D8, sin cambios).
 
 **Deviation documentada**: D8 dibuja un RPC `upsert_pcp_legacy` (ya creado en
 `0012_pcp_extras.sql` M8), pero su propio texto marca que ese RPC predata la
 expansión de alcance a find-or-create y "necesitará revisarse en el propio
-`sdd-design` de PR8". Ninguna tarea de esta fase (tasks.md 8.1-8.8) pide una
-migración nueva ni tocar la 0012 -- así que este run implementa el flujo
-find-or-create acá, a nivel de servicio/Python, igual que el resto de
+`sdd-design` de PR8". Ninguna tarea de esta fase (tasks.md 8.1-8.8) ni de T2
+pide una migración nueva ni tocar la 0012 -- así que este run implementa el
+flujo find-or-create acá, a nivel de servicio/Python, igual que el resto de
 `services/pcp/**` (ningún otro submódulo -- gestion/renglones/catalogo/
 negociacion -- enruta una escritura por un RPC; todos hacen INSERT/UPDATE
 directos vía su propio `repository.py`). El RPC queda sin uso, documentado
@@ -68,48 +77,45 @@ def _resolver_cliente_id(client: Client, *, drogueria_id: str, codigo_cliente: s
     return cliente["id"]
 
 
-def _crear_pcp_placeholder(
+def _resolver_presupuesto_para_pcp(
+    client: Client, *, drogueria_id: str, numero_presupuesto: str | None
+) -> dict[str, Any]:
+    """T2 (agreed design): el import de PCP ya no crea placeholders -- busca
+    el presupuesto ya importado (T1, `importar_presupuesto_legacy`) vía
+    `presupuesto_legacy_map` por `numero_presupuesto`. Rechaza el PCP entero
+    (NotFoundError, todo-o-nada por lote -- mismo criterio que
+    `_resolver_cliente_id`) si falta el número, o si ese presupuesto no fue
+    importado todavía."""
+    if not numero_presupuesto:
+        raise NotFoundError("numero_presupuesto es requerido para importar un PCP")
+    mapa_presupuesto = repo.buscar_mapa_legacy_presupuesto(
+        client, drogueria_id=drogueria_id, codigo_legacy=numero_presupuesto
+    )
+    if mapa_presupuesto is None:
+        raise NotFoundError(f"No existe el presupuesto {numero_presupuesto}: importalo primero")
+    presupuesto = repo.buscar_presupuesto(client, presupuesto_id=mapa_presupuesto["presupuesto_id"])
+    if presupuesto is None:
+        raise NotFoundError(f"El presupuesto mapeado para '{numero_presupuesto}' ya no existe")
+    return presupuesto
+
+
+def _crear_pcp(
     client: Client,
     *,
     drogueria_id: str,
     header: FilaImportPcpLegacy,
-    cantidad_renglones: int,
+    presupuesto: dict[str, Any],
     usuario_id: str,
 ) -> dict[str, Any]:
-    """Primer import de un "número de PCP" (D8): genera los placeholders de
-    `procesos_comerciales`/`presupuestos` una única vez -- un reimport nunca
-    vuelve a pasar por acá (ver `importar_pcp_legacy`)."""
-    cliente_id = _resolver_cliente_id(
-        client, drogueria_id=drogueria_id, codigo_cliente=header.codigo_cliente
-    )
-    clase = _CLASE_POR_PROCESO_COMERCIAL.get(header.proceso_comercial or "", _CLASE_DEFAULT)
-
-    proceso = repo.crear_proceso_comercial(
-        client,
-        {
-            "drogueria_id": drogueria_id,
-            "cliente_id": cliente_id,
-            "clase": clase,
-            # El export legado no trae nombre de proceso -- se sintetiza
-            # (D8: "nombre (NOT NULL) es sintetizado").
-            "nombre": f"Import legado — {header.razon_social_cliente} (PCP {header.numero_pcp})",
-        },
-    )
-    presupuesto = repo.crear_presupuesto(
-        client,
-        {
-            "proceso_comercial_id": proceso["id"],
-            "drogueria_id": drogueria_id,
-            "monto_total": str(header.importe_total) if header.importe_total is not None else None,
-            "cantidad_items": cantidad_renglones,
-        },
-    )
+    """Primer import de un "número de PCP" (T2): reusa el
+    `proceso_comercial_id`/`presupuesto_id` del presupuesto ya importado --
+    nunca crea ninguno de los dos (superado D8, ver docstring del módulo)."""
     return repo.crear_pcp(
         client,
         {
             "drogueria_id": drogueria_id,
             "presupuesto_id": presupuesto["id"],
-            "proceso_comercial_id": proceso["id"],
+            "proceso_comercial_id": presupuesto["proceso_comercial_id"],
             "fecha_entrega_solicitada": header.fecha_respuesta_esperada,
             "origen": "import_legado",
             "created_by": usuario_id,
@@ -126,24 +132,20 @@ def _importar_renglon(
     fila: FilaImportPcpLegacy,
     usuario_id: str,
 ) -> dict[str, Any]:
-    """8.2/8.4/8.6: `items_proceso` find-or-create por
-    `(proceso_comercial_id, numero_renglon)`; `pcp_renglones` find-or-create
-    por `(pcp_id, item_proceso_id)` -- un reimport nunca duplica ninguno de
-    los dos, y todo renglón creado por este camino queda `origen =
-    'import_legado'` (8.6, nunca `'manual'`/`'regla'`)."""
+    """8.4/8.6 + T2: `items_proceso` YA existe (creado por el import de
+    presupuestos, T1) -- este import nunca lo crea, solo lo busca por
+    `(proceso_comercial_id, numero_renglon)` y rechaza el renglón
+    (NotFoundError) si no está. `pcp_renglones` sigue siendo find-or-create
+    por `(pcp_id, item_proceso_id)` -- un reimport nunca lo duplica, y todo
+    renglón creado por este camino queda `origen = 'import_legado'` (8.6,
+    nunca `'manual'`/`'regla'`). `producto_id` viene del `items_proceso` ya
+    resuelto por T1, nunca se vuelve a resolver acá."""
     item = repo.buscar_item_proceso_por_renglon(
         client, proceso_comercial_id=pcp["proceso_comercial_id"], numero_renglon=fila.renglon
     )
     if item is None:
-        item = repo.crear_item_proceso(
-            client,
-            {
-                "proceso_comercial_id": pcp["proceso_comercial_id"],
-                "drogueria_id": drogueria_id,
-                "numero_renglon": fila.renglon,
-                "descripcion": fila.descripcion_producto,
-                "cantidad": str(fila.cantidad_producto),
-            },
+        raise NotFoundError(
+            f"El renglón {fila.renglon} no existe en el presupuesto {fila.numero_presupuesto}"
         )
 
     renglon_existente = repo.buscar_renglon_por_item(
@@ -187,13 +189,17 @@ def importar_pcp_legacy(
         mapa = repo.buscar_mapa_legacy(client, drogueria_id=drogueria_id, codigo_legacy=numero_pcp)
 
         if mapa is None:
-            # 8.1/8.2/8.5: primer import -- crea el pcp (con sus placeholders)
+            # 8.1/8.2/8.5 + T2: primer import -- resuelve el presupuesto ya
+            # importado (T2, nunca crea placeholders), crea el pcp reusándolo
             # y la fila de idempotencia en pcp_legacy_map.
-            pcp = _crear_pcp_placeholder(
+            presupuesto = _resolver_presupuesto_para_pcp(
+                client, drogueria_id=drogueria_id, numero_presupuesto=header.numero_presupuesto
+            )
+            pcp = _crear_pcp(
                 client,
                 drogueria_id=drogueria_id,
                 header=header,
-                cantidad_renglones=len(filas_pcp),
+                presupuesto=presupuesto,
                 usuario_id=usuario_id,
             )
             repo.crear_mapa_legacy(
@@ -202,8 +208,6 @@ def importar_pcp_legacy(
                     "pcp_id": pcp["id"],
                     "drogueria_id": drogueria_id,
                     "codigo_legacy": numero_pcp,
-                    # "número de presupuesto" es archival-only (D8): entra
-                    # acá, nunca como clave de lookup/resolución.
                     "datos_legacy": header.model_dump(mode="json"),
                 },
             )
