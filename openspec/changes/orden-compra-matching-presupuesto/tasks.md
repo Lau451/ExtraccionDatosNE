@@ -808,19 +808,112 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 
 ## Phase 9: Documentación + verificación integral (tracker → `dev`)
 
-- [ ] 9.1 Revisar que `docs/schema/extractor_final.sql` (actualizado en 1.6) sigue reflejando la base
+- [x] 9.1 Revisar que `docs/schema/extractor_final.sql` (actualizado en 1.6) sigue reflejando la base
   viva tras las Fases 2-8 (ningún cambio de esquema adicional se agregó fuera de la migración 0026).
-- [ ] 9.2 Correr la suite completa de backend: `pytest tests/ --cov=services` — confirmar 0
+  **Evidencia**: `git log --oneline --all -- docs/schema/extractor_final.sql` → el último commit que
+  toca el archivo dentro de este cambio es `7701798` ("migracion 0026 vinculo oc_items <->
+  presupuesto_items", Phase 1); ningún commit de Phases 2-8 (`08e4bb7`, `e6bdbf0`, `17dd120`,
+  `a8f8395`, `931a93f`, `af362d6`, `229864f`) lo toca. `ls supabase/migrations/` confirma que
+  `0026_oc_vinculo_presupuesto.sql`/`.down.sql` es la migración más reciente — no existe ninguna
+  `0027_*` u otra posterior. Consistente con `design.md` § File Changes y con las evidencias propias
+  de Phases 2-4 (único módulo backend nuevo, sin tocar `presupuestos/repository.py` por C6, sin
+  columnas/constraints nuevos fuera de los ya documentados en 1.2-1.6). No fue necesario corregir
+  nada — pura confirmación, tal como preveía la instrucción de esta tarea.
+- [x] 9.2 Correr la suite completa de backend: `pytest tests/ --cov=services` — confirmar 0
   regresiones fuera de `tests/oc_presupuesto/` y `tests/extraccion/` (cambios de esta fase), y
   cobertura razonable sobre el módulo nuevo.
-- [ ] 9.3 Correr build + tests completos de frontend: `pnpm --filter frontend build` y `pnpm
+  **Evidencia**: `pytest tests/ --cov=services -q` (sin filtro `-m`, corre unit + integration contra
+  `grnamollopxdlstcpxhc`) → `909 passed, 5 failed` en `1782.91s` (29m42s), cobertura total `84%`
+  (`8292 stmts, 1345 miss`). Las 5 fallas están **todas fuera** de `tests/oc_presupuesto/` y
+  `tests/extraccion/`, en dos módulos que este cambio nunca toca:
+  - `tests/pcp/sugerencias/test_service.py::test_precio_reciente_vigente_se_sugiere_como_referencia`
+    — flake de borde de fecha (`assert referencia["dias_restantes"] == 30` → `29 == 30`),
+    reproducido en aislamiento (`pytest tests/pcp/sugerencias/test_service.py::... -q`): el test
+    computa `date.today() + timedelta(days=30)` al armar el fixture y compara contra
+    `dias_restantes` recalculado más tarde en la misma ejecución — cruza el borde de medianoche
+    según cuándo corre, sin relación con `oc_presupuesto`/`extraccion`.
+  - `tests/usuarios/test_service.py::{test_admin_crea_usuario_fuerza_su_propia_drogueria,
+    test_superadmin_crea_admin, test_superadmin_crea_usuario_con_drogueria_explicita,
+    test_superadmin_crea_otro_superadmin_sin_drogueria}` — las 4 llaman a `crear_usuario` →
+    `invitar_usuario_auth` → `client.auth.admin.invite_user_by_email`; reproducido en aislamiento
+    para la primera → `services.shared.exceptions.ConflictError: No se pudo enviar la invitación
+    por email en este momento (límite de envíos alcanzado)`, mapeado desde `AuthApiError.status ==
+    429` de Supabase Auth (límite de envíos del proyecto de test, no un defecto de código; las otras
+    3 comparten el mismo `crear_usuario`/`invite_user_by_email`, mismo causa raíz). Ninguna de las 5
+    fallas es de `usuarios`/`pcp` alcanzable desde código de esta propuesta.
+  No-regresión confirmada con precisión sobre los dos módulos de esta fase:
+  `pytest tests/oc_presupuesto --cov=services.presupuestacion.oc_presupuesto --cov-report=term-missing -q`
+  → `70 passed` (unit + integration), cobertura del módulo nuevo `96%` (`models.py` 100%,
+  `router.py` 100%, `service.py` 96%, `repository.py` 92%, `TOTAL 375 stmts, 15 miss`);
+  `pytest tests/extraccion -q` → `161 passed, 0 failed` (unit + integration). Baseline no-integration
+  completo (`pytest tests/ -q -m "not integration"`) → `450 passed`, idéntico al baseline ya
+  confirmado en Phase 8 (`450 passed`, sin filtro de cobertura) — cero regresiones detectables sin
+  depender de la disponibilidad de red de Supabase.
+- [x] 9.3 Correr build + tests completos de frontend: `pnpm --filter frontend build` y `pnpm
   --filter frontend test` — confirmar 0 regresiones fuera de `oc-matching/` y `validar-extraccion/`.
-- [ ] 9.4 Verificar manualmente, contra el proyecto Supabase de test, el checklist completo de
+  **Evidencia**: mismo hallazgo que Phases 5-8 — no hay `pnpm` en el PATH de este entorno ni
+  workspaces de pnpm en el repo; se usaron los equivalentes reales `npx`. `npx tsc -b --noEmit` desde
+  `frontend/` → exit code 0, sin output, cero errores. `npx vitest run` (suite completa, sin filtro)
+  → `226 passed` (32 test files), idéntico al baseline de Phase 8. `npx vite build` (proxy de la
+  mitad `vite build` del script `"build": "tsc -b && vite build"` de `package.json` — la mitad
+  `tsc -b` ya se corrió sin `--noEmit` implícitamente al pasar limpio con `--noEmit` arriba) → build
+  productivo exitoso en 357ms, 383 módulos transformados, incluyendo el chunk
+  `_authenticated.ordenes-compra._ordenCompraId.matching-0YetWKLK.js` (confirma que la ruta de
+  Phase 5/7 está en el bundle de producción). Sin regresiones fuera de `oc-matching/` ni
+  `validar-extraccion/` — de hecho sin regresiones en ningún archivo, la suite completa quedó verde.
+- [x] 9.4 Verificar manualmente, contra el proyecto Supabase de test, el checklist completo de
   Success Criteria de `proposal.md` (9 ítems: navegación automática, ranking por coincidencias,
   sugerencia única no auto-confirmada, desempate sin preselección, `pendiente` no bloqueante,
   herencia de `producto_id`, N:1 con aviso, `estado_matching`/`confianza_matching` sin modificar,
   caso real SAMCo Rafaela reproducido como test) y dejar registrada la evidencia de cada uno (test
   que lo cubre o verificación manual).
+  **Evidencia**: sin acceso a tools `mcp__supabase__*` en este rol (misma limitación documentada en
+  la nota de proceso de 1.1/1.4/1.5), los 9 ítems se verifican citando el test automatizado real que
+  cada uno ya cubre — no se fabrica ninguna verificación manual no realizable:
+  1. **Navegación automática**: `ValidarExtraccionDetalle.test.tsx` →
+     `'confirmar una orden de compra con orden_compra_id navega a la pantalla de matching'`
+     (`navigateMock` llamado con `{ to: '/ordenes-compra/$ordenCompraId/matching', params: {
+     ordenCompraId: 'oc-999' } }`) + `'... orden_compra_id null ... sigue navegando al listado'`
+     (Phase 6, `describe('ValidarExtraccionDetalle — navegación tras confirmar (D10)')`).
+  2. **Ranking por más coincidencias**: `tests/oc_presupuesto/test_service.py::
+     test_rankear_ordena_por_cantidad_de_coincidencias_desc` (varios presupuestos sintéticos, función
+     pura `_rankear_presupuestos`) + `test_ranking_integracion_samco_rafaela_pone_el_presupuesto_primero_con_2_coincidencias`
+     (integración con datos reales, un solo presupuesto cargado para ese cliente — el orden con
+     varios candidatos lo prueba el primero).
+  3. **Sugerencia única no auto-confirmada**: `RenglonOcFila.test.tsx` →
+     `'un único candidato: "Confirmar" está habilitado y nada viene preseleccionado'` (frontend) +
+     backend: `obtener_matching` nunca escribe (solo `confirmar_vinculo` lo hace, `test_service.py`
+     § `confirmar_vinculo`, 3.4).
+  4. **Desempate sin preselección**: `RenglonOcFila.test.tsx` →
+     `'varios candidatos: se listan ordenados (orden recibido) y ninguno viene preseleccionado'` +
+     backend `test_ordenar_por_similitud_ordena_descendente_por_wratio` /
+     `test_ordenar_por_similitud_no_filtra_incluye_scores_bajos` (3.2).
+  5. **`pendiente` no bloqueante**: `RenglonOcFila.test.tsx` →
+     `'cero candidatos: el estado pendiente queda visible y no bloquea la fila (sigue permitiendo
+     descartar)'` + `OcMatchingDetalle.test.tsx` (confirmar/descartar un renglón no exige tocar los
+     demás, 7.4).
+  6. **Herencia de `producto_id`**: `tests/oc_presupuesto/test_service.py::
+     test_heredar_producto_id_ambos_presentes_gana_presupuesto` (+ los otros 3 casos del `COALESCE`,
+     3.3) + `test_matching_integracion_samco_rafaela_sugiere_sin_ambiguedad_y_hereda_producto`
+     (integración, datos reales) + `tests/oc_presupuesto/test_router.py::
+     test_confirmar_vinculo_endpoint_200_hereda_producto_y_reemplaza_sin_error` (ciclo HTTP
+     completo).
+  7. **N:1 con aviso no bloqueante**: `tests/oc_presupuesto/test_service.py::
+     test_agregar_aviso_n1_cuenta_total_otras_oc_y_suma_cantidad` (3.7) +
+     `AvisoReutilizacion.test.tsx` (4 tests, "nunca deshabilita", 7.2).
+  8. **`estado_matching`/`confianza_matching` sin modificar**: `tests/oc_presupuesto/test_service.py::
+     test_sesion_completa_no_modifica_estado_matching_ni_confianza_matching` — integración con datos
+     reales, snapshot antes/después de una sesión completa (2 confirmar + 1 deshacer + 1 descartar,
+     3.8).
+  9. **Caso real SAMCo Rafaela reproducido como test**: los mismos
+     `test_ranking_integracion_samco_rafaela_pone_el_presupuesto_primero_con_2_coincidencias` (2.12) y
+     `test_matching_integracion_samco_rafaela_sugiere_sin_ambiguedad_y_hereda_producto` (3.9) — OC
+     00104857 ↔ presupuesto 00246033, 2 renglones, 2 vínculos sin ambigüedad, herencia de
+     `producto_id` confirmada — corridos de nuevo en 9.2 (`pytest tests/oc_presupuesto -m integration
+     -q` incluido en el `70 passed` de arriba) contra el proyecto de test real.
+  **Ningún ítem quedó sin cobertura automatizada** — los 9 tienen al menos un test citado arriba que
+  ya corrió en verde en 9.2/Phases 2-8; no fue necesario fabricar una verificación manual no
+  realizable ni dejar ningún criterio sin evidencia.
 
 ---
 
