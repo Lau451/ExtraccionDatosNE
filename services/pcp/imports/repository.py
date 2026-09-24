@@ -128,3 +128,84 @@ def buscar_renglon_por_item(
 
 def crear_renglon(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("pcp_renglones").insert(fila).execute().data[0]
+
+
+# -- presupuesto_legacy_map (idempotencia del import legado de presupuestos,
+# migración 0015) -- mismo esqueleto que pcp_legacy_map, mismo
+# SISTEMA_ORIGEN_LEGACY (ver comentario de la migración: "mirror deliberado de
+# pcp_legacy_map"). ---------------------------------------------------------
+
+
+def buscar_mapa_legacy_presupuesto(
+    client: Client, *, drogueria_id: str, codigo_legacy: str
+) -> dict[str, Any] | None:
+    resultado = (
+        client.table("presupuesto_legacy_map")
+        .select("*")
+        .eq("drogueria_id", drogueria_id)
+        .eq("sistema_origen", SISTEMA_ORIGEN_LEGACY)
+        .eq("codigo_legacy", codigo_legacy)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def crear_mapa_legacy_presupuesto(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
+    return client.table("presupuesto_legacy_map").insert(fila).execute().data[0]
+
+
+# -- presupuestos / presupuesto_items -----------------------------------------
+# `crear_presupuesto` ya existe más arriba (placeholder de PCP) -- mismo
+# insert genérico, se reusa tal cual acá.
+
+
+def buscar_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
+    resultado = client.table("presupuestos").select("*").eq("id", presupuesto_id).limit(1).execute()
+    return resultado.data[0] if resultado.data else None
+
+
+def borrar_presupuesto(client: Client, *, presupuesto_id: str) -> None:
+    """Compensación manual (no hay transacción real vía PostgREST, mismo
+    criterio que `services/presupuestacion/extraccion/repository.py::
+    borrar_orden_compra`): usada por `_crear_presupuesto_legacy` para
+    deshacer el insert de `presupuestos` cuando un insert posterior
+    (presupuesto_legacy_map/items_proceso/presupuesto_items) falla. Cascadea
+    `presupuesto_items` (fk_pi_pre) y `presupuesto_legacy_map`
+    (fk_prelm_presupuesto) -- ambos ON DELETE CASCADE."""
+    client.table("presupuestos").delete().eq("id", presupuesto_id).execute()
+
+
+def borrar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> None:
+    """Segunda mitad de la compensación de `_crear_presupuesto_legacy`: debe
+    correr DESPUÉS de `borrar_presupuesto` -- `items_proceso` (fk_ip_proc,
+    ON DELETE CASCADE desde procesos_comerciales) queda bloqueado por
+    `presupuesto_items.item_proceso_id` (fk_pi_item, sin CASCADE) hasta que
+    esa fila ya no exista, mismo orden documentado en
+    tests/pcp/imports/test_service.py::_limpiar_import para pcp/presupuestos/
+    procesos_comerciales."""
+    client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()
+
+
+def crear_presupuesto_item(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
+    return client.table("presupuesto_items").insert(fila).execute().data[0]
+
+
+# -- productos: resolución opcional de producto_id por codigo_interno (nunca
+# bloquea la fila si no matchea -- mismo criterio sin filtro de activo/
+# deleted_at que services/presupuestacion/imports/repository.py::
+# mapear_productos_por_codigo). ------------------------------------------------
+
+
+def buscar_producto_por_codigo(
+    client: Client, *, drogueria_id: str, codigo_interno: str
+) -> dict[str, Any] | None:
+    resultado = (
+        client.table("productos")
+        .select("id")
+        .eq("drogueria_id", drogueria_id)
+        .eq("codigo_interno", codigo_interno)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None

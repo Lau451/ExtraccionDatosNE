@@ -33,7 +33,7 @@ from supabase import Client
 
 from services.pcp.historial import service as historial_service
 from services.pcp.imports import repository as repo
-from services.pcp.imports.models import FilaImportPcpLegacy
+from services.pcp.imports.models import FilaImportPcpLegacy, FilaImportPresupuestoLegacy
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError
 
@@ -250,5 +250,214 @@ def importar_pcp_legacy_para_endpoint(
     *, drogueria_id: str, filas: list[FilaImportPcpLegacy], usuario_id: str
 ) -> list[dict[str, Any]]:
     return importar_pcp_legacy(
+        get_service_client(), drogueria_id=drogueria_id, filas=filas, usuario_id=usuario_id
+    )
+
+
+# =============================================================================
+# Import legado de presupuestos (Progress; engram #647, agreed design
+# 2026-09-24, odd/tasks/presupuestos-legacy-import.md T1)
+#
+# Import order es mandatorio (design agreed): presupuesto PRIMERO, PCP
+# DESPUÉS (T2 busca líneas ya existentes vía `presupuesto_legacy_map`, nunca
+# las crea). Reusa acá mismo `_resolver_cliente_id` y
+# `_CLASE_POR_PROCESO_COMERCIAL`/`_CLASE_DEFAULT` -- mismo criterio de
+# resolución de cliente y de clase que el import de PCP, sin duplicar esa
+# lógica (ambos import viven en el mismo módulo `services/pcp/imports`).
+# =============================================================================
+
+
+def _resolver_producto_id(
+    client: Client, *, drogueria_id: str, codigo_producto: str | None
+) -> str | None:
+    """`codigo_producto` es opcional y puede no matchear ningún
+    `productos.codigo_interno` de la droguería -- en ambos casos resuelve a
+    `None` sin bloquear la fila (agreed design: "NULL if missing or not
+    found")."""
+    if not codigo_producto:
+        return None
+    producto = repo.buscar_producto_por_codigo(
+        client, drogueria_id=drogueria_id, codigo_interno=codigo_producto
+    )
+    return producto["id"] if producto else None
+
+
+def _crear_presupuesto_legacy(
+    client: Client,
+    *,
+    drogueria_id: str,
+    header: FilaImportPresupuestoLegacy,
+    filas_grupo: list[FilaImportPresupuestoLegacy],
+    usuario_id: str,
+) -> tuple[dict[str, Any], int]:
+    """Primer import de un `numero_presupuesto`: crea `procesos_comerciales` +
+    `presupuestos`, y dentro de un bloque compensado `presupuesto_legacy_map`
+    (el ancla de idempotencia) + `items_proceso`/`presupuesto_items` por
+    renglón.
+
+    Compensación manual (no hay transacción real vía PostgREST -- mismo
+    criterio que `services/presupuestacion/extraccion/service.py::
+    _materializar_orden_compra`): ante cualquier excepción tras crear
+    `presupuestos`, se borra esa fila (cascadea `presupuesto_items` +
+    `presupuesto_legacy_map`) y luego `procesos_comerciales` (cascadea
+    `items_proceso`, ya liberado de la referencia RESTRICT de
+    `presupuesto_items`) -- ese orden es obligatorio, ver
+    `repo.borrar_proceso_comercial`. Un reintento posterior con el mismo
+    `numero_presupuesto` no encuentra ningún huérfano y arranca de cero."""
+    cliente_id = _resolver_cliente_id(
+        client, drogueria_id=drogueria_id, codigo_cliente=header.codigo_cliente
+    )
+    clase = _CLASE_POR_PROCESO_COMERCIAL.get(header.proceso_comercial or "", _CLASE_DEFAULT)
+
+    proceso = repo.crear_proceso_comercial(
+        client,
+        {
+            "drogueria_id": drogueria_id,
+            "cliente_id": cliente_id,
+            "clase": clase,
+            "nombre": (
+                f"Import legado — {header.razon_social_cliente} "
+                f"(presupuesto {header.numero_presupuesto})"
+            ),
+        },
+    )
+
+    renglones_sin_precio = sum(1 for fila in filas_grupo if fila.precio_producto is None)
+    fila_presupuesto: dict[str, Any] = {
+        "proceso_comercial_id": proceso["id"],
+        "drogueria_id": drogueria_id,
+        "estado": "generado",
+        "monto_total": str(header.importe_total) if header.importe_total is not None else None,
+        "cantidad_items": len(filas_grupo),
+        "items_sin_precio": renglones_sin_precio,
+    }
+    if header.fecha_generacion is not None:
+        fila_presupuesto["generado_at"] = header.fecha_generacion
+
+    presupuesto: dict[str, Any] | None = None
+    try:
+        presupuesto = repo.crear_presupuesto(client, fila_presupuesto)
+
+        # El ancla de idempotencia: se guardan las filas CRUDAS del grupo
+        # completo (no solo la cabecera, a diferencia de pcp_legacy_map) para
+        # trazabilidad archival del presupuesto entero (agreed design).
+        repo.crear_mapa_legacy_presupuesto(
+            client,
+            {
+                "presupuesto_id": presupuesto["id"],
+                "drogueria_id": drogueria_id,
+                "codigo_legacy": header.numero_presupuesto,
+                "datos_legacy": [fila.model_dump(mode="json") for fila in filas_grupo],
+            },
+        )
+
+        renglones_sin_producto = 0
+        for fila in filas_grupo:
+            producto_id = _resolver_producto_id(
+                client, drogueria_id=drogueria_id, codigo_producto=fila.codigo_producto
+            )
+            if producto_id is None:
+                renglones_sin_producto += 1
+
+            item = repo.crear_item_proceso(
+                client,
+                {
+                    "proceso_comercial_id": proceso["id"],
+                    "drogueria_id": drogueria_id,
+                    "numero_renglon": fila.renglon,
+                    "descripcion": fila.descripcion_producto,
+                    "cantidad": str(fila.cantidad_producto),
+                    "producto_id": producto_id,
+                },
+            )
+            repo.crear_presupuesto_item(
+                client,
+                {
+                    "presupuesto_id": presupuesto["id"],
+                    "drogueria_id": drogueria_id,
+                    "item_proceso_id": item["id"],
+                    "producto_id": producto_id,
+                    "precio_unitario": (
+                        str(fila.precio_producto) if fila.precio_producto is not None else None
+                    ),
+                    "cantidad_ofertada": str(fila.cantidad_producto),
+                    # Decisión confirmada por el usuario (2026-09-24): 'manual'
+                    # siempre, incluso sin precio -- no 'sin_precio' pese a que
+                    # ck_pi_metodo lo permite.
+                    "metodo_precio": "manual",
+                },
+            )
+    except Exception:
+        if presupuesto is not None:
+            repo.borrar_presupuesto(client, presupuesto_id=presupuesto["id"])
+        repo.borrar_proceso_comercial(client, proceso_comercial_id=proceso["id"])
+        raise
+
+    return presupuesto, renglones_sin_producto
+
+
+def importar_presupuesto_legacy(
+    client: Client, *, drogueria_id: str, filas: list[FilaImportPresupuestoLegacy], usuario_id: str
+) -> list[dict[str, Any]]:
+    """Agrupa las filas planas por `numero_presupuesto` (los campos de
+    cabecera se repiten por fila, mismo criterio que `importar_pcp_legacy`).
+    Devuelve una fila de resultado por cada `numero_presupuesto` distinto en
+    el lote, con `accion` = "creado" | "existente" (agreed design: un
+    reimport nunca duplica nada -- a diferencia del import de PCP, que sí
+    reprocesa renglones en cada corrida)."""
+    por_presupuesto: "OrderedDict[str, list[FilaImportPresupuestoLegacy]]" = OrderedDict()
+    for fila in filas:
+        por_presupuesto.setdefault(fila.numero_presupuesto, []).append(fila)
+
+    resultados: list[dict[str, Any]] = []
+    for numero_presupuesto, filas_grupo in por_presupuesto.items():
+        header = filas_grupo[0]
+        mapa = repo.buscar_mapa_legacy_presupuesto(
+            client, drogueria_id=drogueria_id, codigo_legacy=numero_presupuesto
+        )
+
+        if mapa is None:
+            presupuesto, renglones_sin_producto = _crear_presupuesto_legacy(
+                client,
+                drogueria_id=drogueria_id,
+                header=header,
+                filas_grupo=filas_grupo,
+                usuario_id=usuario_id,
+            )
+            resultados.append(
+                {
+                    "codigo_legacy": numero_presupuesto,
+                    "presupuesto_id": presupuesto["id"],
+                    "accion": "creado",
+                    "renglones_procesados": len(filas_grupo),
+                    "renglones_sin_producto": renglones_sin_producto,
+                }
+            )
+        else:
+            # Reimport: nunca vuelve a tocar procesos_comerciales/presupuestos/
+            # items_proceso/presupuesto_items (agreed design, "reimport never
+            # duplicates") -- se informan los conteos ya persistidos.
+            presupuesto = repo.buscar_presupuesto(client, presupuesto_id=mapa["presupuesto_id"])
+            if presupuesto is None:
+                raise NotFoundError(
+                    f"El presupuesto mapeado para '{numero_presupuesto}' ya no existe"
+                )
+            resultados.append(
+                {
+                    "codigo_legacy": numero_presupuesto,
+                    "presupuesto_id": presupuesto["id"],
+                    "accion": "existente",
+                    "renglones_procesados": presupuesto["cantidad_items"],
+                    "renglones_sin_producto": presupuesto["items_sin_precio"],
+                }
+            )
+
+    return resultados
+
+
+def importar_presupuesto_legacy_para_endpoint(
+    *, drogueria_id: str, filas: list[FilaImportPresupuestoLegacy], usuario_id: str
+) -> list[dict[str, Any]]:
+    return importar_presupuesto_legacy(
         get_service_client(), drogueria_id=drogueria_id, filas=filas, usuario_id=usuario_id
     )
