@@ -1,3 +1,3 @@
-numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas
-OC-9012;03/09/2026;30555555553;CLINICA DEL SOL;Ruta 9 km 12;1;;GASA ESTERIL 10X10;40;320,00;
-OC-9012;03/09/2026;30555555553;CLINICA DEL SOL;Ruta 9 km 12;1;;ALCOHOL EN GEL 250ML;25;410,00;
+numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;observaciones;numero_renglon;descripcion;cantidad;precio_unitario;importe_total;entregas
+OC-9012;03/09/2026;30555555553;CLINICA DEL SOL;Ruta 9 km 12;1;;;GASA ESTERIL 10X10;40;320,00;;
+OC-9012;03/09/2026;30555555553;CLINICA DEL SOL;Ruta 9 km 12;1;;;ALCOHOL EN GEL 250ML;25;410,00;;

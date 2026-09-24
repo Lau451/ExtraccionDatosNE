@@ -136,6 +136,45 @@ class TestConstruirFilas:
 
         assert _construir_filas(datos) == []
 
+    def test_fieldnames_incluye_observaciones_e_importe_total_en_posicion_correcta(self):
+        """observaciones va después de cantidad_entregas (cabecera); importe_total
+        va después de precio_unitario (renglón) — ver feature doc T1."""
+        assert _FIELDNAMES.index("observaciones") == _FIELDNAMES.index("cantidad_entregas") + 1
+        assert _FIELDNAMES.index("importe_total") == _FIELDNAMES.index("precio_unitario") + 1
+
+    def test_observaciones_cabecera_se_extrae_y_se_repite_por_renglon(self):
+        datos = _datos_oc4471()
+        datos["observaciones"] = "Entrega solo en horario de mañana, ingresar por playón de cargas."
+
+        filas = _construir_filas(datos)
+
+        assert filas[0]["observaciones"] == "Entrega solo en horario de mañana, ingresar por playón de cargas."
+        assert filas[1]["observaciones"] == filas[0]["observaciones"]
+
+    def test_observaciones_ausente_en_json_da_string_vacio(self):
+        filas = _construir_filas(_datos_oc4471())  # sin clave "observaciones"
+
+        assert filas[0]["observaciones"] == ""
+        assert filas[1]["observaciones"] == ""
+
+    def test_importe_total_por_renglon_se_preserva_tal_cual(self):
+        """importe_total NUNCA se calcula acá — se transcribe tal cual llega de Gemini
+        (mismo criterio que precio_unitario: sin separador de miles)."""
+        datos = _datos_oc4471()
+        datos["renglones"][0]["importe_total"] = "125000,00"
+        datos["renglones"][1]["importe_total"] = "78440,00"
+
+        filas = _construir_filas(datos)
+
+        assert filas[0]["importe_total"] == "125000,00"
+        assert filas[1]["importe_total"] == "78440,00"
+
+    def test_importe_total_ausente_en_renglon_da_string_vacio(self):
+        filas = _construir_filas(_datos_oc4471())  # renglones sin clave "importe_total"
+
+        assert filas[0]["importe_total"] == ""
+        assert filas[1]["importe_total"] == ""
+
 
 # ---------------------------------------------------------------------------
 # procesar_orden_compra — mockea Gemini + parseo de documento
