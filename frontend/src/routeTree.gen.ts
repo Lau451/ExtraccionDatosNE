@@ -23,6 +23,7 @@ import { Route as AuthenticatedPcpIndexRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
 import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
 import { Route as AuthenticatedPcpImportsRouteImport } from './routes/_authenticated.pcp.imports'
+import { Route as AuthenticatedPresupuestosImportarRouteImport } from './routes/_authenticated.presupuestos.importar'
 import { Route as AuthenticatedProductosIndexRouteImport } from './routes/_authenticated.productos.index'
 import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
 import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
@@ -105,6 +106,12 @@ const AuthenticatedPcpImportsRoute = AuthenticatedPcpImportsRouteImport.update({
   path: '/imports',
   getParentRoute: () => AuthenticatedPcpRoute,
 } as any)
+const AuthenticatedPresupuestosImportarRoute =
+  AuthenticatedPresupuestosImportarRouteImport.update({
+    id: '/presupuestos/importar',
+    path: '/presupuestos/importar',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedProductosIndexRoute =
   AuthenticatedProductosIndexRouteImport.update({
     id: '/',
@@ -179,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/pcp/imports': typeof AuthenticatedPcpImportsRoute
+  '/presupuestos/importar': typeof AuthenticatedPresupuestosImportarRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -201,6 +209,7 @@ export interface FileRoutesByTo {
   '/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/pcp/imports': typeof AuthenticatedPcpImportsRoute
+  '/presupuestos/importar': typeof AuthenticatedPresupuestosImportarRoute
   '/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -228,6 +237,7 @@ export interface FileRoutesById {
   '/_authenticated/pcp/$pcpId': typeof AuthenticatedPcpPcpIdRouteWithChildren
   '/_authenticated/pcp/catalogo': typeof AuthenticatedPcpCatalogoRoute
   '/_authenticated/pcp/imports': typeof AuthenticatedPcpImportsRoute
+  '/_authenticated/presupuestos/importar': typeof AuthenticatedPresupuestosImportarRoute
   '/_authenticated/productos/$productoId': typeof AuthenticatedProductosProductoIdRoute
   '/_authenticated/superadmin/empresas': typeof AuthenticatedSuperadminEmpresasRoute
   '/_authenticated/terceros/$terceroId': typeof AuthenticatedTercerosTerceroIdRoute
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/pcp/$pcpId'
     | '/pcp/catalogo'
     | '/pcp/imports'
+    | '/presupuestos/importar'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/pcp/$pcpId'
     | '/pcp/catalogo'
     | '/pcp/imports'
+    | '/presupuestos/importar'
     | '/productos/$productoId'
     | '/superadmin/empresas'
     | '/terceros/$terceroId'
@@ -303,6 +315,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pcp/$pcpId'
     | '/_authenticated/pcp/catalogo'
     | '/_authenticated/pcp/imports'
+    | '/_authenticated/presupuestos/importar'
     | '/_authenticated/productos/$productoId'
     | '/_authenticated/superadmin/empresas'
     | '/_authenticated/terceros/$terceroId'
@@ -422,6 +435,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/pcp/imports'
       preLoaderRoute: typeof AuthenticatedPcpImportsRouteImport
       parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/presupuestos/importar': {
+      id: '/_authenticated/presupuestos/importar'
+      path: '/presupuestos/importar'
+      fullPath: '/presupuestos/importar'
+      preLoaderRoute: typeof AuthenticatedPresupuestosImportarRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/productos/': {
       id: '/_authenticated/productos/'
@@ -569,6 +589,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTercerosRoute: typeof AuthenticatedTercerosRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminUsuariosRoute: typeof AuthenticatedAdminUsuariosRoute
+  AuthenticatedPresupuestosImportarRoute: typeof AuthenticatedPresupuestosImportarRoute
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
   AuthenticatedValidarExtraccionExtractionIdRoute: typeof AuthenticatedValidarExtraccionExtractionIdRoute
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
@@ -582,6 +603,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTercerosRoute: AuthenticatedTercerosRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminUsuariosRoute: AuthenticatedAdminUsuariosRoute,
+  AuthenticatedPresupuestosImportarRoute:
+    AuthenticatedPresupuestosImportarRoute,
   AuthenticatedSuperadminEmpresasRoute: AuthenticatedSuperadminEmpresasRoute,
   AuthenticatedValidarExtraccionExtractionIdRoute:
     AuthenticatedValidarExtraccionExtractionIdRoute,
