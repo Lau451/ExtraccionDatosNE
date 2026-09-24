@@ -78,8 +78,20 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
 
   const mutation = useMutation({
     mutationFn: (payload: ValidarExtraccionPayload) => validarExtraccion(extractionId, payload),
-    onSuccess: () => {
+    onSuccess: (resultado) => {
       queryClient.invalidateQueries({ queryKey: EXTRACCIONES_KEY })
+      // D10: mismo patrón que subir -> validar (carga-documentos) -- la fase
+      // siguiente (matching OC<->presupuesto) se abre sola en vez de dejar al
+      // operador de vuelta en el listado sin saber que falta un paso.
+      // `orden_compra_id` es null para licitación/comparativa (el mecanismo
+      // no aplica), que conservan la navegación de siempre.
+      if (resultado.orden_compra_id) {
+        navigate({
+          to: '/ordenes-compra/$ordenCompraId/matching',
+          params: { ordenCompraId: resultado.orden_compra_id },
+        })
+        return
+      }
       navigate({ to: '/validar-extraccion' })
     },
   })

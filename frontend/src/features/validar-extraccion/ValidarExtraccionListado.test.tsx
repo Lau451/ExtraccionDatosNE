@@ -31,6 +31,11 @@ const OC_1: ExtraccionResumen = {
   proceso_comercial_id: null,
   proceso_comercial_nombre: null,
   created_at: '2026-01-01T00:00:00Z',
+  // Phase 6 (D11, tasks.md 6.2) hizo el campo requerido en el tipo TS al
+  // sincronizarlo con el backend; se agrega acá solo para que el fixture siga
+  // tipando -- Phase 8 es quien consume este campo para el link de
+  // re-entrada, fuera del alcance de esta tarea.
+  orden_compra_id: null,
 }
 const OC_2: ExtraccionResumen = { ...OC_1, id: 'ex-2', source_filename: 'oc2.pdf' }
 const LICITACION_1: ExtraccionResumen = {
