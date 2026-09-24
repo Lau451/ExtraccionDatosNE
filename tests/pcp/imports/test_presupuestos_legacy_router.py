@@ -78,9 +78,9 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_presupuesto(
         headers={"Authorization": f"Bearer {token}"},
     )
 
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
     try:
-        assert respuesta.status_code < 300
-        cuerpo = respuesta.json()
         assert cuerpo[0]["accion"] == "creado"
         assert cuerpo[0]["renglones_procesados"] == 1
         assert cuerpo[0]["renglones_sin_producto"] == 1

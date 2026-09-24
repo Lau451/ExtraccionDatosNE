@@ -26,6 +26,7 @@ acá en vez de borrado silenciosamente (una migración `DROP FUNCTION` está
 fuera del alcance de esta fase, que no incluye ninguna migración).
 """
 
+import logging
 from collections import OrderedDict
 from typing import Any
 
@@ -36,6 +37,8 @@ from services.pcp.imports import repository as repo
 from services.pcp.imports.models import FilaImportPcpLegacy, FilaImportPresupuestoLegacy
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 # D8: "1" = cotización directa / "2" = licitación; ausente -> default
 # `licitacion` (decisión confirmada por el usuario, no `cotizacion`).
@@ -388,9 +391,30 @@ def _crear_presupuesto_legacy(
                 },
             )
     except Exception:
+        # T1b(d): cada paso de la compensación queda guardado por separado --
+        # si `borrar_presupuesto` también falla (p.ej. un problema de red
+        # aparte del error que disparó esta compensación), NO debe pisar el
+        # error ORIGINAL que se re-lanza al final, y `borrar_proceso_comercial`
+        # debe seguir corriendo igual (mismo criterio para su propio fallo).
         if presupuesto is not None:
-            repo.borrar_presupuesto(client, presupuesto_id=presupuesto["id"])
-        repo.borrar_proceso_comercial(client, proceso_comercial_id=proceso["id"])
+            try:
+                repo.borrar_presupuesto(client, presupuesto_id=presupuesto["id"])
+            except Exception:
+                logger.exception(
+                    "Compensación de importar_presupuesto_legacy falló al "
+                    "borrar presupuesto %s (numero_presupuesto=%s)",
+                    presupuesto["id"],
+                    header.numero_presupuesto,
+                )
+        try:
+            repo.borrar_proceso_comercial(client, proceso_comercial_id=proceso["id"])
+        except Exception:
+            logger.exception(
+                "Compensación de importar_presupuesto_legacy falló al "
+                "borrar proceso_comercial %s (numero_presupuesto=%s)",
+                proceso["id"],
+                header.numero_presupuesto,
+            )
         raise
 
     return presupuesto, renglones_sin_producto
@@ -442,13 +466,20 @@ def importar_presupuesto_legacy(
                 raise NotFoundError(
                     f"El presupuesto mapeado para '{numero_presupuesto}' ya no existe"
                 )
+            # T1b(a): misma métrica que el primer import (renglones sin
+            # producto_id resuelto) -- `items_sin_precio` es un campo
+            # distinto (renglones sin precio) que solo coincidía por
+            # casualidad cuando ninguna fila traía precio ni código.
+            renglones_sin_producto = repo.contar_presupuesto_items_sin_producto(
+                client, presupuesto_id=presupuesto["id"]
+            )
             resultados.append(
                 {
                     "codigo_legacy": numero_presupuesto,
                     "presupuesto_id": presupuesto["id"],
                     "accion": "existente",
                     "renglones_procesados": presupuesto["cantidad_items"],
-                    "renglones_sin_producto": presupuesto["items_sin_precio"],
+                    "renglones_sin_producto": renglones_sin_producto,
                 }
             )
 

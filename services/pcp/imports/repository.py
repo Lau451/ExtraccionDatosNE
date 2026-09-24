@@ -191,6 +191,22 @@ def crear_presupuesto_item(client: Client, fila: dict[str, Any]) -> dict[str, An
     return client.table("presupuesto_items").insert(fila).execute().data[0]
 
 
+def contar_presupuesto_items_sin_producto(client: Client, *, presupuesto_id: str) -> int:
+    """T1b(a): métrica de reimport -- debe coincidir con la de primer import
+    (renglones cuyo `producto_id` no se resolvió), no con
+    `presupuestos.items_sin_precio` (campo distinto -- renglones sin
+    `precio_producto` -- que solo coincidía por casualidad en los tests
+    originales cuando ninguna fila traía precio ni código de producto)."""
+    resultado = (
+        client.table("presupuesto_items")
+        .select("id")
+        .eq("presupuesto_id", presupuesto_id)
+        .is_("producto_id", None)
+        .execute()
+    )
+    return len(resultado.data)
+
+
 # -- productos: resolución opcional de producto_id por codigo_interno (nunca
 # bloquea la fila si no matchea -- mismo criterio sin filtro de activo/
 # deleted_at que services/presupuestacion/imports/repository.py::
