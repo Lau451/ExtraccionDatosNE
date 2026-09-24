@@ -134,6 +134,14 @@ beforeEach(() => {
     filas_creadas: 1,
     comparativa_id: null,
     reemplazo_version_anterior: false,
+    // D10/D13 (Phase 6) -- los 4 campos que el backend ya devuelve desde
+    // 3b37fca3 (C7); el default de esta suite espeja el default real del
+    // backend (orden_compra_id null -> navega al listado, ver describe
+    // "navegación tras confirmar" más abajo).
+    orden_compra_id: null,
+    entregas_creadas: 0,
+    renglones_sin_producto: 0,
+    extracciones_validadas: 1,
   })
 })
 
@@ -256,6 +264,80 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
         producto_id: null,
       },
     ])
+  })
+})
+
+// Phase 6 (D10) — navegación automática al confirmar, según `orden_compra_id`
+// del resultado. La rama de `onSuccess` decide únicamente por ese campo, no
+// por `document_type` (design.md D10): por eso ambos casos se ejercitan sobre
+// el mismo flujo ya estable de `orden_compra` (stubs de OrdenCompraSelector/
+// CabeceraOrdenCompra ya establecidos arriba), variando solo el
+// `orden_compra_id` que la mutación resuelve. Nota de rigor: no existía
+// ningún test previo en este archivo que afirmara la navegación al listado
+// (`navigateMock` estaba declarado pero nunca aserteado) -- confirmado con
+// `rg navigateMock` antes de escribir este bloque -- así que "extender" el
+// caso null es, en los hechos, el primer test de navegación de este archivo,
+// no una extensión literal de uno preexistente.
+describe('ValidarExtraccionDetalle — navegación tras confirmar (D10)', () => {
+  it('confirmar una orden de compra con orden_compra_id navega a la pantalla de matching', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    vi.mocked(validarExtraccion).mockResolvedValueOnce({
+      extraction_id: 'abc',
+      document_type: 'orden_compra',
+      proceso_comercial_id: null,
+      filas_creadas: 1,
+      comparativa_id: null,
+      reemplazo_version_anterior: false,
+      orden_compra_id: 'oc-999',
+      entregas_creadas: 0,
+      renglones_sin_producto: 0,
+      extracciones_validadas: 1,
+    })
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/ordenes-compra/$ordenCompraId/matching',
+        params: { ordenCompraId: 'oc-999' },
+      }),
+    )
+    expect(navigateMock).not.toHaveBeenCalledWith({ to: '/validar-extraccion' })
+  })
+
+  it('confirmar una extracción cuyo resultado trae orden_compra_id null (licitación/comparativa) sigue navegando al listado', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    vi.mocked(validarExtraccion).mockResolvedValueOnce({
+      extraction_id: 'abc',
+      document_type: 'orden_compra',
+      proceso_comercial_id: null,
+      filas_creadas: 1,
+      comparativa_id: null,
+      reemplazo_version_anterior: false,
+      orden_compra_id: null,
+      entregas_creadas: 0,
+      renglones_sin_producto: 0,
+      extracciones_validadas: 1,
+    })
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/validar-extraccion' }))
+    expect(navigateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/ordenes-compra/$ordenCompraId/matching' }),
+    )
   })
 })
 

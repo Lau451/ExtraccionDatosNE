@@ -24,6 +24,7 @@ from services.presupuestacion.extraccion.service import (
     _leer_filas_csv,
     _validar_filas_override,
     leer_filas_extraccion,
+    listar_extracciones,
     validar_extraccion,
 )
 
@@ -1503,3 +1504,111 @@ def test_validar_fila_47_de_80_invalida_no_escribe_nada(
         .data
     )
     assert items == []
+
+
+# -- listado: orden_compra_id (D11, Phase 4) ---------------------------------
+# ExtraccionResumen.orden_compra_id se resuelve con un lookup APARTE por
+# extraction_id (repo.listar_ordenes_compra_por_extraction_ids) -- no viene
+# embebido en la fila de extraction_results. Distinto del `orden_compra_id`
+# de ResultadoValidarExtraccion (C7, ya existe desde 3b37fca3): este es el
+# campo del LISTADO, para la sección "Órdenes de compra validadas" (D11).
+
+
+def test_listar_extracciones_puebla_orden_compra_id_via_lookup_por_extraction_id(monkeypatch):
+    filas = [
+        {
+            "id": "extraccion-oc",
+            "document_type": "orden_compra",
+            "source_filename": "oc.pdf",
+            "row_count": 1,
+            "status": "completed",
+            "validado": True,
+            "proceso_comercial_id": None,
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "grupo_id": None,
+            "procesos_comerciales": None,
+        },
+        {
+            "id": "extraccion-licitacion",
+            "document_type": "licitacion",
+            "source_filename": "lici.pdf",
+            "row_count": 1,
+            "status": "completed",
+            "validado": True,
+            "proceso_comercial_id": "proceso-1",
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "grupo_id": None,
+            "procesos_comerciales": {"nombre": "Proceso 1"},
+        },
+    ]
+    monkeypatch.setattr(
+        repo, "listar_extracciones", lambda client, **kw: [dict(f) for f in filas]
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_ordenes_compra_por_extraction_ids",
+        lambda client, *, extraction_ids: [
+            {"id": "orden-compra-1", "extraction_id": "extraccion-oc"}
+        ],
+    )
+
+    resultado = listar_extracciones(MagicMock(), validado=None, limit=50, offset=0)
+
+    por_id = {r.id: r for r in resultado}
+    assert por_id["extraccion-oc"].orden_compra_id == "orden-compra-1"
+    # licitación nunca tiene fila en ordenes_compra -- el lookup no la matchea
+    assert por_id["extraccion-licitacion"].orden_compra_id is None
+
+
+def test_listar_extracciones_lote_vacio_no_llama_al_lookup_de_ordenes_compra(monkeypatch):
+    monkeypatch.setattr(repo, "listar_extracciones", lambda client, **kw: [])
+    lookup = MagicMock(return_value=[])
+    monkeypatch.setattr(repo, "listar_ordenes_compra_por_extraction_ids", lookup)
+
+    resultado = listar_extracciones(MagicMock(), validado=None, limit=50, offset=0)
+
+    assert resultado == []
+    lookup.assert_not_called()
+
+
+def test_en_lotes_de_450_extraction_ids_produce_3_lotes_de_200_200_50():
+    # Mismo criterio de troceo que oc_presupuesto/repository.py (D3): un in_()
+    # de PostgREST con demasiados ids revienta el límite de URL.
+    ids = [f"extraccion-{i}" for i in range(450)]
+
+    lotes = list(repo._en_lotes(ids))
+
+    assert [len(lote) for lote in lotes] == [200, 200, 50]
+    assert [item for lote in lotes for item in lote] == ids  # concatenación intacta
+
+
+def test_listar_ordenes_compra_por_extraction_ids_trocea_450_ids_en_3_llamadas_al_cliente_mockeado():
+    extraction_ids = [f"extraccion-{i}" for i in range(450)]
+    lotes_recibidos: list[list[str]] = []
+
+    def _fake_in_(columna: str, lote: list[str]):
+        assert columna == "extraction_id"
+        lotes_recibidos.append(lote)
+        query = MagicMock()
+        resultado = MagicMock()
+        resultado.data = [{"id": f"oc-de-{eid}", "extraction_id": eid} for eid in lote]
+        query.execute.return_value = resultado
+        return query
+
+    client = MagicMock()
+    client.table.return_value.select.return_value.in_.side_effect = _fake_in_
+
+    resultado = repo.listar_ordenes_compra_por_extraction_ids(client, extraction_ids=extraction_ids)
+
+    assert len(lotes_recibidos) == 3
+    assert [len(lote) for lote in lotes_recibidos] == [200, 200, 50]
+    assert len(resultado) == 450  # concatenación de las 3 llamadas, intacta
+
+
+def test_listar_ordenes_compra_por_extraction_ids_vacio_no_llama_al_cliente():
+    client = MagicMock()
+
+    resultado = repo.listar_ordenes_compra_por_extraction_ids(client, extraction_ids=[])
+
+    assert resultado == []
+    client.table.assert_not_called()

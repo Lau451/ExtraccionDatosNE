@@ -393,3 +393,116 @@ def test_agrupar_extracciones_endpoint_en_vivo(
         .data
     )
     assert all(fila["grupo_id"] is None for fila in filas_finales)
+
+
+# -- listado: orden_compra_id (D11, Phase 4) ---------------------------------
+
+
+@pytest.mark.integration
+def test_listar_extracciones_expone_orden_compra_id_de_extraccion_validada(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, crear_usuario_autenticado, seed_cliente_factory,
+):
+    # D11: el listado gana orden_compra_id, resuelto por un lookup aparte
+    # contra `ordenes_compra.extraction_id` -- licitación/comparativa nunca
+    # crean esa fila, así que deben devolver `orden_compra_id=None` siempre
+    # (nunca tienen fila en ordenes_compra, C7 no toca este campo).
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+    # ck_oc_anclaje (0025): una OC de una extracción de cliente se ancla por
+    # cliente_id (no tiene proceso_comercial_id) -- necesita un cliente real.
+    cliente_seed = seed_cliente_factory(drogueria_id=seed_drogueria["id"])
+
+    oc_extraccion = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+    )
+    licitacion_extraccion = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+    )
+
+    orden_compra = (
+        service_client.table("ordenes_compra")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "cliente_id": cliente_seed["cliente_id"],
+                "extraction_id": oc_extraccion["id"],
+                "numero_oc": "OC-TEST-4-2",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    # Limpieza vía seed_extraction_result_factory: su teardown ya busca y
+    # borra en cascada cualquier ordenes_compra cuyo extraction_id apunte a
+    # una extracción sembrada por él (_borrar_orden_compra_en_cascada).
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+
+    por_id = {r.id: r for r in resultado}
+    assert por_id[oc_extraccion["id"]].orden_compra_id == orden_compra["id"]
+    assert por_id[licitacion_extraccion["id"]].orden_compra_id is None
+
+
+@pytest.mark.integration
+def test_listar_extracciones_grupo_multiarchivo_solo_la_extraccion_ancla_tiene_orden_compra_id(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, crear_usuario_autenticado, seed_cliente_factory,
+):
+    # D11, nota de grupo multi-archivo (D13/D13.1 del cambio padre):
+    # `ordenes_compra.extraction_id` guarda UNA sola de las N extracciones del
+    # grupo (el ancla que _materializar_orden_compra usó al confirmar). Las
+    # N-1 restantes quedan con orden_compra_id=None -- comportamiento
+    # ACEPTADO explícitamente por el diseño, este test lo afirma tal cual, no
+    # asume que "debería" resolverse para todo el grupo.
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+    cliente_seed = seed_cliente_factory(drogueria_id=seed_drogueria["id"])
+
+    grupo_id = str(uuid.uuid4())
+    columnas = ["numero_renglon", "descripcion", "cantidad"]
+    ancla = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=columnas,
+        grupo_id=grupo_id,
+    )
+    miembro_2 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Amoxicilina 500mg", "cantidad": "5"}],
+        columnas=columnas,
+        grupo_id=grupo_id,
+    )
+
+    service_client.table("ordenes_compra").insert(
+        {
+            "drogueria_id": seed_drogueria["id"],
+            "cliente_id": cliente_seed["cliente_id"],
+            "extraction_id": ancla["id"],
+            "numero_oc": "OC-GRUPO-TEST-4-2",
+        }
+    ).execute()
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+
+    por_id = {r.id: r for r in resultado}
+    assert por_id[ancla["id"]].orden_compra_id is not None
+    assert por_id[miembro_2["id"]].orden_compra_id is None

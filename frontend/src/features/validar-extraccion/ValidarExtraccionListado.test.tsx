@@ -2,10 +2,29 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ValidarExtraccionListado, puedeAgruparSeleccion, grupoIdDe } from './ValidarExtraccionListado'
-import type { ExtraccionResumen } from '@/lib/api/extracciones'
+import type { ExtraccionResumen, ListarExtraccionesParams } from '@/lib/api/extracciones'
 
+// D11 -- a diferencia del mock mínimo previo (`<a>{children}</a>`), esta
+// versión propaga `to`/`params` como `href` para poder afirmar el destino
+// real de los links de re-entrada (task 8.1). Sustituye literales de ruta
+// tipo `$ordenCompraId` por el valor correspondiente en `params`, mismo
+// criterio que `LoginForm.test.tsx` (único precedente que ya exponía `to`).
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a>,
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children?: React.ReactNode
+    to: string
+    params?: Record<string, string>
+  }) => {
+    let href = to
+    if (params) {
+      for (const [clave, valor] of Object.entries(params)) href = href.replace(`$${clave}`, valor)
+    }
+    return <a href={href}>{children}</a>
+  },
 }))
 
 vi.mock('@/lib/api/extracciones', () => ({
@@ -31,6 +50,11 @@ const OC_1: ExtraccionResumen = {
   proceso_comercial_id: null,
   proceso_comercial_nombre: null,
   created_at: '2026-01-01T00:00:00Z',
+  // Phase 6 (D11, tasks.md 6.2) hizo el campo requerido en el tipo TS al
+  // sincronizarlo con el backend; se agrega acá solo para que el fixture siga
+  // tipando -- Phase 8 es quien consume este campo para el link de
+  // re-entrada, fuera del alcance de esta tarea.
+  orden_compra_id: null,
 }
 const OC_2: ExtraccionResumen = { ...OC_1, id: 'ex-2', source_filename: 'oc2.pdf' }
 const LICITACION_1: ExtraccionResumen = {
@@ -40,8 +64,35 @@ const LICITACION_1: ExtraccionResumen = {
   source_filename: 'lici1.pdf',
 }
 
+// D11 (Phase 8, tasks 8.1-8.2) -- una OC validada, con `orden_compra_id`
+// resuelto (ancla del grupo, o sin grupo). Base para el fixture "sin ancla"
+// (orden_compra_id: null) de cada test que lo necesita.
+const OC_VALIDADA_1: ExtraccionResumen = {
+  ...OC_1,
+  id: 'ex-validada-1',
+  source_filename: 'oc-validada-1.pdf',
+  validado: true,
+  orden_compra_id: 'oc-abc',
+}
+
+/** `listarExtracciones` real distingue por `params.validado`: la fábrica
+ * arma un mock único con ambas ramas en vez de duplicar el `mockReset()` +
+ * `mockImplementation()` en cada test (D11 agrega una segunda query junto a
+ * la ya existente `{ validado: false }`). */
+function mockListarExtracciones({
+  pendientes = [OC_1, OC_2, LICITACION_1],
+  validadas = [] as ExtraccionResumen[],
+} = {}) {
+  vi.mocked(listarExtracciones)
+    .mockReset()
+    .mockImplementation((params: ListarExtraccionesParams = {}) => {
+      if (params.validado === true) return Promise.resolve(validadas)
+      return Promise.resolve(pendientes)
+    })
+}
+
 beforeEach(() => {
-  vi.mocked(listarExtracciones).mockReset().mockResolvedValue([OC_1, OC_2, LICITACION_1])
+  mockListarExtracciones()
   vi.mocked(agruparExtracciones).mockReset()
   vi.mocked(desagruparExtracciones).mockReset()
 })
@@ -133,11 +184,7 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
   it('7.13: el indicador de grupo y "Desagrupar" leen el grupo_id persistido de un refetch/recarga, sin pasar por agrupar/desagrupar primero', async () => {
     const OC_1_AGRUPADA: ExtraccionResumen = { ...OC_1, grupo_id: 'grupo-persistido' }
     const OC_2_AGRUPADA: ExtraccionResumen = { ...OC_2, grupo_id: 'grupo-persistido' }
-    vi.mocked(listarExtracciones).mockReset().mockResolvedValue([
-      OC_1_AGRUPADA,
-      OC_2_AGRUPADA,
-      LICITACION_1,
-    ])
+    mockListarExtracciones({ pendientes: [OC_1_AGRUPADA, OC_2_AGRUPADA, LICITACION_1] })
 
     renderConQueryClient(<ValidarExtraccionListado />)
     await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
@@ -151,5 +198,60 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
     fireEvent.click(screen.getByLabelText(/seleccionar oc2\.pdf/i))
 
     expect(screen.getByRole('button', { name: /^desagrupar$/i })).not.toBeDisabled()
+  })
+})
+
+describe('ValidarExtraccionListado (D11) — sección "Órdenes de compra validadas"', () => {
+  it('consulta { validado: true, limit: 50 } y muestra un link a la pantalla de matching por fila con orden_compra_id', async () => {
+    mockListarExtracciones({ validadas: [OC_VALIDADA_1] })
+
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
+
+    expect(listarExtracciones).toHaveBeenCalledWith({ validado: true, limit: 50 })
+
+    const link = screen.getByRole('link', { name: /matching/i })
+    expect(link).toHaveAttribute('href', '/ordenes-compra/oc-abc/matching')
+  })
+
+  it('una fila con orden_compra_id null (miembro no-ancla de un grupo, D11) no muestra un link roto', async () => {
+    const OC_VALIDADA_SIN_ANCLA: ExtraccionResumen = {
+      ...OC_VALIDADA_1,
+      id: 'ex-validada-2',
+      source_filename: 'oc-validada-2.pdf',
+      orden_compra_id: null,
+    }
+    mockListarExtracciones({ validadas: [OC_VALIDADA_SIN_ANCLA] })
+
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('oc-validada-2.pdf')).toBeInTheDocument())
+
+    // Convención ya establecida en PendientesTable (proceso_comercial_nombre
+    // ?? '—'): la fila se muestra igual, sin acción rota, en vez de
+    // ocultarse por completo.
+    expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
+  })
+
+  it('filtra document_type === orden_compra en el cliente -- licitación/comparativa validadas no aparecen en la sección', async () => {
+    const LICITACION_VALIDADA: ExtraccionResumen = {
+      ...OC_VALIDADA_1,
+      id: 'ex-validada-lici',
+      document_type: 'licitacion',
+      source_filename: 'lici-validada.pdf',
+      orden_compra_id: null,
+    }
+    mockListarExtracciones({ validadas: [OC_VALIDADA_1, LICITACION_VALIDADA] })
+
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
+
+    expect(screen.queryByText('lici-validada.pdf')).not.toBeInTheDocument()
+  })
+
+  it('sin órdenes de compra validadas, la sección no muestra ningún link de matching', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
   })
 })

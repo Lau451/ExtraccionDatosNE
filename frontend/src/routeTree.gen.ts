@@ -9,38 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
-import { Route as AuthenticatedTercerosRouteImport } from './routes/_authenticated.terceros'
-import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
-import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
-import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
-import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authenticated.terceros.index'
-import { Route as AuthenticatedProductosIndexRouteImport } from './routes/_authenticated.productos.index'
-import { Route as AuthenticatedPcpIndexRouteImport } from './routes/_authenticated.pcp.index'
-import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
-import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
-import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
-import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
-import { Route as AuthenticatedPcpImportsRouteImport } from './routes/_authenticated.pcp.imports'
-import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
-import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
+import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
+import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
+import { Route as AuthenticatedTercerosRouteImport } from './routes/_authenticated.terceros'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
+import { Route as AuthenticatedPcpIndexRouteImport } from './routes/_authenticated.pcp.index'
+import { Route as AuthenticatedPcpPcpIdRouteImport } from './routes/_authenticated.pcp.$pcpId'
+import { Route as AuthenticatedPcpCatalogoRouteImport } from './routes/_authenticated.pcp.catalogo'
+import { Route as AuthenticatedPcpImportsRouteImport } from './routes/_authenticated.pcp.imports'
+import { Route as AuthenticatedProductosIndexRouteImport } from './routes/_authenticated.productos.index'
+import { Route as AuthenticatedProductosProductoIdRouteImport } from './routes/_authenticated.productos.$productoId'
+import { Route as AuthenticatedSuperadminEmpresasRouteImport } from './routes/_authenticated.superadmin.empresas'
+import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authenticated.terceros.index'
+import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
+import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
+import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
+import { Route as AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.matching'
 import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
 import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcceptInviteRoute = AcceptInviteRouteImport.update({
@@ -48,8 +43,14 @@ const AcceptInviteRoute = AcceptInviteRouteImport.update({
   path: '/accept-invite',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -57,14 +58,9 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedTercerosRoute = AuthenticatedTercerosRouteImport.update({
-  id: '/terceros',
-  path: '/terceros',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedProductosRoute = AuthenticatedProductosRouteImport.update({
-  id: '/productos',
-  path: '/productos',
+const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
+  id: '/mi-cuenta',
+  path: '/mi-cuenta',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedPcpRoute = AuthenticatedPcpRouteImport.update({
@@ -72,61 +68,30 @@ const AuthenticatedPcpRoute = AuthenticatedPcpRouteImport.update({
   path: '/pcp',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
-  id: '/mi-cuenta',
-  path: '/mi-cuenta',
+const AuthenticatedProductosRoute = AuthenticatedProductosRouteImport.update({
+  id: '/productos',
+  path: '/productos',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedValidarExtraccionIndexRoute =
-  AuthenticatedValidarExtraccionIndexRouteImport.update({
-    id: '/validar-extraccion/',
-    path: '/validar-extraccion/',
+const AuthenticatedTercerosRoute = AuthenticatedTercerosRouteImport.update({
+  id: '/terceros',
+  path: '/terceros',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminUsuariosRoute =
+  AuthenticatedAdminUsuariosRouteImport.update({
+    id: '/admin/usuarios',
+    path: '/admin/usuarios',
     getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedTercerosIndexRoute =
-  AuthenticatedTercerosIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedTercerosRoute,
-  } as any)
-const AuthenticatedProductosIndexRoute =
-  AuthenticatedProductosIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedProductosRoute,
   } as any)
 const AuthenticatedPcpIndexRoute = AuthenticatedPcpIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedPcpRoute,
 } as any)
-const AuthenticatedValidarExtraccionExtractionIdRoute =
-  AuthenticatedValidarExtraccionExtractionIdRouteImport.update({
-    id: '/validar-extraccion/$extractionId',
-    path: '/validar-extraccion/$extractionId',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedTercerosTerceroIdRoute =
-  AuthenticatedTercerosTerceroIdRouteImport.update({
-    id: '/$terceroId',
-    path: '/$terceroId',
-    getParentRoute: () => AuthenticatedTercerosRoute,
-  } as any)
-const AuthenticatedSuperadminEmpresasRoute =
-  AuthenticatedSuperadminEmpresasRouteImport.update({
-    id: '/superadmin/empresas',
-    path: '/superadmin/empresas',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedProductosProductoIdRoute =
-  AuthenticatedProductosProductoIdRouteImport.update({
-    id: '/$productoId',
-    path: '/$productoId',
-    getParentRoute: () => AuthenticatedProductosRoute,
-  } as any)
-const AuthenticatedPcpImportsRoute = AuthenticatedPcpImportsRouteImport.update({
-  id: '/imports',
-  path: '/imports',
+const AuthenticatedPcpPcpIdRoute = AuthenticatedPcpPcpIdRouteImport.update({
+  id: '/$pcpId',
+  path: '/$pcpId',
   getParentRoute: () => AuthenticatedPcpRoute,
 } as any)
 const AuthenticatedPcpCatalogoRoute =
@@ -135,15 +100,57 @@ const AuthenticatedPcpCatalogoRoute =
     path: '/catalogo',
     getParentRoute: () => AuthenticatedPcpRoute,
   } as any)
-const AuthenticatedPcpPcpIdRoute = AuthenticatedPcpPcpIdRouteImport.update({
-  id: '/$pcpId',
-  path: '/$pcpId',
+const AuthenticatedPcpImportsRoute = AuthenticatedPcpImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
   getParentRoute: () => AuthenticatedPcpRoute,
 } as any)
-const AuthenticatedAdminUsuariosRoute =
-  AuthenticatedAdminUsuariosRouteImport.update({
-    id: '/admin/usuarios',
-    path: '/admin/usuarios',
+const AuthenticatedProductosIndexRoute =
+  AuthenticatedProductosIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedProductosRoute,
+  } as any)
+const AuthenticatedProductosProductoIdRoute =
+  AuthenticatedProductosProductoIdRouteImport.update({
+    id: '/$productoId',
+    path: '/$productoId',
+    getParentRoute: () => AuthenticatedProductosRoute,
+  } as any)
+const AuthenticatedSuperadminEmpresasRoute =
+  AuthenticatedSuperadminEmpresasRouteImport.update({
+    id: '/superadmin/empresas',
+    path: '/superadmin/empresas',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedTercerosIndexRoute =
+  AuthenticatedTercerosIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedTercerosRoute,
+  } as any)
+const AuthenticatedTercerosTerceroIdRoute =
+  AuthenticatedTercerosTerceroIdRouteImport.update({
+    id: '/$terceroId',
+    path: '/$terceroId',
+    getParentRoute: () => AuthenticatedTercerosRoute,
+  } as any)
+const AuthenticatedValidarExtraccionIndexRoute =
+  AuthenticatedValidarExtraccionIndexRouteImport.update({
+    id: '/validar-extraccion/',
+    path: '/validar-extraccion/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedValidarExtraccionExtractionIdRoute =
+  AuthenticatedValidarExtraccionExtractionIdRouteImport.update({
+    id: '/validar-extraccion/$extractionId',
+    path: '/validar-extraccion/$extractionId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute =
+  AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport.update({
+    id: '/ordenes-compra/$ordenCompraId/matching',
+    path: '/ordenes-compra/$ordenCompraId/matching',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPcpConsultasConsultaIdRoute =
@@ -180,6 +187,7 @@ export interface FileRoutesByFullPath {
   '/productos/': typeof AuthenticatedProductosIndexRoute
   '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -201,6 +209,7 @@ export interface FileRoutesByTo {
   '/productos': typeof AuthenticatedProductosIndexRoute
   '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -227,6 +236,7 @@ export interface FileRoutesById {
   '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
   '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/_authenticated/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/productos/'
     | '/terceros/'
     | '/validar-extraccion/'
+    | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/terceros'
     | '/validar-extraccion'
+    | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
   id:
@@ -299,6 +311,7 @@ export interface FileRouteTypes {
     | '/_authenticated/productos/'
     | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
+    | '/_authenticated/ordenes-compra/$ordenCompraId/matching'
     | '/_authenticated/pcp/consultas/$consultaId'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
@@ -312,18 +325,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accept-invite': {
@@ -333,11 +339,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcceptInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -347,18 +360,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/terceros': {
-      id: '/_authenticated/terceros'
-      path: '/terceros'
-      fullPath: '/terceros'
-      preLoaderRoute: typeof AuthenticatedTercerosRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/productos': {
-      id: '/_authenticated/productos'
-      path: '/productos'
-      fullPath: '/productos'
-      preLoaderRoute: typeof AuthenticatedProductosRouteImport
+    '/_authenticated/mi-cuenta': {
+      id: '/_authenticated/mi-cuenta'
+      path: '/mi-cuenta'
+      fullPath: '/mi-cuenta'
+      preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/pcp': {
@@ -368,81 +374,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPcpRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/mi-cuenta': {
-      id: '/_authenticated/mi-cuenta'
-      path: '/mi-cuenta'
-      fullPath: '/mi-cuenta'
-      preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
+    '/_authenticated/productos': {
+      id: '/_authenticated/productos'
+      path: '/productos'
+      fullPath: '/productos'
+      preLoaderRoute: typeof AuthenticatedProductosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/validar-extraccion/': {
-      id: '/_authenticated/validar-extraccion/'
-      path: '/validar-extraccion'
-      fullPath: '/validar-extraccion/'
-      preLoaderRoute: typeof AuthenticatedValidarExtraccionIndexRouteImport
+    '/_authenticated/terceros': {
+      id: '/_authenticated/terceros'
+      path: '/terceros'
+      fullPath: '/terceros'
+      preLoaderRoute: typeof AuthenticatedTercerosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/terceros/': {
-      id: '/_authenticated/terceros/'
-      path: '/'
-      fullPath: '/terceros/'
-      preLoaderRoute: typeof AuthenticatedTercerosIndexRouteImport
-      parentRoute: typeof AuthenticatedTercerosRoute
-    }
-    '/_authenticated/productos/': {
-      id: '/_authenticated/productos/'
-      path: '/'
-      fullPath: '/productos/'
-      preLoaderRoute: typeof AuthenticatedProductosIndexRouteImport
-      parentRoute: typeof AuthenticatedProductosRoute
+    '/_authenticated/admin/usuarios': {
+      id: '/_authenticated/admin/usuarios'
+      path: '/admin/usuarios'
+      fullPath: '/admin/usuarios'
+      preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/pcp/': {
       id: '/_authenticated/pcp/'
       path: '/'
       fullPath: '/pcp/'
       preLoaderRoute: typeof AuthenticatedPcpIndexRouteImport
-      parentRoute: typeof AuthenticatedPcpRoute
-    }
-    '/_authenticated/validar-extraccion/$extractionId': {
-      id: '/_authenticated/validar-extraccion/$extractionId'
-      path: '/validar-extraccion/$extractionId'
-      fullPath: '/validar-extraccion/$extractionId'
-      preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/terceros/$terceroId': {
-      id: '/_authenticated/terceros/$terceroId'
-      path: '/$terceroId'
-      fullPath: '/terceros/$terceroId'
-      preLoaderRoute: typeof AuthenticatedTercerosTerceroIdRouteImport
-      parentRoute: typeof AuthenticatedTercerosRoute
-    }
-    '/_authenticated/superadmin/empresas': {
-      id: '/_authenticated/superadmin/empresas'
-      path: '/superadmin/empresas'
-      fullPath: '/superadmin/empresas'
-      preLoaderRoute: typeof AuthenticatedSuperadminEmpresasRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/productos/$productoId': {
-      id: '/_authenticated/productos/$productoId'
-      path: '/$productoId'
-      fullPath: '/productos/$productoId'
-      preLoaderRoute: typeof AuthenticatedProductosProductoIdRouteImport
-      parentRoute: typeof AuthenticatedProductosRoute
-    }
-    '/_authenticated/pcp/imports': {
-      id: '/_authenticated/pcp/imports'
-      path: '/imports'
-      fullPath: '/pcp/imports'
-      preLoaderRoute: typeof AuthenticatedPcpImportsRouteImport
-      parentRoute: typeof AuthenticatedPcpRoute
-    }
-    '/_authenticated/pcp/catalogo': {
-      id: '/_authenticated/pcp/catalogo'
-      path: '/catalogo'
-      fullPath: '/pcp/catalogo'
-      preLoaderRoute: typeof AuthenticatedPcpCatalogoRouteImport
       parentRoute: typeof AuthenticatedPcpRoute
     }
     '/_authenticated/pcp/$pcpId': {
@@ -452,11 +409,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPcpPcpIdRouteImport
       parentRoute: typeof AuthenticatedPcpRoute
     }
-    '/_authenticated/admin/usuarios': {
-      id: '/_authenticated/admin/usuarios'
-      path: '/admin/usuarios'
-      fullPath: '/admin/usuarios'
-      preLoaderRoute: typeof AuthenticatedAdminUsuariosRouteImport
+    '/_authenticated/pcp/catalogo': {
+      id: '/_authenticated/pcp/catalogo'
+      path: '/catalogo'
+      fullPath: '/pcp/catalogo'
+      preLoaderRoute: typeof AuthenticatedPcpCatalogoRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/pcp/imports': {
+      id: '/_authenticated/pcp/imports'
+      path: '/imports'
+      fullPath: '/pcp/imports'
+      preLoaderRoute: typeof AuthenticatedPcpImportsRouteImport
+      parentRoute: typeof AuthenticatedPcpRoute
+    }
+    '/_authenticated/productos/': {
+      id: '/_authenticated/productos/'
+      path: '/'
+      fullPath: '/productos/'
+      preLoaderRoute: typeof AuthenticatedProductosIndexRouteImport
+      parentRoute: typeof AuthenticatedProductosRoute
+    }
+    '/_authenticated/productos/$productoId': {
+      id: '/_authenticated/productos/$productoId'
+      path: '/$productoId'
+      fullPath: '/productos/$productoId'
+      preLoaderRoute: typeof AuthenticatedProductosProductoIdRouteImport
+      parentRoute: typeof AuthenticatedProductosRoute
+    }
+    '/_authenticated/superadmin/empresas': {
+      id: '/_authenticated/superadmin/empresas'
+      path: '/superadmin/empresas'
+      fullPath: '/superadmin/empresas'
+      preLoaderRoute: typeof AuthenticatedSuperadminEmpresasRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/terceros/': {
+      id: '/_authenticated/terceros/'
+      path: '/'
+      fullPath: '/terceros/'
+      preLoaderRoute: typeof AuthenticatedTercerosIndexRouteImport
+      parentRoute: typeof AuthenticatedTercerosRoute
+    }
+    '/_authenticated/terceros/$terceroId': {
+      id: '/_authenticated/terceros/$terceroId'
+      path: '/$terceroId'
+      fullPath: '/terceros/$terceroId'
+      preLoaderRoute: typeof AuthenticatedTercerosTerceroIdRouteImport
+      parentRoute: typeof AuthenticatedTercerosRoute
+    }
+    '/_authenticated/validar-extraccion/': {
+      id: '/_authenticated/validar-extraccion/'
+      path: '/validar-extraccion'
+      fullPath: '/validar-extraccion/'
+      preLoaderRoute: typeof AuthenticatedValidarExtraccionIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/validar-extraccion/$extractionId': {
+      id: '/_authenticated/validar-extraccion/$extractionId'
+      path: '/validar-extraccion/$extractionId'
+      fullPath: '/validar-extraccion/$extractionId'
+      preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ordenes-compra/$ordenCompraId/matching': {
+      id: '/_authenticated/ordenes-compra/$ordenCompraId/matching'
+      path: '/ordenes-compra/$ordenCompraId/matching'
+      fullPath: '/ordenes-compra/$ordenCompraId/matching'
+      preLoaderRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/pcp/consultas/$consultaId': {
@@ -552,6 +572,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
   AuthenticatedValidarExtraccionExtractionIdRoute: typeof AuthenticatedValidarExtraccionExtractionIdRoute
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
+  AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -566,6 +587,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedValidarExtraccionExtractionIdRoute,
   AuthenticatedValidarExtraccionIndexRoute:
     AuthenticatedValidarExtraccionIndexRoute,
+  AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute:
+    AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

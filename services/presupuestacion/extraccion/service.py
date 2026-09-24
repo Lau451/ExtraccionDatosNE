@@ -82,11 +82,28 @@ def listar_extracciones(
     client: Client, *, validado: bool | None, limit: int, offset: int
 ) -> list[ExtraccionResumen]:
     filas = repo.listar_extracciones(client, validado=validado, limit=limit, offset=offset)
+    # D11 (Phase 4) -- lookup aparte por extraction_id, no embebido: solo
+    # UNA de las N extracciones de un grupo multi-archivo tiene fila en
+    # ordenes_compra (el ancla que _materializar_orden_compra usó), así que
+    # el mapa queda incompleto a propósito y .get() resuelve None para el
+    # resto (aceptado explícitamente, D11). Lote vacío no llama al lookup.
+    ordenes = (
+        repo.listar_ordenes_compra_por_extraction_ids(
+            client, extraction_ids=[fila["id"] for fila in filas]
+        )
+        if filas
+        else []
+    )
+    orden_compra_id_por_extraccion = {orden["extraction_id"]: orden["id"] for orden in ordenes}
     resumenes = []
     for fila in filas:
         proceso_embed = fila.pop("procesos_comerciales", None) or {}
         resumenes.append(
-            ExtraccionResumen(**fila, proceso_comercial_nombre=proceso_embed.get("nombre"))
+            ExtraccionResumen(
+                **fila,
+                proceso_comercial_nombre=proceso_embed.get("nombre"),
+                orden_compra_id=orden_compra_id_por_extraccion.get(fila["id"]),
+            )
         )
     return resumenes
 
