@@ -477,20 +477,78 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 > contra `routeTree.gen.ts`, así que el `navigate({ to: '/ordenes-compra/$ordenCompraId/matching' })`
 > de Phase 6 no compilaría si la ruta todavía no existe. Este orden evita ese error de tipos.
 
-- [ ] 5.1 [GREEN] Crear `frontend/src/lib/api/ocMatching.ts`: espejos TypeScript literales de los
+- [x] 5.1 [RED→GREEN] Crear `frontend/src/lib/api/ocMatching.ts`: espejos TypeScript literales de los
   modelos Pydantic de `oc_presupuesto/models.py` (`snake_case`, comentario que nombra el modelo de
   origen, misma convención que `extracciones.ts`), y las 5 funciones:
   `obtenerPresupuestosCandidatos`, `obtenerMatching`, `confirmarVinculo`, `deshacerVinculo`,
   `descartarRenglon` — firmas literales de `design.md` § Espejos TypeScript.
-- [ ] 5.2 [GREEN] Crear
+  **Evidencia**: `EstadoVinculo`, `OrigenVinculo`, `CandidatoPresupuesto`,
+  `PresupuestosCandidatosOut`, `RenglonPresupuesto`, `CandidatoVinculo`, `RenglonOrdenCompra`,
+  `MatchingOut` transcriptos carácter a carácter contra
+  `services/presupuestacion/oc_presupuesto/models.py` (verificado leyendo el archivo real, no
+  `design.md`), con la misma convención de comentario-por-campo. Los campos `Decimal` de Python se
+  mapean a `number` en TS — **no** a `string`: se siguió el precedente real de
+  `frontend/src/lib/api/pcp.ts` (`precio_referencia`, `precio_unitario` → `number | null`), que es
+  el módulo que sí mirroriza respuestas `Decimal` del backend; `extracciones.ts` usa `string` para
+  `cantidad`/`precio_unitario`, pero ahí son inputs de formulario/CSV sin tipar (`FilaOrdenCompraIn`),
+  no la forma de un `BaseModel` de respuesta — no es el precedente aplicable. Los campos `datetime`
+  (`generado_at`) se mapean a `string`, mismo criterio que `created_at` en `ExtraccionResumen`. Las 5
+  funciones llaman a `presupuestacionFetch` (reusado tal cual, sin cliente nuevo) contra las rutas
+  literales de D13; `obtenerMatching` omite `presupuesto_id` del querystring cuando no se pasa
+  (mismo patrón `URLSearchParams` que `listarExtracciones`).
+- [x] 5.2 [GREEN] Crear
   `frontend/src/routes/_authenticated.ordenes-compra.$ordenCompraId.matching.tsx`: ruta con
   `validateSearch` de `presupuesto` (query param opcional, D8 — sobrevive a reload, compartible por
   link).
-- [ ] 5.3 [Generado] Regenerar `frontend/src/routeTree.gen.ts` con TanStack Router (`pnpm --filter
+  **Evidencia**: mismo patrón `createFileRoute` + `validateSearch` que
+  `_authenticated.validar-extraccion.$extractionId.tsx` (la ruta análoga más cercana). Sin
+  `beforeLoad`/guard de rol propio: `_authenticated.tsx` (layout padre) ya exige sesión
+  (`requireAuth`) para toda la rama, y `validar-extraccion` — el predecesor inmediato en el flujo —
+  tampoco guarda por rol en el frontend (la autorización real vive en el backend, D12,
+  `_ROLES_MATCHING`); no se inventó una tupla de roles de frontend fuera del alcance de esta fase.
+  **Desviación explícita, documentada en el propio archivo**: `OcMatchingDetalle` (Phase 7,
+  `frontend/src/features/oc-matching/`) todavía no existe — esta fase se adelantó a propósito
+  (nota de dependencia al inicio de esta Phase 5) solo para que `routeTree.gen.ts` tipe el
+  `navigate({ to: ... })` de Phase 6. El componente de la ruta es un placeholder mínimo que resuelve
+  `Route.useParams()`/`Route.useSearch()` con la forma final (D8) y los renderiza; Phase 7 reemplaza
+  el cuerpo sin tocar la firma de la ruta.
+- [x] 5.3 [Generado] Regenerar `frontend/src/routeTree.gen.ts` con TanStack Router (`pnpm --filter
   frontend dev` o el comando del generador del proyecto) tras crear la ruta de 5.2.
-- [ ] 5.4 Verificación: `pnpm --filter frontend typecheck` (o `tsc --noEmit`) sin errores sobre los
+  **Evidencia**: no hay comando `typecheck`/generador dedicado en `package.json` (solo `dev`,
+  `build`, `lint`, `preview`, `test`); el plugin `@tanstack/router-plugin/vite` (`vite.config.ts`)
+  regenera el árbol como side-effect de cualquier build/dev de Vite, así que se corrió
+  `pnpm exec vite build` (más rápido y no interactivo que `pnpm dev`) — terminó en 1.37s, generó
+  `dist/` (gitignorado, sin rastro en `git status`) y emitió el chunk nuevo
+  `_authenticated.ordenes-compra._ordenCompraId.matching-*.js`, confirmando que el router lo
+  descubrió. Verificado con `rg` sobre el archivo regenerado: la ruta nueva aparece en las 8
+  ubicaciones esperadas (import, `.update()`, los 3 mapas de tipos `FileRoutesByFullPath`/
+  `FileRoutesByTo`/`FileRoutesById`, el bloque `FileRouteTypes`, `routesByPath` y el árbol final).
+  **Nota sobre el diff pre-existente**: `git status` ya mostraba `frontend/src/routeTree.gen.ts`
+  modificado (356 líneas) *antes* de este batch, por una sesión previa que corrió el generador sin
+  comitear — confirmado con `git diff --stat` antes de tocar nada: es *solo* reordenamiento
+  alfabético de imports/rutas ya existentes (el generador actual ordena distinto que la versión que
+  generó el archivo comiteado), cero rutas agregadas o quitadas. La regeneración de esta tarea corre
+  el mismo generador sobre el mismo árbol de rutas más la ruta nueva de 5.2, así que el resultado es
+  **estrictamente aditivo** sobre ese diff pre-existente (mismo reordenamiento + la ruta nueva), no
+  un revert de trabajo ajeno — no había ninguna ruta pendiente de otro cambio que perder.
+- [x] 5.4 Verificación: `pnpm --filter frontend typecheck` (o `tsc --noEmit`) sin errores sobre los
   archivos nuevos; si el proyecto tiene tests de cliente HTTP (mock de `fetch`), agregar uno por
   función siguiendo el patrón existente para `extracciones.ts`, si lo hay.
+  **Evidencia**: no existe script `typecheck` en `package.json`; se corrió `tsc -b --noEmit`
+  (equivalente real, mismo binario que usa `build`) → exit code 0, sin output, cero errores sobre
+  los 3 archivos nuevos. `extracciones.ts` **no tiene** archivo de test (`extracciones.test.ts` no
+  existe en el repo); el patrón real de testing de cliente HTTP sí existe en
+  `frontend/src/lib/api/pcp.test.ts` (mock de `./presupuestacion` vía `vi.mock`, assertions con
+  `toHaveBeenCalledWith` sobre la ruta y el `init` exactos) — se siguió **ese** patrón (más cercano
+  y más simple que necesitar mockear `supabase` también, que `pcp.test.ts` hace solo porque
+  `pcp.ts` importa `supabase` directo para otra función; `ocMatching.ts` no lo hace). Se creó
+  `frontend/src/lib/api/ocMatching.test.ts` con 6 tests (uno por función, más un caso adicional de
+  `obtenerMatching` con/sin `presupuestoId`). **RED confirmado de verdad, no retroactivo**: se movió
+  `ocMatching.ts` a `.bak` y se corrió `pnpm test -- ocMatching` → `Failed to resolve import
+  "./ocMatching"` (fallo de colección, ningún test corrido) con el resto de la suite intacta (27
+  test files / 199 tests preexistentes en verde). Se restauró el archivo y se corrió de nuevo →
+  **GREEN**: 28 test files / 205 tests (199 baseline + 6 nuevos), sin regresiones.
+  `pnpm test` completo (suite entera) confirmado en verde después, mismo resultado.
 
 ## Phase 6: Frontend — sincronización de tipos + navegación automática (D10)
 
