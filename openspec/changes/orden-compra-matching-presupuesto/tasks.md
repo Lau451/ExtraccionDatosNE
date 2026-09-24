@@ -396,11 +396,16 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 > Depende de Phase 3 (router completo para `include_router`). No depende de Phase 1/2/3 para D11,
 > podría correr en paralelo, pero se secuencia después para no bifurcar la cadena de PRs.
 
-- [ ] 4.1 [GREEN] Modificar `services/presupuestacion/main.py`: `include_router` del router de
+- [x] 4.1 [GREEN] Modificar `services/presupuestacion/main.py`: `include_router` del router de
   `oc_presupuesto/` (D12). **No confundir con `ResultadoValidarExtraccion`**: ese modelo y
   `_materializar_orden_compra()` **no se tocan** — ya devuelven/propagan `orden_compra_id` desde
   `3b37fca3` (C7).
-- [ ] 4.2 [RED] En `tests/extraccion/test_service.py` (o archivo dedicado si el existente crece
+  **Evidencia**: import + `app.include_router(oc_presupuesto_router, tags=["oc_presupuesto"])`
+  agregados (2 líneas). Verificado con `python -c "from services.presupuestacion.main import app; ..."`
+  → `app` importa sin error, 167 rutas totales (antes 162); las 5 rutas de `oc_presupuesto/router.py`
+  confirmadas presentes: `GET/POST/DELETE .../items/{oc_item_id}/vinculo`,
+  `POST .../items/{oc_item_id}/descartar`, `GET .../matching`, `GET .../presupuestos-candidatos`.
+- [x] 4.2 [RED] En `tests/extraccion/test_service.py` (o archivo dedicado si el existente crece
   demasiado), test del listado de extracciones validadas con `orden_compra_id` poblado (D11): dado
   un lote de extracciones que incluye una `orden_compra` validada, el listado devuelve
   `ExtraccionResumen.orden_compra_id` con el id real de `ordenes_compra` (lookup por
@@ -410,19 +415,60 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   restantes quedan en `None` — comportamiento **aceptado explícitamente**, el test lo afirma en vez
   de asumir que debería ser distinto. Confirmar RED:
   `AttributeError`/campo inexistente en `ExtraccionResumen`.
-- [ ] 4.3 [GREEN] Modificar `services/presupuestacion/extraccion/models.py`: agregar
+  **Evidencia**: 5 tests unitarios agregados a `tests/extraccion/test_service.py` (mapeo del lookup
+  vía `monkeypatch.setattr(repo, ...)`, lote vacío no llama al lookup, troceo de `_en_lotes` en
+  200/200/50, troceo de `listar_ordenes_compra_por_extraction_ids` con cliente mockeado, lookup con
+  lista vacía no llama al cliente — mismo patrón que `tests/oc_presupuesto/test_service.py`) + 2 tests
+  de integración en `tests/extraccion/test_router.py` (extracción validada de tipo OC vs.
+  licitación; grupo multi-archivo con solo el ancla poblado). RED confirmado:
+  `pytest tests/extraccion/test_service.py -m "not integration" -q` → `5 failed, 15 passed` — las 5
+  fallas nuevas por `AttributeError: module '...repository' has no attribute
+  'listar_ordenes_compra_por_extraction_ids'` (3 tests) y `has no attribute '_en_lotes'` (1 test) y
+  la misma causa raíz en el test de mapeo (falla al monkeypatchear el símbolo inexistente) — exactamente
+  los símbolos de 4.3-4.5, ningún falso positivo; los 15 tests preexistentes del archivo intactos.
+- [x] 4.3 [GREEN] Modificar `services/presupuestacion/extraccion/models.py`: agregar
   `orden_compra_id: str | None = None` **solo** a `ExtraccionResumen`. `ResultadoValidarExtraccion`
   queda sin tocar (C7).
-- [ ] 4.4 [GREEN] Modificar `services/presupuestacion/extraccion/repository.py`: función de lookup de
+  **Evidencia**: campo agregado con comentario que distingue explícitamente este campo del
+  `orden_compra_id` de `ResultadoValidarExtraccion` (C7, campo distinto en modelo distinto, ya
+  existente desde `3b37fca3`). `ResultadoValidarExtraccion` confirmado sin diff (verificado con
+  `git diff` acotado al archivo: único hunk es el de `ExtraccionResumen`).
+- [x] 4.4 [GREEN] Modificar `services/presupuestacion/extraccion/repository.py`: función de lookup de
   `ordenes_compra` por `extraction_id` acotada a las extracciones del lote que se está listando
   (`in_()`, mismo patrón de troceo que el módulo nuevo si el lote puede ser grande).
-- [ ] 4.5 [GREEN] Modificar `services/presupuestacion/extraccion/service.py`: poblar
+  **Evidencia**: `_TAMANO_LOTE = 200` + `_en_lotes()` (idénticos a
+  `oc_presupuesto/repository.py`/`imports/repository.py`, replicados localmente por frontera de
+  módulos — ningún módulo importa el helper privado de otro, mismo criterio que D12) y
+  `listar_ordenes_compra_por_extraction_ids(client, *, extraction_ids) -> list[dict]` (`select("id,
+  extraction_id")`, `in_("extraction_id", lote)`, troceado, `[]` sin llamar al cliente si
+  `extraction_ids` está vacío).
+- [x] 4.5 [GREEN] Modificar `services/presupuestacion/extraccion/service.py`: poblar
   `ExtraccionResumen.orden_compra_id` en la función que arma el listado, usando el lookup de 4.4.
   `_materializar_orden_compra()` queda sin tocar (C7).
-- [ ] 4.6 [REFACTOR] Correr `pytest tests/extraccion -m "not integration" -q` y
+  **Evidencia**: `listar_extracciones()` arma `orden_compra_id_por_extraccion` (dict
+  `extraction_id -> orden_compra_id`) desde el lookup de 4.4 (solo si `filas` no está vacío, confirmado
+  por el test de 4.2 que verifica que un lote vacío no dispara la llamada) y lo aplica con
+  `.get(fila["id"])` al construir cada `ExtraccionResumen` — `None` por defecto para
+  licitación/comparativa y para los N-1 miembros no-ancla de un grupo (D11, aceptado). `git diff`
+  acotado al archivo: único cambio es dentro de `listar_extracciones()`, ninguna otra función tocada.
+- [x] 4.6 [REFACTOR] Correr `pytest tests/extraccion -m "not integration" -q` y
   `pytest tests/extraccion -m integration -k listado -q` contra el proyecto de test. Verificación de
   no-regresión: `pytest tests/ -q -m "not integration"` completo, confirmando que las suites de
   licitación/comparativa/OC de `orden-compra` (Tramos 1-2) siguen en verde sin cambios.
+  **Evidencia**: `pytest tests/extraccion -m "not integration" -q` → `120 passed` (115 baseline +
+  5 nuevos de 4.2). El comando literal `-k listado` de la tarea no matchea ningún test real (los
+  nombres del archivo usan `listar_extracciones`, no `listado`); se corrió en su lugar
+  `pytest tests/extraccion -m integration -k "orden_compra_id or grupo_multiarchivo" -q` → `2 passed`
+  (los 2 tests de 4.2) contra `grnamollopxdlstcpxhc`. **Nota de proceso**: el primer intento contra el
+  proyecto de test devolvió `521 Web server is down` (Cloudflare) y luego `PGRST205 — schema cache`
+  al despertar de pausa por inactividad; se esperó a que el REST endpoint respondiera 200 sobre
+  `droguerias` antes de reintentar, sin cambios de código de por medio — infraestructura externa, no
+  un defecto. El primer intento de los tests también reveló que faltaba `cliente_id` en el insert
+  manual de `ordenes_compra` de los propios tests (`ck_oc_anclaje` — una OC sin
+  `proceso_comercial_id` necesita `cliente_id`, C7/D8 del diseño de `orden-compra`); corregido en el
+  test con `seed_cliente_factory`, no en código de producción. No-regresión:
+  `pytest tests/ -q -m "not integration"` → `450 passed` (445 baseline de Phase 3 + 5 nuevos de esta
+  fase), sin fallas fuera de `tests/extraccion/`.
 
 ## Phase 5: Frontend — cliente HTTP + ruta (D8, D13)
 

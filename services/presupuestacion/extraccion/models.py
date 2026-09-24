@@ -121,6 +121,16 @@ class ExtraccionResumen(BaseModel):
     # indicador de agrupación del listado sobreviva a un refetch/recarga sin
     # depender solo del estado en memoria del front (`gruposLocales`).
     grupo_id: str | None = None
+    # D11 (Phase 4, cambio orden-compra-matching-presupuesto) -- re-entrada a
+    # la pantalla de matching desde el listado. Resuelto por un lookup APARTE
+    # contra `ordenes_compra.extraction_id` (service.listar_extracciones), no
+    # embebido en extraction_results. Distinto de
+    # ResultadoValidarExtraccion.orden_compra_id (C7, ya existe desde
+    # 3b37fca3): ese es el campo de la respuesta de validar UNA extracción,
+    # este es el del LISTADO. `ordenes_compra.extraction_id` guarda solo UNA
+    # de las N extracciones de un grupo multi-archivo (D13/D13.1 del cambio
+    # padre) -- las N-1 restantes quedan en `None`, aceptado explícitamente.
+    orden_compra_id: str | None = None
 
 
 class MiembroGrupo(BaseModel):

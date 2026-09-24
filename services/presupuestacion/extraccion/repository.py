@@ -1,6 +1,19 @@
-from typing import Any
+from typing import Any, Iterable, TypeVar
 
 from supabase import Client
+
+# .in_() codifica cada valor en la URL (GET): con un lote grande de
+# extraction_ids de golpe la URL supera el límite del servidor y PostgREST
+# devuelve 400 Bad Request. Mismo criterio y mismo tamaño que
+# oc_presupuesto/repository.py::_TAMANO_LOTE (D3) e imports/repository.py.
+_TAMANO_LOTE = 200
+
+_T = TypeVar("_T")
+
+
+def _en_lotes(items: list[_T], tamano: int = _TAMANO_LOTE) -> Iterable[list[_T]]:
+    for inicio in range(0, len(items), tamano):
+        yield items[inicio : inicio + tamano]
 
 
 def buscar_extraction_result(client: Client, *, extraction_id: str) -> dict[str, Any] | None:
@@ -41,6 +54,32 @@ def listar_extracciones(
     if validado is not None:
         query = query.eq("validado", validado)
     return query.execute().data
+
+
+def listar_ordenes_compra_por_extraction_ids(
+    client: Client, *, extraction_ids: list[str]
+) -> list[dict[str, Any]]:
+    """D11 (Phase 4) -- lookup aparte para poblar
+    `ExtraccionResumen.orden_compra_id` en el listado: `ordenes_compra` no se
+    trae embebida en `listar_extracciones` porque la relación es 1:1 opcional
+    y solo hace falta el id. Acotado a las extracciones del lote que se está
+    listando (`in_()`, troceado en lotes de 200, D3 § mismo criterio que
+    oc_presupuesto/repository.py). Un grupo multi-archivo (D13/D13.1 del
+    cambio padre) deja `extraction_id` en UNA sola fila de `ordenes_compra`
+    -- las demás extracciones del grupo simplemente no aparecen acá, y el
+    caller las deja en `None` (D11, aceptado explícitamente)."""
+    if not extraction_ids:
+        return []
+    ordenes: list[dict[str, Any]] = []
+    for lote in _en_lotes(extraction_ids):
+        resultado = (
+            client.table("ordenes_compra")
+            .select("id, extraction_id")
+            .in_("extraction_id", lote)
+            .execute()
+        )
+        ordenes.extend(resultado.data)
+    return ordenes
 
 
 def actualizar_extraction_result(
