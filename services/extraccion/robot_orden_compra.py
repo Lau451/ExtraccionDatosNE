@@ -9,9 +9,11 @@ Public API (misma firma y estructura que procesar_comparativa):
   procesar_orden_compra(ruta_archivo, nombre_original, *, session_id=None,
                          instrucciones_extra=None) -> Path
 
-CSV grammar (D6, openspec/changes/orden-compra/design.md § D6):
+CSV grammar (D6, openspec/changes/orden-compra/design.md § D6; observaciones/
+importe_total added later — see odd/tasks/oc-importe-observaciones.md):
   numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;
-  cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas
+  cantidad_entregas;observaciones;numero_renglon;descripcion;cantidad;
+  precio_unitario;importe_total;entregas
 
 Regla dura (C10, D6): `numero_renglon` NUNCA se fabrica. Si el documento no
 declara número de línea para un renglón, la celda queda vacía — el prompt lo
@@ -52,10 +54,12 @@ _FIELDNAMES = [
     "razon_social_cliente",
     "direccion_entrega",
     "cantidad_entregas",
+    "observaciones",
     "numero_renglon",
     "descripcion",
     "cantidad",
     "precio_unitario",
+    "importe_total",
     "entregas",
 ]
 
@@ -76,12 +80,14 @@ Return ONLY valid JSON with this exact structure:
   "razon_social_cliente": "the customer's legal/business name as written, or empty string",
   "direccion_entrega": "delivery address as written, or empty string",
   "cantidad_entregas": "how many deliveries the document declares in total (a plain number), or empty string if not stated",
+  "observaciones": "free-text notes/remarks printed on the order that are NOT specific to a single line — general conditions, delivery instructions, stock notes, authorization notes, etc. (e.g. a field labeled 'Observación'/'Observaciones'/'Notas'/'Condiciones'). Empty string if the document has none. Never invent or summarize — transcribe as written.",
   "renglones": [
     {
       "numero_renglon": "the line number EXACTLY as declared in the document, or empty string — see CRITICAL RULE below",
       "descripcion": "product description for this line",
       "cantidad": "quantity ordered for this line (a plain number)",
       "precio_unitario": "unit price for this line, numeric, WITHOUT any thousands-separator — keep only the single decimal separator exactly as the document uses it (comma or dot). Example: document shows '$1.250,00' -> output '1250,00'. Document shows '980,50' -> output '980,50'. Empty string if not found.",
+      "importe_total": "the line TOTAL exactly as printed in the document (usually cantidad × precio_unitario, but this is a TRANSCRIPTION, never a calculation you perform). Same numeric convention as precio_unitario: WITHOUT any thousands-separator, keep only the document's single decimal separator. Empty string if the document does not print a total for this line — do NOT compute it yourself.",
       "entregas": "delivery breakdown for THIS line only, formatted as cantidad@plazo_dias pairs separated by '|' (e.g. '50@30|50@60' = 50 units at 30 days, 50 units at 60 days). Empty string if the document does not break this line down by delivery."
     }
   ]
@@ -108,10 +114,19 @@ RULES FOR THE DELIVERY BREAKDOWN (entregas):
 - If a line has a single, undivided delivery (no explicit per-line breakdown), leave "entregas"
   as an empty string — do not invent a single-entry breakdown.
 
+RULE ABOUT LINE TOTAL (importe_total):
+- "importe_total" is a TRANSCRIPTION field, not a calculation. Copy the total exactly as the
+  document prints it for that line (often under a header like "Total"/"Importe"/"Subtotal").
+- You are STRICTLY FORBIDDEN from computing cantidad × precio_unitario yourself when the
+  document does not print an explicit total for that line — leave "importe_total" as an empty
+  string instead.
+
 GENERAL RULES:
 - Never invent data. Any field not found in the document is an empty string ("").
 - "cantidad_entregas" reflects what the document states about the ORDER as a whole; it is
   independent from how many "entregas" pairs any single line declares.
+- "observaciones" is header-level only — general remarks about the whole order, never a
+  per-line detail (those belong in "descripcion" or "entregas" instead).
 - Return ALL line items found, in the order they appear in the document."""
 
 
@@ -209,6 +224,7 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         "razon_social_cliente": str(datos.get("razon_social_cliente") or "").strip(),
         "direccion_entrega": str(datos.get("direccion_entrega") or "").strip(),
         "cantidad_entregas": str(datos.get("cantidad_entregas") or "").strip(),
+        "observaciones": str(datos.get("observaciones") or "").strip(),
     }
 
     filas: list[dict[str, str]] = []
@@ -218,6 +234,7 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         fila["descripcion"] = str(renglon.get("descripcion") or "").strip()
         fila["cantidad"] = str(renglon.get("cantidad") or "").strip()
         fila["precio_unitario"] = str(renglon.get("precio_unitario") or "").strip()
+        fila["importe_total"] = str(renglon.get("importe_total") or "").strip()
         fila["entregas"] = str(renglon.get("entregas") or "").strip()
         filas.append(fila)
 

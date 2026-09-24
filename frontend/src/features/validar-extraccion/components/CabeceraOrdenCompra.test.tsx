@@ -9,12 +9,20 @@ import { CabeceraOrdenCompra } from './CabeceraOrdenCompra'
  * el wiring completo. */
 function ArnesConBotonConfirmar({ filas }: { filas: Record<string, string>[] }) {
   const [bloqueado, setBloqueado] = useState(true)
+  const [observacionesReportadas, setObservacionesReportadas] = useState('')
   return (
     <div>
-      <CabeceraOrdenCompra filas={filas} onCambio={(_cabecera, bloqueadoActual) => setBloqueado(bloqueadoActual)} />
+      <CabeceraOrdenCompra
+        filas={filas}
+        onCambio={(cabecera, bloqueadoActual) => {
+          setBloqueado(bloqueadoActual)
+          setObservacionesReportadas(cabecera.observaciones)
+        }}
+      />
       <button type="button" disabled={bloqueado}>
         Confirmar OC
       </button>
+      <p data-testid="observaciones-reportadas">{observacionesReportadas}</p>
     </div>
   )
 }
@@ -41,6 +49,13 @@ const MIEMBRO_B_OTROS_CAMPOS_DISTINTOS = {
   razon_social_cliente: 'Hospital Central S.A.',
   fecha_emision: '2026-01-15',
   direccion_entrega: 'Otra Dirección 456',
+}
+
+const MIEMBRO_A_CON_OBSERVACIONES = { ...MIEMBRO_A, observaciones: 'Entregar en depósito' }
+const MIEMBRO_B_OBSERVACIONES_DISTINTAS = {
+  ...MIEMBRO_A,
+  _extraction_id: 'ext-b',
+  observaciones: 'Coordinar con portería',
 }
 
 describe('CabeceraOrdenCompra (D13.1)', () => {
@@ -81,5 +96,40 @@ describe('CabeceraOrdenCompra (D13.1)', () => {
 
     expect(screen.getByRole('button', { name: /confirmar oc/i })).not.toBeDisabled()
     expect(screen.queryByText(/desacuerdo/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('CabeceraOrdenCompra — observaciones (T2)', () => {
+  it('precarga el textarea "Observaciones" con el valor más frecuente entre miembros', () => {
+    render(
+      <ArnesConBotonConfirmar
+        filas={[MIEMBRO_A_CON_OBSERVACIONES, { ...MIEMBRO_A_CON_OBSERVACIONES, _extraction_id: 'ext-b' }]}
+      />,
+    )
+
+    expect(screen.getByLabelText(/observaciones/i)).toHaveValue('Entregar en depósito')
+  })
+
+  it('editar el textarea reporta el nuevo valor vía onCambio', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A_CON_OBSERVACIONES]} />)
+
+    fireEvent.change(screen.getByLabelText(/observaciones/i), { target: { value: 'Coordinar horario' } })
+
+    expect(screen.getByTestId('observaciones-reportadas')).toHaveTextContent('Coordinar horario')
+  })
+
+  it('desacuerdo en observaciones entre miembros aparece en el aviso, pero no bloquea', () => {
+    render(
+      <ArnesConBotonConfirmar filas={[MIEMBRO_A_CON_OBSERVACIONES, MIEMBRO_B_OBSERVACIONES_DISTINTAS]} />,
+    )
+
+    expect(screen.getByRole('button', { name: /confirmar oc/i })).not.toBeDisabled()
+    expect(screen.getByText(/desacuerdo entre archivos del grupo/i)).toHaveTextContent(/observaciones/i)
+  })
+
+  it('sin observaciones en ningún miembro, el textarea arranca vacío', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A, { ...MIEMBRO_A, _extraction_id: 'ext-b' }]} />)
+
+    expect(screen.getByLabelText(/observaciones/i)).toHaveValue('')
   })
 })

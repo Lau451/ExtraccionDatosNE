@@ -49,6 +49,11 @@ const CAMPOS_POR_DOCUMENT_TYPE: Record<string, CampoConfig[]> = {
     { campo: 'descripcion', tipo: 'texto' },
     { campo: 'cantidad', tipo: 'decimal' },
     { campo: 'precio_unitario', tipo: 'decimal-positivo' },
+    // T2: control de línea, puramente informativo -- nunca viaja en
+    // FilaOrdenCompraIn (extra="forbid" en el backend, oc_items.monto_total
+    // es GENERATED). Solo alimenta la advertencia no bloqueante de
+    // TablaEditable (importeNoCoincide), no aporta a erroresPorCelda.
+    { campo: 'importe_total', tipo: 'texto-opcional', editable: false },
     { campo: 'entregas', tipo: 'texto-opcional', editable: false },
     { campo: '_archivo', tipo: 'texto-opcional', editable: false },
     { campo: '_extraction_id', tipo: 'texto-opcional', editable: false },
@@ -134,6 +139,36 @@ export function parsearPlanEntregas(valor: string): PlanEntregaCsv[] | null {
     resultado.push({ cantidad, plazo_dias: Number(plazoTexto) })
   }
   return resultado
+}
+
+/** Mismo normalizado "," -> "." que `validarCampo` -- `NaN` cuando el valor
+ * está vacío o no es un número (nunca `0` por default: eso confundiría
+ * "vacío" con "cero declarado"). */
+function parsearDecimalControl(valor: string): number {
+  const limpio = (valor ?? '').trim()
+  if (!limpio) return NaN
+  // Mismo criterio que `_a_decimal` del backend: toda "," pasa a "." -- un
+  // valor con separador de miles ("1.250,00") queda no numérico y se omite.
+  return Number(limpio.replaceAll(',', '.'))
+}
+
+/** Control D6 (T2, no bloqueante): compara `importe_total` -- tal como lo
+ * imprimió el documento -- contra `cantidad × precio_unitario` tal como está
+ * editado en la fila. Vacío o algún operando no numérico -> `false` (no hay
+ * con qué comparar, no es un error). Cualquier diferencia avisa, incluso un
+ * centavo: se compara en centavos enteros para que el ruido de punto
+ * flotante no genere ni oculte avisos. Pura -- sin acceso a
+ * `erroresPorCelda`, nunca bloquea "Confirmar OC" (D13.1: solo `numero_oc`
+ * bloquea). */
+export function importeNoCoincide(fila: Record<string, string | boolean>): boolean {
+  const importeTotal = parsearDecimalControl(String(fila.importe_total ?? ''))
+  if (Number.isNaN(importeTotal)) return false
+
+  const cantidad = parsearDecimalControl(String(fila.cantidad ?? ''))
+  const precioUnitario = parsearDecimalControl(String(fila.precio_unitario ?? ''))
+  if (Number.isNaN(cantidad) || Number.isNaN(precioUnitario)) return false
+
+  return Math.round(cantidad * precioUnitario * 100) !== Math.round(importeTotal * 100)
 }
 
 let contadorFilaNueva = 0

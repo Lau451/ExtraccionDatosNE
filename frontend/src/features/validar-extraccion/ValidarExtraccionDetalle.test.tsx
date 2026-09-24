@@ -46,7 +46,12 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
     onCambio,
   }: {
     onCambio: (
-      cabecera: { numero_oc: string; fecha_emision: string; direccion_entrega: string },
+      cabecera: {
+        numero_oc: string
+        fecha_emision: string
+        direccion_entrega: string
+        observaciones: string
+      },
       bloqueado: boolean,
     ) => void
   }) => {
@@ -55,7 +60,12 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
     // igual que el componente real (design.md/CabeceraOrdenCompra.tsx).
     useEffect(() => {
       onCambio(
-        { numero_oc: 'OC-4471', fecha_emision: '12/09/2026', direccion_entrega: 'Av. Siempreviva 742' },
+        {
+          numero_oc: 'OC-4471',
+          fecha_emision: '12/09/2026',
+          direccion_entrega: 'Av. Siempreviva 742',
+          observaciones: '',
+        },
         false,
       )
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,9 +75,27 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
         <p>cabecera-orden-compra-stub</p>
         <button
           type="button"
-          onClick={() => onCambio({ numero_oc: '', fecha_emision: '', direccion_entrega: '' }, true)}
+          onClick={() =>
+            onCambio({ numero_oc: '', fecha_emision: '', direccion_entrega: '', observaciones: '' }, true)
+          }
         >
           stub-cabecera-bloqueada
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onCambio(
+              {
+                numero_oc: 'OC-4471',
+                fecha_emision: '12/09/2026',
+                direccion_entrega: 'Av. Siempreviva 742',
+                observaciones: '  Entrega parcial  ',
+              },
+              false,
+            )
+          }
+        >
+          stub-observaciones
         </button>
       </div>
     )
@@ -253,6 +281,7 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
       razon_social_extraida: 'HOSPITAL CENTRAL',
       fecha_emision: '2026-09-12', // D6: DD/MM/AAAA en el documento -> ISO para el backend
       direccion_entrega: 'Av. Siempreviva 742',
+      notas: null, // T2: sin observaciones cargadas (stub default '') -> null, no ''
     })
     expect(payload.orden_compra).not.toHaveProperty('entregas')
     expect(payload.orden_compra?.filas).toEqual([
@@ -264,6 +293,27 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
         producto_id: null,
       },
     ])
+    // importe_total es control de UI (T2) -- nunca viaja en el override
+    // (FilaOrdenCompraIn tiene extra="forbid" en el backend).
+    expect(payload.orden_compra?.filas[0]).not.toHaveProperty('importe_total')
+  })
+
+  it('notas viaja con el valor trimeado de cabecera.observaciones cuando no está vacío (T2)', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    fireEvent.click(screen.getByText('stub-observaciones'))
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(validarExtraccion).toHaveBeenCalledTimes(1))
+    const [, payload] = vi.mocked(validarExtraccion).mock.calls[0]
+    expect(payload.orden_compra?.notas).toBe('Entrega parcial')
   })
 })
 

@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { parsearPlanEntregas, useFilasEditables } from './useFilasEditables'
+import { importeNoCoincide, parsearPlanEntregas, useFilasEditables } from './useFilasEditables'
 
 const FILAS_LICITACION = [
   { item: '1', descripcion: 'Paracetamol', cantidad: '10' },
@@ -163,6 +163,116 @@ describe('useFilasEditables — orden_compra (D6/D13.1, Phase 8)', () => {
 
     act(() => result.current.actualizarCelda(filaId, 'precio_unitario', '1250,50'))
     expect(result.current.erroresPorCelda[`${filaId}:precio_unitario`]).toBeUndefined()
+  })
+})
+
+describe('useFilasEditables — importe_total (T2, control de línea)', () => {
+  const FILAS_CON_IMPORTE = [
+    {
+      numero_renglon: '1',
+      descripcion: 'Ibuprofeno 400mg x 20',
+      cantidad: '100',
+      precio_unitario: '1250,00',
+      importe_total: '125000,00',
+      entregas: '',
+      _archivo: 'oc-hospital.pdf',
+      _extraction_id: 'ext-1',
+    },
+  ]
+
+  it('importe_total aparece en CAMPOS_POR_DOCUMENT_TYPE.orden_compra justo después de precio_unitario, no editable', () => {
+    const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_CON_IMPORTE))
+    const nombresCampo = result.current.campos.map((c) => c.campo)
+    const indicePrecio = nombresCampo.indexOf('precio_unitario')
+    expect(nombresCampo[indicePrecio + 1]).toBe('importe_total')
+
+    const porCampo = Object.fromEntries(result.current.campos.map((c) => [c.campo, c]))
+    expect(porCampo.importe_total.editable).toBe(false)
+  })
+
+  it('importe_total no editable nunca aporta a erroresPorCelda, aunque no sea numérico', () => {
+    // Array estable fuera del callback: un literal inline crea una referencia
+    // nueva por render y dispara el efecto de sincronización en loop infinito.
+    const filas = [{ ...FILAS_CON_IMPORTE[0], importe_total: 'basura-no-numerica' }]
+    const { result } = renderHook(() => useFilasEditables('orden_compra', filas))
+    expect(result.current.tieneErrores).toBe(false)
+  })
+})
+
+describe('importeNoCoincide (T2, pura -- control cantidad × precio_unitario vs importe_total)', () => {
+  it('sin diferencia -> false', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '125000,00' }),
+    ).toBe(false)
+  })
+
+  it('diferencia grande -> true', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '120000,00' }),
+    ).toBe(true)
+  })
+
+  it('diferencia de exactamente un centavo -> true (cualquier diferencia avisa)', () => {
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '30,01' }),
+    ).toBe(true)
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '29,99' }),
+    ).toBe(true)
+    // 2.01 - 2 === 0.0099999999999997868 en punto flotante: una tolerancia
+    // "> 0.01" no avisaría. Se compara en centavos enteros.
+    expect(
+      importeNoCoincide({ cantidad: '1', precio_unitario: '2,01', importe_total: '2,00' }),
+    ).toBe(true)
+  })
+
+  it('el ruido de punto flotante no genera avisos falsos (se compara en centavos)', () => {
+    // 3 × 10.1 === 30.299999999999997 en punto flotante
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,10', importe_total: '30,30' }),
+    ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '3000', precio_unitario: '109,75', importe_total: '329250,00' }),
+    ).toBe(false)
+  })
+
+  it('parsea igual que el backend (_a_decimal): con separador de miles "." y "," -> no numérico, no avisa', () => {
+    expect(
+      importeNoCoincide({ cantidad: '1', precio_unitario: '1250,00', importe_total: '1.250,00' }),
+    ).toBe(false)
+  })
+
+  it('"." solo se interpreta como decimal, igual que el backend: "329.250" es 329,25 y avisa', () => {
+    expect(
+      importeNoCoincide({ cantidad: '3000', precio_unitario: '109,75', importe_total: '329.250' }),
+    ).toBe(true)
+  })
+
+  it('importe_total vacío -> false (nada que comparar)', () => {
+    expect(importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '' })).toBe(
+      false,
+    )
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '   ' }),
+    ).toBe(false)
+  })
+
+  it('cantidad o precio_unitario no numéricos -> false (nada que comparar)', () => {
+    expect(
+      importeNoCoincide({ cantidad: 'no-numero', precio_unitario: '1250,00', importe_total: '125000' }),
+    ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: 'no-numero', importe_total: '125000' }),
+    ).toBe(false)
+  })
+
+  it('acepta separador decimal "." además de ","', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250.00', importe_total: '125000.00' }),
+    ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250.00', importe_total: '999.00' }),
+    ).toBe(true)
   })
 })
 

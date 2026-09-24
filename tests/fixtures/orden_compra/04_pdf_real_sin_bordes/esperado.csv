@@ -1,3 +1,3 @@
-numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;numero_renglon;descripcion;cantidad;precio_unitario;entregas
-00104857;10/09/2026;30674283888;SAMCo Rafaela Hospital Dr. Jaime Ferr�;Lisandro de la Torre 737;;;Hidroclorotiazida 50 mg comp.;3000;109,75;
-00104857;10/09/2026;30674283888;SAMCo Rafaela Hospital Dr. Jaime Ferr�;Lisandro de la Torre 737;;;Gemfibrozil 600 mg comp.;4000;187,00;
+numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;cantidad_entregas;observaciones;numero_renglon;descripcion;cantidad;precio_unitario;importe_total;entregas
+00104857;10/09/2026;30674283888;SAMCo Rafaela Hospital Dr. Jaime Ferr�;Lisandro de la Torre 737;;Negativa de Stock de Medicamentos Adquiridos por Compras Centralizadas.;;Hidroclorotiazida 50 mg comp.;3000;109,75;329250,00;
+00104857;10/09/2026;30674283888;SAMCo Rafaela Hospital Dr. Jaime Ferr�;Lisandro de la Torre 737;;Negativa de Stock de Medicamentos Adquiridos por Compras Centralizadas.;;Gemfibrozil 600 mg comp.;4000;187,00;748000,00;
