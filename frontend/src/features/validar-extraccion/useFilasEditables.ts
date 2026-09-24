@@ -147,15 +147,19 @@ export function parsearPlanEntregas(valor: string): PlanEntregaCsv[] | null {
 function parsearDecimalControl(valor: string): number {
   const limpio = (valor ?? '').trim()
   if (!limpio) return NaN
-  return Number(limpio.replace(',', '.'))
+  // Mismo criterio que `_a_decimal` del backend: toda "," pasa a "." -- un
+  // valor con separador de miles ("1.250,00") queda no numérico y se omite.
+  return Number(limpio.replaceAll(',', '.'))
 }
 
 /** Control D6 (T2, no bloqueante): compara `importe_total` -- tal como lo
  * imprimió el documento -- contra `cantidad × precio_unitario` tal como está
  * editado en la fila. Vacío o algún operando no numérico -> `false` (no hay
- * con qué comparar, no es un error). Tolerancia 0.01 por redondeo del
- * documento. Pura -- sin acceso a `erroresPorCelda`, nunca bloquea
- * "Confirmar OC" (D13.1: solo `numero_oc` bloquea). */
+ * con qué comparar, no es un error). Cualquier diferencia avisa, incluso un
+ * centavo: se compara en centavos enteros para que el ruido de punto
+ * flotante no genere ni oculte avisos. Pura -- sin acceso a
+ * `erroresPorCelda`, nunca bloquea "Confirmar OC" (D13.1: solo `numero_oc`
+ * bloquea). */
 export function importeNoCoincide(fila: Record<string, string | boolean>): boolean {
   const importeTotal = parsearDecimalControl(String(fila.importe_total ?? ''))
   if (Number.isNaN(importeTotal)) return false
@@ -164,7 +168,7 @@ export function importeNoCoincide(fila: Record<string, string | boolean>): boole
   const precioUnitario = parsearDecimalControl(String(fila.precio_unitario ?? ''))
   if (Number.isNaN(cantidad) || Number.isNaN(precioUnitario)) return false
 
-  return Math.abs(cantidad * precioUnitario - importeTotal) > 0.01
+  return Math.round(cantidad * precioUnitario * 100) !== Math.round(importeTotal * 100)
 }
 
 let contadorFilaNueva = 0

@@ -190,10 +190,11 @@ describe('useFilasEditables — importe_total (T2, control de línea)', () => {
     expect(porCampo.importe_total.editable).toBe(false)
   })
 
-  it('importe_total no editable nunca aporta a erroresPorCelda', () => {
-    const { result } = renderHook(() =>
-      useFilasEditables('orden_compra', [{ ...FILAS_CON_IMPORTE[0], importe_total: '' }]),
-    )
+  it('importe_total no editable nunca aporta a erroresPorCelda, aunque no sea numérico', () => {
+    // Array estable fuera del callback: un literal inline crea una referencia
+    // nueva por render y dispara el efecto de sincronización en loop infinito.
+    const filas = [{ ...FILAS_CON_IMPORTE[0], importe_total: 'basura-no-numerica' }]
+    const { result } = renderHook(() => useFilasEditables('orden_compra', filas))
     expect(result.current.tieneErrores).toBe(false)
   })
 })
@@ -205,16 +206,46 @@ describe('importeNoCoincide (T2, pura -- control cantidad × precio_unitario vs 
     ).toBe(false)
   })
 
-  it('diferencia mayor a la tolerancia (0.01) -> true', () => {
+  it('diferencia grande -> true', () => {
     expect(
       importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '120000,00' }),
     ).toBe(true)
   })
 
-  it('diferencia dentro de la tolerancia de redondeo (<=0.01) -> false', () => {
+  it('diferencia de exactamente un centavo -> true (cualquier diferencia avisa)', () => {
     expect(
-      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '30,005' }),
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '30,01' }),
+    ).toBe(true)
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '29,99' }),
+    ).toBe(true)
+    // 2.01 - 2 === 0.0099999999999997868 en punto flotante: una tolerancia
+    // "> 0.01" no avisaría. Se compara en centavos enteros.
+    expect(
+      importeNoCoincide({ cantidad: '1', precio_unitario: '2,01', importe_total: '2,00' }),
+    ).toBe(true)
+  })
+
+  it('el ruido de punto flotante no genera avisos falsos (se compara en centavos)', () => {
+    // 3 × 10.1 === 30.299999999999997 en punto flotante
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,10', importe_total: '30,30' }),
     ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '3000', precio_unitario: '109,75', importe_total: '329250,00' }),
+    ).toBe(false)
+  })
+
+  it('parsea igual que el backend (_a_decimal): con separador de miles "." y "," -> no numérico, no avisa', () => {
+    expect(
+      importeNoCoincide({ cantidad: '1', precio_unitario: '1250,00', importe_total: '1.250,00' }),
+    ).toBe(false)
+  })
+
+  it('"." solo se interpreta como decimal, igual que el backend: "329.250" es 329,25 y avisa', () => {
+    expect(
+      importeNoCoincide({ cantidad: '3000', precio_unitario: '109,75', importe_total: '329.250' }),
+    ).toBe(true)
   })
 
   it('importe_total vacío -> false (nada que comparar)', () => {
