@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { importarPresupuestosLegacy } from '@/lib/api/pcp'
 import type { FilaImportPresupuestoLegacy } from '@/lib/api/pcp'
@@ -20,17 +20,26 @@ export function ImportarPresupuestosLegacy() {
   const mutation = useMutation({
     mutationFn: (filas: FilaImportPresupuestoLegacy[]) => importarPresupuestosLegacy(filas),
   })
+  /** Id monotónico de la última selección de archivo: si dos selecciones se
+   * disparan en sucesión rápida, la lectura (`archivo.text()`) de una puede
+   * resolver después que la de la otra ("stale read"). Se compara el id
+   * capturado contra el actual al reanudar tras el `await`; si no coinciden,
+   * la lectura quedó obsoleta y se descarta sin tocar el estado. */
+  const idUltimaSeleccionRef = useRef(0)
 
   async function onSeleccionarArchivo(event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0] ?? null
+    const idSeleccion = (idUltimaSeleccionRef.current += 1)
     mutation.reset()
     setParseo(null)
     setErrorLectura(null)
     if (!archivo) return
     try {
       const contenido = await archivo.text()
+      if (idUltimaSeleccionRef.current !== idSeleccion) return
       setParseo(parsearCsvPresupuestos(contenido))
     } catch {
+      if (idUltimaSeleccionRef.current !== idSeleccion) return
       setErrorLectura('No se pudo leer el archivo seleccionado.')
     }
   }

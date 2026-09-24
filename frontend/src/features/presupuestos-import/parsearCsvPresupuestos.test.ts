@@ -221,4 +221,80 @@ describe('parsearCsvPresupuestos', () => {
     expect(resultado.filas).toEqual([])
     expect(resultado.errores).toHaveLength(1)
   })
+
+  it('reporta fecha_generacion inválida cuando el día no existe en el mes (31/02)', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;31/02/2026;1;;Amoxicilina 500mg;10;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.filas).toEqual([])
+    expect(resultado.errores).toEqual([{ linea: 2, mensaje: expect.stringMatching(/fecha_generacion/i) }])
+  })
+
+  it('reporta fecha_generacion inválida en formato ISO cuando mes/día están fuera de rango (2026-13-45)', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;2026-13-45;1;;Amoxicilina 500mg;10;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.filas).toEqual([])
+    expect(resultado.errores).toEqual([{ linea: 2, mensaje: expect.stringMatching(/fecha_generacion/i) }])
+  })
+
+  it('reporta 29/02 inválido en un año no bisiesto', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;29/02/2027;1;;Amoxicilina 500mg;10;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.filas).toEqual([])
+    expect(resultado.errores).toEqual([{ linea: 2, mensaje: expect.stringMatching(/fecha_generacion/i) }])
+  })
+
+  it('acepta 29/02 en un año bisiesto', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;29/02/2028;1;;Amoxicilina 500mg;10;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.errores).toEqual([])
+    expect(resultado.filas[0].fecha_generacion).toBe('2028-02-29')
+  })
+
+  it('reporta comillas sin cerrar y no parsea el resto del archivo', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;;1;;"Descripcion sin cerrar;10;;;',
+      'CLI-2;Farmacia Sur;PRE-200;;;2;;Ibuprofeno 400mg;5;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.filas).toEqual([])
+    expect(resultado.errores).toHaveLength(1)
+    expect(resultado.errores[0].linea).toBe(2)
+    expect(resultado.errores[0].mensaje).toMatch(/comillas sin cerrar/i)
+  })
+
+  it('reporta el número de línea físico considerando saltos de línea dentro de comillas', () => {
+    const csv = [
+      ENCABEZADO,
+      'CLI-1;Farmacia Central;PRE-100;;;1;;"Descripcion\ncon salto";10;;;',
+      'CLI-2;Farmacia Sur;PRE-200;;;abc;;Ibuprofeno 400mg;5;;;',
+    ].join('\n')
+
+    const resultado = parsearCsvPresupuestos(csv)
+
+    expect(resultado.filas).toHaveLength(1)
+    expect(resultado.errores).toEqual([{ linea: 4, mensaje: expect.stringMatching(/renglón/i) }])
+  })
 })

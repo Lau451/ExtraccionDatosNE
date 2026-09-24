@@ -15,8 +15,15 @@ import type { ImportPresupuestoLegacyResultado } from '@/lib/api/pcp'
 const ENCABEZADO =
   'codigo_cliente,razon_social_cliente,numero_presupuesto,renglon,descripcion_producto,cantidad_producto'
 
-function archivoCsv(contenido: string) {
-  return new File([contenido], 'legado.csv', { type: 'text/csv' })
+function archivoCsv(contenido: string, textoDeferido?: Promise<void>) {
+  const archivo = new File([contenido], 'legado.csv', { type: 'text/csv' })
+  if (textoDeferido) {
+    archivo.text = async () => {
+      await textoDeferido
+      return contenido
+    }
+  }
+  return archivo
 }
 
 const CSV_DOS_PRESUPUESTOS = [
@@ -98,6 +105,29 @@ describe('ImportarPresupuestosLegacy', () => {
     expect(screen.getByText('creado')).toBeInTheDocument()
     expect(screen.getByText('PRE-200')).toBeInTheDocument()
     expect(screen.getByText('existente')).toBeInTheDocument()
+  })
+
+  it('ignora una lectura de archivo obsoleta cuando dos selecciones resuelven fuera de orden', async () => {
+    renderPantalla()
+
+    let resolverLecturaA: () => void = () => {}
+    const lecturaA = new Promise<void>((resolve) => {
+      resolverLecturaA = resolve
+    })
+    const archivoA = archivoCsv(CSV_CON_ERROR, lecturaA)
+    const archivoB = archivoCsv(CSV_DOS_PRESUPUESTOS)
+
+    const input = screen.getByLabelText(/archivo/i)
+    fireEvent.change(input, { target: { files: [archivoA] } })
+    fireEvent.change(input, { target: { files: [archivoB] } })
+
+    expect(await screen.findByText(/2 presupuestos/i)).toBeInTheDocument()
+
+    resolverLecturaA()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.getByText(/2 presupuestos/i)).toBeInTheDocument()
+    expect(screen.queryByText(/línea 2/i)).not.toBeInTheDocument()
   })
 
   it('si la API de import falla, muestra el detalle del backend', async () => {

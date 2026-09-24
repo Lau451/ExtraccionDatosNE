@@ -29,20 +29,65 @@ const COLUMNAS_OPCIONALES = [
   'importe_total',
 ] as const
 
-const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/
+const FECHA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/
 const FECHA_DDMMYYYY = /^(\d{2})\/(\d{2})\/(\d{4})$/
 
+interface FilaTokenizada {
+  valores: string[]
+  /** Línea física (1-based) donde empieza este registro, contando saltos de
+   * línea embebidos dentro de campos entre comillas -- no solo el índice del
+   * registro tokenizado. */
+  lineaInicio: number
+}
+
+/** Comilla abierta que nunca se cierra en el resto del archivo: el parseo se
+ * corta ahí y no se procesa nada (ni antes ni después de esa línea) en vez de
+ * absorber silenciosamente el resto del contenido dentro del campo. */
+class ErrorComillasSinCerrar extends Error {
+  readonly linea: number
+
+  constructor(linea: number) {
+    super(`Comillas sin cerrar a partir de la línea ${linea}`)
+    this.linea = linea
+  }
+}
+
 /** Tokeniza el contenido completo (no línea por línea) para poder soportar
- * comillas con delimitador/salto de línea embebidos, RFC4180-style. */
-function tokenizarCsv(contenido: string, delimitador: string): string[][] {
-  const filas: string[][] = []
+ * comillas con delimitador/salto de línea embebidos, RFC4180-style. Lleva la
+ * cuenta de la línea física real (`lineaActual`) para que un salto de línea
+ * embebido en un campo entre comillas también cuente, y así los registros
+ * siguientes reporten su línea física correcta. */
+function tokenizarCsv(contenido: string, delimitador: string): FilaTokenizada[] {
+  const filas: FilaTokenizada[] = []
   let fila: string[] = []
   let campo = ''
   let dentroDeComillas = false
   let i = 0
+  let lineaActual = 1
+  let lineaInicioFila = 1
+  let lineaInicioComillas = 1
 
   while (i < contenido.length) {
     const char = contenido[i]
+
+    if (char === '\r' || char === '\n') {
+      const esCrLf = char === '\r' && contenido[i + 1] === '\n'
+      if (dentroDeComillas) {
+        campo += char
+        if (esCrLf) campo += contenido[i + 1]
+        i += esCrLf ? 2 : 1
+        lineaActual += 1
+        continue
+      }
+      fila.push(campo)
+      filas.push({ valores: fila, lineaInicio: lineaInicioFila })
+      fila = []
+      campo = ''
+      i += esCrLf ? 2 : 1
+      lineaActual += 1
+      lineaInicioFila = lineaActual
+      continue
+    }
 
     if (dentroDeComillas) {
       if (char === '"') {
@@ -62,6 +107,7 @@ function tokenizarCsv(contenido: string, delimitador: string): string[][] {
 
     if (char === '"') {
       dentroDeComillas = true
+      lineaInicioComillas = lineaActual
       i += 1
       continue
     }
@@ -73,22 +119,17 @@ function tokenizarCsv(contenido: string, delimitador: string): string[][] {
       continue
     }
 
-    if (char === '\r' || char === '\n') {
-      fila.push(campo)
-      filas.push(fila)
-      fila = []
-      campo = ''
-      i += char === '\r' && contenido[i + 1] === '\n' ? 2 : 1
-      continue
-    }
-
     campo += char
     i += 1
   }
 
+  if (dentroDeComillas) {
+    throw new ErrorComillasSinCerrar(lineaInicioComillas)
+  }
+
   if (campo.length > 0 || fila.length > 0) {
     fila.push(campo)
-    filas.push(fila)
+    filas.push({ valores: fila, lineaInicio: lineaInicioFila })
   }
 
   return filas
@@ -140,18 +181,34 @@ function parsearEntero(valorCrudo: string): number | null {
 
 type ResultadoFecha = { ok: true; valor: string | undefined } | { ok: false }
 
+/** Valida que año/mes/día formen una fecha de calendario real (mes 1-12,
+ * día dentro de la cantidad de días de ese mes/año -- incluye años
+ * bisiestos vía `Date`, no un tope fijo de 31). */
+function esFechaCalendarioValida(anio: number, mes: number, dia: number): boolean {
+  if (mes < 1 || mes > 12 || dia < 1) return false
+  const ultimoDiaDelMes = new Date(anio, mes, 0).getDate()
+  return dia <= ultimoDiaDelMes
+}
+
 /** `fecha_generacion` acepta dd/mm/aaaa o ISO y siempre se envía en ISO
- * (Decisions). */
+ * (Decisions). Valida que sea una fecha de calendario real (no solo el
+ * formato): rechaza días fuera de rango del mes (31/02), meses fuera de
+ * rango (2026-13-45) y 29/02 en años no bisiestos. */
 function normalizarFecha(valorCrudo: string): ResultadoFecha {
   const valor = valorCrudo.trim()
   if (valor === '') return { ok: true, valor: undefined }
-  if (FECHA_ISO.test(valor)) return { ok: true, valor }
-  const coincidencia = FECHA_DDMMYYYY.exec(valor)
-  if (!coincidencia) return { ok: false }
-  const [, dd, mm, yyyy] = coincidencia
-  const mes = Number(mm)
-  const dia = Number(dd)
-  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return { ok: false }
+
+  const coincidenciaIso = FECHA_ISO.exec(valor)
+  if (coincidenciaIso) {
+    const [, yyyy, mm, dd] = coincidenciaIso
+    if (!esFechaCalendarioValida(Number(yyyy), Number(mm), Number(dd))) return { ok: false }
+    return { ok: true, valor }
+  }
+
+  const coincidenciaDdmmyyyy = FECHA_DDMMYYYY.exec(valor)
+  if (!coincidenciaDdmmyyyy) return { ok: false }
+  const [, dd, mm, yyyy] = coincidenciaDdmmyyyy
+  if (!esFechaCalendarioValida(Number(yyyy), Number(mm), Number(dd))) return { ok: false }
   return { ok: true, valor: `${yyyy}-${mm}-${dd}` }
 }
 
@@ -170,8 +227,16 @@ export function parsearCsvPresupuestos(contenidoOriginal: string): ResultadoPars
   const primeraLinea = primerSalto === -1 ? contenido : contenido.slice(0, primerSalto)
   const delimitador = detectarDelimitador(primeraLinea)
 
-  const filasTokenizadas = tokenizarCsv(contenido, delimitador)
-  while (filasTokenizadas.length > 0 && esFilaVacia(filasTokenizadas[filasTokenizadas.length - 1])) {
+  let filasTokenizadas: FilaTokenizada[]
+  try {
+    filasTokenizadas = tokenizarCsv(contenido, delimitador)
+  } catch (error) {
+    if (error instanceof ErrorComillasSinCerrar) {
+      return { filas: [], errores: [{ linea: error.linea, mensaje: error.message }] }
+    }
+    throw error
+  }
+  while (filasTokenizadas.length > 0 && esFilaVacia(filasTokenizadas[filasTokenizadas.length - 1].valores)) {
     filasTokenizadas.pop()
   }
 
@@ -179,7 +244,7 @@ export function parsearCsvPresupuestos(contenidoOriginal: string): ResultadoPars
     return { filas: [], errores: [{ linea: 1, mensaje: 'El archivo está vacío' }] }
   }
 
-  const encabezado = filasTokenizadas[0].map((columna) => columna.trim().toLowerCase())
+  const encabezado = filasTokenizadas[0].valores.map((columna) => columna.trim().toLowerCase())
   const indiceDe = (nombre: string) => encabezado.indexOf(nombre)
 
   const columnasFaltantes = COLUMNAS_REQUERIDAS.filter((columna) => indiceDe(columna) === -1)
@@ -201,9 +266,9 @@ export function parsearCsvPresupuestos(contenidoOriginal: string): ResultadoPars
   const errores: ErrorParseoCsv[] = []
 
   for (let i = 1; i < filasTokenizadas.length; i += 1) {
-    const columnas = filasTokenizadas[i]
+    const columnas = filasTokenizadas[i].valores
     if (esFilaVacia(columnas)) continue
-    const linea = i + 1
+    const linea = filasTokenizadas[i].lineaInicio
     const valor = (indice: number) => (indice === -1 ? '' : (columnas[indice] ?? '').trim())
 
     const erroresFila: string[] = []
