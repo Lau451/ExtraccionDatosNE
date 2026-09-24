@@ -625,20 +625,31 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 
 > Depende de Phase 5 (cliente HTTP + tipos) y Phase 3 (contrato real de los 5 endpoints).
 
-- [ ] 7.1 [RED] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.test.tsx`: un
+- [x] 7.1 [RED] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.test.tsx`: un
   candidato → botón "Confirmar" habilitado y **nada preseleccionado** (spec § "Un único match de
   precio se sugiere sin vincularse"); varios candidatos → lista ordenada por similitud, **sin
   preselección** (spec § "Varios matches del mismo precio se ordenan..."); cero candidatos → estado
   `pendiente` visible, sin bloquear la fila. Confirmar RED: el componente no existe.
-- [ ] 7.2 [RED] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.test.tsx`:
+  **Evidencia**: 5 tests (los 3 pedidos + `confirmado` y `sin_presupuesto` para cubrir los 3 estados
+  derivados de D4). RED confirmado de verdad: `npx vitest run -- oc-matching` antes de 7.5-7.10 →
+  `4 failed` (los 4 archivos nuevos, `Failed to resolve import` de cada componente/módulo), `28
+  passed` preexistentes intactos.
+- [x] 7.2 [RED] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.test.tsx`:
   aparece con `renglones_oc_vinculados >= 2` o `cantidad_vinculada > cantidad_ofertada` (D5); **nunca
   deshabilita** el botón de confirmar (spec § "Relación N:1 permitida, con aviso no bloqueante").
-- [ ] 7.3 [RED] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.test.tsx`: el
+  **Evidencia**: 4 tests — sin aviso con 1 vínculo y sin exceso; aparece por reutilización; aparece
+  por exceso de cantidad con un solo vínculo; un botón vecino renderizado junto al aviso sigue
+  habilitado (afirma literalmente el "nunca deshabilita", no solo la ausencia de un atributo propio).
+- [x] 7.3 [RED] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.test.tsx`: el
   presupuesto sugerido se muestra primero pero **no viene elegido** (spec § "Selección explícita del
   presupuesto por el usuario", incluso con un único candidato); estado vacío distingue "sin
   presupuestos para este cliente" de "tiene N, ninguno coincide" (spec § "Estado explícito cuando el
   cliente no tiene presupuestos cargados").
-- [ ] 7.4 [RED] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.test.tsx`: una mutación
+  **Evidencia**: 3 tests — único candidato sugerido sin radio marcado; un click reporta la elección
+  al padre vía callback sin auto-marcarse (el componente no guarda estado propio de elección, D8: la
+  elección vive en la URL, la resuelve el container, no este componente); los dos estados vacíos
+  distinguidos con `rerender`.
+- [x] 7.4 [RED] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.test.tsx`: una mutación
   por click (spec § "Confirmar un renglón no exige confirmar los demás primero"); tras cada
   mutación, `setQueryData` reemplaza la cache con el `MatchingOut` devuelto, **sin refetch** (D13);
   confirmar el vínculo de un renglón no toca el estado de los demás (spec § "Confirmar un renglón no
@@ -646,19 +657,46 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   confirmarse en cualquier momento posterior").
   `pnpm --filter frontend test -- OcMatchingDetalle RenglonOcFila AvisoReutilizacion
   SelectorPresupuesto` → confirmar RED (componentes/módulo inexistente) antes de 7.5.
-- [ ] 7.5 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`:
+  **Evidencia**: 3 tests de integración del container (mock de `@/lib/api/ocMatching` y de
+  `@tanstack/react-router::useNavigate`, mismo patrón `renderConQueryClient` que
+  `ValidarExtraccionDetalle.test.tsx`) — confirmar dispara una sola mutación y dispara `obtenerMatching`
+  una única vez en total (afirma el "sin refetch" contando llamadas, no solo el contenido final);
+  deshacer ídem; descartar no exige confirmar el otro renglón primero (el segundo renglón sigue con
+  su botón "Confirmar" disponible tras descartar el primero). Comando literal
+  `pnpm --filter frontend test` no está disponible en este entorno (mismo hallazgo que Phases 5/6: sin
+  `pnpm` en PATH) — se usó `npx vitest run -- oc-matching`, equivalente real.
+- [x] 7.5 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`:
   columna izquierda — descripción/cantidad/precio/estado por `RenglonPresupuesto`, integra
   `AvisoReutilizacion` por fila cuando corresponde.
-- [ ] 7.6 [GREEN] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.tsx`: aviso
+  **Evidencia**: también resalta (borde `navy`) las filas cuyo `presupuesto_item_id` aparece entre los
+  `candidatos` del renglón de OC actualmente seleccionado (proposal.md § "Click en un renglón de OC
+  resalta el o los candidatos del lado del presupuesto") — sin test dedicado (fuera del alcance
+  explícito de 7.1-7.4), documentado acá para que quede trazable y no se descubra como comportamiento
+  no probado más adelante.
+- [x] 7.6 [GREEN] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.tsx`: aviso
   suave, nunca deshabilita nada (implementación que satisface 7.2).
-- [ ] 7.7 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaOrdenCompra.tsx`:
+  **Evidencia**: componente puro sin botones propios — estructuralmente no puede deshabilitar nada
+  ajeno; retorna `null` cuando ninguna de las dos condiciones de D5 se cumple.
+- [x] 7.7 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaOrdenCompra.tsx`:
   columna derecha — un `RenglonOcFila` por renglón de OC.
-- [ ] 7.8 [GREEN] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.tsx`: estado +
+  **Evidencia**: recibe `renglonSeleccionadoId`/`isPending` del container y las 4 callbacks
+  (`onSeleccionar`/`onConfirmar`/`onDeshacer`/`onDescartar`), curriándolas con el `oc_item_id` de cada
+  fila antes de pasarlas a `RenglonOcFila`.
+- [x] 7.8 [GREEN] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.tsx`: estado +
   candidatos + botones "Confirmar" / "Deshacer" / "No está en el presupuesto" (implementación que
   satisface 7.1).
-- [ ] 7.9 [GREEN] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.tsx`: lista
+  **Evidencia**: los 3 estados derivados de D4 (`pendiente`/`confirmado`/`sin_presupuesto`) se
+  renderizan por rama exclusiva; dentro de `pendiente`, 0/1/N candidatos son 3 sub-ramas distintas
+  (párrafo informativo / botón directo / `fieldset` de radios sin preseleccionar, mismo patrón que
+  `OrdenCompraSelector` para CUIT compartido). Único estado local propio: el candidato radio elegido
+  (`useState`), acorde a que ese es un detalle de UI de la fila, no el estado global del container que
+  `design.md` D12 reserva para el renglón de OC resaltado.
+- [x] 7.9 [GREEN] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.tsx`: lista
   de candidatos rankeados, click resalta pero no confirma (implementación que satisface 7.3).
-- [ ] 7.10 [GREEN] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.tsx`: container — 2
+  **Evidencia**: sin estado propio de elección — el `checked` de cada radio compara directamente
+  contra el prop `presupuestoIdSeleccionado` que controla el container (D8: la elección vive en la
+  URL, nunca en estado local de React, alternativa (b) de D8 rechazada explícitamente en `design.md`).
+- [x] 7.10 [GREEN] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.tsx`: container — 2
   queries (`presupuestos-candidatos`, `matching`), 3 mutaciones (`confirmarVinculo`,
   `deshacerVinculo`, `descartarRenglon`), estado de `renglonSeleccionadoId` (`useState`),
   `presupuestoId` leído del search param de la ruta (D8). Cada mutación hace `setQueryData` con el
@@ -666,9 +704,39 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   (el estado local es solo un id seleccionado, D12/forma del frontend de `design.md`).
   `pnpm --filter frontend test -- OcMatchingDetalle RenglonOcFila AvisoReutilizacion
   SelectorPresupuesto` → confirmar GREEN.
-- [ ] 7.11 [REFACTOR] Correr `pnpm --filter frontend test -- oc-matching` (toda la carpeta) y
+  **Evidencia**: `matchingQueryKey` compartida entre el `useQuery` y las 3 `onSuccess` de mutación
+  (mismo array literal recalculado por render, TanStack Query lo serializa — no requiere memoización
+  para que `setQueryData` pegue en la cache correcta). Elegir un presupuesto en `SelectorPresupuesto`
+  navega (`useNavigate` genérico, mismo hook que `ValidarExtraccionDetalle.tsx`) actualizando el
+  search param `presupuesto` con `replace: true` — sin test dedicado (D8 exige que la elección viva en
+  la URL, no en estado local; la función existe para cumplir esa restricción aunque 7.4 no pida
+  probarla explícitamente, documentado acá por la misma razón que 7.5). El placeholder de la ruta
+  (`_authenticated.ordenes-compra.$ordenCompraId.matching.tsx`, Phase 5) se reemplazó por
+  `<OcMatchingDetalle ordenCompraId={ordenCompraId} presupuestoId={presupuesto} />` sin tocar
+  `Route.useParams()`/`Route.useSearch()`. `npx vitest run -- oc-matching` → `32 passed (32)` / `222
+  passed (222)` (207 baseline de Phase 6 + 15 nuevos: 5+4+3+3).
+- [x] 7.11 [REFACTOR] Correr `pnpm --filter frontend test -- oc-matching` (toda la carpeta) y
   confirmar que ningún otro feature (validar-extraccion, terceros, etc.) tiene regresiones:
   `pnpm --filter frontend test`.
+  **Evidencia**: `npx vitest run` (suite completa, sin filtro) → `32 passed (32)` / `222 passed (222)`
+  — mismo resultado exacto que el filtro `-- oc-matching`, confirmando que los 32 archivos del
+  proyecto son todos los test files (ningún feature fuera de `oc-matching` quedó sin correr). `npx tsc
+  -b --noEmit` → exit 0, sin output, cero errores. `git diff --stat` acotado a `frontend/src`: 11
+  archivos, +938/-15 líneas.
+  **Nota sobre presupuesto de revisión (400 líneas)**: el forecast de `tasks.md` ya preveía esta
+  unidad como "la fase frontend más grande" (nota de la invocación) dentro de una cadena
+  `feature-branch-chain` de 9 PRs con ~3.200 líneas totales, no 400 por PR — el propio § Review
+  Workload Forecast fija `400-line budget risk: High` y `Chained PRs recommended: Yes` para el cambio
+  completo, con esta unidad (PR 7) ya identificada como el trabajo cohesivo de construir la pantalla
+  completa (container + 5 componentes + arnés de test nuevo para el directorio) en un solo lote. No se
+  fragmentó artificialmente ni se recortaron tests/comentarios para bajar el número.
+  **`size:exception` recomendado para PR 7**: 953 líneas autoradas (938+15) superan el guardrail
+  genérico de 400 líneas por unidad. Partir esta unidad en sub-PRs (p. ej. componentes de presentación
+  en un PR y el container en otro) fragmentaría una sola pantalla cohesiva a mitad de su primer commit
+  usable — ningún componente de `oc-matching/` tiene consumidores fuera de este directorio todavía, así
+  que un corte intermedio dejaría un PR sin pantalla funcional que revisar. Recomendación: aceptar
+  `size:exception` para PR 7, igual que se preveía en el propio forecast de `tasks.md` para las fases
+  de mayor superficie de esta cadena.
 
 ## Phase 8: Frontend — re-entrada: sección "Órdenes de compra validadas" (D11)
 
