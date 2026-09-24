@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import clsx from 'clsx'
-import type { CampoConfig, FilaEditable } from '../useFilasEditables'
+import { importeNoCoincide, type CampoConfig, type FilaEditable } from '../useFilasEditables'
 import { CeldaEditable } from './CeldaEditable'
 
 const ETIQUETA_CAMPO: Record<string, string> = {
@@ -14,6 +14,7 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   // orden_compra (D6/D13.1, Phase 8)
   numero_renglon: 'N° renglón (documento)',
   precio_unitario: 'Precio unitario',
+  importe_total: 'Importe total', // T2, control de línea
   entregas: 'Entregas (documento)',
   _archivo: 'Archivo',
   _extraction_id: 'Extracción',
@@ -79,17 +80,28 @@ export function TablaEditable({
                 // click nunca abre un CeldaEditable, el usuario no puede
                 // tocarlas desde acá.
                 if (c.editable === false) {
+                  // T2: control no bloqueante, solo para importe_total --
+                  // nunca toca erroresPorCelda (eso seguiría bloqueando
+                  // "Confirmar OC"), es puramente informativo (D13.1: solo
+                  // numero_oc bloquea).
+                  const importeNoCoincideEnFila = c.campo === 'importe_total' && importeNoCoincide(fila)
                   return (
                     <td key={c.campo} className="px-3 py-2 align-top">
                       <span
                         data-testid={key}
                         className={clsx(
                           'block px-2 py-1 text-sm text-slate-500',
+                          importeNoCoincideEnFila && 'text-amber-600',
                           fila._borrada && 'line-through',
                         )}
                       >
                         {valor}
                       </span>
+                      {importeNoCoincideEnFila && (
+                        <p className="px-2 text-xs text-amber-600">
+                          No coincide con cantidad × precio unitario
+                        </p>
+                      )}
                     </td>
                   )
                 }

@@ -146,7 +146,7 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
       razon_social_extraida: razonSocialExtraida,
       fecha_emision: fechaCsvAIso(cabecera?.fecha_emision ?? ''),
       direccion_entrega: cabecera?.direccion_entrega || null,
-      notas: null,
+      notas: (cabecera?.observaciones ?? '').trim() || null, // T2
       filas: hook.filas
         .filter((fila) => !fila._borrada)
         .map((fila) => ({

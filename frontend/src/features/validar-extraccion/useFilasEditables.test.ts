@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { parsearPlanEntregas, useFilasEditables } from './useFilasEditables'
+import { importeNoCoincide, parsearPlanEntregas, useFilasEditables } from './useFilasEditables'
 
 const FILAS_LICITACION = [
   { item: '1', descripcion: 'Paracetamol', cantidad: '10' },
@@ -163,6 +163,85 @@ describe('useFilasEditables — orden_compra (D6/D13.1, Phase 8)', () => {
 
     act(() => result.current.actualizarCelda(filaId, 'precio_unitario', '1250,50'))
     expect(result.current.erroresPorCelda[`${filaId}:precio_unitario`]).toBeUndefined()
+  })
+})
+
+describe('useFilasEditables — importe_total (T2, control de línea)', () => {
+  const FILAS_CON_IMPORTE = [
+    {
+      numero_renglon: '1',
+      descripcion: 'Ibuprofeno 400mg x 20',
+      cantidad: '100',
+      precio_unitario: '1250,00',
+      importe_total: '125000,00',
+      entregas: '',
+      _archivo: 'oc-hospital.pdf',
+      _extraction_id: 'ext-1',
+    },
+  ]
+
+  it('importe_total aparece en CAMPOS_POR_DOCUMENT_TYPE.orden_compra justo después de precio_unitario, no editable', () => {
+    const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_CON_IMPORTE))
+    const nombresCampo = result.current.campos.map((c) => c.campo)
+    const indicePrecio = nombresCampo.indexOf('precio_unitario')
+    expect(nombresCampo[indicePrecio + 1]).toBe('importe_total')
+
+    const porCampo = Object.fromEntries(result.current.campos.map((c) => [c.campo, c]))
+    expect(porCampo.importe_total.editable).toBe(false)
+  })
+
+  it('importe_total no editable nunca aporta a erroresPorCelda', () => {
+    const { result } = renderHook(() =>
+      useFilasEditables('orden_compra', [{ ...FILAS_CON_IMPORTE[0], importe_total: '' }]),
+    )
+    expect(result.current.tieneErrores).toBe(false)
+  })
+})
+
+describe('importeNoCoincide (T2, pura -- control cantidad × precio_unitario vs importe_total)', () => {
+  it('sin diferencia -> false', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '125000,00' }),
+    ).toBe(false)
+  })
+
+  it('diferencia mayor a la tolerancia (0.01) -> true', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '120000,00' }),
+    ).toBe(true)
+  })
+
+  it('diferencia dentro de la tolerancia de redondeo (<=0.01) -> false', () => {
+    expect(
+      importeNoCoincide({ cantidad: '3', precio_unitario: '10,00', importe_total: '30,005' }),
+    ).toBe(false)
+  })
+
+  it('importe_total vacío -> false (nada que comparar)', () => {
+    expect(importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '' })).toBe(
+      false,
+    )
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250,00', importe_total: '   ' }),
+    ).toBe(false)
+  })
+
+  it('cantidad o precio_unitario no numéricos -> false (nada que comparar)', () => {
+    expect(
+      importeNoCoincide({ cantidad: 'no-numero', precio_unitario: '1250,00', importe_total: '125000' }),
+    ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: 'no-numero', importe_total: '125000' }),
+    ).toBe(false)
+  })
+
+  it('acepta separador decimal "." además de ","', () => {
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250.00', importe_total: '125000.00' }),
+    ).toBe(false)
+    expect(
+      importeNoCoincide({ cantidad: '100', precio_unitario: '1250.00', importe_total: '999.00' }),
+    ).toBe(true)
   })
 })
 

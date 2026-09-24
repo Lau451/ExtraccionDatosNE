@@ -5,6 +5,10 @@ export interface CabeceraOrdenCompraValores {
   numero_oc: string
   fecha_emision: string
   direccion_entrega: string
+  /** T2: notas libres de la OC -- editable, precargada igual que el resto de
+   * la cabecera. Viaja como `OrdenCompraOverride.notas` en
+   * `construirOrdenCompraOverride()` (`ValidarExtraccionDetalle.tsx`). */
+  observaciones: string
 }
 
 interface Props {
@@ -28,6 +32,7 @@ const CAMPOS_ADVERTENCIA: { campo: string; etiqueta: string }[] = [
   { campo: 'fecha_emision', etiqueta: 'Fecha de emisión' },
   { campo: 'direccion_entrega', etiqueta: 'Dirección de entrega' },
   { campo: 'cantidad_entregas', etiqueta: 'Cantidad de entregas' },
+  { campo: 'observaciones', etiqueta: 'Observaciones' }, // T2
 ]
 
 /** Espejo de `_valor_mas_frecuente` (empate -> gana el primer miembro). */
@@ -79,6 +84,9 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   const [direccionEntrega, setDireccionEntrega] = useState(() =>
     valorMasFrecuente(representativas.map((fila) => fila.direccion_entrega ?? '')),
   )
+  const [observaciones, setObservaciones] = useState(() =>
+    valorMasFrecuente(representativas.map((fila) => fila.observaciones ?? '')),
+  )
 
   // "Editarlo a un valor único lo habilita": cualquier edición explícita del
   // campo deja un único valor cargado, que es justamente lo que se necesita
@@ -87,11 +95,16 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
 
   useEffect(() => {
     onCambio(
-      { numero_oc: numeroOc, fecha_emision: fechaEmision, direccion_entrega: direccionEntrega },
+      {
+        numero_oc: numeroOc,
+        fecha_emision: fechaEmision,
+        direccion_entrega: direccionEntrega,
+        observaciones,
+      },
       bloqueado,
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numeroOc, fechaEmision, direccionEntrega, bloqueado])
+  }, [numeroOc, fechaEmision, direccionEntrega, observaciones, bloqueado])
 
   const advertencias = CAMPOS_ADVERTENCIA.filter(
     ({ campo }) => new Set(representativas.map((fila) => fila[campo] ?? '')).size > 1,
@@ -144,6 +157,19 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
           id="cabecera-direccion-entrega"
           value={direccionEntrega}
           onChange={(event) => setDireccionEntrega(event.target.value)}
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-observaciones">
+          Observaciones
+        </label>
+        <textarea
+          id="cabecera-observaciones"
+          value={observaciones}
+          onChange={(event) => setObservaciones(event.target.value)}
+          rows={3}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
