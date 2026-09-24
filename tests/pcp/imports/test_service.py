@@ -502,7 +502,7 @@ def test_pcp_renglon_no_existe_en_el_presupuesto_es_rechazado(
     ]
 
     try:
-        with pytest.raises(NotFoundError, match="renglón 2 no existe"):
+        with pytest.raises(NotFoundError, match="renglón 2 del PCP PCP-7003 no existe"):
             importar_pcp_legacy(
                 service_client,
                 drogueria_id=seed_drogueria["id"],

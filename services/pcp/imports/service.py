@@ -206,8 +206,12 @@ def _prevalidar_lote_pcp(
                 client, proceso_comercial_id=proceso_comercial_id, numero_renglon=fila.renglon
             )
             if item is None:
+                # En reimport `numero_presupuesto` es opcional y puede venir
+                # vacío: el mensaje nombra también el PCP para que siempre
+                # identifique qué corregir.
                 raise NotFoundError(
-                    f"El renglón {fila.renglon} no existe en el presupuesto {fila.numero_presupuesto}"
+                    f"El renglón {fila.renglon} del PCP {numero_pcp} no existe en el presupuesto "
+                    f"{fila.numero_presupuesto or '(sin número)'}"
                 )
         contextos[numero_pcp] = (mapa, pcp_existente, presupuesto)
     return contextos

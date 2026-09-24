@@ -196,15 +196,18 @@ def contar_presupuesto_items_sin_producto(client: Client, *, presupuesto_id: str
     (renglones cuyo `producto_id` no se resolvió), no con
     `presupuestos.items_sin_precio` (campo distinto -- renglones sin
     `precio_producto` -- que solo coincidía por casualidad en los tests
-    originales cuando ninguna fila traía precio ni código de producto)."""
+    originales cuando ninguna fila traía precio ni código de producto).
+    Cuenta del lado del servidor (`count="exact"`, `limit(0)`): `len(data)`
+    quedaría truncado por el max-rows de PostgREST en presupuestos grandes."""
     resultado = (
         client.table("presupuesto_items")
-        .select("id")
+        .select("id", count="exact")
         .eq("presupuesto_id", presupuesto_id)
         .is_("producto_id", None)
+        .limit(0)
         .execute()
     )
-    return len(resultado.data)
+    return resultado.count or 0
 
 
 # -- productos: resolución opcional de producto_id por codigo_interno (nunca
