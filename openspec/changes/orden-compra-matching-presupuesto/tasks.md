@@ -557,7 +557,7 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 > de Phases 2-4 en el sentido de contrato — el backend ya expone `orden_compra_id` desde antes de
 > este cambio (C7).
 
-- [ ] 6.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.test.tsx`,
+- [x] 6.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.test.tsx`,
   agregar el caso nuevo (spec `orden-compra-validacion` § "Confirmar una orden de compra navega a la
   pantalla de matching"): mock de la mutación resolviendo con `orden_compra_id` no nulo → afirma
   `navigate` llamado con `{ to: '/ordenes-compra/$ordenCompraId/matching', params: { ordenCompraId }
@@ -565,19 +565,61 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
   (spec § "Confirmar una licitación o comparativa no cambia su navegación"): agregar el caso
   explícito con `orden_compra_id: null` → sigue navegando a `/validar-extraccion`. Confirmar RED:
   el mock de la respuesta no tiene el campo/tipo todavía, o el componente no lee la rama nueva.
-- [ ] 6.2 [GREEN] Modificar `frontend/src/lib/api/extracciones.ts`: agregar a la interfaz
+  **Evidencia**: nuevo `describe('ValidarExtraccionDetalle — navegación tras confirmar (D10)')` con
+  2 tests. **Desviación honesta respecto de la instrucción literal**: `rg navigateMock` sobre el
+  archivo confirmó que `navigateMock` estaba declarado pero **nunca aserteado** por ningún test
+  preexistente — no existía ningún test que afirmara la navegación al listado para "extender". El
+  caso `orden_compra_id: null` es, en los hechos, el primer test de navegación del archivo, no una
+  extensión literal de uno preexistente (documentado en un comentario dentro del propio test file).
+  Ambos casos se ejercitan sobre el flujo ya estable de `orden_compra` (stubs de
+  `OrdenCompraSelector`/`CabeceraOrdenCompra` ya establecidos), variando solo el `orden_compra_id`
+  que la mutación mockeada resuelve — la rama de `onSuccess` decide únicamente por ese campo, no por
+  `document_type` (D10), así que cubre el contrato real sin necesitar manejar el `<select>` real de
+  `ProcesoComercialSelector`. **RED confirmado de verdad**: `npx vitest run -- ValidarExtraccionDetalle`
+  antes de 6.2/6.3 → `1 failed | 27 passed (28)` / `1 failed | 206 passed (207)`; la única falla es el
+  caso `orden_compra_id` no nulo (`navigateMock` nunca llamado con la ruta de matching, porque
+  `onSuccess` todavía no toma el resultado); el caso `null` ya pasaba de entrada porque el
+  comportamiento actual (navegar siempre al listado) coincide con ese caso.
+- [x] 6.2 [GREEN] Modificar `frontend/src/lib/api/extracciones.ts`: agregar a la interfaz
   `ResultadoValidarExtraccion` los 4 campos que el backend ya devuelve (C7) —
   `orden_compra_id: string | null`, `entregas_creadas: number`, `renglones_sin_producto: number`,
   `extracciones_validadas: number` — con el comentario de sincronización contra
   `extraccion/models.py:94-107`. Agregar `orden_compra_id: string | null` a la interfaz
   `ExtraccionResumen` (D11, espejo de 4.3).
-- [ ] 6.3 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
+  **Evidencia**: rango exacto verificado leyendo el archivo real (`grep -n "class
+  ResultadoValidarExtraccion" -A 20 services/presupuestacion/extraccion/models.py`): la clase vive en
+  líneas 94-107 (coincide con la cita de C7/D10 de `design.md`, sin desvío). Los 4 campos agregados
+  con el comentario de sincronización. Se confirmó también que `ExtraccionResumen` (backend, líneas
+  110-131) **ya** tiene `orden_compra_id` desde Phase 4 (D11) — el hueco real era solo el espejo TS,
+  que a su vez **tampoco** lo tenía todavía en `extracciones.ts` (gap de Phase 4 sobre el frontend,
+  no señalado en su momento porque Phase 4 fue puramente backend); se cierra acá porque tasks.md ya
+  asignaba explícitamente esa línea a esta tarea. Efecto colateral de hacer el campo **requerido**
+  (no opcional, mismo estilo que el resto de la interfaz): 2 fixtures `ExtraccionResumen` literales
+  en `ValidarExtraccionListado.test.tsx` (`OC_1`) necesitaron el campo para seguir tipando —
+  agregado con `orden_compra_id: null` y un comentario que aclara que Phase 8 es quien consume ese
+  campo, fuera del alcance de esta tarea (mecánico, no cambia comportamiento).
+- [x] 6.3 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
   el `onSuccess` de la mutación (líneas 81-85 actuales) lee `resultado.orden_compra_id`; si no es
   `null`, navega a `/ordenes-compra/$ordenCompraId/matching` con el id; si es `null`, mantiene
   `navigate({ to: '/validar-extraccion' })` sin cambios.
   `pnpm --filter frontend test -- ValidarExtraccionDetalle` → confirmar GREEN.
-- [ ] 6.4 [REFACTOR] Correr la suite completa de `validar-extraccion` (`pnpm --filter frontend test
+  **Evidencia**: `onSuccess` pasa a tomar `resultado` como parámetro y aplica el `if` de D10,
+  transcripción literal del snippet de `design.md` D10. `npx vitest run -- ValidarExtraccionDetalle`
+  → `28 passed (28)` / `207 passed (207)`. Comando literal `pnpm --filter frontend test` no está
+  disponible tal cual (mismo hallazgo de Phase 5: no hay `pnpm` en el PATH del entorno, y el
+  `package.json` de `frontend/` no tiene workspaces de pnpm — se corrió `npx vitest run` directo
+  desde `frontend/`, equivalente real al script `"test": "vitest run"` de `package.json`).
+- [x] 6.4 [REFACTOR] Correr la suite completa de `validar-extraccion` (`pnpm --filter frontend test
   -- validar-extraccion`) y confirmar que licitación/comparativa no tienen regresiones.
+  **Evidencia**: `npx vitest run -- validar-extraccion` → `28 passed (28)` / `207 passed (207)` —
+  el filtro por patrón de archivo matcheó los 28 archivos porque **son todos** los test files del
+  proyecto (confirmado corriendo `npx vitest run` sin filtro: mismo resultado exacto, `28 passed
+  (28)` / `207 passed (207)`), no hay señal de que el filtro haya sido un no-op silencioso. Sin
+  regresiones en licitación/comparativa ni en ningún otro feature. `npx tsc -b --noEmit` desde
+  `frontend/` → exit code 0, cero errores — confirma que la secuencia Phase 5→6 (adelantar la ruta
+  en Phase 5 para que el `navigate({ to: ... })` de esta fase tipara) funcionó como estaba
+  diseñado. `git diff --stat` acotado a `frontend/src`: 4 archivos, +119/-1 líneas (dentro del
+  presupuesto de revisión de 400 líneas para este work unit, PR 6 de 9).
 
 ## Phase 7: Frontend — pantalla de matching (`oc-matching/`)
 

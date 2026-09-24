@@ -16,6 +16,15 @@ export interface ExtraccionResumen {
   // indicador de agrupación del listado sobreviva a un refetch/recarga sin
   // depender solo del estado en memoria del front (`gruposLocales`).
   grupo_id?: string | null
+  // D11 (Phase 4 backend / Phase 6 espejo frontend, `orden-compra-matching-
+  // presupuesto`) -- re-entrada a la pantalla de matching desde el listado.
+  // El backend (`extraccion/models.py::ExtraccionResumen`) ya lo devuelve
+  // desde Phase 4; este espejo TS quedó desactualizado hasta esta tarea
+  // (6.2). Distinto de `ResultadoValidarExtraccion.orden_compra_id` (ese es
+  // el de la respuesta de validar UNA extracción; este es el del LISTADO).
+  // `null` para licitación/comparativa y para los miembros no-ancla de un
+  // grupo multi-archivo (D13 del cambio padre).
+  orden_compra_id: string | null
 }
 
 /** Espejo literal de `MiembroGrupo` (design.md § D13, Interfaces). */
@@ -110,6 +119,16 @@ export interface ResultadoValidarExtraccion {
   filas_creadas: number
   comparativa_id: string | null
   reemplazo_version_anterior: boolean
+  // Sincronización con services/presupuestacion/extraccion/models.py:94-107
+  // (`ResultadoValidarExtraccion`). Los cuatro campos siguientes ya existen
+  // en el backend desde 3b37fca3 (cambio padre `orden-compra`, C7 de
+  // design.md de `orden-compra-matching-presupuesto`); este espejo quedó
+  // desactualizado hasta ahora (D10, Phase 6). `orden_compra_id` es `null`
+  // para licitación/comparativa; no nulo únicamente en la ruta orden_compra.
+  orden_compra_id: string | null
+  entregas_creadas: number
+  renglones_sin_producto: number
+  extracciones_validadas: number
 }
 
 /** Espejo literal de `services/presupuestacion/extraccion/models.py::OrigenCandidato`
