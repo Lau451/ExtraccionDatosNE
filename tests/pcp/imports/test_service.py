@@ -493,22 +493,31 @@ def test_pcp_renglon_no_existe_en_el_presupuesto_es_rechazado(
         numero_presupuesto="PRE-7003",
         renglones=(1,),
     )
-    # el presupuesto solo tiene el renglón 1 -- el PCP pide el 2, que no existe.
-    # Nota (gap preexistente, no introducido por T2): a diferencia del import
-    # de presupuestos, el import de PCP no compensa un `pcp`/`pcp_legacy_map`
-    # ya creado si un renglón posterior del mismo grupo falla -- mismo
-    # criterio (ausencia de rollback intra-grupo) que ya tenía el código
-    # antes de T2 para cualquier otro fallo a mitad de un grupo.
-    fila = _fila(codigo_cliente="CLI-7003", numero_pcp="PCP-7003", numero_presupuesto="PRE-7003", renglon=2)
+    # el presupuesto solo tiene el renglón 1 -- el PCP pide el 1 (válido) y el
+    # 2, que no existe. El lote se valida entero ANTES de escribir: el
+    # rechazo no puede dejar un `pcp`/`pcp_legacy_map` a medio crear.
+    filas = [
+        _fila(codigo_cliente="CLI-7003", numero_pcp="PCP-7003", numero_presupuesto="PRE-7003", renglon=1),
+        _fila(codigo_cliente="CLI-7003", numero_pcp="PCP-7003", numero_presupuesto="PRE-7003", renglon=2),
+    ]
 
     try:
-        with pytest.raises(NotFoundError):
+        with pytest.raises(NotFoundError, match="renglón 2 no existe"):
             importar_pcp_legacy(
                 service_client,
                 drogueria_id=seed_drogueria["id"],
-                filas=[fila],
+                filas=filas,
                 usuario_id=seed_usuario_sistema["id"],
             )
+        mapa_tras_rechazo = (
+            service_client.table("pcp_legacy_map")
+            .select("pcp_id")
+            .eq("drogueria_id", seed_drogueria["id"])
+            .eq("codigo_legacy", "PCP-7003")
+            .execute()
+            .data
+        )
+        assert mapa_tras_rechazo == []
     finally:
         mapa = (
             service_client.table("pcp_legacy_map")

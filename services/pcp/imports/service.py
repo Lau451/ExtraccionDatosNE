@@ -172,6 +172,47 @@ def _importar_renglon(
     )
 
 
+def _prevalidar_lote_pcp(
+    client: Client,
+    *,
+    drogueria_id: str,
+    por_pcp: "OrderedDict[str, list[FilaImportPcpLegacy]]",
+) -> dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]]:
+    """Valida el lote ENTERO antes del primer write (todo-o-nada): PostgREST
+    no tiene transacciones, así que un rechazo a mitad de un grupo dejaría un
+    `pcp`/`pcp_legacy_map` a medio crear. Por cada "número de PCP" resuelve
+    (mapa, pcp existente, presupuesto) y verifica que cada renglón exista en
+    su proceso comercial; cualquier falla levanta NotFoundError sin haber
+    escrito nada."""
+    contextos: dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]] = {}
+    for numero_pcp, filas_pcp in por_pcp.items():
+        header = filas_pcp[0]
+        mapa = repo.buscar_mapa_legacy(client, drogueria_id=drogueria_id, codigo_legacy=numero_pcp)
+        if mapa is None:
+            presupuesto = _resolver_presupuesto_para_pcp(
+                client, drogueria_id=drogueria_id, numero_presupuesto=header.numero_presupuesto
+            )
+            pcp_existente = None
+            proceso_comercial_id = presupuesto["proceso_comercial_id"]
+        else:
+            pcp_existente = repo.buscar_pcp(client, pcp_id=mapa["pcp_id"])
+            if pcp_existente is None:
+                raise NotFoundError(f"El PCP mapeado para '{numero_pcp}' ya no existe")
+            presupuesto = None
+            proceso_comercial_id = pcp_existente["proceso_comercial_id"]
+
+        for fila in filas_pcp:
+            item = repo.buscar_item_proceso_por_renglon(
+                client, proceso_comercial_id=proceso_comercial_id, numero_renglon=fila.renglon
+            )
+            if item is None:
+                raise NotFoundError(
+                    f"El renglón {fila.renglon} no existe en el presupuesto {fila.numero_presupuesto}"
+                )
+        contextos[numero_pcp] = (mapa, pcp_existente, presupuesto)
+    return contextos
+
+
 def importar_pcp_legacy(
     client: Client, *, drogueria_id: str, filas: list[FilaImportPcpLegacy], usuario_id: str
 ) -> list[dict[str, Any]]:
@@ -183,18 +224,17 @@ def importar_pcp_legacy(
     for fila in filas:
         por_pcp.setdefault(fila.numero_pcp, []).append(fila)
 
+    contextos = _prevalidar_lote_pcp(client, drogueria_id=drogueria_id, por_pcp=por_pcp)
+
     resultados: list[dict[str, Any]] = []
     for numero_pcp, filas_pcp in por_pcp.items():
         header = filas_pcp[0]
-        mapa = repo.buscar_mapa_legacy(client, drogueria_id=drogueria_id, codigo_legacy=numero_pcp)
+        mapa, pcp_existente, presupuesto = contextos[numero_pcp]
 
         if mapa is None:
-            # 8.1/8.2/8.5 + T2: primer import -- resuelve el presupuesto ya
-            # importado (T2, nunca crea placeholders), crea el pcp reusándolo
-            # y la fila de idempotencia en pcp_legacy_map.
-            presupuesto = _resolver_presupuesto_para_pcp(
-                client, drogueria_id=drogueria_id, numero_presupuesto=header.numero_presupuesto
-            )
+            # 8.1/8.2/8.5 + T2: primer import -- reusa el presupuesto ya
+            # importado (T2, nunca crea placeholders), crea el pcp y la fila
+            # de idempotencia en pcp_legacy_map.
             pcp = _crear_pcp(
                 client,
                 drogueria_id=drogueria_id,
@@ -216,9 +256,7 @@ def importar_pcp_legacy(
             # 8.3/8.7/8.7a: reimport -- reusa el pcp ya existente (nativo o
             # de un import anterior) tal cual; procesos_comerciales/
             # presupuestos NUNCA se tocan de nuevo.
-            pcp = repo.buscar_pcp(client, pcp_id=mapa["pcp_id"])
-            if pcp is None:
-                raise NotFoundError(f"El PCP mapeado para '{numero_pcp}' ya no existe")
+            pcp = pcp_existente
             accion = "actualizado"
 
         renglones = [
