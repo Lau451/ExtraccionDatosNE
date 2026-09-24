@@ -743,20 +743,68 @@ base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
 > Depende de Phase 5 (la ruta de matching ya existe para armar el link). Independiente de Phase 7 en
 > el sentido de compilación, pero sin Phase 7 el link no tiene destino útil que probar manualmente.
 
-- [ ] 8.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionListado.test.tsx` (o
+- [x] 8.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionListado.test.tsx` (o
   crearlo si no existe), test de la sección nueva: dado el listado con `{ validado: true, limit: 50
   }` filtrado a `document_type === 'orden_compra'` en el cliente, cada fila muestra un link a
   `/ordenes-compra/$ordenCompraId/matching` usando el `orden_compra_id` de `ExtraccionResumen`
   (6.2/4.3); una fila con `orden_compra_id: null` (miembro no-ancla de un grupo, D11) **no** muestra
   link roto — se omite o se muestra sin acción, documentado explícitamente en el test. Confirmar
   RED: la sección no existe todavía.
-- [ ] 8.2 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`:
+  **Evidencia**: el archivo ya existía (Phase 6, fixture mecánica en `OC_1`). Se agregó un
+  `describe('ValidarExtraccionListado (D11) — sección "Órdenes de compra validadas"')` con 4 tests:
+  (a) query `{ validado: true, limit: 50 }` confirmada con `toHaveBeenCalledWith`, link con
+  `href="/ordenes-compra/oc-abc/matching"`; (b) `orden_compra_id: null` → sin link de "Matching" en
+  el documento — **se decidió mostrar sin acción** (convención ya establecida en `PendientesTable`
+  para `proceso_comercial_nombre ?? '—'`: la fila se muestra igual, con `—` en la celda de acción, en
+  vez de ocultar toda la fila); (c) filtro cliente `document_type === 'orden_compra'` — una
+  `licitacion` validada no aparece en la sección; (d) sin órdenes validadas, la sección no muestra
+  ningún link (test de base, trivialmente verde antes y después, incluido para dejar la ausencia de
+  regresión explícita). **Dos cambios de infraestructura del propio archivo de test, necesarios para
+  que (a)/(b) pudieran afirmar algo real**: (1) el mock de `Link` de `@tanstack/react-router`
+  (`<a>{children}</a>`, sin `href`) no permitía verificar destino — se reemplazó por una versión que
+  propaga `to`/`params` a `href` sustituyendo los literales `$parametro`, mismo criterio que el único
+  precedente real del repo que ya lo hacía (`LoginForm.test.tsx`); no rompe los tests preexistentes
+  de "Revisar" en `PendientesTable`, que nunca aserteaban `href`. (2) la factory
+  `mockListarExtracciones({ pendientes, validadas })` reemplaza el `mockResolvedValue` plano
+  (que servía la misma lista a **ambas** queries, `validado: false` y `validado: true`) por un
+  `mockImplementation` que distingue por `params.validado` — sin esto, el test 7.13 (que ya
+  sobrescribía el mock con OCs agrupadas) habría duplicado `oc1.pdf`/`oc2.pdf` en la sección nueva y
+  roto sus propios `getByText`. El test de 7.13 se migró a la factory (`mockListarExtracciones({
+  pendientes: [...] })`) sin cambiar su aserción original. **RED confirmado**: `npx vitest run --
+  ValidarExtraccionListado` antes de 8.2 → `3 failed | 223 passed (226)` — las 3 fallas son
+  exactamente los tests (a)/(b)/(c) (timeout de `waitFor` esperando texto que no existe porque la
+  sección no está renderizada todavía); el cuarto test D11 ya pasaba de entrada (nada que romper con
+  la sección ausente) y los 223 tests preexistentes del proyecto quedaron intactos.
+- [x] 8.2 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`:
   agregar la segunda query `{ validado: true, limit: 50 }` junto a la existente `{ validado: false }`
   (línea 52 actual), filtrar `document_type === 'orden_compra'` en el cliente, renderizar la sección
   "Órdenes de compra validadas" con el link de re-entrada por fila.
   `pnpm --filter frontend test -- ValidarExtraccionListado` → confirmar GREEN.
-- [ ] 8.3 [REFACTOR] Correr `pnpm --filter frontend test -- validar-extraccion` completo y confirmar
+  **Evidencia**: `OC_VALIDADAS_KEY = ['extracciones', { validado: true, limit: 50 }]` (query key
+  separada, sin colisión con `EXTRACCIONES_KEY`); `validadasQuery` con el mismo patrón
+  `isPending`/`isError`/`data` que la query existente; `ordenesCompraValidadas` filtra
+  `document_type === 'orden_compra'` en el cliente (D11: el backend no expone ese filtro en
+  `/extracciones`). Se creó `frontend/src/features/validar-extraccion/components/ValidadasTable.tsx`
+  (58 líneas) siguiendo el mismo patrón de `PendientesTable.tsx` (una tabla por sección, mismo estilo
+  de celdas) — el link usa `<Link to="/ordenes-compra/$ordenCompraId/matching" params={{
+  ordenCompraId: extraccion.orden_compra_id }}>` cuando el campo no es `null`, y un `—` (mismo
+  glifo que `proceso_comercial_nombre ?? '—'`) cuando sí lo es. Comando literal `pnpm --filter
+  frontend test` no disponible en este entorno (mismo hallazgo que Phases 5-7: sin `pnpm` en PATH) —
+  se corrió `npx vitest run -- ValidarExtraccionListado` → `226 passed (226)` (el filtro por patrón
+  matchea los 32 archivos del proyecto, mismo comportamiento ya documentado en Phases 5-7: no hay
+  señal de que sea un no-op silencioso, es el total real). Sin regresiones sobre ninguno de los 223
+  tests preexistentes.
+- [x] 8.3 [REFACTOR] Correr `pnpm --filter frontend test -- validar-extraccion` completo y confirmar
   que el listado de pendientes (`{ validado: false }`) no tiene regresiones.
+  **Evidencia**: `npx vitest run -- validar-extraccion` → `32 archivos / 226 passed (226)` — mismo
+  resultado exacto que sin filtro (`npx vitest run`, corrido también, idéntico `226 passed (226)`),
+  confirmando una vez más que el filtro por patrón no reduce la superficie real. `npx tsc -b
+  --noEmit` desde `frontend/` → exit code 0, sin output, cero errores. `git diff --stat` acotado a
+  `frontend/src` (archivos trackeados): 2 archivos, +142/-8 líneas; más el archivo nuevo
+  `ValidadasTable.tsx` (58 líneas, sin trackear hasta el commit) → ~200 líneas autoradas totales,
+  dentro del presupuesto de revisión de 400 líneas para este work unit (PR 8 de 9). Ningún test del
+  listado de pendientes (`{ validado: false }`, agrupar/desagrupar, indicador de grupo persistido)
+  cambió de resultado.
 
 ## Phase 9: Documentación + verificación integral (tracker → `dev`)
 
