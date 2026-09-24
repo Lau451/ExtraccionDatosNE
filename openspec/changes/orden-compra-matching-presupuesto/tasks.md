@@ -1,0 +1,454 @@
+# Tasks: Matching de orden de compra contra presupuesto
+
+> Alcance de este checklist: `oc-presupuesto-candidato`, `oc-presupuesto-vinculacion`, y el delta de
+> `orden-compra-validacion` (D10/D11). Sigue estrictamente la tabla § File Changes de
+> `design.md` (D1-D13) — no la tabla § Affected Areas de `proposal.md`, que las correcciones C1-C7 del
+> propio diseño invalidan parcialmente. En particular:
+> `services/presupuestacion/extraccion/models.py` y `extraccion/service.py` **solo tocan
+> `ExtraccionResumen`/el listado** (D11) — `ResultadoValidarExtraccion` y
+> `_materializar_orden_compra` **no se tocan** (C7, ya existen desde `3b37fca3`).
+> `services/presupuestacion/presupuestos/repository.py` **no se modifica** (C6): se importa y reusa
+> `listar_items_presupuesto` tal cual.
+
+## Review Workload Forecast
+
+| Field | Value |
+|-------|-------|
+| Estimated changed lines | ~3.200 (additions + deletions; fixtures excluidas del riesgo autorado) |
+| 400-line budget risk | High |
+| Chained PRs recommended | Yes |
+| Suggested split | PR1 → PR2 → PR3 → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 (feature-branch-chain) |
+| Delivery strategy | auto-chain |
+| Chain strategy | feature-branch-chain |
+
+Decision needed before apply: No
+Chained PRs recommended: Yes
+Chain strategy: feature-branch-chain
+400-line budget risk: High
+
+**Nota sobre la elección de estrategia**: la sesión cachea `delivery_strategy=auto-chain`, que no
+requiere pregunta ni decisión antes de aplicar — el orquestador procede con la primera porción usando
+la estrategia de cadena elegida. Se eligió **feature-branch-chain**, igual que el cambio padre
+`orden-compra`: hay una migración de esquema (0026) con plan de rollback documentado que depende de
+revertir en orden (datos antes que esquema, § Migration de `design.md`), y una cadena de ramas contra
+un branch de tracker da control de rollback más fino que apilar 9 PRs directo a `dev`. Es una
+recomendación de planificación, no una pregunta al usuario — el orquestador puede recachear una
+estrategia distinta si lo prefiere. Tracker sugerido: rama `orden-compra-matching-presupuesto` con
+base `dev` (mismo patrón que el tracker `orden-compra`, ya mergeado).
+
+### Suggested Work Units
+
+| Unit | Goal | Likely PR | Focused test command | Runtime harness | Rollback boundary |
+|------|------|-----------|----------------------|-----------------|-------------------|
+| 1 | Migración 0026 (esquema, sin RLS/GRANTs nuevos — C3) | PR 1 (base = tracker) | `pytest tests/oc_presupuesto -q` (falla hasta PR2-3; en PR1 se verifica con las queries manuales de Fase 1) | Aplicar la migración contra el proyecto Supabase de test (`grnamollopxdlstcpxhc`) y correr las queries de verificación previa/posterior de `design.md` § Migration | `supabase/migrations/0026_*.sql` + `.down.sql`; revertir es aplicar la down migration documentada (aviso de exportar vínculos antes de dropear, `producto_id` heredado no se toca) |
+| 2 | Backend — ranking de presupuestos candidatos (D2, D2.1, D3) | PR 2 (base = PR 1) | `pytest tests/oc_presupuesto/test_service.py tests/oc_presupuesto/test_router.py -k candidato -q` | `pytest tests/oc_presupuesto -m integration -k candidato -q` contra el proyecto Supabase de test | Endpoint `GET /{id}/presupuestos-candidatos` + `rankear_presupuestos_candidatos`; ningún consumidor existente lo llama todavía |
+| 3 | Backend — vinculación completa (D4-D9): matching, confirmar, deshacer, descartar | PR 3 (base = PR 2) | `pytest tests/oc_presupuesto -q` | `pytest tests/oc_presupuesto -m integration -q` contra el proyecto Supabase de test (crea/borra vínculos reales sobre la fixture SAMCo Rafaela) | Endpoints `GET /{id}/matching`, `POST/DELETE .../vinculo`, `POST .../descartar`; revertir el módulo entero deja `oc_items` con las 5 columnas nuevas en `NULL`, estado idéntico al de hoy |
+| 4 | Backend — wiring (`main.py`) + D10/D11 en `extraccion/` (solo `ExtraccionResumen` y el listado) | PR 4 (base = PR 3) | `pytest tests/extraccion -k orden_compra_id -q` | `pytest tests/extraccion -m integration -k listado -q` contra el proyecto Supabase de test | `include_router` en `main.py` (revertir = quitar la línea); `ExtraccionResumen.orden_compra_id` es aditivo y nullable, revertir no rompe consumidores |
+| 5 | Frontend — cliente HTTP + ruta (D8, D13) | PR 5 (base = PR 4) | `pnpm --filter frontend test -- ocMatching` (si hay tests de cliente HTTP; si no, `pnpm --filter frontend typecheck`) | `pnpm --filter frontend dev` + navegar manualmente a la URL con `?presupuesto=<id>` y confirmar que persiste al reload | `frontend/src/lib/api/ocMatching.ts` + ruta nueva + `routeTree.gen.ts`; sin consumidores hasta PR6/PR7 (la navegación llega en PR6, la pantalla en PR7), revertir es solo borrar archivos nuevos |
+| 6 | Frontend — sincronización de tipos + navegación automática (D10) | PR 6 (base = PR 5) | `pnpm --filter frontend test -- ValidarExtraccionDetalle` | `pnpm --filter frontend dev` + flujo manual: validar una extracción de tipo OC, confirmar que navega a `/ordenes-compra/:id/matching` | `frontend/src/lib/api/extracciones.ts` (4 campos aditivos) + `ValidarExtraccionDetalle.tsx` `onSuccess`; revertir deja la navegación como hoy (siempre al listado) |
+| 7 | Frontend — pantalla de matching (`OcMatchingDetalle` + 5 componentes) | PR 7 (base = PR 6) | `pnpm --filter frontend test -- OcMatchingDetalle SelectorPresupuesto ColumnaPresupuesto ColumnaOrdenCompra RenglonOcFila AvisoReutilizacion` | `pnpm --filter frontend dev` + flujo manual end-to-end contra la fixture SAMCo Rafaela: elegir presupuesto, confirmar 2 vínculos, ver `producto_id` heredado | `frontend/src/features/oc-matching/` completo (directorio nuevo); revertir no afecta ninguna otra pantalla |
+| 8 | Frontend — re-entrada: sección "Órdenes de compra validadas" (D11) | PR 8 (base = PR 7) | `pnpm --filter frontend test -- ValidarExtraccionListado` | `pnpm --filter frontend dev` + flujo manual: confirmar una OC, volver al listado, verificar que aparece en la sección nueva con link a matching | `ValidarExtraccionListado.tsx` (query + sección nueva); revertir deja el listado exactamente como hoy |
+| 9 | Documentación + verificación integral (tracker → `dev`) | PR 9 (base = PR 8, es el tracker) | `pytest tests/ --cov=services` | `pnpm --filter frontend build` + `pytest tests/ --cov=services` completos + checklist de Success Criteria de `proposal.md` | `docs/schema/extractor_final.sql` (ya actualizado en Fase 1); sin código de producción nuevo en esta unidad |
+
+---
+
+## Phase 1: Esquema — migración 0026 (Foundation, bloquea todo lo demás)
+
+- [x] 1.1 [Verificación previa, solo lectura] Ejecutar contra el proyecto Supabase de test
+  (`grnamollopxdlstcpxhc`) las 6 verificaciones de `design.md` § Migration → Verificación previa
+  obligatoria. **Evidencia** (ejecutado por el orquestador con `mcp__supabase__execute_sql`, tras
+  confirmar `get_project_url` = `grnamollopxdlstcpxhc.supabase.co`; el `sdd-apply` original quedó sin
+  ese tool disponible, ver nota de proceso más abajo): (a) `uq_pi_id_drog` no existía en
+  `presupuesto_items` → `[]`; (b) ninguna de las 5 columnas nuevas existía en `oc_items` → `[]`; (c)
+  `oc_items.drogueria_id` existe, `is_nullable = NO`; (d) `oci_upd` (`cmd=UPDATE`) sigue exigiendo
+  `get_rol() = ANY ('admin','gerencia','lider_comercial','comercial')` + `drogueria_id = tenant OR
+  es_superadmin()`; (e) `presupuesto_items.excluido` → `NOT NULL DEFAULT false`,
+  `precio_unitario` → nullable, sin default; (f) `to_regclass('public.presupuesto_legacy_map')` →
+  existe. Las 6 verificaciones pasaron.
+- [x] 1.2 Crear `supabase/migrations/0026_oc_vinculo_presupuesto.sql` — transcripción literal del SQL
+  de `design.md` § Migration: guard de versión Postgres 15+, `ADD CONSTRAINT uq_pi_id_drog UNIQUE
+  (id, drogueria_id)` en `presupuesto_items` (C2), 5 columnas aditivas en `oc_items`
+  (`presupuesto_item_id`, `vinculo_descartado`, `vinculo_origen`, `vinculo_confirmado_por`,
+  `vinculo_confirmado_at`), FK compuesta `fk_oci_presupuesto_item` con `ON DELETE SET NULL`, los 3
+  `CHECK` (`ck_oci_vinculo_excluyente`, `ck_oci_vinculo_origen`, `ck_oci_vinculo_origen_val`),
+  comentarios de columna, índice parcial `idx_oci_presupuesto_item`. **Sin RLS ni GRANTs nuevos**
+  (C3) — no se agregó ninguno.
+  **Evidencia**: archivo creado, 90 líneas, transcripción carácter a carácter del bloque SQL de
+  `design.md` líneas 1051-1130 (verificado con diff manual, sin desvíos).
+- [x] 1.3 Crear `supabase/migrations/0026_oc_vinculo_presupuesto.down.sql` — reversa en orden inverso,
+  con el aviso de exportar (`COPY ... TO`) antes de dropear `presupuesto_item_id`, y la nota
+  explícita de que `oc_items.producto_id` ya heredado **no se toca** en el rollback (dato de negocio
+  legítimo, § Rollback Plan de `proposal.md`). `uq_pi_id_drog` se deja (puede tener FKs futuras
+  apuntándole), con la query de verificación en comentario.
+  **Evidencia**: archivo creado, transcripción literal de `design.md` líneas 1134-1167, sin desvíos.
+- [x] 1.4 Aplicar `0026` contra el proyecto Supabase de test (MCP `apply_migration`) y verificar en
+  vivo. **Evidencia** (orquestador, `mcp__supabase__apply_migration` → `{"success":true}`, contenido
+  idéntico al archivo de 1.2): `uq_pi_id_drog` → `UNIQUE (id, drogueria_id)` exacto; 5 columnas en
+  `oc_items` con tipo/nullable/default correctos (`presupuesto_item_id uuid NULL`,
+  `vinculo_descartado boolean NOT NULL DEFAULT false`, `vinculo_origen text NULL`,
+  `vinculo_confirmado_por uuid NULL`, `vinculo_confirmado_at timestamptz NULL`); los 3 `CHECK`
+  presentes con `pg_get_constraintdef` idéntico al SQL fuente; `fk_oci_presupuesto_item` →
+  `FOREIGN KEY (presupuesto_item_id, drogueria_id) REFERENCES presupuesto_items(id, drogueria_id) ON
+  DELETE SET NULL`; `idx_oci_presupuesto_item` → índice parcial `WHERE presupuesto_item_id IS NOT
+  NULL` confirmado. `mcp__supabase__get_advisors(type: security)`: 2 hallazgos, ambos preexistentes
+  y ajenos a esta migración (`SECURITY DEFINER` de `es_superadmin/get_drogueria_id/get_rol/
+  mismo_tenant`, y protección de contraseñas filtradas deshabilitada) — cero hallazgos nuevos sobre
+  `oc_items`/`presupuesto_items`.
+- [x] 1.5 Aplicar la down migration sobre el mismo entorno de test y confirmar reversión sin error;
+  reaplicar `0026` inmediatamente después. **Evidencia** (orquestador): down ejecutado vía
+  `mcp__supabase__execute_sql` con el contenido literal de `.down.sql` (menos el DROP de
+  `uq_pi_id_drog`, que el propio down.sql deja intacto a propósito) → sin error; verificación
+  post-revert de las 5 columnas → `[]` (limpio, ninguna residual); reaplicado `0026` completo
+  inmediatamente después → `{"success":true}`; verificación final de las 5 columnas → las 5
+  presentes. Entorno de test queda en el estado esperado para Fases 2-3.
+- [x] 1.6 Actualizar `docs/schema/extractor_final.sql`: reflejar `uq_pi_id_drog` en
+  `presupuesto_items`, las 5 columnas nuevas + 3 `CHECK` + FK compuesta + índice parcial en
+  `oc_items`. **Desviación respecto de la instrucción literal**: la tarea pide verificar contra la
+  base viva aplicada en 1.4, no contra el snapshot (C4 del cambio padre); como 1.4 está bloqueado,
+  esta transcripción se hizo directamente desde el archivo de migración de 1.2 (que sí es la fuente
+  de verdad del SQL, ya validada carácter a carácter en 1.2) en vez de contra una base viva que no
+  se pudo tocar en ese momento. Sigue el mismo patrón inline de comentarios `-- 0026: ...` que el
+  archivo ya usa para 0025. **Cerrado**: 1.4 confirmó contra la base viva que el SQL aplicado es
+  carácter a carácter el mismo que este snapshot ya reflejaba — no hubo divergencia que corregir.
+
+> **Nota de proceso (1.1/1.4/1.5)**: la invocación original de `sdd-apply` para esta fase no tuvo
+> ningún tool `mcp__supabase__*` disponible en su lista de funciones (el rol `sdd-apply` no lo
+> incluye en su definición), pese a que `.mcp.json` configura el servidor contra
+> `grnamollopxdlstcpxhc`. El orquestador completó 1.1/1.4/1.5 directamente con esos tools después.
+> Vale la pena que una futura fase de backend (2-3, que si necesita escribir/leer contra Supabase
+> desde Python, no desde el MCP) confirme si tiene el mismo problema antes de asumir que puede
+> correr sus tests de integración sin intervención manual.
+
+## Phase 2: Backend — módulo `oc_presupuesto/`, ranking de presupuestos candidatos (D2, D2.1, D3, D12)
+
+> Depende de Phase 1 solo por `uq_pi_id_drog`/columnas nuevas de completitud de esquema; el ranking
+> en sí no las usa (lee `presupuesto_items`/`items_proceso` existentes). Cubre
+> `oc-presupuesto-candidato` completa.
+
+- [ ] 2.1 [RED] Crear `tests/oc_presupuesto/fixtures/` con el caso real ya validado end-to-end:
+  cliente SAMCo Rafaela (CUIT 30-67428388-8), presupuesto `00246033` (2 renglones con
+  `precio_unitario` conocido), OC real Nro 00104857 (2 renglones que matchean exacto contra esos 2).
+  Reusar el patrón de fixtures/factories de `tests/extraccion/conftest.py`
+  (`seed_cliente_factory`) para poder sembrar el caso en el proyecto de test y limpiarlo en
+  `finally`.
+- [ ] 2.2 [RED] Crear `tests/oc_presupuesto/test_service.py` con la tabla de casos de
+  `rankear_presupuestos_candidatos` (D2): orden por `renglones_oc_con_coincidencia DESC,
+  generado_at DESC, presupuesto_id ASC`; tope de 5 candidatos aplicado **después** de ordenar;
+  `presupuestos_del_cliente` cuenta el total sin filtrar (0 coincidencias sigue apareciendo con
+  puntaje 0, no se excluye — spec `oc-presupuesto-candidato` § "Ningún renglón... coincide en
+  precio"); `presupuesto_sugerido_id = candidatos[0]` cuando hay candidatos, sin autoconfirmar nada
+  (spec § "Selección explícita del presupuesto por el usuario", incluso con un solo candidato).
+  Confirmar RED: `ModuleNotFoundError: No module named 'services.presupuestacion.oc_presupuesto'`.
+- [ ] 2.3 [RED] En el mismo archivo, casos vacíos de D2 (spec § "Estado explícito cuando el cliente
+  no tiene presupuestos cargados", HTTP 200 en los 3 casos): cliente sin ningún presupuesto
+  (`candidatos=[]`, `presupuestos_del_cliente=0`, advertencia A); cliente con presupuestos pero
+  ninguno coincide en precio (`candidatos=[]`, `presupuestos_del_cliente=N`, advertencia B,
+  **distinta** de la anterior); OC anclada por proceso comercial (`cliente_id IS NULL`) →
+  `ValidationError` (422), no una respuesta vacía.
+- [ ] 2.4 [RED] Tests unitarios de la normalización de escala de precio (D3, § Testing Strategy):
+  `Decimal("109.750").quantize(Decimal("0.01"))` produce la misma cadena que
+  `Decimal("109.75")`; comparación siempre sobre `Decimal`, nunca `float`; `precio_unitario IS NULL`
+  queda fuera del conjunto de filtro sin lanzar excepción; `excluido = TRUE` se excluye del conjunto
+  de candidatos (C4).
+- [ ] 2.5 [RED] Test unitario del troceo de `in_()` en lotes de 200 (D3): una lista de 450 ids
+  produce 3 llamadas al cliente Supabase mockeado, con la concatenación de resultados intacta.
+- [ ] 2.6 [GREEN] Crear `services/presupuestacion/oc_presupuesto/__init__.py` (módulo nuevo, D12).
+- [ ] 2.7 [GREEN] Crear `services/presupuestacion/oc_presupuesto/models.py` con **todos** los modelos
+  de `design.md` § Interfaces/Contracts (se usan en Phases 2 y 3, un solo archivo): `EstadoVinculo`,
+  `OrigenVinculo`, `CandidatoPresupuesto`, `PresupuestosCandidatosOut`, `RenglonPresupuesto`,
+  `CandidatoVinculo`, `RenglonOrdenCompra`, `MatchingOut`, `ConfirmarVinculoRequest` (con
+  `model_config = ConfigDict(extra="forbid")`). Transcripción literal de los `BaseModel` del
+  diseño, sin campos adicionales.
+- [ ] 2.8 [GREEN] Crear `services/presupuestacion/oc_presupuesto/repository.py` — solo las funciones
+  del camino de ranking por ahora: resolución de `procesos_comerciales`/`presupuestos` del cliente
+  (C6, dos pasos: `presupuestos` no tiene `cliente_id`), select de `presupuesto_items` con
+  `in_(precios)` + `eq("excluido", False)` (D3, con troceo de 200 de 2.5), select de `items_proceso`
+  para descripción (C5), lookup de `numero_presupuesto` vía `presupuesto_legacy_map` con el
+  **service client**, acotado a los `presupuesto_id` ya autorizados (D2.1, fallback `null` si no hay
+  fila).
+- [ ] 2.9 [GREEN] Crear `services/presupuestacion/oc_presupuesto/service.py` —
+  `rankear_presupuestos_candidatos()`: arma el conjunto de precios de la OC, cuenta coincidencias
+  por presupuesto, ordena por el criterio de D2, aplica el tope de 5, arma las dos advertencias de
+  casos vacíos.
+- [ ] 2.10 [GREEN] Crear `services/presupuestacion/oc_presupuesto/router.py` con
+  `_ROLES_MATCHING = ("admin", "gerencia", "lider_comercial", "comercial")` (tupla local nueva,
+  desviación explícita de D12) y el endpoint `GET /ordenes-compra/{orden_compra_id}
+  /presupuestos-candidatos`. Autorización por endpoint (D12): `require_roles(_ROLES_MATCHING)` →
+  lectura de la OC con *user client* → `NotFoundError` si no aparece (404, no confirma existencia de
+  OC de otra droguería).
+  `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → confirmar GREEN.
+- [ ] 2.11 [RED→GREEN] Crear `tests/oc_presupuesto/test_router.py` con la tabla de autorización del
+  endpoint: rol fuera de `_ROLES_MATCHING` → 403; OC de otra droguería (RLS) → 404; OC anclada por
+  proceso comercial → 422. Confirmar RED antes de escribirlos contra el router de 2.10 (deben fallar
+  por `ImportError`/`AttributeError` antes del `router.py`, pasar después).
+- [ ] 2.12 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -k candidato -q` contra el
+  proyecto Supabase de test (fixture SAMCo Rafaela de 2.1): el presupuesto `00246033` aparece
+  primero con `renglones_oc_con_coincidencia = 2`. Verificación de no-regresión:
+  `pytest tests/ -q -m "not integration"` contra el baseline previo a esta fase.
+
+## Phase 3: Backend — vinculación renglón a renglón (D4-D9, D12)
+
+> Depende de Phase 2 (mismos `models.py`/módulo). Cubre `oc-presupuesto-vinculacion` completa.
+
+- [ ] 3.1 [RED] En `tests/oc_presupuesto/test_service.py`, tabla de `obtener_matching` (D8):
+  resolución del presupuesto activo en el orden documentado — vínculos confirmados de la OC primero,
+  luego query param, luego el sugerido del ranking; **invariante duro**: todos los vínculos
+  confirmados de una misma OC pertenecen al mismo presupuesto (verificado antes de escribir, no solo
+  al leer).
+- [ ] 3.2 [RED] Tests de `_ordenar_por_similitud` (D7, spec § "Varios matches del mismo precio se
+  ordenan por similitud de descripción"): ordena descendente por `fuzz.WRatio`, **no filtra** por
+  score — incluir explícitamente un par con score < 70 que debe seguir apareciendo; `None` cuando
+  hay un solo candidato (no hay nada que desempatar); reusa `normalizar_descripcion` importado tal
+  cual, sin parametrizar.
+- [ ] 3.3 [RED] Tests de herencia de `producto_id` (D6, spec § "Herencia de `producto_id` al
+  confirmar un vínculo"): tabla de 4 casos del `COALESCE(presupuesto_items.producto_id,
+  items_proceso.producto_id)` — ambos presentes (gana el del presupuesto), solo presupuesto, solo
+  item_proceso, ninguno (`producto_id` queda `None`, **sin excepción y sin estado de UI especial**,
+  confirmando explícitamente que no hay precondición de bloqueo).
+- [ ] 3.4 [RED] Tests de `confirmar_vinculo` (D4, D13, spec § "Sugerencia de vínculo por precio
+  exacto" y § "Confirmación humana obligatoria y granular por renglón"): un solo `UPDATE` después de
+  todas las validaciones; acepta un vínculo cuyo precio **no** coincide con `vinculo_origen='manual'`
+  (nunca bloquea, "el precio sugiere, no autoriza"); confirmar sobre un renglón ya confirmado
+  reemplaza el vínculo sin error (idempotencia, D13); confirmar contra un presupuesto distinto del
+  que ya tiene vínculos → `ValidationError` 422 nombrando el presupuesto actual (D8); `oc_item_id`
+  que no pertenece a la OC → `NotFoundError` 404; `presupuesto_item_id` de otra droguería/cliente →
+  `NotFoundError` 404 (no 403); `presupuesto_item_id` con `excluido=TRUE` → `ValidationError` 422.
+- [ ] 3.5 [RED] Tests de `deshacer_vinculo` (D9, spec § implícita en el ciclo de confirmación — no
+  hay requirement propio en el spec de vinculación para deshacer, documentar la referencia a D9 de
+  `design.md` como fuente): revierte el renglón a `pendiente` sirviendo tanto para `confirmado` como
+  para `sin_presupuesto`; revierte `producto_id` a `NULL` **solo** si sigue siendo el valor que el
+  vínculo dio (recalculado en el momento); lo deja intacto si fue cambiado por otro camino después;
+  no-op si ya era `NULL`.
+- [ ] 3.6 [RED] Tests de `descartar_renglon` (D4): marca `vinculo_descartado=True` →
+  `estado='sin_presupuesto'`, distinto de `pendiente` ("todavía no lo miré" vs. "lo miré y no
+  está").
+- [ ] 3.7 [RED] Tests del aviso N:1 (D5, spec § "Relación N:1 permitida, con aviso no bloqueante"):
+  dos `oc_items` (incluso de **distintas** OC de la misma droguería) apuntando al mismo
+  `presupuesto_item_id` → `renglones_oc_vinculados=2`, `renglones_oc_vinculados_otras_oc` cuenta las
+  de otra OC, `cantidad_vinculada` suma cantidades, **ninguna excepción ni bloqueo en ningún caso**.
+- [ ] 3.8 [RED] Test del invariante duro (spec § "`items_proceso.estado_matching` y
+  `confianza_matching` quedan fuera de alcance"): snapshot de ambos campos antes/después de una
+  sesión completa (confirmar + deshacer + descartar sobre varios renglones) → sin cambios.
+- [ ] 3.9 [RED] Test de integración con la fixture SAMCo Rafaela (spec § "Caso validado con datos
+  reales — dos renglones sin ambigüedad"): los 2 renglones de la OC 00104857 reciben exactamente un
+  renglón de presupuesto sugerido cada uno, sin desempate necesario, confirmar ambos hereda
+  `producto_id` correctamente.
+  Confirmar RED de 3.1-3.9 con `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q`
+  antes de 3.10.
+- [ ] 3.10 [GREEN] Extender `services/presupuestacion/oc_presupuesto/repository.py`: select de
+  `oc_items` de la droguería con `presupuesto_item_id` en el conjunto (aviso N:1, usa
+  `idx_oci_presupuesto_item`), el `UPDATE` único de confirmación/deshacer/descarte.
+- [ ] 3.11 [GREEN] Extender `services/presupuestacion/oc_presupuesto/service.py`:
+  `obtener_matching()`, `confirmar_vinculo()`, `deshacer_vinculo()`, `descartar_renglon()`, con el
+  orden de validación-antes-de-escribir de D12 (pertenencia de `oc_item` ∈ OC, `presupuesto_item` ∈
+  presupuesto elegido ∈ cliente de la OC, **antes del primer write**).
+- [ ] 3.12 [GREEN] Extender `services/presupuestacion/oc_presupuesto/router.py` con los 4 endpoints
+  restantes de D13: `GET /{id}/matching?presupuesto_id=`, `POST /{id}/items/{oc_item_id}/vinculo`,
+  `DELETE /{id}/items/{oc_item_id}/vinculo`, `POST /{id}/items/{oc_item_id}/descartar` — todos con
+  `_ROLES_MATCHING`, todos devuelven `MatchingOut` completo (D13, no solo el renglón tocado).
+  `pytest tests/oc_presupuesto/test_service.py -m "not integration" -q` → confirmar GREEN.
+- [ ] 3.13 [GREEN] Extender `tests/oc_presupuesto/test_router.py`: tabla completa de errores de D13
+  (404 pertenencia, 422 presupuesto cruzado/excluido/OC sin cliente, idempotencia del
+  re-confirmar) como tests de integración con cliente Supabase mockeado.
+  `pytest tests/oc_presupuesto/test_router.py -m "not integration" -q` → confirmar GREEN.
+- [ ] 3.14 [REFACTOR] Correr `pytest tests/oc_presupuesto -m integration -q` contra el proyecto
+  Supabase de test: fixture SAMCo Rafaela completa (confirmar los 2 vínculos reales), aviso N:1 con
+  datos reales, invariante `estado_matching` sin modificar. Verificación de no-regresión:
+  `pytest tests/ -q -m "not integration"` sin regresiones fuera de `tests/oc_presupuesto/`.
+
+## Phase 4: Backend — wiring + D10/D11 en `extraccion/` (solo `ExtraccionResumen`/listado, C7)
+
+> Depende de Phase 3 (router completo para `include_router`). No depende de Phase 1/2/3 para D11,
+> podría correr en paralelo, pero se secuencia después para no bifurcar la cadena de PRs.
+
+- [ ] 4.1 [GREEN] Modificar `services/presupuestacion/main.py`: `include_router` del router de
+  `oc_presupuesto/` (D12). **No confundir con `ResultadoValidarExtraccion`**: ese modelo y
+  `_materializar_orden_compra()` **no se tocan** — ya devuelven/propagan `orden_compra_id` desde
+  `3b37fca3` (C7).
+- [ ] 4.2 [RED] En `tests/extraccion/test_service.py` (o archivo dedicado si el existente crece
+  demasiado), test del listado de extracciones validadas con `orden_compra_id` poblado (D11): dado
+  un lote de extracciones que incluye una `orden_compra` validada, el listado devuelve
+  `ExtraccionResumen.orden_compra_id` con el id real de `ordenes_compra` (lookup por
+  `ordenes_compra.extraction_id`); licitación/comparativa devuelven `orden_compra_id=None`. Caso de
+  grupo multi-archivo (D13 del cambio padre + nota de D11): solo **una** de las N extracciones del
+  grupo lleva `orden_compra_id` no nulo (`ordenes_compra.extraction_id` guarda una sola), las N-1
+  restantes quedan en `None` — comportamiento **aceptado explícitamente**, el test lo afirma en vez
+  de asumir que debería ser distinto. Confirmar RED:
+  `AttributeError`/campo inexistente en `ExtraccionResumen`.
+- [ ] 4.3 [GREEN] Modificar `services/presupuestacion/extraccion/models.py`: agregar
+  `orden_compra_id: str | None = None` **solo** a `ExtraccionResumen`. `ResultadoValidarExtraccion`
+  queda sin tocar (C7).
+- [ ] 4.4 [GREEN] Modificar `services/presupuestacion/extraccion/repository.py`: función de lookup de
+  `ordenes_compra` por `extraction_id` acotada a las extracciones del lote que se está listando
+  (`in_()`, mismo patrón de troceo que el módulo nuevo si el lote puede ser grande).
+- [ ] 4.5 [GREEN] Modificar `services/presupuestacion/extraccion/service.py`: poblar
+  `ExtraccionResumen.orden_compra_id` en la función que arma el listado, usando el lookup de 4.4.
+  `_materializar_orden_compra()` queda sin tocar (C7).
+- [ ] 4.6 [REFACTOR] Correr `pytest tests/extraccion -m "not integration" -q` y
+  `pytest tests/extraccion -m integration -k listado -q` contra el proyecto de test. Verificación de
+  no-regresión: `pytest tests/ -q -m "not integration"` completo, confirmando que las suites de
+  licitación/comparativa/OC de `orden-compra` (Tramos 1-2) siguen en verde sin cambios.
+
+## Phase 5: Frontend — cliente HTTP + ruta (D8, D13)
+
+> Depende de Phase 3 (los 5 endpoints ya existen en el backend). Se adelanta respecto de la
+> sincronización de navegación (Phase 6) a propósito: `useNavigate` de TanStack Router tipa `to`
+> contra `routeTree.gen.ts`, así que el `navigate({ to: '/ordenes-compra/$ordenCompraId/matching' })`
+> de Phase 6 no compilaría si la ruta todavía no existe. Este orden evita ese error de tipos.
+
+- [ ] 5.1 [GREEN] Crear `frontend/src/lib/api/ocMatching.ts`: espejos TypeScript literales de los
+  modelos Pydantic de `oc_presupuesto/models.py` (`snake_case`, comentario que nombra el modelo de
+  origen, misma convención que `extracciones.ts`), y las 5 funciones:
+  `obtenerPresupuestosCandidatos`, `obtenerMatching`, `confirmarVinculo`, `deshacerVinculo`,
+  `descartarRenglon` — firmas literales de `design.md` § Espejos TypeScript.
+- [ ] 5.2 [GREEN] Crear
+  `frontend/src/routes/_authenticated.ordenes-compra.$ordenCompraId.matching.tsx`: ruta con
+  `validateSearch` de `presupuesto` (query param opcional, D8 — sobrevive a reload, compartible por
+  link).
+- [ ] 5.3 [Generado] Regenerar `frontend/src/routeTree.gen.ts` con TanStack Router (`pnpm --filter
+  frontend dev` o el comando del generador del proyecto) tras crear la ruta de 5.2.
+- [ ] 5.4 Verificación: `pnpm --filter frontend typecheck` (o `tsc --noEmit`) sin errores sobre los
+  archivos nuevos; si el proyecto tiene tests de cliente HTTP (mock de `fetch`), agregar uno por
+  función siguiendo el patrón existente para `extracciones.ts`, si lo hay.
+
+## Phase 6: Frontend — sincronización de tipos + navegación automática (D10)
+
+> Depende de Phase 5: la ruta `/ordenes-compra/$ordenCompraId/matching` ya existe y está registrada
+> en `routeTree.gen.ts`, así que `navigate({ to: ... })` tipa correctamente contra ella. No depende
+> de Phases 2-4 en el sentido de contrato — el backend ya expone `orden_compra_id` desde antes de
+> este cambio (C7).
+
+- [ ] 6.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.test.tsx`,
+  agregar el caso nuevo (spec `orden-compra-validacion` § "Confirmar una orden de compra navega a la
+  pantalla de matching"): mock de la mutación resolviendo con `orden_compra_id` no nulo → afirma
+  `navigate` llamado con `{ to: '/ordenes-compra/$ordenCompraId/matching', params: { ordenCompraId }
+  }`. **El test existente que afirma la navegación al listado se extiende, no se reemplaza**
+  (spec § "Confirmar una licitación o comparativa no cambia su navegación"): agregar el caso
+  explícito con `orden_compra_id: null` → sigue navegando a `/validar-extraccion`. Confirmar RED:
+  el mock de la respuesta no tiene el campo/tipo todavía, o el componente no lee la rama nueva.
+- [ ] 6.2 [GREEN] Modificar `frontend/src/lib/api/extracciones.ts`: agregar a la interfaz
+  `ResultadoValidarExtraccion` los 4 campos que el backend ya devuelve (C7) —
+  `orden_compra_id: string | null`, `entregas_creadas: number`, `renglones_sin_producto: number`,
+  `extracciones_validadas: number` — con el comentario de sincronización contra
+  `extraccion/models.py:94-107`. Agregar `orden_compra_id: string | null` a la interfaz
+  `ExtraccionResumen` (D11, espejo de 4.3).
+- [ ] 6.3 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionDetalle.tsx`:
+  el `onSuccess` de la mutación (líneas 81-85 actuales) lee `resultado.orden_compra_id`; si no es
+  `null`, navega a `/ordenes-compra/$ordenCompraId/matching` con el id; si es `null`, mantiene
+  `navigate({ to: '/validar-extraccion' })` sin cambios.
+  `pnpm --filter frontend test -- ValidarExtraccionDetalle` → confirmar GREEN.
+- [ ] 6.4 [REFACTOR] Correr la suite completa de `validar-extraccion` (`pnpm --filter frontend test
+  -- validar-extraccion`) y confirmar que licitación/comparativa no tienen regresiones.
+
+## Phase 7: Frontend — pantalla de matching (`oc-matching/`)
+
+> Depende de Phase 5 (cliente HTTP + tipos) y Phase 3 (contrato real de los 5 endpoints).
+
+- [ ] 7.1 [RED] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.test.tsx`: un
+  candidato → botón "Confirmar" habilitado y **nada preseleccionado** (spec § "Un único match de
+  precio se sugiere sin vincularse"); varios candidatos → lista ordenada por similitud, **sin
+  preselección** (spec § "Varios matches del mismo precio se ordenan..."); cero candidatos → estado
+  `pendiente` visible, sin bloquear la fila. Confirmar RED: el componente no existe.
+- [ ] 7.2 [RED] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.test.tsx`:
+  aparece con `renglones_oc_vinculados >= 2` o `cantidad_vinculada > cantidad_ofertada` (D5); **nunca
+  deshabilita** el botón de confirmar (spec § "Relación N:1 permitida, con aviso no bloqueante").
+- [ ] 7.3 [RED] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.test.tsx`: el
+  presupuesto sugerido se muestra primero pero **no viene elegido** (spec § "Selección explícita del
+  presupuesto por el usuario", incluso con un único candidato); estado vacío distingue "sin
+  presupuestos para este cliente" de "tiene N, ninguno coincide" (spec § "Estado explícito cuando el
+  cliente no tiene presupuestos cargados").
+- [ ] 7.4 [RED] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.test.tsx`: una mutación
+  por click (spec § "Confirmar un renglón no exige confirmar los demás primero"); tras cada
+  mutación, `setQueryData` reemplaza la cache con el `MatchingOut` devuelto, **sin refetch** (D13);
+  confirmar el vínculo de un renglón no toca el estado de los demás (spec § "Confirmar un renglón no
+  exige confirmar los demás primero", los demás "permanecen sin cambios, disponibles para
+  confirmarse en cualquier momento posterior").
+  `pnpm --filter frontend test -- OcMatchingDetalle RenglonOcFila AvisoReutilizacion
+  SelectorPresupuesto` → confirmar RED (componentes/módulo inexistente) antes de 7.5.
+- [ ] 7.5 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`:
+  columna izquierda — descripción/cantidad/precio/estado por `RenglonPresupuesto`, integra
+  `AvisoReutilizacion` por fila cuando corresponde.
+- [ ] 7.6 [GREEN] Crear `frontend/src/features/oc-matching/components/AvisoReutilizacion.tsx`: aviso
+  suave, nunca deshabilita nada (implementación que satisface 7.2).
+- [ ] 7.7 [GREEN] Crear `frontend/src/features/oc-matching/components/ColumnaOrdenCompra.tsx`:
+  columna derecha — un `RenglonOcFila` por renglón de OC.
+- [ ] 7.8 [GREEN] Crear `frontend/src/features/oc-matching/components/RenglonOcFila.tsx`: estado +
+  candidatos + botones "Confirmar" / "Deshacer" / "No está en el presupuesto" (implementación que
+  satisface 7.1).
+- [ ] 7.9 [GREEN] Crear `frontend/src/features/oc-matching/components/SelectorPresupuesto.tsx`: lista
+  de candidatos rankeados, click resalta pero no confirma (implementación que satisface 7.3).
+- [ ] 7.10 [GREEN] Crear `frontend/src/features/oc-matching/OcMatchingDetalle.tsx`: container — 2
+  queries (`presupuestos-candidatos`, `matching`), 3 mutaciones (`confirmarVinculo`,
+  `deshacerVinculo`, `descartarRenglon`), estado de `renglonSeleccionadoId` (`useState`),
+  `presupuestoId` leído del search param de la ruta (D8). Cada mutación hace `setQueryData` con el
+  `MatchingOut` completo devuelto — sin refetch (D13). **Sin hook propio tipo `useFilasEditables`**
+  (el estado local es solo un id seleccionado, D12/forma del frontend de `design.md`).
+  `pnpm --filter frontend test -- OcMatchingDetalle RenglonOcFila AvisoReutilizacion
+  SelectorPresupuesto` → confirmar GREEN.
+- [ ] 7.11 [REFACTOR] Correr `pnpm --filter frontend test -- oc-matching` (toda la carpeta) y
+  confirmar que ningún otro feature (validar-extraccion, terceros, etc.) tiene regresiones:
+  `pnpm --filter frontend test`.
+
+## Phase 8: Frontend — re-entrada: sección "Órdenes de compra validadas" (D11)
+
+> Depende de Phase 5 (la ruta de matching ya existe para armar el link). Independiente de Phase 7 en
+> el sentido de compilación, pero sin Phase 7 el link no tiene destino útil que probar manualmente.
+
+- [ ] 8.1 [RED] En `frontend/src/features/validar-extraccion/ValidarExtraccionListado.test.tsx` (o
+  crearlo si no existe), test de la sección nueva: dado el listado con `{ validado: true, limit: 50
+  }` filtrado a `document_type === 'orden_compra'` en el cliente, cada fila muestra un link a
+  `/ordenes-compra/$ordenCompraId/matching` usando el `orden_compra_id` de `ExtraccionResumen`
+  (6.2/4.3); una fila con `orden_compra_id: null` (miembro no-ancla de un grupo, D11) **no** muestra
+  link roto — se omite o se muestra sin acción, documentado explícitamente en el test. Confirmar
+  RED: la sección no existe todavía.
+- [ ] 8.2 [GREEN] Modificar `frontend/src/features/validar-extraccion/ValidarExtraccionListado.tsx`:
+  agregar la segunda query `{ validado: true, limit: 50 }` junto a la existente `{ validado: false }`
+  (línea 52 actual), filtrar `document_type === 'orden_compra'` en el cliente, renderizar la sección
+  "Órdenes de compra validadas" con el link de re-entrada por fila.
+  `pnpm --filter frontend test -- ValidarExtraccionListado` → confirmar GREEN.
+- [ ] 8.3 [REFACTOR] Correr `pnpm --filter frontend test -- validar-extraccion` completo y confirmar
+  que el listado de pendientes (`{ validado: false }`) no tiene regresiones.
+
+## Phase 9: Documentación + verificación integral (tracker → `dev`)
+
+- [ ] 9.1 Revisar que `docs/schema/extractor_final.sql` (actualizado en 1.6) sigue reflejando la base
+  viva tras las Fases 2-8 (ningún cambio de esquema adicional se agregó fuera de la migración 0026).
+- [ ] 9.2 Correr la suite completa de backend: `pytest tests/ --cov=services` — confirmar 0
+  regresiones fuera de `tests/oc_presupuesto/` y `tests/extraccion/` (cambios de esta fase), y
+  cobertura razonable sobre el módulo nuevo.
+- [ ] 9.3 Correr build + tests completos de frontend: `pnpm --filter frontend build` y `pnpm
+  --filter frontend test` — confirmar 0 regresiones fuera de `oc-matching/` y `validar-extraccion/`.
+- [ ] 9.4 Verificar manualmente, contra el proyecto Supabase de test, el checklist completo de
+  Success Criteria de `proposal.md` (9 ítems: navegación automática, ranking por coincidencias,
+  sugerencia única no auto-confirmada, desempate sin preselección, `pendiente` no bloqueante,
+  herencia de `producto_id`, N:1 con aviso, `estado_matching`/`confianza_matching` sin modificar,
+  caso real SAMCo Rafaela reproducido como test) y dejar registrada la evidencia de cada uno (test
+  que lo cubre o verificación manual).
+
+---
+
+## Notas de trazabilidad (spec → tarea)
+
+| Capability / Requirement | Cubierto en |
+|---|---|
+| `oc-presupuesto-candidato` § Ranking por coincidencia exacta | 2.2, 2.9, 2.12 |
+| `oc-presupuesto-candidato` § Selección explícita del usuario | 2.2, 7.3, 7.9 |
+| `oc-presupuesto-candidato` § Estado sin presupuestos | 2.3, 7.3 |
+| `oc-presupuesto-vinculacion` § Sugerencia por precio + desempate | 3.2, 3.11, 7.1, 7.8 |
+| `oc-presupuesto-vinculacion` § Confirmación granular obligatoria | 3.4, 3.11, 7.1, 7.4, 7.8, 7.10 |
+| `oc-presupuesto-vinculacion` § Herencia de `producto_id` | 3.3, 3.11 |
+| `oc-presupuesto-vinculacion` § `pendiente` no bloqueante | 3.4, 7.1 |
+| `oc-presupuesto-vinculacion` § N:1 con aviso | 3.7, 3.11, 7.2, 7.6 |
+| `oc-presupuesto-vinculacion` § `estado_matching`/`confianza_matching` fuera de alcance | 3.8, 3.14 |
+| `orden-compra-validacion` (delta) § Navegación automática | 6.1, 6.2, 6.3, 6.4 |
+
+## Rollback (referencia rápida)
+
+Orden documentado en `proposal.md` § Rollback Plan y `design.md` § down migration:
+
+1. Revertir frontend (Phases 5-8) primero — restaura `navigate({ to: '/validar-extraccion' })` y
+   quita las rutas nuevas. A partir de ahí nadie puede crear vínculos nuevos.
+2. Revertir backend (Phases 2-4) — quita los endpoints y el módulo `oc_presupuesto/`. El campo
+   `orden_compra_id` puede quedarse (aditivo, nullable).
+3. Revertir esquema (Phase 1) al final, con la down migration de 1.3 — exportar vínculos antes si la
+   baja puede revertirse; `oc_items.producto_id` ya heredado **no se toca** nunca.
