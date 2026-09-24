@@ -50,13 +50,36 @@ tags=["pcp"])`).
 Implementado y probado en producción de test: **PR1-PR12** (97/97 tareas del
 `tasks.md`). `pcp-legacy-import` (Fase 8, tareas 8.1-8.8) fue el último en
 cerrarse: el contrato del export legado (13 columnas, fila por renglón) se
-confirmó con el usuario (D8), y `services/pcp/imports/` implementa el
-find-or-create de `procesos_comerciales`/`presupuestos`/`items_proceso` para
-los PCP legados que todavía no tienen contraparte en el presupuestador nuevo
-— reutilizando `pcp_legacy_map` como única ancla de idempotencia (sin tabla
-de mapeo adicional). La RPC `upsert_pcp_legacy` (0012_pcp_extras.sql)
-predata esa expansión de alcance y quedó sin usar; el flujo real vive en
-Python, igual que el resto de los submódulos de `services/pcp/`.
+confirmó con el usuario (D8). La RPC `upsert_pcp_legacy` (0012_pcp_extras.sql)
+quedó sin usar; el flujo real vive en Python, igual que el resto de los
+submódulos de `services/pcp/`.
+
+> **Actualización (2026-09-24, `odd/tasks/presupuestos-legacy-import.md`):**
+> el diseño de placeholders de D8 quedó superado. Ahora hay dos imports
+> legados, con orden obligatorio:
+>
+> 1. **Presupuestos** — `POST /pcp/imports/presupuestos-legacy`. Crea el
+>    universo completo: `procesos_comerciales`, `presupuestos`
+>    (`estado='generado'`, `monto_total` = `importe_total`), `items_proceso` y
+>    `presupuesto_items` (`metodo_precio='manual'`, `producto_id` resuelto por
+>    `codigo_producto` → `productos.codigo_interno`, NULL si no matchea).
+>    Idempotente por `presupuesto_legacy_map` (`codigo_legacy` =
+>    `numero_presupuesto`): un reimport no escribe nada y devuelve
+>    `accion='existente'`. Si falla a mitad, compensa borrando lo creado.
+>    Columnas: `codigo_cliente`, `razon_social_cliente`, `numero_presupuesto`,
+>    `proceso_comercial`, `fecha_generacion`, `renglon`, `codigo_producto`,
+>    `descripcion_producto`, `cantidad_producto`, `precio_producto`,
+>    `importe_total`. El subtotal por renglón no se importa:
+>    `presupuesto_items.monto_total` es GENERATED.
+> 2. **PCP** — `POST /pcp/imports/legacy`. Busca el presupuesto ya importado
+>    por `numero_presupuesto` y reusa su proceso e `items_proceso` (nunca los
+>    crea). Rechaza el lote entero (404) si falta el número, si el presupuesto
+>    no fue importado o si un renglón no existe en él. El lote se valida
+>    completo antes del primer write, así que un rechazo no deja un PCP a
+>    medio crear. `pcp_legacy_map` sigue siendo el ancla de idempotencia del PCP.
+>
+> Ambos reciben filas ya parseadas: la futura tarea programada que lea los
+> CSV que deja Progress llama a estos mismos casos de uso.
 
 ## La máquina de estados del PCP
 
