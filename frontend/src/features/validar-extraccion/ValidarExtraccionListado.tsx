@@ -7,8 +7,13 @@ import {
   type ExtraccionResumen,
 } from '@/lib/api/extracciones'
 import { PendientesTable } from './components/PendientesTable'
+import { ValidadasTable } from './components/ValidadasTable'
 
 const EXTRACCIONES_KEY = ['extracciones', { validado: false }]
+// D11 (`orden-compra-matching-presupuesto`) -- segunda query para la sección
+// "Órdenes de compra validadas" (re-entrada a la pantalla de matching).
+// `limit: 50` mismo tope que design.md § D11.
+const OC_VALIDADAS_KEY = ['extracciones', { validado: true, limit: 50 }]
 
 /** D13 § Agrupar después -- guard puro que espeja las precondiciones de
  * `agrupar_extracciones` (service.py): al menos 2 filas, todas del mismo
@@ -55,6 +60,19 @@ export function ValidarExtraccionListado() {
 
   const filas = query.data ?? []
   const filasSeleccionadas = filas.filter((extraccion) => seleccionados.has(extraccion.id))
+
+  // D11 -- re-entrada a la pantalla de matching desde el listado, sin
+  // depender de la navegación automática (D10) ni de haber guardado el
+  // permalink. Filtrado en el cliente: el backend no expone un filtro por
+  // document_type en /extracciones (D11 de design.md).
+  const validadasQuery = useQuery({
+    queryKey: OC_VALIDADAS_KEY,
+    queryFn: () => listarExtracciones({ validado: true, limit: 50 }),
+    staleTime: 0,
+  })
+  const ordenesCompraValidadas = (validadasQuery.data ?? []).filter(
+    (extraccion) => extraccion.document_type === 'orden_compra',
+  )
 
   const agruparMutation = useMutation({
     mutationFn: (ids: string[]) => agruparExtracciones(ids),
@@ -161,6 +179,25 @@ export function ValidarExtraccionListado() {
             gruposLocales={gruposLocales}
           />
         )}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-slate-900">Órdenes de compra validadas</h2>
+          <p className="text-xs text-slate-500">Retomar el matching contra presupuesto</p>
+        </div>
+
+        {validadasQuery.isPending && <p className="text-sm text-slate-500">Cargando…</p>}
+
+        {validadasQuery.isError && (
+          <p className="text-sm text-red-600">
+            {validadasQuery.error instanceof Error
+              ? validadasQuery.error.message
+              : 'No se pudo cargar las órdenes de compra validadas.'}
+          </p>
+        )}
+
+        {validadasQuery.data && <ValidadasTable extracciones={ordenesCompraValidadas} />}
       </div>
     </div>
   )
