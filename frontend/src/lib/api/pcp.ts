@@ -454,6 +454,42 @@ export function importarPcpLegacy(filas: FilaImportPcpLegacy[]): Promise<ImportP
   })
 }
 
+/** Una fila del export legado de presupuestos (`services/pcp/imports/models.py`
+ * `FilaImportPresupuestoLegacy`, sibling de `FilaImportPcpLegacy`). Trae todas
+ * las líneas cotizadas del proceso comercial -- import mandatorio ANTES del
+ * import de PCP (odd/tasks/presupuestos-legacy-import.md T1/T2). */
+export interface FilaImportPresupuestoLegacy {
+  codigo_cliente: string
+  razon_social_cliente: string
+  numero_presupuesto: string
+  proceso_comercial?: ProcesoComercialLegacy
+  fecha_generacion?: string
+  renglon: number
+  codigo_producto?: string
+  descripcion_producto: string
+  cantidad_producto: number
+  precio_producto?: number
+  importe_total?: number
+}
+
+export interface ImportPresupuestoLegacyResultado {
+  codigo_legacy: string
+  presupuesto_id: string
+  accion: 'creado' | 'existente'
+  renglones_procesados: number
+  renglones_sin_producto: number
+}
+
+export function importarPresupuestosLegacy(
+  filas: FilaImportPresupuestoLegacy[],
+): Promise<ImportPresupuestoLegacyResultado[]> {
+  return presupuestacionFetch<ImportPresupuestoLegacyResultado[]>('/pcp/imports/presupuestos-legacy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filas }),
+  })
+}
+
 /** No puede reusar `presupuestacionFetch`: esa función siempre llama
  * `response.json()`, lo que rompería contra un cuerpo PDF binario
  * (design.md, `lib/api/pcp.ts` Contract). Duplica el fetch con header de

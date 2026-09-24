@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth, type Rol } from '@/features/auth/AuthContext'
-import { PCP_READ_ROLES, puedeRol } from '@/features/pcp/roles'
+import { PCP_READ_ROLES, PCP_WRITE_ROLES, puedeRol } from '@/features/pcp/roles'
 
 interface NavItem {
   label: string
@@ -41,6 +41,12 @@ export function Sidebar() {
 
   const navItems: NavItem[] = [
     ...NAV_ITEMS,
+    // Gateado con PCP_WRITE_ROLES (mismos roles que el endpoint), no
+    // PCP_READ_ROLES -- feature doc presupuestos-legacy-import-ui.md
+    // Decisions: "Importar presupuestos" visible solo a roles de escritura.
+    ...(puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+      ? [{ label: 'Importar presupuestos', to: '/presupuestos/importar' }]
+      : []),
     ...(muestraNavegacionPcp(perfil?.rol) ? [{ label: 'PCP', to: '/pcp' }] : []),
     ...(perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
       ? [{ label: 'Usuarios', to: '/admin/usuarios' }]
