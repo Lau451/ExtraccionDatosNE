@@ -187,6 +187,10 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
               setClienteId(id)
               setRazonSocialExtraida(razonSocial)
             }}
+            onClienteDesconfirmado={() => {
+              setClienteId(null)
+              setRazonSocialExtraida(null)
+            }}
           />
         </>
       ) : (

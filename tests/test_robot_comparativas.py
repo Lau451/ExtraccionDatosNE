@@ -16,6 +16,7 @@ import json
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -27,6 +28,7 @@ from services.extraccion.robot_comparativas import (
     _split_markdown_chunks,
     _llamar_gemini_json,
     _extraer_comparativa,
+    _extraer_comparativa_por_paginas,
     procesar_comparativa,
 )
 
@@ -402,6 +404,24 @@ def test_extraer_comparativa_no_usa_chunking_para_markdown_pequeno():
     with patch("services.extraccion.robot_comparativas._split_markdown_chunks") as p_split, \
          patch("services.extraccion.robot_comparativas._llamar_gemini_json", return_value=datos):
         _extraer_comparativa(markdown_pequeno, Path("pequeno.pdf"))
+    p_split.assert_not_called()
+
+
+def test_extraer_comparativa_session_id_sin_drogueria_id_lanza_error():
+    """session_id sin drogueria_id ya no debe saltear la persistencia en
+    silencio: debe fallar explícito antes de llamar a Gemini."""
+    with patch("services.extraccion.robot_comparativas._llamar_gemini_json") as p_gemini:
+        with pytest.raises(ValueError, match="drogueria_id"):
+            _extraer_comparativa("markdown", Path("archivo.pdf"), session_id=uuid4())
+    p_gemini.assert_not_called()
+
+
+def test_extraer_comparativa_por_paginas_session_id_sin_drogueria_id_lanza_error():
+    """Mismo contrato que _extraer_comparativa para el flujo de PDFs grandes
+    paginados: sin drogueria_id no se debe ni intentar dividir el PDF."""
+    with patch("services.extraccion.robot_comparativas._split_pdf_by_pages") as p_split:
+        with pytest.raises(ValueError, match="drogueria_id"):
+            _extraer_comparativa_por_paginas(Path("grande.pdf"), session_id=uuid4())
     p_split.assert_not_called()
 
 

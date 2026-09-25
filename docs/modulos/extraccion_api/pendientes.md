@@ -1,5 +1,10 @@
 # Pendientes — Auditoría técnica de API & Persistencia (legacy)
 
+> **Nota (T2, 2026-09-25)**: los pendientes sobre `routers/licitaciones.py`/tabla
+> `licitaciones` y sobre HTML legacy vs. frontend nuevo abajo se resolvieron retirando
+> ambos (`odd/tasks/extraccion-multi-tenant.md`). Contenido conservado como registro
+> histórico.
+
 Clasificación P1 (ausencia de una capacidad esperada / riesgo estructural) / P2 (deuda
 técnica relevante) / P3 (menor), verificada contra el código y los tests reales en esta
 sesión.

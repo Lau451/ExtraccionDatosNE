@@ -1,10 +1,11 @@
 from functools import lru_cache
 
 from fastapi import Depends, Header
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
 from services.shared.config import get_settings
 from services.shared.exceptions import AuthenticationError
+from services.shared.http_client import build_resilient_httpx_client
 
 
 def get_bearer_token(authorization: str | None = Header(None)) -> str:
@@ -19,7 +20,13 @@ def get_bearer_token(authorization: str | None = Header(None)) -> str:
 @lru_cache
 def get_service_client() -> Client:
     settings = get_settings()
-    return create_client(settings.supabase_url, settings.supabase_service_key)
+    # http2=False: ver services/shared/http_client.py -- evita reusar una conexión
+    # pooled que Supabase cerró mientras el proceso estaba ocupado.
+    return create_client(
+        settings.supabase_url,
+        settings.supabase_service_key,
+        options=ClientOptions(httpx_client=build_resilient_httpx_client()),
+    )
 
 
 @lru_cache(maxsize=256)
@@ -33,7 +40,13 @@ def _cliente_por_token(token: str) -> Client:
     # instancia entre usuarios distintos filtraría el token de uno al pedido
     # de otro. maxsize acota el crecimiento a medida que rotan usuarios/tokens.
     settings = get_settings()
-    client = create_client(settings.supabase_url, settings.supabase_anon_key)
+    # http2=False: ver services/shared/http_client.py -- evita reusar una conexión
+    # pooled que Supabase cerró mientras el proceso estaba ocupado.
+    client = create_client(
+        settings.supabase_url,
+        settings.supabase_anon_key,
+        options=ClientOptions(httpx_client=build_resilient_httpx_client()),
+    )
     client.postgrest.auth(token)
     return client
 

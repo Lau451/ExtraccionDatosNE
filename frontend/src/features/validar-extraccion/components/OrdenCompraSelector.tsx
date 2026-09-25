@@ -13,6 +13,13 @@ interface Props {
    * `oc_cliente_alias` al confirmar (D3.1); `null` cuando el cliente vino del
    * buscador manual, no de una sugerencia con texto de origen. */
   onClienteConfirmado: (clienteId: string, razonSocialExtraida: string | null) => void
+  /** "Cambiar" deshace la confirmación: quien renderiza debe volver a
+   * bloquear "Confirmar OC" hasta una nueva confirmación explícita. */
+  onClienteDesconfirmado?: () => void
+}
+
+function etiquetaCliente(razonSocial: string, cuit: string | null | undefined) {
+  return cuit ? `${razonSocial} — CUIT ${cuit}` : razonSocial
 }
 
 /** Rediseño completo de D3: sugiere el cliente en 3 niveles (alias -> CUIT ->
@@ -20,9 +27,16 @@ interface Props {
  * click humano explícito, igual en los tres niveles. Sin input de código: esa
  * premisa quedó invalidada por C5 (el `codigo_interno` es nuestro, no del
  * cliente). */
-export function OrdenCompraSelector({ extractionId, onClienteConfirmado }: Props) {
+export function OrdenCompraSelector({
+  extractionId,
+  onClienteConfirmado,
+  onClienteDesconfirmado,
+}: Props) {
   const [mostrarBuscador, setMostrarBuscador] = useState(false)
   const [candidatoElegidoId, setCandidatoElegidoId] = useState<string | null>(null)
+  // Etiqueta del cliente ya confirmado: sin esto el click de "Confirmar
+  // cliente" no daba ninguna señal visible (la confirmación vive en el padre).
+  const [etiquetaConfirmada, setEtiquetaConfirmada] = useState<string | null>(null)
 
   const { data, isPending } = useQuery({
     queryKey: ['cliente-candidato', extractionId],
@@ -37,8 +51,34 @@ export function OrdenCompraSelector({ extractionId, onClienteConfirmado }: Props
     return null
   }
 
+  const confirmar = (clienteId: string, razonSocialExtraida: string | null, etiqueta: string) => {
+    setEtiquetaConfirmada(etiqueta)
+    onClienteConfirmado(clienteId, razonSocialExtraida)
+  }
+
+  if (etiquetaConfirmada) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3">
+        <div>
+          <p className="text-sm text-emerald-700">Cliente confirmado</p>
+          <p className="text-sm font-medium text-slate-900">{etiquetaConfirmada}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setEtiquetaConfirmada(null)
+            onClienteDesconfirmado?.()
+          }}
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+        >
+          Cambiar
+        </button>
+      </div>
+    )
+  }
+
   const seleccionarManual = (tercero: Tercero) => {
-    onClienteConfirmado(tercero.id, null)
+    confirmar(tercero.id, null, etiquetaCliente(tercero.razon_social, tercero.cuit))
   }
 
   // Nivel 3 (D3.2): sin sugerencia, o el usuario rechazó la que había.
@@ -77,10 +117,16 @@ export function OrdenCompraSelector({ extractionId, onClienteConfirmado }: Props
         <button
           type="button"
           disabled={!candidatoElegidoId}
-          onClick={() =>
-            candidatoElegidoId &&
-            onClienteConfirmado(candidatoElegidoId, data.razon_social_extraida)
-          }
+          onClick={() => {
+            const elegido = data.candidatos.find((c) => c.cliente_id === candidatoElegidoId)
+            if (elegido) {
+              confirmar(
+                elegido.cliente_id,
+                data.razon_social_extraida,
+                etiquetaCliente(elegido.razon_social, elegido.cuit),
+              )
+            }
+          }}
           className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           Confirmar cliente
@@ -104,7 +150,13 @@ export function OrdenCompraSelector({ extractionId, onClienteConfirmado }: Props
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => onClienteConfirmado(sugerencia.cliente_id, data.razon_social_extraida)}
+          onClick={() =>
+            confirmar(
+              sugerencia.cliente_id,
+              data.razon_social_extraida,
+              etiquetaCliente(sugerencia.razon_social, sugerencia.cuit),
+            )
+          }
           className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
         >
           Confirmar cliente

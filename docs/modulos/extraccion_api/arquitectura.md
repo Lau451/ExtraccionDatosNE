@@ -1,5 +1,10 @@
 # Arquitectura — API & Persistencia (legacy)
 
+> **Retirado (T2, 2026-09-25)**: la sección "Servir HTML y JSON en el mismo endpoint" y
+> las referencias a `routers/licitaciones.py`/HTML legacy abajo describen un estado
+> anterior — ambos se eliminaron (`odd/tasks/extraccion-multi-tenant.md`). `/procesar`
+> responde JSON exclusivamente. Contenido conservado como registro histórico.
+
 ## Capas del módulo
 
 ```

@@ -1,22 +1,17 @@
 import asyncio
 import csv
-import io
 import logging
 import os
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile, File, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 
 from pathlib import Path
 from uuid import UUID, uuid4
-from urllib.parse import urlencode
 
-from services.extraccion.auth import get_usuario_id_actual
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
-from services.extraccion.routers.licitaciones import router as licitaciones_router
+from services.extraccion.auth import UsuarioPerfil, get_current_user, get_drogueria_id_actual
+from services.extraccion.supabase_client import get_client
+from services.shared.exceptions import register_exception_handlers
 from services.extraccion.routers.extraction_results import router as extraction_results_router
 from services.extraccion.routers.clientes import router as clientes_router
 from services.extraccion.procesos_comerciales_client import (
@@ -27,7 +22,7 @@ from services.extraccion.robot import obtener_cliente, procesar_archivo
 from services.extraccion.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from services.extraccion.robot_orden_compra import procesar_orden_compra, OrdenCompraSinRenglonesError
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
-from services.extraccion.config import get_output_dir, get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
+from services.extraccion.config import get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from services.extraccion.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
 from services.extraccion.persistent_output import calcular_sha256, buscar_duplicado_con_lock
 from services.extraccion.persistent_chunking import crear_sesion
@@ -48,9 +43,9 @@ logger = logging.getLogger(__name__)
 # ======================
 
 app = FastAPI(title="Extractor de Documentos")
-app.include_router(licitaciones_router)
 app.include_router(extraction_results_router)
 app.include_router(clientes_router)
+register_exception_handlers(app)
 
 _cors_origins = [
     origen.strip()
@@ -68,57 +63,22 @@ app.add_middleware(
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
 # ======================
-# FRONTEND
-# ======================
-
-app.mount("/static", StaticFiles(directory="services/extraccion/static"), name="static")
-templates = Jinja2Templates(directory="services/extraccion/templates")
-
-# ======================
 # HELPERS
 # ======================
 
-def wants_json(request: Request) -> bool:
-    accept = request.headers.get("accept", "").lower()
-    requested_with = request.headers.get("x-requested-with", "").lower()
-    return "application/json" in accept or requested_with in {"fetch", "xmlhttprequest"}
-
-
-def render_upload_response(
-    request: Request,
-    context: dict,
-    status_code: int = 200,
-):
-    if wants_json(request):
-        payload = {"ok": status_code < 400}
-        if "resultado" in context:
-            payload["resultado"] = context["resultado"]
-        if "error" in context:
-            payload["error"] = context["error"]
-        if "tipo" in context:
-            payload["tipo"] = context["tipo"]
-        return JSONResponse(payload, status_code=status_code)
-
-    return templates.TemplateResponse(request, "index.html", context, status_code=status_code)
+def _procesar_response(context: dict, status_code: int = 200) -> JSONResponse:
+    """`POST /procesar` responde siempre JSON (el HTML legacy se retiró en T2,
+    ver odd/tasks/extraccion-multi-tenant.md). `extraction_id` se incluye acá
+    porque el 409 de duplicado lo necesita — el frontend lo lee del body."""
+    payload = {"ok": status_code < 400}
+    for key in ("resultado", "error", "tipo", "extraction_id"):
+        if key in context:
+            payload[key] = context[key]
+    return JSONResponse(payload, status_code=status_code)
 
 # ======================
 # RUTAS
 # ======================
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse(request, "home.html")
-
-
-@app.get("/licitaciones", response_class=HTMLResponse)
-async def licitaciones_page(request: Request):
-    return templates.TemplateResponse(request, "licitaciones.html", {})
-
-
-@app.get("/upload", response_class=HTMLResponse)
-async def upload_page(request: Request, tipo: str = ""):
-    return templates.TemplateResponse(request, "index.html", {"tipo": tipo})
-
 
 async def _resolver_formato_prompt(
     client, *, cliente_id: str, doc_type: str
@@ -179,16 +139,16 @@ def _validar_grupo_id(grupo_id: str) -> str | None:
     return str(parsed)
 
 
-@app.post("/procesar", response_class=HTMLResponse)
+@app.post("/procesar")
 async def procesar(
-    request: Request,
     bg_tasks: BackgroundTasks,
     archivo: UploadFile = File(...),
     tipo: str = Form(""),
     licitacion_id: str = Form(""),
     cliente_id: str = Form(""),
     grupo_id: str = Form(""),
-    usuario_id: str | None = Depends(get_usuario_id_actual),
+    usuario: UsuarioPerfil = Depends(get_current_user),
+    drogueria_id: str = Depends(get_drogueria_id_actual),
 ):
     # D13: grupo_id solo aplica a tipo=="ordenes" — se ignora entero para cualquier
     # otro tipo. Fail-fast antes de cualquier I/O si viene y no es un UUID v4 (SC-25).
@@ -201,7 +161,9 @@ async def procesar(
     # openspec/changes/validar-extraccion/proposal.md). licitacion_id sigue aceptado y
     # validado si viene seteado (por compatibilidad / otros callers), simplemente no es
     # obligatorio para ningún tipo de documento en este endpoint.
-    licitacion_id_validado = await validar_proceso_comercial_id(licitacion_id)
+    licitacion_id_validado = await validar_proceso_comercial_id(
+        licitacion_id, drogueria_id=drogueria_id
+    )
 
     # ======================
     # GUARDAR ARCHIVO
@@ -218,8 +180,7 @@ async def procesar(
         permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"}
 
     if extension not in permitidos:
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "Tipo de archivo no permitido", "tipo": tipo},
             status_code=415,
         )
@@ -237,11 +198,12 @@ async def procesar(
     # ======================
     sha256_doc = await asyncio.to_thread(calcular_sha256, destino)
 
-    existing_extraction = await buscar_duplicado_con_lock(source_sha256=sha256_doc)
+    existing_extraction = await buscar_duplicado_con_lock(
+        source_sha256=sha256_doc, drogueria_id=drogueria_id
+    )
     if existing_extraction:
         logger.warning("Documento duplicado detectado: %s - extraction_id: %s", nombre_original, existing_extraction)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "Este documento ya fue procesado", "extraction_id": str(existing_extraction), "tipo": tipo},
             status_code=409,
         )
@@ -267,8 +229,9 @@ async def procesar(
         client_id=origen_id,
         total_chunks=0,  # placeholder; se actualiza al procesar chunks
         doc_type=doc_type,
+        drogueria_id=drogueria_id,
         formato_usado_id=formato_id,
-        subido_por=usuario_id,
+        subido_por=usuario.id,
     )
 
     # ======================
@@ -280,23 +243,21 @@ async def procesar(
                 csv_generado = await asyncio.to_thread(
                     procesar_comparativa, destino, nombre_original,
                     session_id=session_id,
+                    drogueria_id=drogueria_id,
                     instrucciones_extra=instrucciones_prompt,
                 )
-                params = urlencode({"origen": origen_id, "modulo": "comparativas"})
             elif tipo == "ordenes":
                 csv_generado = await asyncio.to_thread(
                     procesar_orden_compra, destino, nombre_original,
                     session_id=session_id,
                     instrucciones_extra=instrucciones_prompt,
                 )
-                params = urlencode({"origen": origen_id})
             else:
                 csv_generado = await asyncio.to_thread(
                     procesar_archivo, destino, nombre_original,
                     session_id=session_id,
                     instrucciones_extra=instrucciones_prompt,
                 )
-                params = urlencode({"origen": origen_id})
 
         # ======================
         # LEER CSV + SCHEDULING DE PERSISTENCIA
@@ -319,72 +280,65 @@ async def procesar(
             client_id=origen_id,
             source_filename=nombre_original,
             source_sha256=sha256_doc,
+            drogueria_id=drogueria_id,
             licitacion_id=licitacion_id_validado,
             grupo_id=grupo_id_validado,
         )
 
-        return render_upload_response(request, {"tipo": tipo})
+        return _procesar_response({"tipo": tipo})
 
     except UnsupportedFormatError as e:
         logger.warning("Unsupported format: %s", e.extension)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": f"Formato no soportado: {e.extension}", "tipo": tipo},
             status_code=415,
         )
 
     except ParserError as e:
         logger.error("Parser error: %s - %s", e.filepath, e.cause)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}", "tipo": tipo},
             status_code=422,
         )
 
     except NoProvidersDetectedError as e:
         logger.warning("No providers detected: %s", e.message)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
             status_code=422,
         )
 
     except OrdenCompraSinRenglonesError as e:
         logger.warning("No renglones detected in orden_compra: %s", e.message)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "No se detectaron renglones en el documento", "tipo": tipo},
             status_code=422,
         )
 
     except GeminiQuotaExceededError as e:
         logger.error("Gemini API quota exceeded: %s", e.message)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.", "tipo": tipo},
             status_code=503,
         )
 
     except GeminiRateLimitError as e:
         logger.error("Gemini API rate limit exceeded: %s", e.message)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.", "tipo": tipo},
             status_code=429,
         )
 
     except GeminiAPIError as e:
         logger.error("Gemini API error: %s", e.message)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": f"Error en el servicio de IA: {e.message[:80]}", "tipo": tipo},
             status_code=500,
         )
 
     except Exception as e:
         logger.exception("Unexpected error processing %s: %s", tipo, e)
-        return render_upload_response(
-            request,
+        return _procesar_response(
             {"error": "Error interno del servidor", "tipo": tipo},
             status_code=500,
         )
@@ -406,18 +360,10 @@ async def procesar(
             logger.debug("Could not remove tmp directory: %s", cleanup_error)
 
 
-@app.get("/calendario", response_class=HTMLResponse)
-async def calendario_page(request: Request):
-    return templates.TemplateResponse(request, "calendario.html", {})
-
-
-@app.get("/historial", response_class=HTMLResponse)
-async def historial_page(request: Request):
-    return templates.TemplateResponse(request, "historial.html")
-
-
 @app.get("/api/documentos")
-async def listar_documentos(tipo: str = ""):
+async def listar_documentos(
+    tipo: str = "", drogueria_id: str = Depends(get_drogueria_id_actual)
+):
     client = get_client()
     if not client:
         return JSONResponse({"documentos": [], "sin_persistencia": True})
@@ -429,6 +375,7 @@ async def listar_documentos(tipo: str = ""):
                 "id,source_filename,document_type,row_count,status,created_at,"
                 "proceso_comercial_id"
             )
+            .eq("drogueria_id", drogueria_id)
             .order("created_at", desc=True)
         )
         if tipo in ("comparativa", "licitacion"):
@@ -441,7 +388,9 @@ async def listar_documentos(tipo: str = ""):
     # Resuelve nombres via procesos_comerciales_client (escopeado por drogueria_id) en vez del
     # embed roto contra la tabla "licitaciones" inexistente.
     proceso_ids = {row["proceso_comercial_id"] for row in docs if row.get("proceso_comercial_id")}
-    nombres = await listar_nombres_procesos_comerciales(list(proceso_ids))
+    nombres = await listar_nombres_procesos_comerciales(
+        list(proceso_ids), drogueria_id=drogueria_id
+    )
 
     for row in docs:
         proceso_id = row.pop("proceso_comercial_id", None)
@@ -451,16 +400,21 @@ async def listar_documentos(tipo: str = ""):
 
 
 @app.get("/api/documentos/{doc_id}")
-async def detalle_documento(doc_id: str):
+async def detalle_documento(
+    doc_id: str, drogueria_id: str = Depends(get_drogueria_id_actual)
+):
     client = get_client()
     if not client:
         return JSONResponse({"error": "Persistencia no disponible"}, status_code=503)
 
     def _query():
+        # .eq("drogueria_id", drogueria_id): un doc_id de OTRA droguería no matchea
+        # -> mismo 404 que un doc_id inexistente (no filtra existencia entre tenants).
         meta_r = (
             client.table("extraction_results")
             .select("id,source_filename,document_type,client_id,row_count,status,created_at")
             .eq("id", doc_id)
+            .eq("drogueria_id", drogueria_id)
             .limit(1)
             .execute()
         )
@@ -483,69 +437,3 @@ async def detalle_documento(doc_id: str):
         return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
 
     return JSONResponse({"meta": meta, "rows": rows})
-
-
-@app.get("/api/documentos/{doc_id}/descargar")
-async def descargar_documento_supabase(doc_id: str):
-    client = get_client()
-    if not client:
-        return JSONResponse({"error": "Persistencia no disponible"}, status_code=503)
-
-    def _query():
-        meta_r = (
-            client.table("extraction_results")
-            .select("document_type,source_filename")
-            .eq("id", doc_id)
-            .limit(1)
-            .execute()
-        )
-        if not meta_r.data:
-            return None, None
-        meta = meta_r.data[0]
-        tabla = "comparativas_results" if meta["document_type"] == "comparativa" else "licitaciones_results"
-        rows_r = (
-            client.table(tabla)
-            .select("rows")
-            .eq("extraction_id", doc_id)
-            .limit(1)
-            .execute()
-        )
-        rows = rows_r.data[0]["rows"] if rows_r.data else []
-        return meta["source_filename"], rows
-
-    source_filename, rows = await asyncio.to_thread(_query)
-
-    if source_filename is None:
-        return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
-    if not rows:
-        return JSONResponse({"error": "Sin datos para descargar"}, status_code=404)
-
-    stem = Path(source_filename).stem
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()), delimiter=";")
-    writer.writeheader()
-    writer.writerows(rows)
-    csv_bytes = output.getvalue().encode("utf-8-sig")  # utf-8-sig: Excel abre sin conversión
-
-    return StreamingResponse(
-        iter([csv_bytes]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'},
-    )
-
-
-@app.get("/guia", response_class=HTMLResponse)
-async def guia_usuario():
-    return FileResponse(Path(__file__).parent.parent / "docs" / "guia_usuario.html", media_type="text/html")
-
-
-@app.get("/descargar/{nombre_archivo}")
-def descargar(nombre_archivo: str, origen: str = "", modulo: str = ""):
-    base = COMPARATIVAS_OUTPUT_BASE if modulo == "comparativas" else OUTPUT_BASE
-    archivo = get_output_dir(base_dir=base, origen_id=origen, ensure_exists=False) / nombre_archivo
-
-    return FileResponse(
-        path=archivo,
-        filename=archivo.name,
-        media_type="text/csv"
-    )

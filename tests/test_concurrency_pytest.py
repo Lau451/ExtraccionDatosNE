@@ -15,10 +15,22 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
+from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.main import app
 
-# Sin dependency_override deliberadamente: estos tests llaman a /procesar sin
-# Authorization, igual que el HTML viejo -- ejercitan el camino anónimo real.
+# Auth obligatoria (extraccion-multi-tenant, T1): /procesar ya no acepta caller
+# anónimo. Estos tests ejercitan concurrencia/semáforo, no el gate de auth --
+# autentican con un usuario fijo vía dependency_override.
+
+
+@pytest.fixture(autouse=True)
+def _autenticado():
+    app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+        id="usuario-test", drogueria_id="drogueria-test", rol="comercial"
+    )
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 

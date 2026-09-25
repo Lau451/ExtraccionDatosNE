@@ -158,77 +158,30 @@ class TestSingleton:
         del sc_module.create_client  # limpieza
 
 
-class TestResolverDrogueriaIdUnica:
-    """Tests para resolver_drogueria_id_unica() — cache en proceso del id de la
-    droguería que sirve esta app, con DROGUERIA_ID como fuente determinística y
-    fallback a SELECT...LIMIT 1 (sin filtro) si no está configurada."""
+class TestResilientHttpClient:
+    """T5 (odd/tasks/extraccion-multi-tenant.md): la conexión Supabase pooled debe
+    sobrevivir a un idle largo (~50s de Gemini) sin reusar un socket que el server ya
+    cerró. Ver services/shared/http_client.py para el detalle de la causa raíz."""
 
-    def test_usa_droguria_id_de_env_sin_consultar_la_tabla(self, monkeypatch):
-        """Regresión: si DROGUERIA_ID está seteada, NUNCA debe consultar
-        droguerias — la variable de entorno es la única fuente de verdad, sin la
-        ambigüedad de un LIMIT 1 no determinístico."""
-        monkeypatch.setenv("DROGUERIA_ID", "drogueria-de-env")
-        mock_client = MagicMock()
+    def test_get_client_disables_http2_on_underlying_httpx_client(self, monkeypatch, mocker):
+        """get_client() debe inyectar un httpx.Client propio (http2=False) vía
+        ClientOptions -- sin esto, postgrest-py fuerza http2=True internamente y una
+        conexión que Supabase cerró mientras el proceso estaba ocupado se reusa
+        muerta en el siguiente pedido -> httpx.RemoteProtocolError("Server disconnected")."""
+        monkeypatch.setenv("ENABLE_RESULT_PERSISTENCE", "true")
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+        mocker.patch.object(sc_module, "_SUPABASE_AVAILABLE", True)
+        # TestSingleton (arriba) hace `del sc_module.create_client` como limpieza tras
+        # inyectar un mock -- eso borra también el binding real importado a nivel de
+        # módulo (`del modulo.attr` no distingue "mock" de "el `from supabase import
+        # create_client` original"), no solo el mock. Re-bindeamos acá para no depender
+        # del orden de ejecución de otros tests del mismo archivo.
+        import supabase as _supabase_pkg
 
-        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
+        monkeypatch.setattr(sc_module, "create_client", _supabase_pkg.create_client, raising=False)
 
-        assert resultado == "drogueria-de-env"
-        mock_client.table.assert_not_called()
+        resultado = sc_module.get_client()
 
-    def test_resuelve_y_cachea_via_fallback_sin_env(self, monkeypatch):
-        monkeypatch.delenv("DROGUERIA_ID", raising=False)
-        mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
-            {"id": "drogueria-123"}
-        ]
-
-        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
-
-        assert resultado == "drogueria-123"
-        mock_client.table.assert_called_once_with("droguerias")
-
-        # Segunda llamada: no vuelve a consultar (cache en proceso).
-        mock_client.table.reset_mock()
-        segundo = sc_module.resolver_drogueria_id_unica(mock_client)
-
-        assert segundo == "drogueria-123"
-        mock_client.table.assert_not_called()
-
-    def test_sin_filas_retorna_none(self, monkeypatch):
-        monkeypatch.delenv("DROGUERIA_ID", raising=False)
-        mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
-
-        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
-
-        assert resultado is None
-
-    def test_excepcion_retorna_none_sin_propagar(self, monkeypatch):
-        monkeypatch.delenv("DROGUERIA_ID", raising=False)
-        mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.side_effect = (
-            RuntimeError("DB error simulado")
-        )
-
-        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
-
-        assert resultado is None
-
-    def test_reset_client_for_testing_limpia_el_cache(self, monkeypatch):
-        monkeypatch.delenv("DROGUERIA_ID", raising=False)
-        mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
-            {"id": "drogueria-abc"}
-        ]
-        sc_module.resolver_drogueria_id_unica(mock_client)
-
-        sc_module.reset_client_for_testing()
-        mock_client.table.reset_mock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = [
-            {"id": "drogueria-xyz"}
-        ]
-
-        resultado = sc_module.resolver_drogueria_id_unica(mock_client)
-
-        assert resultado == "drogueria-xyz"
-        mock_client.table.assert_called_once_with("droguerias")
+        assert resultado is not None
+        assert resultado.postgrest.session._transport._pool._http2 is False

@@ -41,6 +41,7 @@ def kwargs_base(tmp_path):
         "client_id": "cliente_a",
         "source_filename": "comparativa.xlsx",
         "source_sha256": "a" * 64,
+        "drogueria_id": "drogueria-1",
     }
 
 
@@ -148,6 +149,29 @@ class TestRetryPersist:
         assert sleep_args == [2, 4], (
             f"Se esperaba [2, 4] segundos de backoff, se obtuvo: {sleep_args}"
         )
+
+    @pytest.mark.asyncio
+    async def test_retry_persist_attempt_mayor_a_cero_propaga_drogueria_id(self, kwargs_base, mocker):
+        """
+        Cuando _retry_persist se invoca como reintento (attempt > 0 — el caso
+        de la llamada recursiva tras un fallo), drogueria_id debe seguir
+        llegando a persistir_output_final. Un reintento que perdiera el
+        tenant terminaría persistiendo (o fallando a persistir) para la
+        droguería equivocada.
+        """
+        extraction_uuid = uuid.uuid4()
+        mock_persistir = mocker.patch(
+            "services.extraccion.background_tasks.persistir_output_final",
+            new_callable=AsyncMock,
+            return_value=extraction_uuid,
+        )
+        mocker.patch("services.extraccion.background_tasks.asyncio.sleep", new_callable=AsyncMock)
+
+        await _retry_persist(**kwargs_base, attempt=1, max_attempts=3)
+
+        mock_persistir.assert_awaited_once()
+        _, llamada_kwargs = mock_persistir.call_args
+        assert llamada_kwargs["drogueria_id"] == kwargs_base["drogueria_id"]
 
     @pytest.mark.asyncio
     async def test_retry_persist_partial_failure(self, kwargs_base, mocker):

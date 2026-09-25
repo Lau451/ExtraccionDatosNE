@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from uuid import UUID
 
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
+from services.extraccion.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -52,16 +52,19 @@ def calcular_sha256(path: Path) -> str:
     return digest
 
 
-async def buscar_duplicado_con_lock(*, source_sha256: str) -> UUID | None:
+async def buscar_duplicado_con_lock(*, source_sha256: str, drogueria_id: str) -> UUID | None:
     """
-    Busca un extraction_result completado con el SHA256 dado, usando
-    la RPC reserve_extraction que hace SELECT FOR UPDATE.
+    Busca un extraction_result completado con el SHA256 dado PARA LA DROGUERIA DEL
+    CALLER, usando la RPC reserve_extraction que hace SELECT FOR UPDATE.
 
     Esto garantiza que dos requests simultaneos del mismo archivo no
-    generen dos extracciones paralelas (el segundo espera al primero).
+    generen dos extracciones paralelas (el segundo espera al primero), y que el
+    409 nunca devuelva un extraction_id de OTRA droguería (dedup por
+    (drogueria_id, source_sha256) -- migración 0027).
 
     Args:
         source_sha256: Hexdigest SHA256 del archivo fuente.
+        drogueria_id:  droguería del usuario autenticado (obligatorio).
 
     Returns:
         UUID del extraction_result existente si status='completed',
@@ -75,7 +78,10 @@ async def buscar_duplicado_con_lock(*, source_sha256: str) -> UUID | None:
 
     try:
         respuesta = await asyncio.to_thread(
-            lambda: client.rpc("reserve_extraction", {"p_sha": source_sha256}).execute()
+            lambda: client.rpc(
+                "reserve_extraction",
+                {"p_sha": source_sha256, "p_drogueria_id": drogueria_id},
+            ).execute()
         )
         # La RPC retorna NULL (None en Python) o un UUID string
         resultado = respuesta.data
@@ -94,10 +100,14 @@ async def buscar_duplicado_con_lock(*, source_sha256: str) -> UUID | None:
         )
         return extraction_id
     except Exception as exc:
-        logger.warning(
-            "buscar_duplicado_con_lock: error consultando RPC — %s. "
-            "Se procedera sin verificacion de duplicados.",
+        logger.error(
+            "buscar_duplicado_con_lock: error consultando RPC reserve_extraction — %s. "
+            "DEDUPLICACION DESHABILITADA para este request (sha256=%s, drogueria_id=%s): "
+            "la carga continua sin verificar duplicados. Posible causa: falta aplicar "
+            "la migracion 0027 (reserve_extraction con firma (p_sha, p_drogueria_id)).",
             exc,
+            source_sha256[:12] + "..." if source_sha256 else "N/A",
+            drogueria_id,
         )
         return None
 
@@ -111,6 +121,7 @@ async def persistir_output_final(
     client_id: str,
     source_filename: str,
     source_sha256: str,
+    drogueria_id: str,
     licitacion_id: str | None = None,
     grupo_id: str | None = None,
 ) -> UUID | None:
@@ -150,6 +161,9 @@ async def persistir_output_final(
         client_id:       Aceptado por compatibilidad, no se persiste (ver NOTA).
         source_filename: Nombre del archivo original subido.
         source_sha256:   SHA256 del archivo original (para deduplicacion futura).
+        drogueria_id:    droguería del usuario autenticado que subió el documento.
+                          Obligatorio, sin fallback -- viene de
+                          services.extraccion.auth.get_drogueria_id_actual.
         licitacion_id:   proceso_comercial_id ya validado (o None). Se persiste tal cual.
         grupo_id:        UUID v4 ya validado (o None) que asocia N extracciones de
                           orden_compra como una sola OC lógica (D13). Se persiste tal
@@ -188,15 +202,6 @@ async def persistir_output_final(
             "persistir_output_final: doc_type='%s' no soportado. Valores validos: %s",
             doc_type,
             sorted(_DOC_TYPES_SOPORTADOS),
-        )
-        return None
-
-    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
-    if drogueria_id is None:
-        logger.error(
-            "persistir_output_final: no se pudo resolver drogueria_id — INSERT abortado. "
-            "source_filename=%s",
-            source_filename,
         )
         return None
 

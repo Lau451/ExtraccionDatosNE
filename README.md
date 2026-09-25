@@ -94,7 +94,8 @@ SUPABASE_KEY=tu_service_role_key
 Levanta los 3 procesos necesarios para usar el proyecto completo, cada uno en su
 propia ventana de consola:
 
-- **http://localhost:8000** — `services/extraccion` (backend legacy + HTML viejo)
+- **http://localhost:8000** — `services/extraccion` (backend de extracción, API JSON pura —
+  el HTML legacy se retiró, ver `odd/tasks/extraccion-multi-tenant.md`)
 - **http://localhost:8001** — `services/presupuestacion` (backend nuevo, exige JWT)
 - **http://localhost:5173** — `frontend/` (Vite + React, el frontend nuevo — requiere
   login contra `services/presupuestacion`, ver `frontend/.env.example`)
@@ -116,7 +117,7 @@ presupuestación (puerto 8001), sin los otros dos.
 
 ```
 services/
-  extraccion/             — backend legacy: bot de extracción con Gemini
+  extraccion/             — backend de extracción: bot con Gemini, API JSON pura
     main.py                — rutas FastAPI, deduplicación, orquestación
     robot.py               — extracción de licitaciones (Gemini)
     robot_comparativas.py  — extracción de comparativas (Gemini, chunking)
@@ -135,8 +136,8 @@ services/
     main.py
     Dockerfile
 
-frontend/                — frontend nuevo (Vite + React + TanStack Router/Query), reemplaza
-                            gradualmente el HTML legacy de services/extraccion/templates
+frontend/                — frontend (Vite + React + TanStack Router/Query), único cliente de
+                            services/extraccion desde que se retiró su HTML legacy
 
 supabase/migrations/     — migraciones SQL (tablas, RPC, pg_cron TTL)
 docs/schema/              — snapshot de referencia del DDL y las políticas RLS aplicadas

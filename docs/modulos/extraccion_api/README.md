@@ -2,26 +2,33 @@
 
 ## Qué es
 
-API & Persistencia es la capa HTTP y de persistencia en Supabase del backend legacy
+API & Persistencia es la capa HTTP y de persistencia en Supabase del backend
 `services/extraccion/` (Droguería Nueva Era). Es el módulo que recibe el archivo subido
 por el usuario, lo guarda en disco, deduplica por hash, delega la extracción de datos en
 el módulo [`extraccion_ia`](../extraccion_ia/) (`robot.py`/`robot_comparativas.py`/
 `parsers.py`), lee el CSV resultante y persiste su metadata en Supabase — además de
-exponer los endpoints CRUD de licitaciones, clientes y extraction results que consumen
-tanto el HTML legacy (`templates/`, `static/`) como el frontend nuevo (Vite/React).
+exponer los endpoints CRUD de clientes y extraction results que consume el frontend
+(Vite/React).
 
-Este documento cubre 12 archivos — el resto de `services/extraccion/`
+**T2 (2026-09-25, `odd/tasks/extraccion-multi-tenant.md`)** retiró el HTML legacy
+(`templates/`, `static/`, rutas Jinja2 `/`, `/upload`, `/licitaciones`, `/calendario`,
+`/historial`, `/guia`), los endpoints legacy-only de descarga (`/descargar/{...}`,
+`/api/documentos/{id}/descargar`) y `routers/licitaciones.py` (`/api/licitaciones/*`,
+CRUD de una tabla `licitaciones` que ya no existe — ver `decisiones.md`). `/procesar`
+responde JSON exclusivamente. El resto de este documento describe el estado previo a T2
+donde no se indica lo contrario; ver los documentos de módulo para el detalle.
+
+Este documento cubre 10 archivos — el resto de `services/extraccion/`
 (`robot.py`, `robot_comparativas.py`, `parsers.py`, `config.py`, `gemini_errors.py`) es
 el módulo "Extracción IA", documentado por separado en
 [`../extraccion_ia/`](../extraccion_ia/README.md).
 
 | Archivo | Líneas | Rol |
 |---|---|---|
-| `main.py` | 498 | Entrypoint FastAPI: rutas HTML (Jinja2) + endpoints API inline (`/procesar`, `/api/documentos*`, `/descargar/{...}`). |
-| `routers/licitaciones.py` | 308 | CRUD de la tabla legacy `licitaciones`, consumido por el HTML viejo. |
+| `main.py` | ~330 | Entrypoint FastAPI: `/procesar`, `/api/documentos*` — JSON puro desde T2. |
 | `routers/extraction_results.py` | 60 | `PATCH /api/extraction-results/{id}` — vincula/desvincula un archivo a un proceso comercial y cambia su `document_type`. |
 | `routers/clientes.py` | 54 | `GET /api/clientes` — selector de cliente real para el formulario de upload (§8). |
-| `schemas/licitaciones.py` | 156 | Modelos Pydantic v2 compartidos por `licitaciones.py` y `extraction_results.py`. |
+| `schemas/licitaciones.py` | 156 | Modelos Pydantic v2 — el nombre es histórico (compartidos con el router retirado), hoy solo los usa `extraction_results.py`. |
 | `supabase_client.py` | 160 | Cliente Supabase singleton (feature flag), dedup de conexión y `resolver_drogueria_id_unica`. |
 | `persistent_output.py` | 244 | SHA256, deduplicación (`buscar_duplicado_con_lock`) y `persistir_output_final` (INSERT de metadata en `extraction_results`). |
 | `persistent_chunking.py` | 237 | CRUD de `processing_sessions` y `chunk_results`. |
@@ -38,17 +45,13 @@ Total: ~2151 líneas, leídas en su totalidad en esta sesión.
   (§8), crea una sesión de procesamiento, invoca `extraccion_ia` bajo un
   `asyncio.Semaphore(15)` (`main.py:67`, `:241`), lee el CSV resultante y agenda su
   persistencia como `BackgroundTask`. Ver [`flujo.md`](./flujo.md).
-- Sirve la interfaz HTML legacy (Jinja2: `home.html`, `index.html`, `licitaciones.html`,
-  `calendario.html`, `historial.html`) y, en el mismo endpoint `/procesar`, responde JSON
-  al frontend nuevo según headers `Accept`/`X-Requested-With` — ver
-  [`arquitectura.md`](./arquitectura.md).
 - Persiste metadata de extracciones (`extraction_results`), sesiones de procesamiento
   (`processing_sessions`) y chunks (`chunk_results`) en el schema nuevo de
-  `presupuestacion/`, resolviendo `drogueria_id` porque este backend no tiene ese
-  concepto en su propio dominio. Ver [`base_de_datos.md`](./base_de_datos.md).
-- Expone CRUD HTTP de la tabla legacy `licitaciones` (`routers/licitaciones.py`),
-  vinculación de archivos a procesos comerciales (`routers/extraction_results.py`) y
-  listado de clientes activos (`routers/clientes.py`).
+  `presupuestacion/`, resolviendo `drogueria_id` del usuario autenticado. Ver
+  [`base_de_datos.md`](./base_de_datos.md).
+- Expone vinculación de archivos a procesos comerciales
+  (`routers/extraction_results.py`) y listado de clientes activos
+  (`routers/clientes.py`).
 - Valida `proceso_comercial_id` (parámetro de formulario `licitacion_id`) contra la tabla
   `procesos_comerciales` del schema nuevo, escopeado por `drogueria_id`, vía
   `procesos_comerciales_client.py` — el cliente de solo lectura cross-servicio hacia el
@@ -68,13 +71,11 @@ Total: ~2151 líneas, leídas en su totalidad en esta sesión.
   `persistent_output.py:9-12` y en `persistir_output_final` (`persistent_output.py:106-244`,
   el payload de INSERT nunca incluye `rows`). Ver RN-EXTRACCIONAPI-003 en
   [`reglas.md`](./reglas.md).
-- **No tiene un único validador de UUID de vinculación.** Coexisten dos funciones con
-  responsabilidad solapada: `routers/licitaciones.py:validar_licitacion_id` (contra la
-  tabla legacy `licitaciones`, sin ningún call site activo confirmado en esta sesión) y
-  `procesos_comerciales_client.py:validar_proceso_comercial_id` (contra
-  `procesos_comerciales`, la que realmente usa `/procesar` hoy —
-  `main.py:174`). Ver la tensión completa documentada en
-  [`arquitectura.md`](./arquitectura.md) y [`pendientes.md`](./pendientes.md).
+- **Ya no expone CRUD de licitaciones ni endpoints de descarga legacy.**
+  `routers/licitaciones.py` (`/api/licitaciones/*`, tabla `licitaciones` inexistente),
+  `/descargar/{nombre_archivo}` y `/api/documentos/{id}/descargar` se retiraron en T2
+  junto con el HTML legacy que los consumía; el único validador de vinculación activo es
+  `procesos_comerciales_client.py:validar_proceso_comercial_id`.
 
 ## Documentos del módulo
 

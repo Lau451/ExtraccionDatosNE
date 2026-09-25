@@ -18,10 +18,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
+from services.extraccion.auth import get_drogueria_id_actual
+from services.extraccion.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
@@ -34,16 +35,14 @@ class ClienteActivo(BaseModel):
 
 
 @router.get("", response_model=list[ClienteActivo])
-async def listar_activos() -> list[ClienteActivo]:
-    """Clientes activos de la droguería, para el selector opcional de upload.
-    Si Supabase no está disponible, devuelve lista vacía (el selector queda oculto,
-    la carga sigue funcionando igual que hoy — ver index.html)."""
+async def listar_activos(
+    drogueria_id: str = Depends(get_drogueria_id_actual),
+) -> list[ClienteActivo]:
+    """Clientes activos de la droguería del usuario autenticado, para el selector
+    opcional de upload. Si Supabase no está disponible, devuelve lista vacía (el
+    selector queda oculto, la carga sigue funcionando igual que hoy)."""
     client = get_client()
     if client is None:
-        return []
-
-    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
-    if drogueria_id is None:
         return []
 
     try:

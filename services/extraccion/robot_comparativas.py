@@ -493,6 +493,7 @@ def _extraer_comparativa(
     filepath: Path,
     *,
     session_id: Optional[UUID] = None,
+    drogueria_id: Optional[str] = None,
     prompt: str = _PROMPT_UNIFIED,
 ) -> dict:
     """Extract providers and all items with prices from a comparativa document.
@@ -504,6 +505,10 @@ def _extraer_comparativa(
     Args:
         markdown: Compressed document content as a Markdown string.
         filepath: Original file path — used only in error messages.
+        session_id: Optional session UUID for Supabase partial-result persistence.
+            When given, drogueria_id is mandatory (see Raises).
+        drogueria_id: droguería del usuario autenticado (obligatorio si se pasa
+            session_id — sin fallback silencioso, ver guardar_chunk).
         prompt: Prompt a usar (default: _PROMPT_UNIFIED). Ver _procesar_chunk_pdf.
 
     Returns:
@@ -511,7 +516,16 @@ def _extraer_comparativa(
 
     Raises:
         NoProvidersDetectedError: If no providers detected across all chunks.
+        ValueError: If session_id is given without drogueria_id — persisting
+            chunks without a tenant would either fail or (worse) silently skip
+            persistence, so this fails fast instead.
     """
+    if session_id is not None and drogueria_id is None:
+        raise ValueError(
+            "drogueria_id es obligatorio cuando se pasa session_id "
+            "(persistencia de chunks en Supabase) — no hay fallback silencioso."
+        )
+
     chunks = _split_markdown_chunks(markdown) if len(markdown) > _CHUNK_THRESHOLD else [markdown]
     total = len(chunks)
 
@@ -555,7 +569,10 @@ def _extraer_comparativa(
 
         if session_id:
             try:
-                guardar_chunk(session_id=session_id, chunk_num=idx, resultado_json=result)
+                guardar_chunk(
+                    session_id=session_id, chunk_num=idx, resultado_json=result,
+                    drogueria_id=drogueria_id,
+                )
             except Exception as exc:
                 logger.warning("Error guardando chunk %d en Supabase: %s", idx, exc)
 
@@ -651,6 +668,7 @@ def _extraer_comparativa_por_paginas(
     ruta_pdf: Path,
     *,
     session_id: Optional[UUID] = None,
+    drogueria_id: Optional[str] = None,
     prompt: str = _PROMPT_UNIFIED,
 ) -> dict:
     """Extract providers and renglones from a large PDF using page-based chunking.
@@ -662,6 +680,9 @@ def _extraer_comparativa_por_paginas(
     Args:
         ruta_pdf: Path to the source PDF.
         session_id: Optional session UUID for Supabase partial-result persistence.
+            When given, drogueria_id is mandatory (see Raises).
+        drogueria_id: droguería del usuario autenticado (obligatorio si se pasa
+            session_id — sin fallback silencioso, ver guardar_chunk).
         prompt: Prompt a usar (default: _PROMPT_UNIFIED). Ver _procesar_chunk_pdf.
 
     Returns:
@@ -669,7 +690,16 @@ def _extraer_comparativa_por_paginas(
 
     Raises:
         NoProvidersDetectedError: If no providers detected across all chunks.
+        ValueError: If session_id is given without drogueria_id — persisting
+            chunks without a tenant would either fail or (worse) silently skip
+            persistence, so this fails fast instead.
     """
+    if session_id is not None and drogueria_id is None:
+        raise ValueError(
+            "drogueria_id es obligatorio cuando se pasa session_id "
+            "(persistencia de chunks en Supabase) — no hay fallback silencioso."
+        )
+
     chunk_paths = _split_pdf_by_pages(ruta_pdf)
     total = len(chunk_paths)
     workers = min(_MAX_PARALLEL_CHUNKS, total)
@@ -712,7 +742,10 @@ def _extraer_comparativa_por_paginas(
 
         if session_id:
             try:
-                guardar_chunk(session_id=session_id, chunk_num=idx, resultado_json=result)
+                guardar_chunk(
+                    session_id=session_id, chunk_num=idx, resultado_json=result,
+                    drogueria_id=drogueria_id,
+                )
             except Exception as exc:
                 logger.warning("Error guardando chunk %d en Supabase: %s", idx, exc)
 
@@ -895,6 +928,7 @@ def procesar_comparativa(
     nombre_original: Optional[str] = None,
     *,
     session_id: Optional[UUID] = None,
+    drogueria_id: Optional[str] = None,
     instrucciones_extra: Optional[str] = None,  # §8: formato por cliente, ver v_formato_para_prompt
 ) -> Path:
     """Process a price comparison document using optimized single-extraction flow.
@@ -968,7 +1002,7 @@ def procesar_comparativa(
     if usar_page_chunks:
         # New flow: split PDF by pages, parse each chunk, merge results
         all_data = _extraer_comparativa_por_paginas(
-            ruta_archivo, session_id=session_id, prompt=prompt_efectivo
+            ruta_archivo, session_id=session_id, drogueria_id=drogueria_id, prompt=prompt_efectivo
         )
     else:
         # Existing flow: parse full document to Markdown, chunk if too large
@@ -978,7 +1012,8 @@ def procesar_comparativa(
         _guardar_docling_output(markdown, nombre_base, cliente)
         markdown = _comprimir_markdown(markdown)
         all_data = _extraer_comparativa(
-            markdown, ruta_archivo, session_id=session_id, prompt=prompt_efectivo
+            markdown, ruta_archivo, session_id=session_id, drogueria_id=drogueria_id,
+            prompt=prompt_efectivo,
         )
 
     if not all_data.get("renglones"):
