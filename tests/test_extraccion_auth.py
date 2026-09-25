@@ -326,6 +326,4 @@ def test_reserve_extraction_no_filtra_duplicado_de_otra_drogueria(
         assert propio.data is not None  # la droguería dueña sí ve su duplicado
     finally:
         service_client.table("extraction_results").delete().eq("source_sha256", sha).execute()
-        # No dejar droguerías de prueba en la base compartida de TEST.
-        service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
