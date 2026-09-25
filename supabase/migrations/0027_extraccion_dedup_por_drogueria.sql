@@ -5,7 +5,7 @@
 -- droguerías distintas colisionaba, y la RPC reserve_extraction(p_sha) devolvía
 -- el extraction_id de la PRIMERA droguería que lo subió -- el 409 de /procesar podía
 -- filtrar el id (y por transitividad, la existencia de una extracción) de OTRA
--- droguería (openspec/changes/extraccion-multi-tenant, Problem).
+-- droguería (odd/tasks/extraccion-multi-tenant.md, Problem).
 --
 -- 1. uq_er_sha256 -> uq_er_drog_sha UNIQUE (drogueria_id, source_sha256): mismo
 --    archivo, distinta droguería, ya no colisiona.

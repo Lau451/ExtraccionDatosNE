@@ -283,12 +283,10 @@ class TestBuscarDuplicadoConLockRecibeDrogueriaId:
 
 @pytest.mark.integration
 def test_reserve_extraction_no_filtra_duplicado_de_otra_drogueria(
-    service_client, seed_drogueria, seed_extraction_result_factory,
+    service_client, seed_drogueria,
 ):
-    """No puede pasar hasta que el padre aplique la migración 0027 a Supabase TEST
-    (grnamollopxdlstcpxhc) -- reserve_extraction(p_sha, p_drogueria_id) todavía no
-    existe con esa firma en la base real. Prueba contra la RPC real: un duplicado en
-    OTRA droguería no debe bloquear un upload en la propia."""
+    """Contra la RPC real (migración 0027): un duplicado en OTRA droguería no
+    bloquea un upload en la propia, y la propia droguería sí recibe su id."""
     import secrets
 
     sha = secrets.token_hex(32)
@@ -321,6 +319,13 @@ def test_reserve_extraction_no_filtra_duplicado_de_otra_drogueria(
         ).execute()
 
         assert resultado.data is None  # sin duplicado EN LA PROPIA droguería
+
+        propio = service_client.rpc(
+            "reserve_extraction", {"p_sha": sha, "p_drogueria_id": otra_drogueria["id"]}
+        ).execute()
+        assert propio.data is not None  # la droguería dueña sí ve su duplicado
     finally:
         service_client.table("extraction_results").delete().eq("source_sha256", sha).execute()
+        # No dejar droguerías de prueba en la base compartida de TEST.
+        service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
