@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import services.extraccion.supabase_client as sc_module
+from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.main import app
 
 
@@ -51,6 +52,15 @@ def reset_supabase():
     sc_module.reset_client_for_testing()
     yield
     sc_module.reset_client_for_testing()
+
+
+@pytest.fixture(autouse=True)
+def _autenticado():
+    app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+        id="usuario-test", drogueria_id="drogueria-1", rol="comercial"
+    )
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture

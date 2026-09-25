@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
+from services.extraccion.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ async def crear_sesion(
     client_id: str,
     total_chunks: int,
     doc_type: str,
+    drogueria_id: str,
     formato_usado_id: str | None = None,
     subido_por: str | None = None,
 ) -> UUID | None:
@@ -40,6 +41,9 @@ async def crear_sesion(
                       presupuestacion/ — mismo criterio que persistent_output.py).
         total_chunks: Número estimado de chunks (puede ser 0 si aún no se sabe).
         doc_type:     Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
+        drogueria_id: droguería del usuario autenticado que subió el documento
+                      (services.extraccion.auth.get_drogueria_id_actual). Obligatorio,
+                      sin fallback -- ver resolver_drogueria_id_unica (removida).
         formato_usado_id: id de cliente_formato_documentos usado para enriquecer el
                       prompt (§8), si se resolvió uno. Trazabilidad.
         subido_por:   usuario_id (auth.uid()) de quien subió el documento, resuelto
@@ -50,11 +54,6 @@ async def crear_sesion(
     """
     client = get_client()
     if client is None:
-        return None
-
-    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
-    if drogueria_id is None:
-        logger.error("crear_sesion: no se pudo resolver drogueria_id — INSERT abortado.")
         return None
 
     payload = {
@@ -96,6 +95,7 @@ def guardar_chunk(
     session_id: UUID,
     chunk_num: int,
     resultado_json: dict,
+    drogueria_id: str,
 ) -> bool:
     """
     Upsert de un chunk en chunk_results.
@@ -108,17 +108,13 @@ def guardar_chunk(
         session_id:     UUID de la sesión de procesamiento.
         chunk_num:      Número de chunk (base 0 o base 1, consistente con el robot).
         resultado_json: Dict con los datos extraídos por Gemini para este chunk.
+        drogueria_id:   droguería del usuario autenticado (obligatorio, sin fallback).
 
     Returns:
         True si el guardado fue exitoso, False si falló (sin propagar excepción).
     """
     client = get_client()
     if client is None:
-        return False
-
-    drogueria_id = resolver_drogueria_id_unica(client)
-    if drogueria_id is None:
-        logger.warning("guardar_chunk: no se pudo resolver drogueria_id — upsert abortado.")
         return False
 
     payload = {

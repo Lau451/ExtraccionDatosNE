@@ -22,11 +22,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 import services.extraccion.supabase_client as sc_module
+from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.main import app
 
-# Sin dependency_override deliberadamente: estos tests llaman a /procesar sin
-# Authorization, igual que el HTML viejo -- ejercitan el camino anónimo real
-# (usuario_id=None) en vez de simular un login que ese flujo nunca tuvo.
+# Auth obligatoria (extraccion-multi-tenant, T1): /procesar y /api/documentos ya no
+# aceptan caller anónimo -- el HTML viejo que lo hacía se retira en T2. Estos tests
+# ejercitan el flujo de negocio (upload/parsing/persistencia), no el gate de auth en
+# sí (eso vive en tests/test_extraccion_auth.py), así que autentican con un usuario
+# fijo vía dependency_override.
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +42,15 @@ def reset_supabase_singleton():
     sc_module.reset_client_for_testing()
     yield
     sc_module.reset_client_for_testing()
+
+
+@pytest.fixture(autouse=True)
+def _autenticado():
+    app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+        id="usuario-test", drogueria_id="drogueria-test", rol="comercial"
+    )
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
@@ -699,6 +711,7 @@ class TestListarDocumentosConLicitacion:
         mock_result.data = [doc_row]
         mock_qb = MagicMock()
         mock_qb.select.return_value = mock_qb
+        mock_qb.eq.return_value = mock_qb
         mock_qb.order.return_value = mock_qb
         mock_qb.execute.return_value = mock_result
 
@@ -737,6 +750,7 @@ class TestListarDocumentosConLicitacion:
         mock_result.data = [doc_row]
         mock_qb = MagicMock()
         mock_qb.select.return_value = mock_qb
+        mock_qb.eq.return_value = mock_qb
         mock_qb.order.return_value = mock_qb
         mock_qb.execute.return_value = mock_result
 
@@ -777,6 +791,7 @@ class TestListarDocumentosConLicitacion:
         mock_result.data = [doc_row]
         mock_qb = MagicMock()
         mock_qb.select.return_value = mock_qb
+        mock_qb.eq.return_value = mock_qb
         mock_qb.order.return_value = mock_qb
         mock_qb.execute.return_value = mock_result
 

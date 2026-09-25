@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.main import app
 
 client = TestClient(app)
@@ -28,6 +29,15 @@ def _qb(data):
     return qb
 
 
+@pytest.fixture(autouse=True)
+def _autenticado():
+    app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+        id="usuario-test", drogueria_id="drogueria-1", rol="comercial"
+    )
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 class TestListarClientesActivos:
     def test_devuelve_clientes_de_la_drogueria(self, mocker):
         mock_supabase = MagicMock()
@@ -38,9 +48,6 @@ class TestListarClientesActivos:
             ]
         )
         mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch(
-            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
-        )
 
         response = client.get("/api/clientes")
 
@@ -60,9 +67,6 @@ class TestListarClientesActivos:
             ]
         )
         mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch(
-            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
-        )
 
         response = client.get("/api/clientes")
 
@@ -81,9 +85,6 @@ class TestListarClientesActivos:
             ]
         )
         mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch(
-            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
-        )
 
         response = client.get("/api/clientes")
 
@@ -98,15 +99,20 @@ class TestListarClientesActivos:
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_sin_drogueria_resuelta_devuelve_lista_vacia(self, mocker):
+    def test_usuario_sin_drogueria_asignada_devuelve_403(self, mocker):
+        """Ya no existe el fallback "sin drogueria resuelta -> lista vacia": si el
+        perfil del usuario autenticado no tiene drogueria_id, get_drogueria_id_actual
+        corta con 403 antes de tocar Supabase (sin fallback silencioso)."""
+        app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+            id="usuario-huerfano", drogueria_id=None, rol="comercial"
+        )
         mock_supabase = MagicMock()
         mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch("services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value=None)
 
         response = client.get("/api/clientes")
 
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 403
+        mock_supabase.table.assert_not_called()
 
     def test_error_de_consulta_devuelve_lista_vacia_sin_propagar(self, mocker):
         mock_supabase = MagicMock()
@@ -114,9 +120,6 @@ class TestListarClientesActivos:
             "DB error simulado"
         )
         mocker.patch("services.extraccion.routers.clientes.get_client", return_value=mock_supabase)
-        mocker.patch(
-            "services.extraccion.routers.clientes.resolver_drogueria_id_unica", return_value="drogueria-1"
-        )
 
         response = client.get("/api/clientes")
 

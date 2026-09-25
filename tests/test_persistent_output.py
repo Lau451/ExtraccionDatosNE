@@ -51,23 +51,16 @@ def otro_archivo_temp():
 @pytest.fixture
 def mock_supabase_client(mocker):
     """
-    Mock de supabase.Client para persistent_output.
-    - table("droguerias").select(...).limit(...).execute() → una fila (resolución de
-      drogueria_id, ver _resolver_drogueria_id).
-    - cualquier otro table(...).insert(...).execute() → una fila con el id generado.
+    Mock de supabase.Client para persistent_output. drogueria_id ya no se resuelve
+    acá -- lo enhebra explícito el caller. table(nombre).insert(...).execute() → una
+    fila con el id generado.
     """
     mock = MagicMock()
     extraction_uuid = str(uuid.uuid4())
-    drogueria_uuid = str(uuid.uuid4())
 
     def _table(nombre):
         tabla_mock = MagicMock()
-        if nombre == "droguerias":
-            tabla_mock.select.return_value.limit.return_value.execute.return_value.data = [
-                {"id": drogueria_uuid}
-            ]
-        else:
-            tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
+        tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
         return tabla_mock
 
     mock.table.side_effect = _table
@@ -124,7 +117,7 @@ class TestBuscarDuplicadoConLock:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
-            source_sha256="a" * 64
+            source_sha256="a" * 64, drogueria_id="drogueria-1"
         )
 
         assert resultado is not None
@@ -142,7 +135,7 @@ class TestBuscarDuplicadoConLock:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
-            source_sha256="b" * 64
+            source_sha256="b" * 64, drogueria_id="drogueria-1"
         )
 
         assert resultado is None
@@ -155,7 +148,7 @@ class TestBuscarDuplicadoConLock:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
-            source_sha256="c" * 64
+            source_sha256="c" * 64, drogueria_id="drogueria-1"
         )
 
         assert resultado is None
@@ -171,7 +164,7 @@ class TestBuscarDuplicadoConLock:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 
         resultado = await persistent_output.buscar_duplicado_con_lock(
-            source_sha256="d" * 64
+            source_sha256="d" * 64, drogueria_id="drogueria-1"
         )
 
         assert resultado is None
@@ -202,6 +195,7 @@ class TestPersistirOutputFinal:
             client_id="cliente_a",
             source_filename="comparativa.xlsx",
             source_sha256="e" * 64,
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is not None
@@ -225,6 +219,7 @@ class TestPersistirOutputFinal:
             client_id="cliente_a",
             source_filename="comparativa.xlsx",
             source_sha256="f" * 64,
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is None
@@ -257,6 +252,7 @@ class TestPersistirOutputFinal:
                 client_id="cliente_a",
                 source_filename="grande.xlsx",
                 source_sha256="g" * 64,
+                drogueria_id="drogueria-1",
             )
 
         # El resultado sigue siendo válido (INSERT se ejecutó)
@@ -283,6 +279,7 @@ class TestPersistirOutputFinal:
             client_id="cliente_b",
             source_filename="doc.pdf",
             source_sha256="h" * 64,
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is None
@@ -306,6 +303,7 @@ class TestPersistirOutputFinal:
             client_id="cliente_a",
             source_filename="doc.pdf",
             source_sha256="i" * 64,
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is None

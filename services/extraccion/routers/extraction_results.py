@@ -5,8 +5,9 @@ import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from services.extraccion.auth import get_drogueria_id_actual
 from services.extraccion.schemas.licitaciones import ExtractionResultOut, ExtractionResultUpdate
 from services.extraccion.supabase_client import get_client
 
@@ -30,17 +31,26 @@ def _require_client():
 
 
 @router.patch("/{result_id}", response_model=ExtractionResultOut)
-async def actualizar(result_id: UUID, payload: ExtractionResultUpdate):
+async def actualizar(
+    result_id: UUID,
+    payload: ExtractionResultUpdate,
+    drogueria_id: str = Depends(get_drogueria_id_actual),
+):
     client = _require_client()
     update_body = payload.to_db_payload()
     if not update_body:
         raise HTTPException(status_code=400, detail="Body vacío: nada para actualizar")
 
     def _run():
+        # .eq("drogueria_id", drogueria_id) en el UPDATE (no solo en el SELECT
+        # posterior): un id que existe pero es de otra droguería actualiza 0 filas,
+        # igual que un id inexistente -- mismo 404, sin distinguir los dos casos
+        # (no filtra existencia entre tenants).
         upd = (
             client.table("extraction_results")
             .update(update_body)
             .eq("id", str(result_id))
+            .eq("drogueria_id", drogueria_id)
             .execute()
         )
         if not upd.data:
@@ -49,6 +59,7 @@ async def actualizar(result_id: UUID, payload: ExtractionResultUpdate):
             client.table("extraction_results")
             .select(_SELECT_FIELDS)
             .eq("id", str(result_id))
+            .eq("drogueria_id", drogueria_id)
             .limit(1)
             .execute()
         )

@@ -53,23 +53,18 @@ def extraction_uuid():
 
 
 def _supabase_mock(extraction_uuid: str) -> tuple[MagicMock, dict[str, MagicMock]]:
-    """Mock del cliente Supabase: resuelve drogueria_id y simula el INSERT en
-    extraction_results como exitoso. Devuelve también el dict de mocks por tabla
-    (side_effect crea mocks desconectados del padre — hay que guardar la referencia
-    para poder assertear sobre ellos, `mock.mock_calls` no los ve)."""
+    """Mock del cliente Supabase: simula el INSERT en extraction_results como exitoso
+    (drogueria_id ya no se resuelve acá, lo enhebra explícito el caller). Devuelve
+    también el dict de mocks por tabla (side_effect crea mocks desconectados del padre
+    — hay que guardar la referencia para poder assertear sobre ellos, `mock.mock_calls`
+    no los ve)."""
     mock = MagicMock()
-    drogueria_uuid = str(uuid.uuid4())
     tablas: dict[str, MagicMock] = {}
 
     def _table(nombre):
         if nombre not in tablas:
             tabla_mock = MagicMock()
-            if nombre == "droguerias":
-                tabla_mock.select.return_value.limit.return_value.execute.return_value.data = [
-                    {"id": drogueria_uuid}
-                ]
-            else:
-                tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
+            tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
             tablas[nombre] = tabla_mock
         return tablas[nombre]
 
@@ -103,6 +98,7 @@ class TestPersistirConLicitacionId:
             client_id="cliente1",
             source_filename="doc.pdf",
             source_sha256="a" * 64,
+            drogueria_id="drogueria-1",
             licitacion_id=lic_id,
         )
 
@@ -133,6 +129,7 @@ class TestPersistirConLicitacionId:
             client_id="cliente1",
             source_filename="doc.pdf",
             source_sha256="b" * 64,
+            drogueria_id="drogueria-1",
             licitacion_id=None,
         )
 
@@ -166,6 +163,7 @@ class TestSchedulePersistOutputPropagaLicitacionId:
             client_id="cliente1",
             source_filename="doc.pdf",
             source_sha256="c" * 64,
+            drogueria_id="drogueria-1",
             licitacion_id=lic_id,
         )
 

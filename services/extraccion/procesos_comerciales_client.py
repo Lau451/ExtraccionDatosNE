@@ -22,19 +22,26 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
+from services.extraccion.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 
 
-async def validar_proceso_comercial_id(proceso_comercial_id: str | None) -> str | None:
-    """Valida que proceso_comercial_id sea un UUID existente en la BD, para la droguería que
-    sirve esta instancia.
+async def validar_proceso_comercial_id(
+    proceso_comercial_id: str | None, *, drogueria_id: str
+) -> str | None:
+    """Valida que proceso_comercial_id sea un UUID existente en la BD, para la droguería del
+    usuario autenticado.
 
     Retorna el id normalizado o None si viene vacío.
     Lanza HTTPException 422 si el id no es UUID válido, no existe, o pertenece a otra droguería
     (SC-25: fail-fast antes de cualquier I/O o invocación a Gemini). No se distingue "no existe"
     de "es de otra droguería" en el mensaje de error, para no filtrar existencia entre tenants.
+
+    Args:
+        proceso_comercial_id: id a validar (o vacío).
+        drogueria_id: droguería del usuario autenticado (obligatorio, sin fallback --
+            ver resolver_drogueria_id_unica, removida).
     """
     if not proceso_comercial_id or not proceso_comercial_id.strip():
         return None
@@ -54,13 +61,6 @@ async def validar_proceso_comercial_id(proceso_comercial_id: str | None) -> str 
             detail="Supabase no disponible",
         )
 
-    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
-    if drogueria_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No se pudo resolver la droguería de esta instancia",
-        )
-
     res = await asyncio.to_thread(
         lambda: client.table("procesos_comerciales")
         .select("id")
@@ -77,9 +77,11 @@ async def validar_proceso_comercial_id(proceso_comercial_id: str | None) -> str 
     return proceso_comercial_id
 
 
-async def listar_nombres_procesos_comerciales(ids: list[str]) -> dict[str, str]:
+async def listar_nombres_procesos_comerciales(
+    ids: list[str], *, drogueria_id: str
+) -> dict[str, str]:
     """Resuelve {id: nombre} para una lista de proceso_comercial_id, escopeado a la droguería
-    que sirve esta instancia.
+    del usuario autenticado.
 
     Los ids que no matchean (borrados, o de otra droguería — no debería pasar si
     validar_proceso_comercial_id() se usó al crear el vínculo, pero esta función no confía en
@@ -92,10 +94,6 @@ async def listar_nombres_procesos_comerciales(ids: list[str]) -> dict[str, str]:
 
     client = get_client()
     if client is None:
-        return {}
-
-    drogueria_id = await asyncio.to_thread(resolver_drogueria_id_unica, client)
-    if drogueria_id is None:
         return {}
 
     try:

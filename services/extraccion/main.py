@@ -14,8 +14,9 @@ from pathlib import Path
 from uuid import UUID, uuid4
 from urllib.parse import urlencode
 
-from services.extraccion.auth import get_usuario_id_actual
-from services.extraccion.supabase_client import get_client, resolver_drogueria_id_unica
+from services.extraccion.auth import UsuarioPerfil, get_current_user, get_drogueria_id_actual
+from services.extraccion.supabase_client import get_client
+from services.shared.exceptions import register_exception_handlers
 from services.extraccion.routers.licitaciones import router as licitaciones_router
 from services.extraccion.routers.extraction_results import router as extraction_results_router
 from services.extraccion.routers.clientes import router as clientes_router
@@ -51,6 +52,7 @@ app = FastAPI(title="Extractor de Documentos")
 app.include_router(licitaciones_router)
 app.include_router(extraction_results_router)
 app.include_router(clientes_router)
+register_exception_handlers(app)
 
 _cors_origins = [
     origen.strip()
@@ -188,7 +190,8 @@ async def procesar(
     licitacion_id: str = Form(""),
     cliente_id: str = Form(""),
     grupo_id: str = Form(""),
-    usuario_id: str | None = Depends(get_usuario_id_actual),
+    usuario: UsuarioPerfil = Depends(get_current_user),
+    drogueria_id: str = Depends(get_drogueria_id_actual),
 ):
     # D13: grupo_id solo aplica a tipo=="ordenes" — se ignora entero para cualquier
     # otro tipo. Fail-fast antes de cualquier I/O si viene y no es un UUID v4 (SC-25).
@@ -201,7 +204,9 @@ async def procesar(
     # openspec/changes/validar-extraccion/proposal.md). licitacion_id sigue aceptado y
     # validado si viene seteado (por compatibilidad / otros callers), simplemente no es
     # obligatorio para ningún tipo de documento en este endpoint.
-    licitacion_id_validado = await validar_proceso_comercial_id(licitacion_id)
+    licitacion_id_validado = await validar_proceso_comercial_id(
+        licitacion_id, drogueria_id=drogueria_id
+    )
 
     # ======================
     # GUARDAR ARCHIVO
@@ -237,7 +242,9 @@ async def procesar(
     # ======================
     sha256_doc = await asyncio.to_thread(calcular_sha256, destino)
 
-    existing_extraction = await buscar_duplicado_con_lock(source_sha256=sha256_doc)
+    existing_extraction = await buscar_duplicado_con_lock(
+        source_sha256=sha256_doc, drogueria_id=drogueria_id
+    )
     if existing_extraction:
         logger.warning("Documento duplicado detectado: %s - extraction_id: %s", nombre_original, existing_extraction)
         return render_upload_response(
@@ -267,8 +274,9 @@ async def procesar(
         client_id=origen_id,
         total_chunks=0,  # placeholder; se actualiza al procesar chunks
         doc_type=doc_type,
+        drogueria_id=drogueria_id,
         formato_usado_id=formato_id,
-        subido_por=usuario_id,
+        subido_por=usuario.id,
     )
 
     # ======================
@@ -280,6 +288,7 @@ async def procesar(
                 csv_generado = await asyncio.to_thread(
                     procesar_comparativa, destino, nombre_original,
                     session_id=session_id,
+                    drogueria_id=drogueria_id,
                     instrucciones_extra=instrucciones_prompt,
                 )
                 params = urlencode({"origen": origen_id, "modulo": "comparativas"})
@@ -319,6 +328,7 @@ async def procesar(
             client_id=origen_id,
             source_filename=nombre_original,
             source_sha256=sha256_doc,
+            drogueria_id=drogueria_id,
             licitacion_id=licitacion_id_validado,
             grupo_id=grupo_id_validado,
         )
@@ -417,7 +427,9 @@ async def historial_page(request: Request):
 
 
 @app.get("/api/documentos")
-async def listar_documentos(tipo: str = ""):
+async def listar_documentos(
+    tipo: str = "", drogueria_id: str = Depends(get_drogueria_id_actual)
+):
     client = get_client()
     if not client:
         return JSONResponse({"documentos": [], "sin_persistencia": True})
@@ -429,6 +441,7 @@ async def listar_documentos(tipo: str = ""):
                 "id,source_filename,document_type,row_count,status,created_at,"
                 "proceso_comercial_id"
             )
+            .eq("drogueria_id", drogueria_id)
             .order("created_at", desc=True)
         )
         if tipo in ("comparativa", "licitacion"):
@@ -441,7 +454,9 @@ async def listar_documentos(tipo: str = ""):
     # Resuelve nombres via procesos_comerciales_client (escopeado por drogueria_id) en vez del
     # embed roto contra la tabla "licitaciones" inexistente.
     proceso_ids = {row["proceso_comercial_id"] for row in docs if row.get("proceso_comercial_id")}
-    nombres = await listar_nombres_procesos_comerciales(list(proceso_ids))
+    nombres = await listar_nombres_procesos_comerciales(
+        list(proceso_ids), drogueria_id=drogueria_id
+    )
 
     for row in docs:
         proceso_id = row.pop("proceso_comercial_id", None)
@@ -451,16 +466,21 @@ async def listar_documentos(tipo: str = ""):
 
 
 @app.get("/api/documentos/{doc_id}")
-async def detalle_documento(doc_id: str):
+async def detalle_documento(
+    doc_id: str, drogueria_id: str = Depends(get_drogueria_id_actual)
+):
     client = get_client()
     if not client:
         return JSONResponse({"error": "Persistencia no disponible"}, status_code=503)
 
     def _query():
+        # .eq("drogueria_id", drogueria_id): un doc_id de OTRA droguería no matchea
+        # -> mismo 404 que un doc_id inexistente (no filtra existencia entre tenants).
         meta_r = (
             client.table("extraction_results")
             .select("id,source_filename,document_type,client_id,row_count,status,created_at")
             .eq("id", doc_id)
+            .eq("drogueria_id", drogueria_id)
             .limit(1)
             .execute()
         )

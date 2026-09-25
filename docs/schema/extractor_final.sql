@@ -571,7 +571,7 @@ CREATE TABLE extraction_results (
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
-    CONSTRAINT uq_er_sha256 UNIQUE (source_sha256),
+    CONSTRAINT uq_er_drog_sha UNIQUE (drogueria_id, source_sha256),
     CONSTRAINT ck_er_doc_type CHECK (document_type IN ('comparativa', 'licitacion', 'cotizacion', 'orden_compra')),
     CONSTRAINT ck_er_status CHECK (status IN ('completed', 'partial', 'failed'))
 );

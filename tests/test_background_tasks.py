@@ -41,6 +41,7 @@ def kwargs_base(tmp_path):
         "client_id": "cliente_a",
         "source_filename": "comparativa.xlsx",
         "source_sha256": "a" * 64,
+        "drogueria_id": "drogueria-1",
     }
 
 

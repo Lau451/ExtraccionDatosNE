@@ -35,32 +35,24 @@ def mock_supabase_client(mocker):
     """
     Mock de supabase.Client completo.
 
-    "droguerias" se distingue del resto vía side_effect (igual que en
-    test_persistent_output.py) para que resolver_drogueria_id_unica() reciba una
-    respuesta determinística en vez de la permisividad de un MagicMock genérico
-    (que sería truthy/subscriptable igual, ocultando el bug que estamos probando).
+    drogueria_id ya no se resuelve acá -- lo enhebra explícito el caller (ver
+    services/extraccion/auth.py::get_drogueria_id_actual), así que este mock no
+    necesita distinguir la tabla "droguerias" del resto.
 
     Estructura del mock:
-      client.table("droguerias").select(...).limit(...).execute() → una fila real
-      client.table(nombre).insert(payload).execute() → MagicMock con .data (resto de tablas)
+      client.table(nombre).insert(payload).execute() → MagicMock con .data
       client.table(nombre).upsert(...).execute()     → MagicMock
       client.table(nombre).select(...).eq(...).execute() → MagicMock con .data
       client.table(nombre).update(...).eq(...).execute() → MagicMock
     """
     mock = MagicMock()
     session_uuid = str(uuid.uuid4())
-    drogueria_uuid = str(uuid.uuid4())
     tablas: dict[str, MagicMock] = {}
 
     def _table(nombre):
         if nombre not in tablas:
             tabla_mock = MagicMock()
-            if nombre == "droguerias":
-                tabla_mock.select.return_value.limit.return_value.execute.return_value.data = [
-                    {"id": drogueria_uuid}
-                ]
-            else:
-                tabla_mock.insert.return_value.execute.return_value.data = [{"id": session_uuid}]
+            tabla_mock.insert.return_value.execute.return_value.data = [{"id": session_uuid}]
             tablas[nombre] = tabla_mock
         return tablas[nombre]
 
@@ -90,6 +82,7 @@ class TestCrearSesion:
             client_id="cliente_a",
             total_chunks=5,
             doc_type="comparativa",
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is not None
@@ -109,6 +102,7 @@ class TestCrearSesion:
             client_id="cliente_b",
             total_chunks=0,
             doc_type="licitacion",
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is None
@@ -120,8 +114,8 @@ class TestCrearSesion:
         """
         Regresión: processing_sessions no tiene columna client_id (schema nuevo de
         presupuestacion/) y sí exige drogueria_id NOT NULL. El INSERT real a
-        processing_sessions no debe mandar "client_id" y SÍ debe mandar
-        "drogueria_id" con el valor resuelto por resolver_drogueria_id_unica().
+        processing_sessions no debe mandar "client_id" y SÍ debe mandar el
+        "drogueria_id" enhebrado explícitamente por el caller (sin fallback).
         """
         mock, _, _tablas = mock_supabase_client
 
@@ -130,12 +124,13 @@ class TestCrearSesion:
             client_id="cliente_a",
             total_chunks=5,
             doc_type="comparativa",
+            drogueria_id="drogueria-explicita",
             formato_usado_id="formato-1",
         )
 
         payload = _tablas["processing_sessions"].insert.call_args[0][0]
         assert "client_id" not in payload
-        assert "drogueria_id" in payload and payload["drogueria_id"] is not None
+        assert payload["drogueria_id"] == "drogueria-explicita"
         assert payload["formato_usado_id"] == "formato-1"
 
 
@@ -158,6 +153,7 @@ class TestGuardarChunk:
             session_id=session_id,
             chunk_num=0,
             resultado_json={"proveedor": "ACME", "precio": 100.0},
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is True
@@ -178,11 +174,13 @@ class TestGuardarChunk:
             session_id=session_id,
             chunk_num=1,
             resultado_json=payload,
+            drogueria_id="drogueria-1",
         )
         resultado_2 = persistent_chunking.guardar_chunk(
             session_id=session_id,
             chunk_num=1,
             resultado_json=payload,
+            drogueria_id="drogueria-1",
         )
 
         assert resultado_1 is True
@@ -202,6 +200,7 @@ class TestGuardarChunk:
             session_id=session_id,
             chunk_num=0,
             resultado_json={"dato": "valor"},
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is False
@@ -209,7 +208,8 @@ class TestGuardarChunk:
     def test_guardar_chunk_payload_incluye_drogueria_id(self, mock_supabase_client):
         """
         Regresión: chunk_results también exige drogueria_id NOT NULL. El upsert real
-        debe incluirlo (resuelto por resolver_drogueria_id_unica()).
+        debe incluir el drogueria_id enhebrado explícitamente por el caller (sin
+        fallback).
         """
         mock, _, _tablas = mock_supabase_client
         session_id = UUID("12345678-1234-5678-1234-567812345678")
@@ -218,10 +218,11 @@ class TestGuardarChunk:
             session_id=session_id,
             chunk_num=0,
             resultado_json={"proveedor": "ACME", "precio": 100.0},
+            drogueria_id="drogueria-explicita",
         )
 
         payload = _tablas["chunk_results"].upsert.call_args[0][0]
-        assert "drogueria_id" in payload and payload["drogueria_id"] is not None
+        assert payload["drogueria_id"] == "drogueria-explicita"
 
     def test_guardar_chunk_exception_retorna_false(self, mock_supabase_client):
         """
@@ -241,6 +242,7 @@ class TestGuardarChunk:
             session_id=session_id,
             chunk_num=2,
             resultado_json={"dato": "valor"},
+            drogueria_id="drogueria-1",
         )
 
         assert resultado is False
