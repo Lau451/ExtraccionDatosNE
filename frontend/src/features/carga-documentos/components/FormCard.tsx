@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import clsx from 'clsx'
+import { ApiError } from '@/lib/api/client'
 import {
   listarClientes,
   listarDocumentosRecientes,
@@ -58,6 +59,15 @@ interface ResultadoPorArchivo {
   archivo: string
   ok: boolean
   error?: string
+  /** 409 de duplicado: id de la extracción ya existente (misma droguería)
+   * para ofrecer ir directo a ella en vez de solo mostrar el error. */
+  extractionIdExistente?: string
+}
+
+function extractionIdDuplicado(error: unknown): string | undefined {
+  if (!(error instanceof ApiError) || error.status !== 409) return undefined
+  const body = error.body as { extraction_id?: unknown } | null
+  return typeof body?.extraction_id === 'string' ? body.extraction_id : undefined
 }
 
 // D13 § Agrupar al subir -- con N>1 archivos de tipo 'ordenes' se genera un
@@ -92,6 +102,7 @@ async function procesarMultiple(
         archivo: archivo.name,
         ok: false,
         error: error instanceof Error ? error.message : 'Error desconocido',
+        extractionIdExistente: extractionIdDuplicado(error),
       })
     }
   }
@@ -115,7 +126,11 @@ export function FormCard() {
       const countAntes = queryClient.getQueryData<{ documentos: unknown[] }>(RECIENTES_KEY)
         ?.documentos.length ?? 0
       const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
-      const documentos = await esperarNuevoDocumento(queryClient, countAntes, archivos.length)
+      // Si ningún archivo se procesó (p.ej. todos duplicados) no va a aparecer
+      // ningún documento nuevo: esperarlo solo demoraba el mensaje de error.
+      const procesados = resultados.filter((resultado) => resultado.ok).length
+      const documentos =
+        procesados > 0 ? await esperarNuevoDocumento(queryClient, countAntes, procesados) : []
       return { resultados, documentos }
     },
     onSuccess: ({ resultados, documentos }) => {
@@ -249,6 +264,21 @@ export function FormCard() {
             {mutation.data?.resultados.map((resultado) => (
               <li key={resultado.archivo} className={resultado.ok ? 'text-emerald-600' : 'text-red-600'}>
                 {resultado.archivo}: {resultado.ok ? 'procesado correctamente' : resultado.error}
+                {resultado.extractionIdExistente && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate({
+                        to: '/validar-extraccion/$extractionId',
+                        params: { extractionId: resultado.extractionIdExistente as string },
+                        search: { rowCount: 0 },
+                      })
+                    }
+                    className="ml-2 font-medium text-accent underline"
+                  >
+                    Ver extracción existente
+                  </button>
+                )}
               </li>
             ))}
           </ul>
