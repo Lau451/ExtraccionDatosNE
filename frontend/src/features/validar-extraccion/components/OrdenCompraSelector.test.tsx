@@ -43,6 +43,7 @@ function ArnesConBotonConfirmarOC({ extractionId }: { extractionId: string }) {
       <OrdenCompraSelector
         extractionId={extractionId}
         onClienteConfirmado={(id) => setClienteId(id)}
+        onClienteDesconfirmado={() => setClienteId(null)}
       />
       <button type="button" disabled={!clienteId}>
         Confirmar OC
@@ -142,6 +143,69 @@ describe('OrdenCompraSelector (D3/D3.2)', () => {
       expect(radio).not.toBeChecked()
     }
     expect(screen.getByRole('button', { name: /confirmar oc/i })).toBeDisabled()
+  })
+
+  it('al confirmar la sugerencia muestra el cliente confirmado y oculta "Confirmar cliente"', async () => {
+    vi.mocked(obtenerClienteCandidato).mockResolvedValue({
+      origen: 'alias',
+      candidatos: [CANDIDATO_ALIAS],
+      cuit_extraido: '30111111111',
+      razon_social_extraida: 'HOSPITAL CENTRAL',
+      advertencias: [],
+    })
+
+    renderConQueryClient(<ArnesConBotonConfirmarOC extractionId="ext-1" />)
+
+    await waitFor(() => expect(screen.getByText(/hospital central/i)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^confirmar cliente$/i }))
+
+    expect(screen.getByText(/cliente confirmado/i)).toBeInTheDocument()
+    expect(screen.getByText(/hospital central/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^confirmar cliente$/i })).not.toBeInTheDocument()
+  })
+
+  it('"Cambiar" vuelve a la sugerencia y deshabilita otra vez "Confirmar OC"', async () => {
+    vi.mocked(obtenerClienteCandidato).mockResolvedValue({
+      origen: 'alias',
+      candidatos: [CANDIDATO_ALIAS],
+      cuit_extraido: '30111111111',
+      razon_social_extraida: 'HOSPITAL CENTRAL',
+      advertencias: [],
+    })
+
+    renderConQueryClient(<ArnesConBotonConfirmarOC extractionId="ext-1" />)
+
+    await waitFor(() => expect(screen.getByText(/hospital central/i)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^confirmar cliente$/i }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /confirmar oc/i })).not.toBeDisabled(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /cambiar/i }))
+
+    expect(screen.queryByText(/cliente confirmado/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^confirmar cliente$/i })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /confirmar oc/i })).toBeDisabled(),
+    )
+  })
+
+  it('el cliente elegido en el buscador manual también se muestra como confirmado', async () => {
+    vi.mocked(obtenerClienteCandidato).mockResolvedValue({
+      origen: 'ninguno',
+      candidatos: [],
+      cuit_extraido: null,
+      razon_social_extraida: null,
+      advertencias: [],
+    })
+
+    renderConQueryClient(<ArnesConBotonConfirmarOC extractionId="ext-1" />)
+
+    await waitFor(() => expect(screen.getByText(/buscador manual/i)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /elegir cliente manual/i }))
+
+    expect(screen.getByText(/cliente confirmado/i)).toBeInTheDocument()
+    expect(screen.getByText(/cliente manual/i)).toBeInTheDocument()
   })
 
   it('sin sugerencia (origen "ninguno") cae directo al buscador, sin pedir "No es este"', async () => {
