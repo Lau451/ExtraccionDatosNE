@@ -4,6 +4,10 @@ Numeración D-EXTRACCIONAPI-NNN, verificada contra el código en esta sesión.
 
 ### D-EXTRACCIONAPI-001 — Servir HTML y JSON desde el mismo endpoint `/procesar`
 
+> **Superada (T2, 2026-09-25)**: el HTML legacy se retiró — `render_upload_response`
+> ya no existe, `/procesar` responde JSON exclusivamente. Decisión conservada como
+> registro histórico.
+
 - **Decisión**: `render_upload_response` decide el formato de la respuesta
   (`JSONResponse` vs. `templates/index.html` renderizado) en función de headers HTTP
   (`Accept`, `X-Requested-With`), en vez de tener dos rutas separadas o una API JSON pura
@@ -28,6 +32,10 @@ Numeración D-EXTRACCIONAPI-NNN, verificada contra el código en esta sesión.
 
 ### D-EXTRACCIONAPI-002 — Mantener `routers/licitaciones.py` intacto, con un validador de UUID paralelo sin uso activo
 
+> **Superada (T2, 2026-09-25)**: `routers/licitaciones.py` se eliminó junto con el HTML
+> legacy que lo consumía (era su único caller real). Decisión conservada como registro
+> histórico.
+
 - **Decisión**: no eliminar ni refactorizar `validar_licitacion_id`
   (`routers/licitaciones.py:45-75`) ni el resto del router, a pesar de que `/procesar`
   usa exclusivamente `validar_proceso_comercial_id` (`procesos_comerciales_client.py`)
@@ -49,6 +57,10 @@ Numeración D-EXTRACCIONAPI-NNN, verificada contra el código en esta sesión.
   confundirse sobre cuál usar para un caso nuevo.
 
 ### D-EXTRACCIONAPI-003 — Fallback no determinístico para `drogueria_id` en vez de fallar duro
+
+> **Superada (T1, 2026-09-25)**: `resolver_drogueria_id_unica` se eliminó —
+> `drogueria_id` se resuelve del usuario autenticado, sin fallback. Decisión conservada
+> como registro histórico.
 
 - **Decisión**: cuando `DROGUERIA_ID` no está seteada, `resolver_drogueria_id_unica`
   hace `SELECT id FROM droguerias LIMIT 1` (sin `ORDER BY`) en vez de retornar `None`/
@@ -109,6 +121,10 @@ Numeración D-EXTRACCIONAPI-NNN, verificada contra el código en esta sesión.
   firma de función.
 
 ### D-EXTRACCIONAPI-006 — Identificación de usuario opcional en vez de obligatoria
+
+> **Superada (T1, 2026-09-25)**: la identificación pasó a obligatoria
+> (`get_current_user`) en todo endpoint no-legacy — ver `tests/test_extraccion_auth.py`.
+> Decisión conservada como registro histórico.
 
 Ver RN-EXTRACCIONAPI-008 para el detalle de comportamiento. Documentado también como
 decisión porque implica una superficie de ataque deliberadamente abierta: cualquier

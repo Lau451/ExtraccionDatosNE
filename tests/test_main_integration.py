@@ -189,9 +189,14 @@ class TestProcesarFileDuplicateBlocks:
         )
 
         assert response.status_code == 409
+        assert response.headers["content-type"].startswith("application/json")
         body = response.json()
         assert body["ok"] is False
         assert "procesado" in body["error"].lower() or "duplicado" in body["error"].lower()
+        # Bug pre-existente (T2, odd/tasks/extraccion-multi-tenant.md): el 409 de
+        # duplicado perdía extraction_id al armar el JSON -- el frontend lo necesita
+        # (mismo id que buscar_duplicado_con_lock encontró).
+        assert body["extraction_id"] == str(existing_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -810,3 +815,36 @@ class TestListarDocumentosConLicitacion:
         assert response.status_code == 200
         docs = response.json()["documentos"]
         assert docs[0]["proceso_comercial"] is None
+
+
+# ---------------------------------------------------------------------------
+# T2 (odd/tasks/extraccion-multi-tenant.md) — legacy HTML retirado: las rutas
+# que servían pantallas Jinja2 y los endpoints legacy-only ya no existen.
+# ---------------------------------------------------------------------------
+
+class TestRutasLegacyRetiradas:
+    """Las pantallas HTML viejas y los endpoints que solo ellas consumían
+    responden 404 -- no hay ningún handler registrado en esas rutas."""
+
+    @pytest.mark.parametrize(
+        "metodo,ruta",
+        [
+            ("get", "/"),
+            ("get", "/upload"),
+            ("get", "/licitaciones"),
+            ("get", "/calendario"),
+            ("get", "/historial"),
+            ("get", "/guia"),
+            ("get", "/descargar/algo.csv"),
+            ("get", f"/api/documentos/{uuid.uuid4()}/descargar"),
+            ("get", "/api/licitaciones"),
+            ("get", "/api/licitaciones/activas"),
+        ],
+    )
+    def test_ruta_legacy_devuelve_404(self, client, metodo, ruta):
+        response = getattr(client, metodo)(ruta)
+        assert response.status_code == 404
+
+    def test_static_no_esta_montado(self, client):
+        response = client.get("/static/main.js")
+        assert response.status_code == 404

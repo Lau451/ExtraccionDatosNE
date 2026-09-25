@@ -1,5 +1,9 @@
 # Reglas — API & Persistencia (legacy)
 
+> **Nota (T2, 2026-09-25)**: el HTML legacy y `routers/licitaciones.py` mencionados en
+> algunas reglas abajo se retiraron (`odd/tasks/extraccion-multi-tenant.md`); la
+> identificación pasó a obligatoria en T1. Contenido conservado como registro histórico.
+
 Todas las reglas fueron verificadas contra el código real (`main.py`, `routers/*.py`,
 `supabase_client.py`, `persistent_output.py`, `persistent_chunking.py`,
 `background_tasks.py`, `auth.py`, `procesos_comerciales_client.py`) y sus tests en esta

@@ -1,5 +1,9 @@
 # Base de datos — API & Persistencia (legacy)
 
+> **Retirado (T2, 2026-09-25)**: las queries de `routers/licitaciones.py` y de
+> `GET /api/documentos/{doc_id}/descargar` descriptas abajo ya no existen
+> (`odd/tasks/extraccion-multi-tenant.md`). Contenido conservado como registro histórico.
+
 Todas las tablas se consultan vía `supabase-py` con el cliente `service_role`
 (`supabase_client.py:get_client`, bypasea RLS). No se encontró en este módulo ningún uso
 de `user_client`/RLS-aware client (ese patrón es propio de `presupuestacion/core/`, ver

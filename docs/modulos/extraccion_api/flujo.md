@@ -1,5 +1,9 @@
 # Flujo — API & Persistencia (legacy)
 
+> **Nota (T2, 2026-09-25)**: `render_upload_response` (paso 14 abajo) se eliminó —
+> `/procesar` responde JSON exclusivamente, ya no hay rama HTML
+> (`odd/tasks/extraccion-multi-tenant.md`). Contenido conservado como registro histórico.
+
 ## Flujo 1: `POST /procesar` end-to-end
 
 ```

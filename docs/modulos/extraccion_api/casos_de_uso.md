@@ -1,5 +1,11 @@
 # Casos de uso — endpoints de API & Persistencia (legacy)
 
+> **Retirado (T2, 2026-09-25)**: las "Rutas HTML (Jinja2)" y `routers/licitaciones.py`
+> (`/api/licitaciones/*`) que este documento describe abajo ya no existen — se
+> eliminaron junto con `templates/`/`static/` (`odd/tasks/extraccion-multi-tenant.md`).
+> `POST /procesar` responde JSON exclusivamente. Contenido conservado como registro
+> histórico de por qué existían y quién los usaba.
+
 Consumidores confirmados por grep de esta sesión contra `frontend/` (Vite/React) y
 `services/extraccion/static/*.js` (HTML legacy). Cuando no se encontró consumidor real,
 se indica explícitamente.

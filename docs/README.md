@@ -28,8 +28,6 @@ pero comparten la misma base de datos Supabase.
 | [`reglas-globales.md`](./reglas-globales.md) | Reglas técnicas transversales a todo el repo: autenticación, autorización/RLS, auditoría, manejo de fechas, logging, manejo de errores, convenciones de API. |
 | [`glosario.md`](./glosario.md) | Términos de negocio y técnicos usados en el resto de la documentación. |
 | [`schema/README.md`](./schema/README.md) | DDL (`extractor_final.sql`) y políticas RLS (`rls_final.sql`) de referencia, tal como están aplicadas en el proyecto Supabase de test. |
-| `guia_usuario.html` | Guía de usuario preexistente (no forma parte de este proyecto de documentación técnica). |
-
 ## Índice de módulos
 
 ### Backend nuevo — `services/presupuestacion/`

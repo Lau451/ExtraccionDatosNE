@@ -5,10 +5,8 @@ proyecto de Supabase que este backend, así que se consulta directo en vez de pe
 `services/presupuestacion` (mismo criterio que `routers/clientes.py`).
 
 Reemplaza a `routers.licitaciones.validar_licitacion_id()` para el flujo de carga de documentos,
-porque esa tabla (`licitaciones`) ya no existe. Deliberadamente NO importa nada de
-`routers/licitaciones.py` — ese módulo se deja intacto mientras el HTML legacy
-(`templates/licitaciones.html`, `calendario.html`) lo siga usando (ver `openspec/changes/
-carga-documentos/proposal.md`).
+porque esa tabla (`licitaciones`) ya no existe. `routers/licitaciones.py` y el HTML legacy que
+lo consumía se retiraron en T2 (ver `odd/tasks/extraccion-multi-tenant.md`).
 
 Este cliente usa `get_client()` (service_role, bypasea RLS) — por eso el filtro
 `.eq("drogueria_id", drogueria_id)` es OBLIGATORIO en cada query, no una opción de diseño. Sin él,

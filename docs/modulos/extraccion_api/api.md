@@ -1,5 +1,9 @@
 # API pública — API & Persistencia (legacy)
 
+> **Retirado (T2, 2026-09-25)**: las rutas HTML Jinja2 y `routers/licitaciones.py` que
+> lista este documento se eliminaron (`odd/tasks/extraccion-multi-tenant.md`). Contenido
+> conservado como registro histórico.
+
 Funciones y endpoints públicos (no prefijados con `_`) de cada archivo, con su firma
 real. Los `_helpers` privados se mencionan solo cuando son relevantes para entender el
 flujo.

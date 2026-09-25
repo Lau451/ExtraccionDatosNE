@@ -75,6 +75,9 @@ automatizaciones.
 
 ### Identificación opcional en `extraccion/` — pasa a obligatoria cuando se retire el HTML viejo
 
+**Hecho (T1, 2026-09-25, `odd/tasks/extraccion-multi-tenant.md`)**: la identificación es
+obligatoria en todo endpoint no-legacy. Sección conservada como registro histórico.
+
 `services/extraccion/auth.py` (`get_usuario_id_actual`) identifica al usuario real
 cuando `POST /procesar` recibe un JWT válido (para `processing_sessions.subido_por`),
 pero es **opcional**, no un gate: sin header `Authorization`, la request sigue
@@ -92,6 +95,10 @@ que va a usar un sistema que está por descontinuarse, para repetir el mismo onb
 después en el sistema que lo reemplaza.
 
 ### `services/extraccion/routers/licitaciones.py` — atado al ciclo de vida del HTML legacy, se retira junto con él
+
+**Hecho (T2, 2026-09-25, `odd/tasks/extraccion-multi-tenant.md`)**: el router y el HTML
+legacy que lo consumía se eliminaron. Sección conservada como registro histórico de por
+qué no se había tocado antes.
 
 Todo el router (`validar_licitacion_id`, `listar`, `listar_activas`, `calendario`,
 `obtener`, `crear`, `actualizar`, `eliminar`) apunta a la tabla `licitaciones`, que ya
