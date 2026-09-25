@@ -36,7 +36,7 @@ export function OrdenCompraSelector({
   const [candidatoElegidoId, setCandidatoElegidoId] = useState<string | null>(null)
   // Etiqueta del cliente ya confirmado: sin esto el click de "Confirmar
   // cliente" no daba ninguna señal visible (la confirmación vive en el padre).
-  const [confirmado, setConfirmado] = useState<string | null>(null)
+  const [etiquetaConfirmada, setEtiquetaConfirmada] = useState<string | null>(null)
 
   const { data, isPending } = useQuery({
     queryKey: ['cliente-candidato', extractionId],
@@ -52,21 +52,21 @@ export function OrdenCompraSelector({
   }
 
   const confirmar = (clienteId: string, razonSocialExtraida: string | null, etiqueta: string) => {
-    setConfirmado(etiqueta)
+    setEtiquetaConfirmada(etiqueta)
     onClienteConfirmado(clienteId, razonSocialExtraida)
   }
 
-  if (confirmado) {
+  if (etiquetaConfirmada) {
     return (
       <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3">
         <div>
           <p className="text-sm text-emerald-700">Cliente confirmado</p>
-          <p className="text-sm font-medium text-slate-900">{confirmado}</p>
+          <p className="text-sm font-medium text-slate-900">{etiquetaConfirmada}</p>
         </div>
         <button
           type="button"
           onClick={() => {
-            setConfirmado(null)
+            setEtiquetaConfirmada(null)
             onClienteDesconfirmado?.()
           }}
           className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"

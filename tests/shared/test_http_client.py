@@ -27,6 +27,19 @@ def test_build_resilient_httpx_client_disables_http2():
     assert client._transport._pool._http2 is False
 
 
+def test_build_resilient_httpx_client_keeps_postgrest_timeout_and_redirects():
+    """Al inyectar el cliente, postgrest-py deja de construir el suyo (que usa
+    DEFAULT_POSTGREST_CLIENT_TIMEOUT y follow_redirects=True). Sin replicarlos,
+    quedaría el timeout por defecto de httpx (5 s) y una consulta pesada se
+    cortaría."""
+    from postgrest.constants import DEFAULT_POSTGREST_CLIENT_TIMEOUT
+
+    client = build_resilient_httpx_client()
+
+    assert client.timeout == httpx.Timeout(DEFAULT_POSTGREST_CLIENT_TIMEOUT)
+    assert client.follow_redirects is True
+
+
 def test_build_resilient_httpx_client_returns_new_instance_each_call():
     """Cada llamada crea un httpx.Client propio -- se inyecta uno por cada
     supabase.Client (ver services/extraccion/supabase_client.py y

@@ -89,7 +89,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     for error_type in STATUS_MAP:
         app.add_exception_handler(error_type, _handler)
 
-    # Red de contención adicional (sin CORS -- ver ServerErrorMiddleware más arriba):
+    # Red de contención adicional (sin CORS -- ver el docstring de _UnhandledExceptionMiddleware):
     # cubre cualquier excepción que por lo que sea no pase por el middleware de abajo
     # (p.ej. algo agregado por error por fuera de este stack). Nunca filtra internals.
     async def _fallback_handler(request: Request, exc: Exception) -> JSONResponse:

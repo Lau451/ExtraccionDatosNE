@@ -32,8 +32,15 @@ Compartido entre services/extraccion/ y services/shared/database.py (services/pr
 y services/terceros/ vía get_user_client/get_service_client) porque ambos servicios pegan
 al mismo proyecto Supabase con el mismo patrón de cliente pooled de larga vida -- un único
 lugar para no duplicar el mismo fix dos veces.
+
+Al inyectar un cliente, postgrest-py deja de construir el suyo, así que hay que
+replicar a mano lo que ese cliente traía: DEFAULT_POSTGREST_CLIENT_TIMEOUT (sin
+esto queda el timeout por defecto de httpx, 5 s) y follow_redirects=True.
+base_url y headers NO hacen falta: postgrest y auth arman la URL absoluta y
+mandan los headers en cada request, sin mutar el cliente inyectado.
 """
 import httpx
+from postgrest.constants import DEFAULT_POSTGREST_CLIENT_TIMEOUT
 
 
 def build_resilient_httpx_client() -> httpx.Client:
@@ -42,4 +49,8 @@ def build_resilient_httpx_client() -> httpx.Client:
     supabase.Client construido -- nunca se comparte un pool de conexiones entre
     clientes con ciclos de vida distintos (singleton de servicio vs. cache por
     token de usuario)."""
-    return httpx.Client(http2=False)
+    return httpx.Client(
+        http2=False,
+        timeout=httpx.Timeout(DEFAULT_POSTGREST_CLIENT_TIMEOUT),
+        follow_redirects=True,
+    )
