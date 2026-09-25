@@ -8,7 +8,7 @@ describe('parsearCsvPresupuestos', () => {
   it('parsea filas válidas con delimitador ; y valores completos', () => {
     const csv = [
       ENCABEZADO,
-      'CLI-1;Farmacia Central;PRE-100;1;24/09/2026;1;PROD-1;Amoxicilina 500mg;10.5;125.50;1,317.75;99',
+      'CLI-1;Farmacia Central;PRE-100;1;24/09/2026;1;PROD-1;Amoxicilina 500mg;10,5;125,50;1317,75;99',
     ].join('\n')
 
     const resultado = parsearCsvPresupuestos(csv)
@@ -160,17 +160,17 @@ describe('parsearCsvPresupuestos', () => {
     expect(resultado.errores).toEqual([{ linea: 2, mensaje: expect.stringMatching(/cantidad/i) }])
   })
 
-  describe('formato numérico de Progress: punto decimal, coma de miles', () => {
+  describe('formato numérico de Progress: coma decimal, sin separador de miles', () => {
     function cantidadDe(valor: string) {
       const csv = [ENCABEZADO, `CLI-1;Farmacia Central;PRE-100;;;1;;Amoxicilina 500mg;${valor};;;`].join('\n')
       return parsearCsvPresupuestos(csv)
     }
 
     it.each([
-      ['1250.50', 1250.5],
-      ['1,250.50', 1250.5],
-      ['1,250', 1250],
-      ['1,234,567.89', 1234567.89],
+      ['1250,50', 1250.5],
+      ['1250', 1250],
+      ['0,75', 0.75],
+      ['1234567,89', 1234567.89],
       ['10', 10],
     ])('acepta %s como %s', (valor, esperado) => {
       const resultado = cantidadDe(valor)
@@ -178,7 +178,7 @@ describe('parsearCsvPresupuestos', () => {
       expect(resultado.filas[0].cantidad_producto).toBe(esperado)
     })
 
-    it.each(['1,25', '1.250,50', '12,50', '1,2345', '1.2.3'])(
+    it.each(['1250.50', '1.250', '1.250,50', '1,250.50', '1,2,3', '12,'])(
       'rechaza %s (no respeta el formato) sin adivinar',
       (valor) => {
         const resultado = cantidadDe(valor)

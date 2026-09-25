@@ -160,22 +160,18 @@ function detectarDelimitador(primeraLinea: string): string {
 
 type ResultadoNumero = { ok: true; valor: number | undefined } | { ok: false }
 
-// Formato del export de Progress (confirmado por el usuario): punto decimal y
-// coma de miles -- `1250.50`, `1,250.50`, `1,250`. Solo se aceptan esas dos
-// formas; cualquier otra (`1,25`, `1.250,50`) es un error de fila, nunca una
-// adivinanza: un separador mal interpretado cambia el valor 1000 veces.
-const NUMERO_SIN_MILES = /^-?\d+(\.\d+)?$/
-const NUMERO_CON_MILES = /^-?\d{1,3}(,\d{3})+(\.\d+)?$/
+// Formato del export de Progress (confirmado por el usuario, 2026-09-25): coma
+// decimal y SIN separador de miles -- `1250,50`, `1250`. Cualquier otra forma
+// (`1250.50`, `1.250`, `1,250.50`) es un error de fila, nunca una adivinanza:
+// un separador mal interpretado cambia el valor 1000 veces.
+const NUMERO_PROGRESS = /^-?\d+(,\d+)?$/
 
 function parsearNumeroDecimal(valorCrudo: string): ResultadoNumero {
   const valor = valorCrudo.trim()
   if (valor === '') return { ok: true, valor: undefined }
   const sinEspacios = valor.replace(/\s/g, '')
-  if (NUMERO_SIN_MILES.test(sinEspacios)) return { ok: true, valor: Number(sinEspacios) }
-  if (NUMERO_CON_MILES.test(sinEspacios)) {
-    return { ok: true, valor: Number(sinEspacios.replaceAll(',', '')) }
-  }
-  return { ok: false }
+  if (!NUMERO_PROGRESS.test(sinEspacios)) return { ok: false }
+  return { ok: true, valor: Number(sinEspacios.replace(',', '.')) }
 }
 
 function parsearEntero(valorCrudo: string): number | null {
@@ -293,13 +289,13 @@ export function parsearCsvPresupuestos(contenidoOriginal: string): ResultadoPars
     if (renglon === null) erroresFila.push('renglón no es un número entero')
 
     const cantidad = parsearNumeroDecimal(valor(idx.cantidad_producto))
-    if (!cantidad.ok || cantidad.valor === undefined) erroresFila.push(`cantidad_producto no es numérica (formato esperado: 1,250.50)`)
+    if (!cantidad.ok || cantidad.valor === undefined) erroresFila.push(`cantidad_producto no es numérica (formato esperado: 1250,50)`)
 
     const precio = parsearNumeroDecimal(valor(idx.precio_producto))
-    if (!precio.ok) erroresFila.push(`precio_producto no es numérico (formato esperado: 1,250.50)`)
+    if (!precio.ok) erroresFila.push(`precio_producto no es numérico (formato esperado: 1250,50)`)
 
     const importeTotal = parsearNumeroDecimal(valor(idx.importe_total))
-    if (!importeTotal.ok) erroresFila.push(`importe_total no es numérico (formato esperado: 1,250.50)`)
+    if (!importeTotal.ok) erroresFila.push(`importe_total no es numérico (formato esperado: 1250,50)`)
 
     const fecha = normalizarFecha(valor(idx.fecha_generacion))
     if (!fecha.ok) erroresFila.push('fecha_generacion inválida (use dd/mm/aaaa o aaaa-mm-dd)')
