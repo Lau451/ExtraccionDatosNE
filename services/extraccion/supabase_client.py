@@ -26,11 +26,14 @@ logger = logging.getLogger(__name__)
 # queda deshabilitada silenciosamente (no rompe el arranque del servidor).
 # ---------------------------------------------------------------------------
 try:
-    from supabase import create_client, Client  # type: ignore
+    from supabase import create_client, Client, ClientOptions  # type: ignore
     _SUPABASE_AVAILABLE = True
 except ImportError:
     _SUPABASE_AVAILABLE = False
     Client = None  # type: ignore
+    ClientOptions = None  # type: ignore
+
+from services.shared.http_client import build_resilient_httpx_client
 
 # ---------------------------------------------------------------------------
 # Singleton interno — se inicializa en el primer get_client()
@@ -84,7 +87,11 @@ def get_client() -> "Client | None":  # type: ignore
         return None
 
     try:
-        _client = create_client(url, key)
+        # http2=False: ver services/shared/http_client.py -- evita reusar una
+        # conexión pooled que Supabase cerró mientras el proceso estaba ocupado.
+        _client = create_client(
+            url, key, options=ClientOptions(httpx_client=build_resilient_httpx_client())
+        )
         logger.info("Cliente Supabase inicializado correctamente")
     except Exception as exc:
         logger.error("Error al inicializar cliente Supabase: %s", exc)

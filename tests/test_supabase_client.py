@@ -156,3 +156,32 @@ class TestSingleton:
         assert resultado is mock_client
 
         del sc_module.create_client  # limpieza
+
+
+class TestResilientHttpClient:
+    """T5 (odd/tasks/extraccion-multi-tenant.md): la conexión Supabase pooled debe
+    sobrevivir a un idle largo (~50s de Gemini) sin reusar un socket que el server ya
+    cerró. Ver services/shared/http_client.py para el detalle de la causa raíz."""
+
+    def test_get_client_disables_http2_on_underlying_httpx_client(self, monkeypatch, mocker):
+        """get_client() debe inyectar un httpx.Client propio (http2=False) vía
+        ClientOptions -- sin esto, postgrest-py fuerza http2=True internamente y una
+        conexión que Supabase cerró mientras el proceso estaba ocupado se reusa
+        muerta en el siguiente pedido -> httpx.RemoteProtocolError("Server disconnected")."""
+        monkeypatch.setenv("ENABLE_RESULT_PERSISTENCE", "true")
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+        mocker.patch.object(sc_module, "_SUPABASE_AVAILABLE", True)
+        # TestSingleton (arriba) hace `del sc_module.create_client` como limpieza tras
+        # inyectar un mock -- eso borra también el binding real importado a nivel de
+        # módulo (`del modulo.attr` no distingue "mock" de "el `from supabase import
+        # create_client` original"), no solo el mock. Re-bindeamos acá para no depender
+        # del orden de ejecución de otros tests del mismo archivo.
+        import supabase as _supabase_pkg
+
+        monkeypatch.setattr(sc_module, "create_client", _supabase_pkg.create_client, raising=False)
+
+        resultado = sc_module.get_client()
+
+        assert resultado is not None
+        assert resultado.postgrest.session._transport._pool._http2 is False
