@@ -43,7 +43,7 @@ async def crear_sesion(
         doc_type:     Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
         drogueria_id: droguería del usuario autenticado que subió el documento
                       (services.extraccion.auth.get_drogueria_id_actual). Obligatorio,
-                      sin fallback -- ver resolver_drogueria_id_unica (removida).
+                      sin fallback -- ver migración 0027 / odd/tasks/extraccion-multi-tenant.md.
         formato_usado_id: id de cliente_formato_documentos usado para enriquecer el
                       prompt (§8), si se resolvió uno. Trazabilidad.
         subido_por:   usuario_id (auth.uid()) de quien subió el documento, resuelto

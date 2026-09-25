@@ -100,10 +100,14 @@ async def buscar_duplicado_con_lock(*, source_sha256: str, drogueria_id: str) ->
         )
         return extraction_id
     except Exception as exc:
-        logger.warning(
-            "buscar_duplicado_con_lock: error consultando RPC — %s. "
-            "Se procedera sin verificacion de duplicados.",
+        logger.error(
+            "buscar_duplicado_con_lock: error consultando RPC reserve_extraction — %s. "
+            "DEDUPLICACION DESHABILITADA para este request (sha256=%s, drogueria_id=%s): "
+            "la carga continua sin verificar duplicados. Posible causa: falta aplicar "
+            "la migracion 0027 (reserve_extraction con firma (p_sha, p_drogueria_id)).",
             exc,
+            source_sha256[:12] + "..." if source_sha256 else "N/A",
+            drogueria_id,
         )
         return None
 
@@ -158,8 +162,8 @@ async def persistir_output_final(
         source_filename: Nombre del archivo original subido.
         source_sha256:   SHA256 del archivo original (para deduplicacion futura).
         drogueria_id:    droguería del usuario autenticado que subió el documento.
-                          Obligatorio, sin fallback (ver resolver_drogueria_id_unica,
-                          removida) -- viene de services.extraccion.auth.get_drogueria_id_actual.
+                          Obligatorio, sin fallback -- viene de
+                          services.extraccion.auth.get_drogueria_id_actual.
         licitacion_id:   proceso_comercial_id ya validado (o None). Se persiste tal cual.
         grupo_id:        UUID v4 ya validado (o None) que asocia N extracciones de
                           orden_compra como una sola OC lógica (D13). Se persiste tal

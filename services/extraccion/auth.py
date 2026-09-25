@@ -7,8 +7,9 @@ UsuarioPerfil/get_current_user de services.shared.auth (mismo mecanismo ya usado
 services/presupuestacion y services/terceros) y agrega get_drogueria_id_actual, que
 extrae drogueria_id del perfil autenticado y falla explícito (403) si no está seteado.
 
-Sin fallback silencioso a ninguna droguería por default -- ver
-services/extraccion/supabase_client.py (resolver_drogueria_id_unica, removida).
+Sin fallback silencioso a ninguna droguería por default: cada request obtiene su
+drogueria_id del perfil del usuario autenticado, nunca de env ni de un valor por
+defecto (ver services/extraccion/supabase_client.py).
 """
 from fastapi import Depends, HTTPException, status
 

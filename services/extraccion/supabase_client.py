@@ -10,10 +10,10 @@ Variables de entorno requeridas:
   SUPABASE_SERVICE_KEY     — Service role key (nunca anon; necesita bypassear RLS)
   ENABLE_RESULT_PERSISTENCE — "true" / "false" (default: "true")
 
-Multi-tenant: drogueria_id ya NO se resuelve acá (ver resolver_drogueria_id_unica,
-removida) — cada request la trae explícita desde el perfil del usuario autenticado
-(services.shared.auth.get_current_user vía services.extraccion.auth.get_drogueria_id_actual)
-y la enhebra manualmente hasta cada función de persistencia. Sin fallback silencioso.
+Multi-tenant: drogueria_id ya NO se resuelve acá — cada request la trae explícita
+desde el perfil del usuario autenticado (services.shared.auth.get_current_user vía
+services.extraccion.auth.get_drogueria_id_actual) y la enhebra manualmente hasta
+cada función de persistencia. Sin fallback silencioso.
 """
 
 import logging

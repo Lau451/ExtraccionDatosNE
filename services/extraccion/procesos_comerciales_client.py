@@ -39,7 +39,7 @@ async def validar_proceso_comercial_id(
     Args:
         proceso_comercial_id: id a validar (o vacío).
         drogueria_id: droguería del usuario autenticado (obligatorio, sin fallback --
-            ver resolver_drogueria_id_unica, removida).
+            viene de services.extraccion.auth.get_drogueria_id_actual).
     """
     if not proceso_comercial_id or not proceso_comercial_id.strip():
         return None

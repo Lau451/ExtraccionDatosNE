@@ -169,6 +169,32 @@ class TestBuscarDuplicadoConLock:
 
         assert resultado is None
 
+    @pytest.mark.asyncio
+    async def test_buscar_duplicado_con_lock_exception_logea_error_explicito(self, mocker, caplog):
+        """
+        Si la RPC reserve_extraction lanza excepción (ej: firma desactualizada
+        porque falta la migración 0027), el fallo debe quedar en el log a
+        nivel ERROR con un mensaje explícito de que la deduplicación quedó
+        DESHABILITADA — un WARNING silencioso esconde que el sistema dejó de
+        detectar duplicados entre tenants.
+        """
+        import logging
+
+        mock = MagicMock()
+        mock.rpc.return_value.execute.side_effect = RuntimeError("RPC error simulado")
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        with caplog.at_level(logging.ERROR, logger="services.extraccion.persistent_output"):
+            resultado = await persistent_output.buscar_duplicado_con_lock(
+                source_sha256="d" * 64, drogueria_id="drogueria-1"
+            )
+
+        assert resultado is None
+        errores = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert errores, f"Se esperaba un log ERROR. Registros: {caplog.records}"
+        assert any("DESHABILITADA" in r.message or "deshabilitada" in r.message.lower() for r in errores)
+        assert any("0027" in r.message for r in errores)
+
 
 # ---------------------------------------------------------------------------
 # Tests de persistir_output_final
