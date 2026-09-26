@@ -175,6 +175,49 @@ class TestProcesarFileSmallSuccess:
         assert body["extraction_id"] == str(extraction_uuid)
         mock_schedule.assert_awaited_once()
 
+    def test_procesar_persiste_el_usuario_autenticado_como_subido_por(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """validar-extraccion-organizacion (F1): POST /procesar pasa el usuario
+        autenticado a crear_extraction_processing. Sin esto, subido_por quedaría
+        NULL en toda fila nueva y el filtro "Solo mías" nunca matchearía, sin que
+        falle ningún test de persistencia (esos llaman a la función directo)."""
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="a" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mock_crear = mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            return_value=str(_mock_csv_output(tmp_path)),
+        )
+        mocker.patch(
+            "services.extraccion.main.schedule_persist_output",
+            new_callable=AsyncMock,
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        mock_crear.assert_awaited_once()
+        assert mock_crear.await_args.kwargs["usuario_id"] == "usuario-test"
+
 
 # ---------------------------------------------------------------------------
 # T1b (carga-asincrona) — crear_extraction_processing devuelve None

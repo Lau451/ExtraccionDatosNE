@@ -45,8 +45,14 @@ Mode: strict (source: global user CLAUDE.md). Runners: `pytest` (backend, `pytes
 
 ## Delivery
 
-Strategy: ask-on-risk. Forecast ~700 authored lines (T1 ~300, T2 ~400) — over the ~400 budget; chain strategy to
-be asked before the second commit if the running count confirms it.
+Strategy: ask-on-risk. Forecast ~700 authored lines (T1 ~300, T2 ~400). Running count after T1: 561 → over budget.
+Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must reach `dev` together (review finding).
+
+- Tracker: `feat/validar-extraccion-organizacion` (reset to `dev` `8cb031b`; draft/no-merge PR → `dev`).
+- Slice 01 `feat/validar-extraccion-organizacion-01-backend` → tracker: T1 (`848ec08`) + F1. Over 400 lines
+  (~560, about half tests, plus migration comments); no cohesive split — `size:exception` recommended.
+- Slice 02 `feat/validar-extraccion-organizacion-02-frontend` → slice 01: T2.
+- Nothing pushed; push and PR creation are the user's decision.
 
 ## Tasks
 
@@ -63,6 +69,20 @@ be asked before the second commit if the running count confirms it.
     6 in `tests/extraccion/test_router.py` (`column extraction_results.subido_por does not exist` — 0029 not applied
     to TEST, pending user confirmation), 4 in `tests/usuarios/test_service.py` (Supabase Auth email rate limit,
     unrelated).
+  - Commit `848ec08`. RDD: assessed medium, `slice_budget_reached` (561 lines) → user granted review → 1 lens
+    (reliability) → approved, acknowledged (lineage `review-b23e0acdffc202d7`, authority burned). Reviewed boundary
+    advances to `848ec08`. Non-blocking follow-ups:
+    - Deploy order: migration 0029 must be applied before this code runs (listing selects `subido_por`; uploads
+      insert it). Ship T1 and T2 together — the listing now returns processing/failed rows the current UI would
+      offer for validation.
+    - Missing test that `POST /procesar` forwards `usuario.id` (→ F1).
+    - `fk_er_subidopor` has no `ON DELETE` (defaults to restrict); matches existing `created_by` FKs; user hard
+      delete is superadmin-only (`usuarios_del`). Left as-is unless the user decides otherwise.
+    - "Uploader name hidden by usuarios RLS" — refuted: `usuarios_sel` allows same-droguería rows
+      (`docs/schema/rls_final.sql:117`).
+- [x] **F1 — Test that `POST /procesar` forwards the uploader** (route: inline; one test file, from review).
+  - Evidence: RED (kwarg temporarily removed from `main.py`) → 1 failed; GREEN → `pytest tests/test_main_integration.py
+    -m "not integration"` 41 passed. `main.py` restored byte-identical.
   - Migration 0029: `extraction_results.subido_por uuid null` (FK to the users table the project uses) + down.
   - Extractor persists the authenticated uploader when creating the `processing` row.
   - `GET /extracciones`: return `processing`, `completed`, `partial`, `failed`; expose `error_msg`, `subido_por`
