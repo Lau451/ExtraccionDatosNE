@@ -71,6 +71,7 @@ def test_leer_filas_extraccion_licitacion_devuelve_columnas_y_filas_del_csv(tmp_
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 2,
+            "status": "completed",
         }
     )
 
@@ -96,6 +97,7 @@ def test_leer_filas_extraccion_comparativa_devuelve_columnas_propias(tmp_path):
             "document_type": "comparativa",
             "csv_disk_path": csv_path,
             "row_count": 1,
+            "status": "completed",
         }
     )
 
@@ -116,6 +118,7 @@ def test_leer_filas_extraccion_mas_de_500_filas_no_es_editable_y_no_manda_filas(
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 501,
+            "status": "completed",
         }
     )
 
@@ -145,6 +148,7 @@ def test_leer_filas_extraccion_orden_compra_grupo_id_null_lee_su_propio_csv(tmp_
             "row_count": 1,
             "source_filename": "test.pdf",
             "grupo_id": None,
+            "status": "completed",
         }
     )
 
@@ -164,8 +168,81 @@ def test_leer_filas_extraccion_csv_no_disponible_levanta_extraccion_no_disponibl
                 "document_type": "licitacion",
                 "csv_disk_path": None,
                 "row_count": 0,
+                "status": "completed",
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# carga-asincrona (T1) -- leer_filas_extraccion solo ofrece extracciones
+# 'completed'/'partial'; 'processing'/'failed' no tienen csv_disk_path
+# utilizable (el robot corre en background, ver services/extraccion/main.py).
+# ---------------------------------------------------------------------------
+
+def test_leer_filas_extraccion_status_processing_levanta_conflict_error():
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-processing",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
+                "status": "processing",
+            }
+        )
+
+
+def test_leer_filas_extraccion_status_failed_levanta_conflict_error():
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-failed",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
+                "status": "failed",
+            }
+        )
+
+
+def test_leer_filas_extraccion_sin_clave_status_no_es_validable():
+    """T1c: alinea `leer_filas_extraccion` con la función `validar_extraccion`
+    (service.py), que trata un dict sin 'status' como no validable (`.get("status")`,
+    sin default 'completed'). El único select real que alimenta esta función
+    (`GET .../filas`, router.py) siempre trae 'status' -- un dict sin esa clave
+    solo pasa acá en tests unitarios que construyen el dict a mano, así que este
+    cambio no puede romper ningún path real."""
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-sin-status",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
+            }
+        )
+
+
+def test_leer_filas_extraccion_status_partial_no_se_ve_afectado(tmp_path):
+    """'partial' se deja pasar sin cambios -- comportamiento previo a esta tarea
+    (nunca se filtró por status)."""
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "10", "descripcion": "Item"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-partial",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "status": "partial",
+        }
+    )
+
+    assert resultado.filas_leidas == 1
 
 
 # --- validado / orden_compra_id en GET .../filas (T2, extraccion-duplicado-link) --
@@ -190,6 +267,7 @@ def test_leer_filas_extraccion_validado_true_sin_client_no_resuelve_orden_compra
             "csv_disk_path": csv_path,
             "row_count": 1,
             "validado": True,
+            "status": "completed",
         }
     )
 
@@ -211,6 +289,7 @@ def test_leer_filas_extraccion_no_validada_expone_validado_false(tmp_path):
             "csv_disk_path": csv_path,
             "row_count": 1,
             "validado": False,
+            "status": "completed",
         }
     )
 
@@ -233,6 +312,7 @@ def test_leer_filas_extraccion_sin_clave_validado_default_false_retrocompatible(
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 1,
+            "status": "completed",
         }
     )
 
@@ -384,6 +464,82 @@ def test_validar_ya_validada_levanta_conflict(
         extraction_id=extraction["id"],
         usuario_id=seed_usuario_sistema["id"],
         proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            service_client,
+            extraction_id=extraction["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=seed_proceso_comercial["id"],
+        )
+
+
+# ---------------------------------------------------------------------------
+# carga-asincrona (T1) -- validar_extraccion solo acepta 'completed'/'partial'.
+# ---------------------------------------------------------------------------
+
+def test_validar_extraccion_status_processing_levanta_conflict_error(monkeypatch):
+    """Unit puro (sin DB real): 'processing' todavía no existe como valor
+    permitido en el CHECK remoto (migración 0028, no aplicada al proyecto de
+    test) -- se verifica acá vía monkeypatch de repo.buscar_extraction_result
+    en vez de sembrar una fila real."""
+    monkeypatch.setattr(
+        repo,
+        "buscar_extraction_result",
+        lambda client, *, extraction_id: {
+            "id": extraction_id,
+            "document_type": "licitacion",
+            "status": "processing",
+            "validado": False,
+        },
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            MagicMock(),
+            extraction_id="extraccion-processing",
+            usuario_id="usuario-1",
+            proceso_comercial_id="proceso-1",
+        )
+
+
+def test_validar_extraccion_status_ausente_no_hace_keyerror(monkeypatch):
+    """T1b (carga-asincrona): antes de esta tarea el chequeo de estado hacía
+    `extraction["status"]` directo -- un dict sin la clave 'status' (un select que
+    la haya omitido, o un test que arme el dict a mano) hacía KeyError en vez del
+    ConflictError esperado. Un status ausente se trata como no validable, igual
+    que cualquier otro valor fuera de ESTADOS_VALIDABLES."""
+    monkeypatch.setattr(
+        repo,
+        "buscar_extraction_result",
+        lambda client, *, extraction_id: {
+            "id": extraction_id,
+            "document_type": "licitacion",
+            "validado": False,
+            # sin "status"
+        },
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            MagicMock(),
+            extraction_id="extraccion-sin-status",
+            usuario_id="usuario-1",
+            proceso_comercial_id="proceso-1",
+        )
+
+
+@pytest.mark.integration
+def test_validar_extraccion_status_failed_levanta_conflict_error(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    extraction = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        status="failed",
     )
 
     with pytest.raises(ConflictError):

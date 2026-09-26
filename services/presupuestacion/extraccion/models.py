@@ -10,6 +10,15 @@ DocumentType = Literal["comparativa", "licitacion", "cotizacion", "orden_compra"
 # reusa esta misma constante para el chequeo de `filas` en el body de validar.
 MAX_FILAS_EDITABLES = 500
 
+# T1b (carga-asincrona) — único lugar donde vive el set de statuses "validables"
+# de extraction_results. Antes de esta tarea, `leer_filas_extraccion` y
+# `validar_extraccion` (service.py) tenían cada uno su propia tupla literal
+# `("completed", "partial")`, repetida y con riesgo de divergir. `repository.py`
+# usa la misma lista para el `.in_("status", ...)` de `listar_extracciones`.
+# 'processing' (robot corriendo en background, T1) y 'failed' quedan afuera --
+# ninguno de los dos tiene datos utilizables para materializar.
+ESTADOS_VALIDABLES = ("completed", "partial")
+
 
 class FilaLicitacionIn(BaseModel):
     """Mismos nombres de columna que el CSV de licitación/cotización."""

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
+import { useAutoGrowTextarea } from '../useAutoGrowTextarea'
 
 export interface CabeceraOrdenCompraValores {
   numero_oc: string
@@ -34,6 +35,38 @@ const CAMPOS_ADVERTENCIA: { campo: string; etiqueta: string }[] = [
   { campo: 'cantidad_entregas', etiqueta: 'Cantidad de entregas' },
   { campo: 'observaciones', etiqueta: 'Observaciones' }, // T2
 ]
+
+/** T3b: dirección de entrega sigue siendo un único valor lógico (a diferencia
+ * de Observaciones, que sí es multilínea a propósito), aunque desde T3 vive en
+ * un textarea auto-creciente para no truncar direcciones largas. Un salto de
+ * línea real nunca debe terminar adentro: Enter se bloquea en el keydown (ver
+ * `bloquearEnter` más abajo, mismo contrato que `CeldaEditable`), y uno que
+ * entre por otra vía (pegado, drag&drop, autocompletado) se normaliza acá a
+ * ", " en vez de guardarse crudo -- el formato final de dirección/notas queda
+ * para T4, esto solo evita que direccion_entrega termine con "\n" adentro
+ * mientras tanto. */
+function normalizarSaltosDeLineaDeDireccion(valor: string): string {
+  if (!/\r\n|\r|\n/.test(valor)) return valor
+  return valor
+    .split(/\r\n|\r|\n/)
+    .map((linea) => linea.trim())
+    .filter((linea) => linea.length > 0)
+    .join(', ')
+}
+
+/** T1d: no bloquear Enter mientras el usuario está componiendo con un IME
+ * (teclados de japonés/chino/coreano, entre otros) -- en esos editores, Enter
+ * confirma la conversión de la composición en curso, no inserta un salto de
+ * línea; `preventDefault()` interrumpía esa confirmación. `isComposing` vive
+ * en el evento nativo (`KeyboardEvent`), no en el SyntheticEvent de React.
+ * Safari manda el Enter que confirma la composición con `isComposing=false` y
+ * `keyCode` 229, así que ese caso también se deja pasar. */
+function bloquearEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
+  const componiendo = event.nativeEvent.isComposing || event.keyCode === 229
+  if (event.key === 'Enter' && !componiendo) {
+    event.preventDefault()
+  }
+}
 
 /** Espejo de `_valor_mas_frecuente` (empate -> gana el primer miembro). */
 function valorMasFrecuente(valores: string[]): string {
@@ -93,6 +126,12 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   // para desbloquear -- no importa si coincide con alguno de los miembros.
   const bloqueado = hayDesacuerdoNumeroOc && !numeroOcEditado
 
+  // T3: dirección/observaciones son campos de texto libre que pueden crecer
+  // mucho (direcciones largas, notas de varias líneas) -- auto-crecientes en
+  // vez de un <input> de una sola línea que cortaba el valor.
+  const direccionAutoGrow = useAutoGrowTextarea(direccionEntrega)
+  const observacionesAutoGrow = useAutoGrowTextarea(observaciones)
+
   useEffect(() => {
     onCambio(
       {
@@ -111,7 +150,9 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   )
 
   return (
-    <div className="space-y-3 rounded-md border border-slate-200 p-3">
+    // T3: grid responsive -- N° OC/fecha comparten fila (son cortos), dirección
+    // y observaciones ocupan el ancho completo (son los campos largos).
+    <div className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-numero-oc">
           Número de OC
@@ -149,33 +190,39 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
         />
       </div>
 
-      <div>
+      <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-direccion-entrega">
           Dirección de entrega
         </label>
-        <input
+        <textarea
           id="cabecera-direccion-entrega"
+          ref={direccionAutoGrow.ref}
           value={direccionEntrega}
-          onChange={(event) => setDireccionEntrega(event.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          onChange={(event) =>
+            setDireccionEntrega(normalizarSaltosDeLineaDeDireccion(event.target.value))
+          }
+          onKeyDown={bloquearEnter}
+          rows={1}
+          className="w-full resize-none overflow-hidden rounded-md border border-slate-300 px-3 py-2 text-sm leading-normal"
         />
       </div>
 
-      <div>
+      <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-observaciones">
           Observaciones
         </label>
         <textarea
           id="cabecera-observaciones"
+          ref={observacionesAutoGrow.ref}
           value={observaciones}
           onChange={(event) => setObservaciones(event.target.value)}
-          rows={3}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          rows={2}
+          className="w-full resize-none overflow-hidden rounded-md border border-slate-300 px-3 py-2 text-sm leading-normal"
         />
       </div>
 
       {advertencias.length > 0 && (
-        <p className="text-xs text-amber-600">
+        <p className="text-xs text-amber-600 sm:col-span-2">
           Desacuerdo entre archivos del grupo en: {advertencias.map((a) => a.etiqueta).join(', ')}.
           Se precargó el valor más frecuente -- revisá antes de confirmar.
         </p>

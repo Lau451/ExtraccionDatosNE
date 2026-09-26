@@ -5,43 +5,12 @@ import clsx from 'clsx'
 import { ApiError } from '@/lib/api/client'
 import {
   listarClientes,
-  listarDocumentosRecientes,
   procesarDocumento,
-  type DocumentoReciente,
   type ProcesarResultado,
   type TipoDocumento,
 } from '@/lib/api/extraccion'
 
 const RECIENTES_KEY = ['documentos-recientes']
-
-function esperar(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// El backend responde 200 apenas termina de leer el CSV -- el guardado real en
-// `extraction_results` corre después, en un BackgroundTask (ver
-// services/extraccion/main.py: schedule_persist_output). Un solo invalidate
-// apenas llega la respuesta casi siempre le gana la carrera a ese guardado y
-// deja "Cargas recientes" desactualizado hasta el próximo refetch (foco de
-// ventana, navegación). Reintentamos hasta ver crecer el conteo en
-// `cantidadEsperada` (D13 -- carga múltiple sube N archivos), con tope.
-async function esperarNuevoDocumento(
-  queryClient: ReturnType<typeof useQueryClient>,
-  countAntes: number,
-  cantidadEsperada: number,
-): Promise<DocumentoReciente[]> {
-  let ultimaLista: DocumentoReciente[] = []
-  for (let intento = 0; intento < 6; intento++) {
-    const data = await queryClient.fetchQuery({
-      queryKey: RECIENTES_KEY,
-      queryFn: () => listarDocumentosRecientes(),
-    })
-    ultimaLista = data.documentos
-    if (data.documentos.length >= countAntes + cantidadEsperada) return ultimaLista
-    await esperar(600)
-  }
-  return ultimaLista
-}
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
   { value: 'licitaciones', label: 'Licitación / Directa' },
@@ -123,34 +92,22 @@ export function FormCard() {
   const mutation = useMutation({
     mutationFn: async () => {
       if (archivos.length === 0) throw new Error('Falta seleccionar un archivo')
-      const countAntes = queryClient.getQueryData<{ documentos: unknown[] }>(RECIENTES_KEY)
-        ?.documentos.length ?? 0
       const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
-      // Si ningún archivo se procesó (p.ej. todos duplicados) no va a aparecer
-      // ningún documento nuevo: esperarlo solo demoraba el mensaje de error.
-      const procesados = resultados.filter((resultado) => resultado.ok).length
-      const documentos =
-        procesados > 0 ? await esperarNuevoDocumento(queryClient, countAntes, procesados) : []
-      return { resultados, documentos }
+      return { resultados }
     },
-    onSuccess: ({ resultados, documentos }) => {
+    // carga-asincrona T2 -- /procesar responde 202 apenas termina el upload
+    // (el robot corre en background, ver services/extraccion/main.py). Ya no
+    // hay nada que esperar acá ni a qué navegar: el usuario ve el progreso
+    // real en "Cargas recientes" (RecentCard pollea mientras haya algo
+    // 'processing'). Solo invalidamos esa query para que la fila nueva
+    // aparezca sin esperar al próximo refetch automático.
+    onSuccess: ({ resultados }) => {
       setArchivos([])
       if (fileInputRef.current) fileInputRef.current.value = ''
 
-      // D13.1/UX (ajuste post-shipping 2026-09-21) -- carga de orden_compra
-      // exitosa (1 o N archivos agrupados) navega directo a la pantalla de
-      // validación, sin que el usuario tenga que ir a buscarla a mano.
-      // Licitación/comparativa NO cambian (se quedan en "Carga de
-      // documentos", como hoy). Si algún archivo del lote falló, no se
-      // navega -- se deja el reporte de error por archivo ya existente.
-      const todosOk = resultados.length > 0 && resultados.every((resultado) => resultado.ok)
-      const extraccion = documentos[0]
-      if (tipo === 'ordenes' && todosOk && extraccion?.id) {
-        navigate({
-          to: '/validar-extraccion/$extractionId',
-          params: { extractionId: extraccion.id },
-          search: { rowCount: extraccion.row_count },
-        })
+      const procesados = resultados.filter((resultado) => resultado.ok).length
+      if (procesados > 0) {
+        queryClient.invalidateQueries({ queryKey: RECIENTES_KEY })
       }
     },
   })
@@ -179,7 +136,7 @@ export function FormCard() {
             type="button"
             onClick={() => cambiarTipo(option.value)}
             className={clsx(
-              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+              'flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1',
               tipo === option.value
                 ? 'bg-navy text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
@@ -263,7 +220,7 @@ export function FormCard() {
           <ul className="space-y-1 text-sm">
             {mutation.data?.resultados.map((resultado) => (
               <li key={resultado.archivo} className={resultado.ok ? 'text-emerald-600' : 'text-red-600'}>
-                {resultado.archivo}: {resultado.ok ? 'procesado correctamente' : resultado.error}
+                {resultado.archivo}: {resultado.ok ? 'Recibido — procesando en segundo plano' : resultado.error}
                 {resultado.extractionIdExistente && (
                   <button
                     type="button"
@@ -274,7 +231,7 @@ export function FormCard() {
                         search: { rowCount: 0 },
                       })
                     }
-                    className="ml-2 font-medium text-accent underline"
+                    className="ml-2 cursor-pointer font-medium text-accent underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
                   >
                     Ver extracción existente
                   </button>
@@ -287,9 +244,9 @@ export function FormCard() {
         <button
           type="submit"
           disabled={archivos.length === 0 || mutation.isPending}
-          className="w-full rounded-md bg-navy py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+          className="w-full cursor-pointer rounded-md bg-navy py-2.5 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {mutation.isPending ? 'Procesando…' : 'Procesar archivo(s)'}
+          {mutation.isPending ? 'Enviando…' : 'Procesar archivo(s)'}
         </button>
       </form>
     </div>

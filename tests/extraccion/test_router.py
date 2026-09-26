@@ -94,6 +94,48 @@ def test_listar_extracciones_validado_false_devuelve_solo_pendientes_de_la_propi
 
 
 @pytest.mark.integration
+def test_listar_extracciones_excluye_status_failed(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, crear_usuario_autenticado,
+):
+    """carga-asincrona (T1): una extracción 'failed' (el robot/persistencia
+    fallaron en background) nunca es ofrecible para validar -- no debe aparecer
+    en el listado aunque validado=False. 'processing' no se siembra acá porque
+    ese valor todavía no está permitido por el CHECK del proyecto de test
+    (migración 0028 no aplicada al remoto) -- ver
+    test_leer_filas_extraccion_status_processing_levanta_conflict_error /
+    test_validar_extraccion_status_processing_levanta_conflict_error en
+    test_service.py para la cobertura de 'processing' (unit, sin DB real)."""
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+
+    pendiente = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+    )
+    fallida = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        status="failed",
+    )
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+    ids = {r.id for r in resultado}
+
+    assert pendiente["id"] in ids
+    assert fallida["id"] not in ids
+
+
+@pytest.mark.integration
 def test_listar_extracciones_expone_grupo_id_persistido(
     seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
     seed_usuario_sistema, crear_usuario_autenticado,

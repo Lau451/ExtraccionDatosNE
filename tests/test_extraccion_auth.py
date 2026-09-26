@@ -117,6 +117,14 @@ class TestProcesarEnhebraDrogueriaId:
             "services.extraccion.main.crear_sesion",
             new_callable=AsyncMock, return_value=session_uuid,
         )
+        # T1b (carga-asincrona): crear_extraction_processing devolviendo None hoy
+        # significa 503 sin agendar el robot -- este test no ejercita ese camino
+        # (ver TestProcesarSinFilaProcessing en test_main_integration.py), así que
+        # se mockea para simular la fila 'processing' creada con éxito.
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock, return_value=uuid.uuid4(),
+        )
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         mock_schedule = mocker.patch(
             "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock,
@@ -129,7 +137,7 @@ class TestProcesarEnhebraDrogueriaId:
             headers={"Accept": "application/json"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_crear_sesion.await_args.kwargs["drogueria_id"] == "drogueria-a"
         assert mock_crear_sesion.await_args.kwargs["subido_por"] == "usuario-a"
         assert mock_schedule.await_args.kwargs["drogueria_id"] == "drogueria-a"
@@ -327,3 +335,49 @@ def test_reserve_extraction_no_filtra_duplicado_de_otra_drogueria(
     finally:
         service_client.table("extraction_results").delete().eq("source_sha256", sha).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
+
+
+@pytest.mark.integration
+def test_reserve_extraction_trata_processing_como_tomada(service_client, seed_drogueria):
+    """T1c: la regla "'processing' cuenta como tomada" (migración 0028) vive
+    solo en la RPC real -- el test anterior (mockeado) del 409 en
+    test_main_integration.py solo prueba que /procesar traduce lo que
+    buscar_duplicado_con_lock le devuelve a un 409, nunca la regla de la SQL en
+    sí. Este test ejercita la RPC real: una fila 'processing' (upload todavía
+    en vuelo) debe bloquear un segundo upload del mismo archivo devolviendo su
+    propio id, igual que una fila 'completed', y sin que la RPC la borre (a
+    diferencia de una fila 'failed', que reserve_extraction sí borra para
+    permitir reprocesar)."""
+    import secrets
+
+    sha = secrets.token_hex(32)
+    en_curso = service_client.table("extraction_results").insert(
+        {
+            "drogueria_id": seed_drogueria["id"],
+            "document_type": "licitacion",
+            "source_filename": "en-vuelo.pdf",
+            "source_sha256": sha,
+            "row_count": 0,
+            "status": "processing",
+        }
+    ).execute().data[0]
+
+    try:
+        resultado = service_client.rpc(
+            "reserve_extraction", {"p_sha": sha, "p_drogueria_id": seed_drogueria["id"]}
+        ).execute()
+
+        assert resultado.data == en_curso["id"]
+
+        # La fila 'processing' no se borra (a diferencia de una 'failed') -- el
+        # robot que la está procesando de verdad todavía la va a actualizar.
+        fila_actual = (
+            service_client.table("extraction_results")
+            .select("id, status")
+            .eq("id", en_curso["id"])
+            .execute()
+            .data
+        )
+        assert fila_actual == [{"id": en_curso["id"], "status": "processing"}]
+    finally:
+        service_client.table("extraction_results").delete().eq("source_sha256", sha).execute()

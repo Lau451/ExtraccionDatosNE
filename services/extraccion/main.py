@@ -2,6 +2,7 @@ import asyncio
 import csv
 import logging
 import os
+from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,8 +25,15 @@ from services.extraccion.robot_orden_compra import procesar_orden_compra, OrdenC
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
 from services.extraccion.config import get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from services.extraccion.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
-from services.extraccion.persistent_output import calcular_sha256, buscar_duplicado_con_lock
-from services.extraccion.persistent_chunking import crear_sesion
+from services.extraccion.persistent_output import (
+    calcular_sha256,
+    buscar_duplicado_con_lock,
+    crear_extraction_processing,
+    marcar_extraccion_fallida,
+    marcar_processing_interrumpidos,
+    latido_extraccion,
+)
+from services.extraccion.persistent_chunking import crear_sesion, cerrar_sesion
 from services.extraccion.background_tasks import schedule_persist_output
 
 # ======================
@@ -42,7 +50,62 @@ logger = logging.getLogger(__name__)
 # APP
 # ======================
 
-app = FastAPI(title="Extractor de Documentos")
+# T1c (carga-asincrona): intervalo del sweep periódico de abajo -- 5 minutos es un
+# compromiso entre detectar filas huérfanas con razonable prontitud y no generar carga
+# extra en la base. Vive acá (no en persistent_output.py, T1d advisory) porque solo
+# `_sweep_periodico` lo usa para programar su propio loop.
+_SWEEP_INTERVALO_SEGUNDOS = 5 * 60
+
+
+async def _sweep_periodico() -> None:
+    """T1c (carga-asincrona): corre `marcar_processing_interrumpidos` cada
+    `_SWEEP_INTERVALO_SEGUNDOS` mientras el proceso está vivo -- el sweep de
+    arranque (T1/T1b) solo limpia huérfanas al reiniciar el servicio; una fila
+    puede quedar huérfana (ej. el proceso que corría el robot muere) sin que el
+    servicio se reinicie, y esa fila necesita este loop para no quedar
+    'processing' para siempre hasta el próximo deploy.
+
+    Tolerante a fallos: una excepción en una iteración (ej. Supabase caído en
+    ese momento) se logea y el loop sigue en la próxima iteración -- aunque
+    `marcar_processing_interrumpidos` ya atrapa sus propios errores y nunca
+    debería propagar, este try/except es la red de seguridad del loop en sí
+    (para no perder el sweep periódico entero por un cambio futuro ahí)."""
+    while True:
+        await asyncio.sleep(_SWEEP_INTERVALO_SEGUNDOS)
+        try:
+            await marcar_processing_interrumpidos()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "_sweep_periodico: error inesperado en una iteración, se reintenta "
+                "en la próxima (cada %ds)",
+                _SWEEP_INTERVALO_SEGUNDOS,
+            )
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """carga-asincrona (T1/T1c): al levantar el servicio, cualquier extraction_results
+    en 'processing' que haya quedado huérfana (reinicio/crash anterior, o más vieja
+    que el umbral de `marcar_processing_interrumpidos`) se marca 'failed'. Además se
+    arranca `_sweep_periodico` para seguir barriendo huérfanas mientras el proceso
+    sigue corriendo (T1c: el sweep de solo-arranque de T1b es inseguro si un segundo
+    proceso comparte la misma base -- ver persistent_output.marcar_processing_interrumpidos).
+    La tarea periódica se cancela limpiamente al apagar el servicio."""
+    await marcar_processing_interrumpidos()
+    tarea_sweep = asyncio.create_task(_sweep_periodico())
+    try:
+        yield
+    finally:
+        tarea_sweep.cancel()
+        try:
+            await tarea_sweep
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Extractor de Documentos", lifespan=_lifespan)
 app.include_router(extraction_results_router)
 app.include_router(clientes_router)
 register_exception_handlers(app)
@@ -62,6 +125,29 @@ app.add_middleware(
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
+# T1d (carga-asincrona): intervalo del heartbeat de `_procesar_documento_background`
+# (`_latir_periodicamente` más abajo) -- mientras el job corre, se refresca
+# `extraction_results.updated_at` (`latido_extraccion`) cada este tanto para que el
+# sweep (`marcar_processing_interrumpidos`) nunca confunda un job vivo con uno
+# huérfano. `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` en persistent_output.py es ~5x este
+# valor a propósito, para tolerar demoras normales del loop de eventos sin marcar
+# 'failed' una fila con un job vivo.
+_LATIDO_INTERVALO_SEGUNDOS = 60
+
+# T1b (carga-asincrona): mensaje fijo cuando `crear_extraction_processing` devuelve
+# None (Supabase no disponible o el INSERT falló) -- no hay fila 'processing' que el
+# robot pueda actualizar, así que /procesar responde 503 antes de agendarlo.
+_MENSAJE_PERSISTENCIA_NO_DISPONIBLE = (
+    "No se pudo registrar el documento para su procesamiento. Intente nuevamente en unos instantes."
+)
+
+# T1c: mismos mensajes fijos que T1b introdujo inline en las ramas `except` de
+# `_procesar_documento_background` -- hoisteados a constantes (junto a
+# `_MENSAJE_PERSISTENCIA_NO_DISPONIBLE` arriba) para que los tests los reusen en vez
+# de repetir el literal, y para que un cambio de copy quede en un solo lugar.
+_MENSAJE_PARSER_ERROR = "No se pudo procesar el archivo. Verificá el formato del documento."
+_MENSAJE_GEMINI_API_ERROR = "Error en el servicio de IA. Intente nuevamente en unos momentos."
+
 # ======================
 # HELPERS
 # ======================
@@ -75,6 +161,27 @@ def _procesar_response(context: dict, status_code: int = 200) -> JSONResponse:
         if key in context:
             payload[key] = context[key]
     return JSONResponse(payload, status_code=status_code)
+
+
+def _limpiar_archivos_temporales(destino: Path, tmp_dir: Path) -> None:
+    """Borra el archivo temporal ya guardado en disco y el directorio tmp si quedó
+    vacío (T1b, carga-asincrona) -- extraído del `finally` de
+    `_procesar_documento_background` porque `/procesar` necesita el mismo cleanup
+    cuando `crear_extraction_processing` devuelve None y el background job nunca
+    llega a agendarse (no hay fila 'processing' que el robot pueda actualizar)."""
+    if destino.exists():
+        try:
+            destino.unlink()
+            logger.debug("Deleted temp file: %s", destino)
+        except Exception as cleanup_error:
+            logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
+
+    try:
+        if tmp_dir.exists() and not any(tmp_dir.iterdir()):
+            tmp_dir.rmdir()
+            logger.debug("Deleted empty tmp directory: %s", tmp_dir)
+    except Exception as cleanup_error:
+        logger.debug("Could not remove tmp directory: %s", cleanup_error)
 
 # ======================
 # RUTAS
@@ -137,6 +244,222 @@ def _validar_grupo_id(grupo_id: str) -> str | None:
         )
 
     return str(parsed)
+
+
+async def _fallar_extraccion(
+    *,
+    extraction_id: UUID | None,
+    drogueria_id: str,
+    session_id: UUID | None,
+    mensaje: str,
+) -> None:
+    """Marca la extraccion 'failed' + cierra la sesión 'failed' -- se llama desde
+    cada rama except de `_procesar_documento_background` para asegurar que la
+    fila de extraction_results NUNCA quede en 'processing' cuando el robot o la
+    lectura del CSV fallan (carga-asincrona, T1). No propaga excepción: ambas
+    funciones internas ya atrapan las suyas."""
+    await marcar_extraccion_fallida(
+        extraction_id=extraction_id, drogueria_id=drogueria_id, error_msg=mensaje
+    )
+    if session_id is not None:
+        await cerrar_sesion(session_id=session_id, status="failed", error_msg=mensaje)
+
+
+async def _latir_periodicamente(*, extraction_id: UUID, drogueria_id: str) -> None:
+    """T1d (carga-asincrona): mientras `_procesar_documento_background` corre, refresca
+    `extraction_results.updated_at` cada `_LATIDO_INTERVALO_SEGUNDOS` llamando a
+    `latido_extraccion` -- así el sweep (`marcar_processing_interrumpidos`) nunca
+    confunde un job vivo (por más que el robot tarde, o quede encolado en
+    `_GEMINI_SEMAPHORE`) con uno huérfano. Se cancela desde el `finally` de
+    `_procesar_documento_background` apenas el job termina (éxito o falla) -- para un
+    job más corto que el intervalo, el primer `sleep` nunca llega a completar, lo cual
+    es esperado (no se necesitó ningún latido).
+
+    Tolerante a fallos igual que `_sweep_periodico`: `latido_extraccion` ya atrapa sus
+    propios errores, pero este try/except es la red de seguridad del loop en sí (para
+    no perder el heartbeat entero por un cambio futuro ahí)."""
+    while True:
+        await asyncio.sleep(_LATIDO_INTERVALO_SEGUNDOS)
+        try:
+            await latido_extraccion(extraction_id=extraction_id, drogueria_id=drogueria_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "_latir_periodicamente: error inesperado en un latido, se reintenta "
+                "en el próximo (cada %ds) -- extraction_id=%s",
+                _LATIDO_INTERVALO_SEGUNDOS,
+                extraction_id,
+            )
+
+
+async def _procesar_documento_background(
+    *,
+    tipo: str,
+    destino: Path,
+    tmp_dir: Path,
+    nombre_original: str,
+    session_id: UUID | None,
+    extraction_id: UUID | None,
+    doc_type: str,
+    drogueria_id: str,
+    origen_id: str,
+    source_sha256: str,
+    instrucciones_prompt: str | None,
+    licitacion_id: str | None,
+    grupo_id: str | None,
+) -> None:
+    """
+    Corre el robot (Gemini), lee el CSV resultante y persiste el resultado final
+    -- TODO esto en background, después de que `/procesar` ya respondió 202 con
+    `extraction_id` (carga-asincrona, T1). Antes de esta tarea, este mismo código
+    vivía inline en el endpoint y el cliente esperaba a que terminara para
+    recibir la respuesta HTTP.
+
+    Nunca propaga excepción (es un BackgroundTask: nadie está esperando su
+    resultado). Cualquier falla acá se traduce al mismo mapeo de mensajes en
+    español que antes armaba la respuesta HTTP de error, ahora escrito en
+    `extraction_results.error_msg` vía `_fallar_extraccion` -- la fila NUNCA debe
+    quedar en 'processing' al salir de esta función, sea cual sea el motivo.
+    El cleanup del archivo temporal (que antes vivía en el `finally` del
+    endpoint) se movió acá porque ahora es este job, no el endpoint, quien
+    termina de usar `destino`.
+
+    T1d: desde ANTES de tomar `_GEMINI_SEMAPHORE` y hasta que este job termina (éxito
+    o falla), corre en paralelo una tarea de heartbeat (`_latir_periodicamente`) que
+    mantiene fresco el `updated_at` de la fila 'processing', para que el sweep nunca
+    la confunda con una huérfana mientras el robot tarda o queda encolado en el
+    semáforo. Se cancela siempre en el `finally` de abajo.
+    """
+    tarea_latido: asyncio.Task | None = None
+    try:
+        if extraction_id is not None:
+            tarea_latido = asyncio.create_task(
+                _latir_periodicamente(extraction_id=extraction_id, drogueria_id=drogueria_id)
+            )
+
+        async with _GEMINI_SEMAPHORE:
+            if tipo == "comparativas":
+                csv_generado = await asyncio.to_thread(
+                    procesar_comparativa, destino, nombre_original,
+                    session_id=session_id,
+                    drogueria_id=drogueria_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+            elif tipo == "ordenes":
+                csv_generado = await asyncio.to_thread(
+                    procesar_orden_compra, destino, nombre_original,
+                    session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+            else:
+                csv_generado = await asyncio.to_thread(
+                    procesar_archivo, destino, nombre_original,
+                    session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+
+        # ======================
+        # LEER CSV + PERSISTENCIA FINAL
+        # ======================
+        csv_path = Path(csv_generado)
+        rows = []
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f, delimiter=";")
+                rows = list(reader)
+        except Exception as e:
+            logger.error("Error al leer CSV generado %s: %s", csv_path, e)
+
+        # Ya estamos corriendo dentro de un BackgroundTask del endpoint (no hay
+        # otro request/response del cual "colgar" una segunda tanda de tareas) --
+        # se le da a schedule_persist_output una BackgroundTasks descartable y se
+        # la corre en el acto, reusando tal cual su lógica de retry/backoff.
+        persist_bg = BackgroundTasks()
+        await schedule_persist_output(
+            persist_bg,
+            extraction_id=extraction_id,
+            session_id=session_id,
+            doc_type=doc_type,
+            rows=rows,
+            csv_path=csv_path,
+            client_id=origen_id,
+            source_filename=nombre_original,
+            source_sha256=source_sha256,
+            drogueria_id=drogueria_id,
+            licitacion_id=licitacion_id,
+            grupo_id=grupo_id,
+        )
+        await persist_bg()
+
+    except UnsupportedFormatError as e:
+        logger.warning("Unsupported format: %s", e.extension)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=f"Formato no soportado: {e.extension}",
+        )
+
+    except ParserError as e:
+        # T1b: el detalle crudo de la excepción queda en el log, no en error_msg --
+        # extraction_results.error_msg lo ve cualquier usuario de la droguería
+        # (GET /api/documentos), así que es un mensaje fijo en español.
+        logger.error("Parser error: %s - %s", e.filepath, e.cause)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=_MENSAJE_PARSER_ERROR,
+        )
+
+    except NoProvidersDetectedError as e:
+        logger.warning("No providers detected: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="No se detectaron proveedores en el documento",
+        )
+
+    except OrdenCompraSinRenglonesError as e:
+        logger.warning("No renglones detected in orden_compra: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="No se detectaron renglones en el documento",
+        )
+
+    except GeminiQuotaExceededError as e:
+        logger.error("Gemini API quota exceeded: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.",
+        )
+
+    except GeminiRateLimitError as e:
+        logger.error("Gemini API rate limit exceeded: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="El servicio está temporalmente saturado. Intente nuevamente en unos momentos.",
+        )
+
+    except GeminiAPIError as e:
+        # T1b: mismo criterio que ParserError arriba -- detalle crudo solo al log.
+        logger.error("Gemini API error: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=_MENSAJE_GEMINI_API_ERROR,
+        )
+
+    except Exception as e:
+        logger.exception("Unexpected error processing %s: %s", tipo, e)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="Error interno del servidor",
+        )
+
+    finally:
+        if tarea_latido is not None:
+            tarea_latido.cancel()
+            try:
+                await tarea_latido
+            except asyncio.CancelledError:
+                pass
+        _limpiar_archivos_temporales(destino, tmp_dir)
 
 
 @app.post("/procesar")
@@ -235,129 +558,72 @@ async def procesar(
     )
 
     # ======================
-    # PROCESAR CON ROBOT
+    # REGISTRO 'processing' + RESPUESTA INMEDIATA (carga-asincrona, T1)
     # ======================
-    try:
-        async with _GEMINI_SEMAPHORE:
-            if tipo == "comparativas":
-                csv_generado = await asyncio.to_thread(
-                    procesar_comparativa, destino, nombre_original,
-                    session_id=session_id,
-                    drogueria_id=drogueria_id,
-                    instrucciones_extra=instrucciones_prompt,
+    # A partir de acá el robot (Gemini), la lectura del CSV y la persistencia
+    # final corren en background -- el cliente ya no espera nada de eso. La fila
+    # 'processing' es lo que permite: (a) responder 202 con un extraction_id real
+    # que el frontend puede pollear, y (b) que un segundo upload del mismo
+    # archivo mientras este todavía corre reciba 409 (reserve_extraction trata
+    # 'processing' como tomada, migración 0028).
+    extraction_id = await crear_extraction_processing(
+        drogueria_id=drogueria_id,
+        document_type=doc_type,
+        source_filename=nombre_original,
+        source_sha256=sha256_doc,
+        grupo_id=grupo_id_validado,
+        proceso_comercial_id=licitacion_id_validado,
+    )
+
+    if extraction_id is None:
+        # T1b: sin fila 'processing' no hay nada que el robot pueda actualizar al
+        # terminar -- antes de esta guarda el robot corría igual en background y el
+        # resultado (o el error) se perdía en silencio (persistir_output_final /
+        # marcar_extraccion_fallida son no-op con extraction_id=None). Se corta acá,
+        # ANTES de agendar el background task.
+        if session_id is not None:
+            # T1c: si cerrar_sesion en sí explota (no su propio try/except interno,
+            # sino algo antes, ej. el client de Supabase), el cleanup del archivo
+            # temporal y el 503 de abajo NUNCA deben perderse por eso -- antes de
+            # esta guarda, una excepción acá se propagaba como 500 sin cleanup.
+            try:
+                await cerrar_sesion(
+                    session_id=session_id, status="failed", error_msg=_MENSAJE_PERSISTENCIA_NO_DISPONIBLE
                 )
-            elif tipo == "ordenes":
-                csv_generado = await asyncio.to_thread(
-                    procesar_orden_compra, destino, nombre_original,
-                    session_id=session_id,
-                    instrucciones_extra=instrucciones_prompt,
+            except Exception as exc:
+                logger.error(
+                    "procesar: error al cerrar la sesión tras 503 (persistencia no "
+                    "disponible) — %s. session_id=%s",
+                    exc,
+                    session_id,
                 )
-            else:
-                csv_generado = await asyncio.to_thread(
-                    procesar_archivo, destino, nombre_original,
-                    session_id=session_id,
-                    instrucciones_extra=instrucciones_prompt,
-                )
-
-        # ======================
-        # LEER CSV + SCHEDULING DE PERSISTENCIA
-        # ======================
-        csv_path = Path(csv_generado)
-        rows = []
-        try:
-            with open(csv_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f, delimiter=";")
-                rows = list(reader)
-        except Exception as e:
-            logger.error("Error al leer CSV generado %s: %s", csv_path, e)
-
-        await schedule_persist_output(
-            bg_tasks,
-            session_id=session_id,
-            doc_type=doc_type,
-            rows=rows,
-            csv_path=csv_path,
-            client_id=origen_id,
-            source_filename=nombre_original,
-            source_sha256=sha256_doc,
-            drogueria_id=drogueria_id,
-            licitacion_id=licitacion_id_validado,
-            grupo_id=grupo_id_validado,
-        )
-
-        return _procesar_response({"tipo": tipo})
-
-    except UnsupportedFormatError as e:
-        logger.warning("Unsupported format: %s", e.extension)
+        _limpiar_archivos_temporales(destino, tmp_dir)
         return _procesar_response(
-            {"error": f"Formato no soportado: {e.extension}", "tipo": tipo},
-            status_code=415,
-        )
-
-    except ParserError as e:
-        logger.error("Parser error: %s - %s", e.filepath, e.cause)
-        return _procesar_response(
-            {"error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}", "tipo": tipo},
-            status_code=422,
-        )
-
-    except NoProvidersDetectedError as e:
-        logger.warning("No providers detected: %s", e.message)
-        return _procesar_response(
-            {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
-            status_code=422,
-        )
-
-    except OrdenCompraSinRenglonesError as e:
-        logger.warning("No renglones detected in orden_compra: %s", e.message)
-        return _procesar_response(
-            {"error": "No se detectaron renglones en el documento", "tipo": tipo},
-            status_code=422,
-        )
-
-    except GeminiQuotaExceededError as e:
-        logger.error("Gemini API quota exceeded: %s", e.message)
-        return _procesar_response(
-            {"error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.", "tipo": tipo},
+            {"error": _MENSAJE_PERSISTENCIA_NO_DISPONIBLE, "tipo": tipo},
             status_code=503,
         )
 
-    except GeminiRateLimitError as e:
-        logger.error("Gemini API rate limit exceeded: %s", e.message)
-        return _procesar_response(
-            {"error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.", "tipo": tipo},
-            status_code=429,
-        )
+    bg_tasks.add_task(
+        _procesar_documento_background,
+        tipo=tipo,
+        destino=destino,
+        tmp_dir=tmp_dir,
+        nombre_original=nombre_original,
+        session_id=session_id,
+        extraction_id=extraction_id,
+        doc_type=doc_type,
+        drogueria_id=drogueria_id,
+        origen_id=origen_id,
+        source_sha256=sha256_doc,
+        instrucciones_prompt=instrucciones_prompt,
+        licitacion_id=licitacion_id_validado,
+        grupo_id=grupo_id_validado,
+    )
 
-    except GeminiAPIError as e:
-        logger.error("Gemini API error: %s", e.message)
-        return _procesar_response(
-            {"error": f"Error en el servicio de IA: {e.message[:80]}", "tipo": tipo},
-            status_code=500,
-        )
-
-    except Exception as e:
-        logger.exception("Unexpected error processing %s: %s", tipo, e)
-        return _procesar_response(
-            {"error": "Error interno del servidor", "tipo": tipo},
-            status_code=500,
-        )
-
-    finally:
-        if destino.exists():
-            try:
-                destino.unlink()
-                logger.debug("Deleted temp file: %s", destino)
-            except Exception as cleanup_error:
-                logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
-
-        # Clean up empty tmp directory
-        try:
-            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
-                tmp_dir.rmdir()
-                logger.debug("Deleted empty tmp directory: %s", tmp_dir)
-        except Exception as cleanup_error:
-            logger.debug("Could not remove tmp directory: %s", cleanup_error)
+    return _procesar_response(
+        {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None},
+        status_code=202,
+    )
 
 
 @app.get("/api/documentos")
@@ -372,7 +638,7 @@ async def listar_documentos(
         q = (
             client.table("extraction_results")
             .select(
-                "id,source_filename,document_type,row_count,status,created_at,"
+                "id,source_filename,document_type,row_count,status,error_msg,created_at,"
                 "proceso_comercial_id"
             )
             .eq("drogueria_id", drogueria_id)

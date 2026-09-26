@@ -133,3 +133,84 @@ describe('CabeceraOrdenCompra — observaciones (T2)', () => {
     expect(screen.getByLabelText(/observaciones/i)).toHaveValue('')
   })
 })
+
+// T3 (carga-asincrona) — direccion_entrega era un <input> de una sola línea:
+// una dirección larga quedaba cortada. Pasa a ser un textarea auto-creciente
+// que muestra la dirección completa.
+describe('CabeceraOrdenCompra — dirección de entrega multilínea (T3)', () => {
+  it('el campo "Dirección de entrega" es un textarea que muestra el valor completo', () => {
+    const direccionLarga =
+      'Avenida Presidente Roque Sáenz Peña 1234, Piso 8 Oficina B, Ciudad Autónoma de Buenos Aires'
+    render(
+      <ArnesConBotonConfirmar
+        filas={[{ ...MIEMBRO_A, direccion_entrega: direccionLarga }]}
+      />,
+    )
+
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+    expect(campo.tagName).toBe('TEXTAREA')
+    expect(campo).toHaveValue(direccionLarga)
+  })
+})
+
+// T3b (carga-asincrona) -- el textarea de T3 no manejaba Enter: un Enter real
+// insertaba un salto de línea crudo en direccion_entrega. La dirección sigue
+// siendo un único valor lógico (a diferencia de Observaciones, que sí es
+// multilínea a propósito) hasta que T4 decida un formato real.
+describe('CabeceraOrdenCompra — dirección de entrega es un valor único (T3b)', () => {
+  it('Enter en el textarea de dirección no inserta un salto de línea', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    const noFueCancelado = fireEvent.keyDown(campo, { key: 'Enter' })
+
+    expect(noFueCancelado).toBe(false)
+  })
+
+  it('T1d: Enter mientras se compone con un IME no se bloquea (confirma la composición)', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    const noFueCancelado = fireEvent.keyDown(campo, { key: 'Enter', isComposing: true })
+
+    expect(noFueCancelado).toBe(true)
+  })
+
+  it('Enter que confirma una composición en Safari (isComposing=false, keyCode 229) tampoco se bloquea', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    const noFueCancelado = fireEvent.keyDown(campo, { key: 'Enter', keyCode: 229 })
+
+    expect(noFueCancelado).toBe(true)
+  })
+
+  it('un salto de línea que llega por otra vía (pegado, autocompletado) se normaliza a ", "', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    fireEvent.change(campo, {
+      target: { value: 'Calle Falsa 123\nPiso 4to\n\nDepto B' },
+    })
+
+    expect(campo).toHaveValue('Calle Falsa 123, Piso 4to, Depto B')
+  })
+
+  it('un valor sin saltos de línea no se altera', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    fireEvent.change(campo, { target: { value: 'Calle Falsa 123' } })
+
+    expect(campo).toHaveValue('Calle Falsa 123')
+  })
+
+  it('observaciones sigue permitiendo saltos de línea reales (a diferencia de dirección)', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A_CON_OBSERVACIONES]} />)
+    const campo = screen.getByLabelText(/observaciones/i)
+
+    fireEvent.change(campo, { target: { value: 'Línea 1\nLínea 2' } })
+
+    expect(campo).toHaveValue('Línea 1\nLínea 2')
+  })
+})

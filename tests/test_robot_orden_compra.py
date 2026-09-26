@@ -21,7 +21,9 @@ import pytest
 
 from services.extraccion.robot_orden_compra import (
     _FIELDNAMES,
+    _PROMPT,
     _construir_filas,
+    _escribir_csv,
     procesar_orden_compra,
 )
 
@@ -175,6 +177,94 @@ class TestConstruirFilas:
         assert filas[0]["importe_total"] == ""
         assert filas[1]["importe_total"] == ""
 
+    def test_observaciones_preserva_saltos_de_linea_internos(self):
+        """T4: observaciones es multilínea a propósito (un remark por línea) —
+        `.strip()` solo recorta los extremos, nunca colapsa los \\n internos."""
+        datos = _datos_oc4471()
+        datos["observaciones"] = "Plazo de Pago: 90 Días\nDatos para Facturar:\nCUIT N°: 33-67835142-9\n"
+
+        filas = _construir_filas(datos)
+
+        assert filas[0]["observaciones"] == "Plazo de Pago: 90 Días\nDatos para Facturar:\nCUIT N°: 33-67835142-9"
+        assert filas[1]["observaciones"] == filas[0]["observaciones"]
+
+    def test_direccion_entrega_normaliza_saltos_de_linea_a_coma(self):
+        """T4: direccion_entrega es de línea única por contrato (D6/frontend) — si el
+        modelo desobedece la regla del prompt y devuelve saltos de línea, se
+        normalizan acá defensivamente a ", " (mismo criterio que
+        `normalizarSaltosDeLineaDeDireccion` en CabeceraOrdenCompra.tsx)."""
+        datos = _datos_oc4471()
+        datos["direccion_entrega"] = "Gral Paz 1406\nTandil\n7000"
+
+        filas = _construir_filas(datos)
+
+        assert filas[0]["direccion_entrega"] == "Gral Paz 1406, Tandil, 7000"
+        assert "\n" not in filas[0]["direccion_entrega"]
+
+    def test_direccion_entrega_sin_saltos_de_linea_no_se_modifica(self):
+        filas = _construir_filas(_datos_oc4471())
+
+        assert filas[0]["direccion_entrega"] == "Av. Siempreviva 742"
+
+
+# ---------------------------------------------------------------------------
+# _PROMPT — contrato de texto (T4: reglas de formato OCR/dirección/observaciones)
+# ---------------------------------------------------------------------------
+
+def _sin_saltos_de_linea(texto: str) -> str:
+    """Normaliza espacios en blanco (incluidos saltos de línea de wrapping del
+    prompt) a un único espacio, para que las aserciones de contrato de texto no
+    dependan de dónde el prompt corta la línea."""
+    return " ".join(texto.split())
+
+
+class TestPromptFormatoLegibilidad:
+    """T4 (carga-asincrona): el prompt debe reparar el espaciado perdido por OCR,
+    restringir localidad/CP de direccion_entrega a campos de ENTREGA, y pedir un
+    remark por línea en observaciones -- sin contradecir la fidelidad del
+    contenido transcripto."""
+
+    def test_incluye_regla_de_reespaciado_ocr(self):
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert "OCR" in prompt
+        assert "Restore the missing spaces" in prompt
+
+    def test_incluye_regla_de_localidad_solo_desde_campos_de_entrega(self):
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert "NEVER take the locality or postal code" in prompt
+        assert "issue place/date line" in prompt
+
+    def test_completa_la_calle_desde_el_domicilio_de_la_misma_institucion(self):
+        """oc_sayago.pdf: "Lugar de Entrega" nombra al hospital sin calle; la calle
+        está en "Domicilio:" del organismo destino. Con temperatura 0 el modelo la
+        omitía siempre -- la regla explícita la recupera."""
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert "take the street and number from that SAME institution's address" in prompt
+
+    def test_incluye_regla_de_un_remark_por_linea_en_observaciones(self):
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert "one remark per line" in prompt
+        assert 'separated by "\\n"' in prompt
+
+    def test_no_contradice_transcribir_tal_cual_con_reparacion_de_formato(self):
+        """La descripción de "observaciones" ya no dice "transcribe as written" a
+        secas (eso contradiría reparar espaciado/acentos) -- la fidelidad ahora se
+        expresa como "never invent, summarize or drop information"."""
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert "Never invent or summarize — transcribe as written." not in prompt
+        assert "never invent, summarize or drop information" in prompt
+
+
+class TestConfigGemini:
+    def test_usa_temperatura_cero_para_extraccion_determinista(self):
+        """T4 (carga-asincrona): con la temperatura por default, la misma OC daba
+        resultados distintos entre corridas (observaciones que omitían líneas,
+        31 vs 32 renglones en OC_TANDIL.pdf). Extraer datos no es una tarea
+        creativa -- temperatura 0 minimiza esa variación."""
+        from services.extraccion.robot_orden_compra import _JSON_CONFIG
+
+        assert _JSON_CONFIG.temperature == 0
+
 
 # ---------------------------------------------------------------------------
 # procesar_orden_compra — mockea Gemini + parseo de documento
@@ -282,3 +372,27 @@ class TestProcesarOrdenCompra:
 
         with pytest.raises(OrdenCompraSinRenglonesError):
             procesar_orden_compra(origen, "ORIGEN_orden.pdf")
+
+    def test_observaciones_con_saltos_de_linea_sobrevive_roundtrip_csv(self, tmp_path, mocker):
+        """T4: el CSV usa QUOTE_MINIMAL -- un campo con \\n embebido se escribe
+        entre comillas automáticamente (RFC 4180) y csv.DictReader lo reconstruye
+        igual, sin colapsar los saltos de línea internos. Mismo lector que usa
+        services/presupuestacion/extraccion/service.py::_leer_filas_csv_con_columnas."""
+        mocker.patch(
+            "services.extraccion.robot_orden_compra.get_output_dir",
+            return_value=tmp_path,
+        )
+
+        datos = _datos_oc4471()
+        datos["observaciones"] = "Plazo de Pago: 90 Días\nDatos para Facturar:\nCUIT N°: 33-67835142-9"
+        filas = _construir_filas(datos)
+
+        csv_path = _escribir_csv(filas, "OC4471", "HOSPITALSANROQUE")
+
+        with open(csv_path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            filas_leidas = list(reader)
+
+        assert filas_leidas[0]["observaciones"] == (
+            "Plazo de Pago: 90 Días\nDatos para Facturar:\nCUIT N°: 33-67835142-9"
+        )
