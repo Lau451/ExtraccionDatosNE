@@ -34,6 +34,7 @@ def kwargs_base(tmp_path):
     csv_path = tmp_path / "resultado.csv"
     csv_path.touch()
     return {
+        "extraction_id": UUID("87654321-4321-8765-4321-876543218765"),
         "session_id": UUID("12345678-1234-5678-1234-567812345678"),
         "doc_type": "comparativa",
         "rows": [{"proveedor": "ACME", "precio": "100"}],
@@ -120,6 +121,53 @@ class TestRetryPersist:
             "definitivamente" in msg or "fallida" in msg
             for msg in caplog.messages
         ), f"Se esperaba ERROR de persistencia definitiva. Mensajes: {caplog.messages}"
+
+    @pytest.mark.asyncio
+    async def test_retry_persist_fails_3_times_marca_extraccion_fallida(self, kwargs_base, mocker):
+        """
+        carga-asincrona (T1): agotados los 3 intentos, la fila de
+        extraction_results (creada en 'processing' antes del robot) debe
+        marcarse 'failed' -- nunca debe quedar en 'processing' para siempre.
+        """
+        mocker.patch(
+            "services.extraccion.background_tasks.persistir_output_final",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Error de BD simulado"),
+        )
+        mocker.patch("services.extraccion.background_tasks.asyncio.sleep", new_callable=AsyncMock)
+        mock_marcar_fallida = mocker.patch(
+            "services.extraccion.background_tasks.marcar_extraccion_fallida",
+            new_callable=AsyncMock,
+        )
+        mock_cerrar_sesion = mocker.patch(
+            "services.extraccion.background_tasks.cerrar_sesion",
+            new_callable=AsyncMock,
+        )
+
+        await _retry_persist(**kwargs_base, attempt=0, max_attempts=3)
+
+        mock_marcar_fallida.assert_awaited_once()
+        assert mock_marcar_fallida.await_args.kwargs["extraction_id"] == kwargs_base["extraction_id"]
+        assert mock_marcar_fallida.await_args.kwargs["drogueria_id"] == kwargs_base["drogueria_id"]
+        mock_cerrar_sesion.assert_awaited_once()
+        assert mock_cerrar_sesion.await_args.kwargs["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_retry_persist_first_attempt_success_no_marca_fallida(self, kwargs_base, mocker):
+        """Éxito en el primer intento -> marcar_extraccion_fallida nunca se llama."""
+        mocker.patch(
+            "services.extraccion.background_tasks.persistir_output_final",
+            new_callable=AsyncMock,
+            return_value=kwargs_base["extraction_id"],
+        )
+        mock_marcar_fallida = mocker.patch(
+            "services.extraccion.background_tasks.marcar_extraccion_fallida",
+            new_callable=AsyncMock,
+        )
+
+        await _retry_persist(**kwargs_base, attempt=0, max_attempts=3)
+
+        mock_marcar_fallida.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_retry_persist_backoff_exponencial(self, kwargs_base, mocker):

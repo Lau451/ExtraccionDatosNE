@@ -102,15 +102,17 @@ class TestProcesarFileSmallSuccess:
         self, client, headers_json, pdf_bytes, tmp_path, mocker
     ):
         """
-        Dado un PDF pequeño válido:
+        Dado un PDF pequeño válido (carga-asincrona, T1):
         1. calcular_sha256 corre sin error
         2. buscar_duplicado_con_lock retorna None (no es duplicado)
         3. crear_sesion retorna UUID
-        4. procesar_archivo retorna un CSV válido
-        5. schedule_persist_output registra la background task
-        6. La respuesta HTTP es 200 con ok=True
+        4. crear_extraction_processing inserta la fila 'processing' y retorna su id
+        5. procesar_archivo retorna un CSV válido (corrido en background)
+        6. schedule_persist_output registra la persistencia final
+        7. La respuesta HTTP es 202 con ok=True y el extraction_id de la fila 'processing'
         """
         session_uuid = uuid.uuid4()
+        extraction_uuid = uuid.uuid4()
         csv_path = _mock_csv_output(tmp_path)
 
         # Mock SHA256 — operación rápida sin acceso a disco real
@@ -130,6 +132,12 @@ class TestProcesarFileSmallSuccess:
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
+        # Fila 'processing' creada exitosamente
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=extraction_uuid,
+        )
         # Robot retorna el CSV sin llamar a Gemini
         mocker.patch(
             "services.extraccion.main.procesar_archivo",
@@ -148,9 +156,10 @@ class TestProcesarFileSmallSuccess:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         body = response.json()
         assert body["ok"] is True
+        assert body["extraction_id"] == str(extraction_uuid)
         mock_schedule.assert_awaited_once()
 
 
@@ -204,18 +213,25 @@ class TestProcesarFileDuplicateBlocks:
 # ---------------------------------------------------------------------------
 
 class TestProcesarFileGeminiFailsChunk1:
-    """Test 4.5.3: el robot lanza excepción → respuesta de error apropiada."""
+    """Test 4.5.3: el robot lanza excepción → la extracción se marca 'failed'.
 
-    def test_procesar_file_gemini_fails_chunk_1(
+    carga-asincrona (T1): el robot corre en background, así que una excepción
+    ahí NUNCA cambia el código HTTP de /procesar (ya respondió 202 antes de que
+    el robot arranque) -- se traduce a un UPDATE de extraction_results a
+    status='failed' + error_msg, y a cerrar la sesión como 'failed'.
+    """
+
+    def test_procesar_file_gemini_falla_marca_extraccion_failed(
         self, client, headers_json, pdf_bytes, mocker
     ):
         """
-        Cuando el robot lanza una excepción genérica (simulando fallo de Gemini) →
-        la respuesta HTTP es 500 con ok=False.
-        La sesión debería quedar en estado "partial" (no verificamos BD aquí,
-        solo el HTTP response del endpoint).
+        Cuando el robot lanza una excepción genérica (simulando fallo de Gemini):
+        1. La respuesta HTTP sigue siendo 202 (ya se respondió antes de correr el robot)
+        2. marcar_extraccion_fallida se llama con el extraction_id de la fila 'processing'
+        3. cerrar_sesion se llama con status='failed'
         """
         session_uuid = uuid.uuid4()
+        extraction_uuid = uuid.uuid4()
 
         mocker.patch(
             "services.extraccion.main.calcular_sha256",
@@ -231,10 +247,23 @@ class TestProcesarFileGeminiFailsChunk1:
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=extraction_uuid,
+        )
         # Robot falla con excepción genérica
         mocker.patch(
             "services.extraccion.main.procesar_archivo",
             side_effect=RuntimeError("Gemini chunk 1 failed after 3 retries"),
+        )
+        mock_marcar_fallida = mocker.patch(
+            "services.extraccion.main.marcar_extraccion_fallida",
+            new_callable=AsyncMock,
+        )
+        mock_cerrar_sesion = mocker.patch(
+            "services.extraccion.main.cerrar_sesion",
+            new_callable=AsyncMock,
         )
 
         response = client.post(
@@ -244,9 +273,16 @@ class TestProcesarFileGeminiFailsChunk1:
             headers=headers_json,
         )
 
-        assert response.status_code == 500
+        assert response.status_code == 202
         body = response.json()
-        assert body["ok"] is False
+        assert body["ok"] is True
+
+        mock_marcar_fallida.assert_awaited_once()
+        assert mock_marcar_fallida.await_args.kwargs["extraction_id"] == extraction_uuid
+        assert mock_marcar_fallida.await_args.kwargs["error_msg"] == "Error interno del servidor"
+        mock_cerrar_sesion.assert_awaited_once()
+        assert mock_cerrar_sesion.await_args.kwargs["session_id"] == session_uuid
+        assert mock_cerrar_sesion.await_args.kwargs["status"] == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +321,11 @@ class TestProcesarComparativaChunksSavings:
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
         # Robot de comparativas retorna CSV exitosamente
         mocker.patch(
             "services.extraccion.main.procesar_comparativa",
@@ -308,7 +349,7 @@ class TestProcesarComparativaChunksSavings:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         body = response.json()
         assert body["ok"] is True
 
@@ -336,6 +377,7 @@ class TestProcesarConLicitacionIdValido:
         mocker.patch("services.extraccion.main.calcular_sha256", return_value="d" * 64)
         mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
         mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("services.extraccion.main.crear_extraction_processing", new_callable=AsyncMock, return_value=uuid.uuid4())
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         # validar_proceso_comercial_id retorna el mismo id (ya existe en BD, misma droguería)
         mocker.patch(
@@ -352,7 +394,7 @@ class TestProcesarConLicitacionIdValido:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         mock_schedule.assert_awaited_once()
         assert mock_schedule.await_args.kwargs["licitacion_id"] == lic_id
 
@@ -373,6 +415,7 @@ class TestProcesarSinLicitacionId:
         mocker.patch("services.extraccion.main.calcular_sha256", return_value="e" * 64)
         mocker.patch("services.extraccion.main.buscar_duplicado_con_lock", new_callable=AsyncMock, return_value=None)
         mocker.patch("services.extraccion.main.crear_sesion", new_callable=AsyncMock, return_value=session_uuid)
+        mocker.patch("services.extraccion.main.crear_extraction_processing", new_callable=AsyncMock, return_value=uuid.uuid4())
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         # Vacío → validar_proceso_comercial_id retorna None
         mocker.patch(
@@ -389,7 +432,7 @@ class TestProcesarSinLicitacionId:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_schedule.await_args.kwargs["licitacion_id"] is None
 
 
@@ -476,6 +519,11 @@ class TestProcesarTipoOrdenes:
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
         mock_orden_compra = mocker.patch(
             "services.extraccion.main.procesar_orden_compra",
             return_value=str(csv_path),
@@ -492,7 +540,7 @@ class TestProcesarTipoOrdenes:
         )
 
         assert response.status_code != 422
-        assert response.status_code == 200
+        assert response.status_code == 202
         mock_orden_compra.assert_called_once()
         mock_schedule.assert_awaited_once()
         assert mock_schedule.await_args.kwargs["doc_type"] == "orden_compra"
@@ -515,6 +563,11 @@ class TestProcesarTipoOrdenes:
             return_value=session_uuid,
         )
         mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mocker.patch(
             "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
         )
         mocker.patch(
@@ -528,7 +581,7 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
     def test_tipo_ordenes_acepta_htm(
         self, client, headers_json, tmp_path, mocker
@@ -548,6 +601,11 @@ class TestProcesarTipoOrdenes:
             return_value=session_uuid,
         )
         mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mocker.patch(
             "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
         )
         mocker.patch(
@@ -561,7 +619,7 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
     def test_grupo_id_invalido_retorna_422_sin_llamar_robot(
         self, client, headers_json, pdf_bytes, mocker
@@ -600,6 +658,11 @@ class TestProcesarTipoOrdenes:
             return_value=session_uuid,
         )
         mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mocker.patch(
             "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
         )
         mock_schedule = mocker.patch(
@@ -613,7 +676,7 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_schedule.await_args.kwargs["grupo_id"] is None
 
     def test_grupo_id_valido_se_propaga_a_schedule_persist_output(
@@ -635,6 +698,11 @@ class TestProcesarTipoOrdenes:
             return_value=session_uuid,
         )
         mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
+        mocker.patch(
             "services.extraccion.main.procesar_orden_compra", return_value=str(csv_path)
         )
         mock_schedule = mocker.patch(
@@ -648,7 +716,7 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_schedule.await_args.kwargs["grupo_id"] == grupo_id
 
     def test_grupo_id_ignorado_si_tipo_no_es_ordenes(
@@ -670,6 +738,11 @@ class TestProcesarTipoOrdenes:
             new_callable=AsyncMock,
             return_value=session_uuid,
         )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        )
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         mock_schedule = mocker.patch(
             "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
@@ -682,7 +755,7 @@ class TestProcesarTipoOrdenes:
             headers=headers_json,
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_schedule.await_args.kwargs["grupo_id"] is None
 
 

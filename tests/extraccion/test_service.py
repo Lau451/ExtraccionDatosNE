@@ -168,6 +168,60 @@ def test_leer_filas_extraccion_csv_no_disponible_levanta_extraccion_no_disponibl
         )
 
 
+# ---------------------------------------------------------------------------
+# carga-asincrona (T1) -- leer_filas_extraccion solo ofrece extracciones
+# 'completed'/'partial'; 'processing'/'failed' no tienen csv_disk_path
+# utilizable (el robot corre en background, ver services/extraccion/main.py).
+# ---------------------------------------------------------------------------
+
+def test_leer_filas_extraccion_status_processing_levanta_conflict_error():
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-processing",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
+                "status": "processing",
+            }
+        )
+
+
+def test_leer_filas_extraccion_status_failed_levanta_conflict_error():
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-failed",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
+                "status": "failed",
+            }
+        )
+
+
+def test_leer_filas_extraccion_status_partial_no_se_ve_afectado(tmp_path):
+    """'partial' se deja pasar sin cambios -- comportamiento previo a esta tarea
+    (nunca se filtró por status)."""
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "10", "descripcion": "Item"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-partial",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "status": "partial",
+        }
+    )
+
+    assert resultado.filas_leidas == 1
+
+
 # --- validado / orden_compra_id en GET .../filas (T2, extraccion-duplicado-link) --
 # La pantalla de validación necesita saber si esta extracción ya fue validada (y,
 # para OC, adónde ir) para no ofrecer una segunda confirmación que el backend de
@@ -384,6 +438,56 @@ def test_validar_ya_validada_levanta_conflict(
         extraction_id=extraction["id"],
         usuario_id=seed_usuario_sistema["id"],
         proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            service_client,
+            extraction_id=extraction["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=seed_proceso_comercial["id"],
+        )
+
+
+# ---------------------------------------------------------------------------
+# carga-asincrona (T1) -- validar_extraccion solo acepta 'completed'/'partial'.
+# ---------------------------------------------------------------------------
+
+def test_validar_extraccion_status_processing_levanta_conflict_error(monkeypatch):
+    """Unit puro (sin DB real): 'processing' todavía no existe como valor
+    permitido en el CHECK remoto (migración 0028, no aplicada al proyecto de
+    test) -- se verifica acá vía monkeypatch de repo.buscar_extraction_result
+    en vez de sembrar una fila real."""
+    monkeypatch.setattr(
+        repo,
+        "buscar_extraction_result",
+        lambda client, *, extraction_id: {
+            "id": extraction_id,
+            "document_type": "licitacion",
+            "status": "processing",
+            "validado": False,
+        },
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            MagicMock(),
+            extraction_id="extraccion-processing",
+            usuario_id="usuario-1",
+            proceso_comercial_id="proceso-1",
+        )
+
+
+@pytest.mark.integration
+def test_validar_extraccion_status_failed_levanta_conflict_error(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    extraction = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        status="failed",
     )
 
     with pytest.raises(ConflictError):

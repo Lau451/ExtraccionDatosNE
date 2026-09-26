@@ -2,6 +2,7 @@ import asyncio
 import csv
 import logging
 import os
+from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,8 +25,14 @@ from services.extraccion.robot_orden_compra import procesar_orden_compra, OrdenC
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
 from services.extraccion.config import get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
 from services.extraccion.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
-from services.extraccion.persistent_output import calcular_sha256, buscar_duplicado_con_lock
-from services.extraccion.persistent_chunking import crear_sesion
+from services.extraccion.persistent_output import (
+    calcular_sha256,
+    buscar_duplicado_con_lock,
+    crear_extraction_processing,
+    marcar_extraccion_fallida,
+    marcar_processing_interrumpidos,
+)
+from services.extraccion.persistent_chunking import crear_sesion, cerrar_sesion
 from services.extraccion.background_tasks import schedule_persist_output
 
 # ======================
@@ -42,7 +49,17 @@ logger = logging.getLogger(__name__)
 # APP
 # ======================
 
-app = FastAPI(title="Extractor de Documentos")
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """carga-asincrona (T1): al levantar el servicio, cualquier extraction_results
+    en 'processing' que haya quedado huérfana de un reinicio/crash anterior se
+    marca 'failed' -- ver persistent_output.marcar_processing_interrumpidos.
+    Nunca bloquea el arranque (esa función atrapa sus propios errores)."""
+    await marcar_processing_interrumpidos()
+    yield
+
+
+app = FastAPI(title="Extractor de Documentos", lifespan=_lifespan)
 app.include_router(extraction_results_router)
 app.include_router(clientes_router)
 register_exception_handlers(app)
@@ -137,6 +154,185 @@ def _validar_grupo_id(grupo_id: str) -> str | None:
         )
 
     return str(parsed)
+
+
+async def _fallar_extraccion(
+    *,
+    extraction_id: UUID | None,
+    drogueria_id: str,
+    session_id: UUID | None,
+    mensaje: str,
+) -> None:
+    """Marca la extraccion 'failed' + cierra la sesión 'failed' -- se llama desde
+    cada rama except de `_procesar_documento_background` para asegurar que la
+    fila de extraction_results NUNCA quede en 'processing' cuando el robot o la
+    lectura del CSV fallan (carga-asincrona, T1). No propaga excepción: ambas
+    funciones internas ya atrapan las suyas."""
+    await marcar_extraccion_fallida(
+        extraction_id=extraction_id, drogueria_id=drogueria_id, error_msg=mensaje
+    )
+    if session_id is not None:
+        await cerrar_sesion(session_id=session_id, status="failed", error_msg=mensaje)
+
+
+async def _procesar_documento_background(
+    *,
+    tipo: str,
+    destino: Path,
+    tmp_dir: Path,
+    nombre_original: str,
+    session_id: UUID | None,
+    extraction_id: UUID | None,
+    doc_type: str,
+    drogueria_id: str,
+    origen_id: str,
+    source_sha256: str,
+    instrucciones_prompt: str | None,
+    licitacion_id: str | None,
+    grupo_id: str | None,
+) -> None:
+    """
+    Corre el robot (Gemini), lee el CSV resultante y persiste el resultado final
+    -- TODO esto en background, después de que `/procesar` ya respondió 202 con
+    `extraction_id` (carga-asincrona, T1). Antes de esta tarea, este mismo código
+    vivía inline en el endpoint y el cliente esperaba a que terminara para
+    recibir la respuesta HTTP.
+
+    Nunca propaga excepción (es un BackgroundTask: nadie está esperando su
+    resultado). Cualquier falla acá se traduce al mismo mapeo de mensajes en
+    español que antes armaba la respuesta HTTP de error, ahora escrito en
+    `extraction_results.error_msg` vía `_fallar_extraccion` -- la fila NUNCA debe
+    quedar en 'processing' al salir de esta función, sea cual sea el motivo.
+    El cleanup del archivo temporal (que antes vivía en el `finally` del
+    endpoint) se movió acá porque ahora es este job, no el endpoint, quien
+    termina de usar `destino`.
+    """
+    try:
+        async with _GEMINI_SEMAPHORE:
+            if tipo == "comparativas":
+                csv_generado = await asyncio.to_thread(
+                    procesar_comparativa, destino, nombre_original,
+                    session_id=session_id,
+                    drogueria_id=drogueria_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+            elif tipo == "ordenes":
+                csv_generado = await asyncio.to_thread(
+                    procesar_orden_compra, destino, nombre_original,
+                    session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+            else:
+                csv_generado = await asyncio.to_thread(
+                    procesar_archivo, destino, nombre_original,
+                    session_id=session_id,
+                    instrucciones_extra=instrucciones_prompt,
+                )
+
+        # ======================
+        # LEER CSV + PERSISTENCIA FINAL
+        # ======================
+        csv_path = Path(csv_generado)
+        rows = []
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f, delimiter=";")
+                rows = list(reader)
+        except Exception as e:
+            logger.error("Error al leer CSV generado %s: %s", csv_path, e)
+
+        # Ya estamos corriendo dentro de un BackgroundTask del endpoint (no hay
+        # otro request/response del cual "colgar" una segunda tanda de tareas) --
+        # se le da a schedule_persist_output una BackgroundTasks descartable y se
+        # la corre en el acto, reusando tal cual su lógica de retry/backoff.
+        persist_bg = BackgroundTasks()
+        await schedule_persist_output(
+            persist_bg,
+            extraction_id=extraction_id,
+            session_id=session_id,
+            doc_type=doc_type,
+            rows=rows,
+            csv_path=csv_path,
+            client_id=origen_id,
+            source_filename=nombre_original,
+            source_sha256=source_sha256,
+            drogueria_id=drogueria_id,
+            licitacion_id=licitacion_id,
+            grupo_id=grupo_id,
+        )
+        await persist_bg()
+
+    except UnsupportedFormatError as e:
+        logger.warning("Unsupported format: %s", e.extension)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=f"Formato no soportado: {e.extension}",
+        )
+
+    except ParserError as e:
+        logger.error("Parser error: %s - %s", e.filepath, e.cause)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=f"No se pudo procesar el archivo: {str(e.cause)[:100]}",
+        )
+
+    except NoProvidersDetectedError as e:
+        logger.warning("No providers detected: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="No se detectaron proveedores en el documento",
+        )
+
+    except OrdenCompraSinRenglonesError as e:
+        logger.warning("No renglones detected in orden_compra: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="No se detectaron renglones en el documento",
+        )
+
+    except GeminiQuotaExceededError as e:
+        logger.error("Gemini API quota exceeded: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.",
+        )
+
+    except GeminiRateLimitError as e:
+        logger.error("Gemini API rate limit exceeded: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="El servicio está temporalmente saturado. Intente nuevamente en unos momentos.",
+        )
+
+    except GeminiAPIError as e:
+        logger.error("Gemini API error: %s", e.message)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje=f"Error en el servicio de IA: {e.message[:80]}",
+        )
+
+    except Exception as e:
+        logger.exception("Unexpected error processing %s: %s", tipo, e)
+        await _fallar_extraccion(
+            extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
+            mensaje="Error interno del servidor",
+        )
+
+    finally:
+        if destino.exists():
+            try:
+                destino.unlink()
+                logger.debug("Deleted temp file: %s", destino)
+            except Exception as cleanup_error:
+                logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
+
+        # Clean up empty tmp directory
+        try:
+            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
+                tmp_dir.rmdir()
+                logger.debug("Deleted empty tmp directory: %s", tmp_dir)
+        except Exception as cleanup_error:
+            logger.debug("Could not remove tmp directory: %s", cleanup_error)
 
 
 @app.post("/procesar")
@@ -235,129 +431,44 @@ async def procesar(
     )
 
     # ======================
-    # PROCESAR CON ROBOT
+    # REGISTRO 'processing' + RESPUESTA INMEDIATA (carga-asincrona, T1)
     # ======================
-    try:
-        async with _GEMINI_SEMAPHORE:
-            if tipo == "comparativas":
-                csv_generado = await asyncio.to_thread(
-                    procesar_comparativa, destino, nombre_original,
-                    session_id=session_id,
-                    drogueria_id=drogueria_id,
-                    instrucciones_extra=instrucciones_prompt,
-                )
-            elif tipo == "ordenes":
-                csv_generado = await asyncio.to_thread(
-                    procesar_orden_compra, destino, nombre_original,
-                    session_id=session_id,
-                    instrucciones_extra=instrucciones_prompt,
-                )
-            else:
-                csv_generado = await asyncio.to_thread(
-                    procesar_archivo, destino, nombre_original,
-                    session_id=session_id,
-                    instrucciones_extra=instrucciones_prompt,
-                )
+    # A partir de acá el robot (Gemini), la lectura del CSV y la persistencia
+    # final corren en background -- el cliente ya no espera nada de eso. La fila
+    # 'processing' es lo que permite: (a) responder 202 con un extraction_id real
+    # que el frontend puede pollear, y (b) que un segundo upload del mismo
+    # archivo mientras este todavía corre reciba 409 (reserve_extraction trata
+    # 'processing' como tomada, migración 0028).
+    extraction_id = await crear_extraction_processing(
+        drogueria_id=drogueria_id,
+        document_type=doc_type,
+        source_filename=nombre_original,
+        source_sha256=sha256_doc,
+        grupo_id=grupo_id_validado,
+        proceso_comercial_id=licitacion_id_validado,
+    )
 
-        # ======================
-        # LEER CSV + SCHEDULING DE PERSISTENCIA
-        # ======================
-        csv_path = Path(csv_generado)
-        rows = []
-        try:
-            with open(csv_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f, delimiter=";")
-                rows = list(reader)
-        except Exception as e:
-            logger.error("Error al leer CSV generado %s: %s", csv_path, e)
+    bg_tasks.add_task(
+        _procesar_documento_background,
+        tipo=tipo,
+        destino=destino,
+        tmp_dir=tmp_dir,
+        nombre_original=nombre_original,
+        session_id=session_id,
+        extraction_id=extraction_id,
+        doc_type=doc_type,
+        drogueria_id=drogueria_id,
+        origen_id=origen_id,
+        source_sha256=sha256_doc,
+        instrucciones_prompt=instrucciones_prompt,
+        licitacion_id=licitacion_id_validado,
+        grupo_id=grupo_id_validado,
+    )
 
-        await schedule_persist_output(
-            bg_tasks,
-            session_id=session_id,
-            doc_type=doc_type,
-            rows=rows,
-            csv_path=csv_path,
-            client_id=origen_id,
-            source_filename=nombre_original,
-            source_sha256=sha256_doc,
-            drogueria_id=drogueria_id,
-            licitacion_id=licitacion_id_validado,
-            grupo_id=grupo_id_validado,
-        )
-
-        return _procesar_response({"tipo": tipo})
-
-    except UnsupportedFormatError as e:
-        logger.warning("Unsupported format: %s", e.extension)
-        return _procesar_response(
-            {"error": f"Formato no soportado: {e.extension}", "tipo": tipo},
-            status_code=415,
-        )
-
-    except ParserError as e:
-        logger.error("Parser error: %s - %s", e.filepath, e.cause)
-        return _procesar_response(
-            {"error": f"No se pudo procesar el archivo: {str(e.cause)[:100]}", "tipo": tipo},
-            status_code=422,
-        )
-
-    except NoProvidersDetectedError as e:
-        logger.warning("No providers detected: %s", e.message)
-        return _procesar_response(
-            {"error": "No se detectaron proveedores en el documento", "tipo": tipo},
-            status_code=422,
-        )
-
-    except OrdenCompraSinRenglonesError as e:
-        logger.warning("No renglones detected in orden_compra: %s", e.message)
-        return _procesar_response(
-            {"error": "No se detectaron renglones en el documento", "tipo": tipo},
-            status_code=422,
-        )
-
-    except GeminiQuotaExceededError as e:
-        logger.error("Gemini API quota exceeded: %s", e.message)
-        return _procesar_response(
-            {"error": "⚠️ Límite de quota alcanzado. Por favor, contacte al administrador para renovar la API key.", "tipo": tipo},
-            status_code=503,
-        )
-
-    except GeminiRateLimitError as e:
-        logger.error("Gemini API rate limit exceeded: %s", e.message)
-        return _procesar_response(
-            {"error": "El servicio está temporalmente saturado. Intente nuevamente en unos momentos.", "tipo": tipo},
-            status_code=429,
-        )
-
-    except GeminiAPIError as e:
-        logger.error("Gemini API error: %s", e.message)
-        return _procesar_response(
-            {"error": f"Error en el servicio de IA: {e.message[:80]}", "tipo": tipo},
-            status_code=500,
-        )
-
-    except Exception as e:
-        logger.exception("Unexpected error processing %s: %s", tipo, e)
-        return _procesar_response(
-            {"error": "Error interno del servidor", "tipo": tipo},
-            status_code=500,
-        )
-
-    finally:
-        if destino.exists():
-            try:
-                destino.unlink()
-                logger.debug("Deleted temp file: %s", destino)
-            except Exception as cleanup_error:
-                logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
-
-        # Clean up empty tmp directory
-        try:
-            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
-                tmp_dir.rmdir()
-                logger.debug("Deleted empty tmp directory: %s", tmp_dir)
-        except Exception as cleanup_error:
-            logger.debug("Could not remove tmp directory: %s", cleanup_error)
+    return _procesar_response(
+        {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None},
+        status_code=202,
+    )
 
 
 @app.get("/api/documentos")
@@ -372,7 +483,7 @@ async def listar_documentos(
         q = (
             client.table("extraction_results")
             .select(
-                "id,source_filename,document_type,row_count,status,created_at,"
+                "id,source_filename,document_type,row_count,status,error_msg,created_at,"
                 "proceso_comercial_id"
             )
             .eq("drogueria_id", drogueria_id)

@@ -7,6 +7,11 @@ antes se aceptaba el parámetro y se descartaba sin escribirlo, dejando siempre 
 vinculación). `client_id` y `session_id` siguen sin persistirse — esas sí son compatibilidad
 pura, ver el docstring de persistir_output_final para el detalle de por qué.
 
+Desde carga-asincrona (T1), persistir_output_final hace un UPDATE por extraction_id
+(la fila ya existe en 'processing', creada por crear_extraction_processing ANTES de
+correr el robot) en vez de un INSERT -- estos tests mockean `.update()` en vez de
+`.insert()`.
+
 Verifica que:
 - persistir_output_final persiste licitacion_id como proceso_comercial_id en el payload
 - licitacion_id=None no agrega la clave proceso_comercial_id al payload (columna nullable)
@@ -53,7 +58,7 @@ def extraction_uuid():
 
 
 def _supabase_mock(extraction_uuid: str) -> tuple[MagicMock, dict[str, MagicMock]]:
-    """Mock del cliente Supabase: simula el INSERT en extraction_results como exitoso
+    """Mock del cliente Supabase: simula el UPDATE en extraction_results como exitoso
     (drogueria_id ya no se resuelve acá, lo enhebra explícito el caller). Devuelve
     también el dict de mocks por tabla (side_effect crea mocks desconectados del padre
     — hay que guardar la referencia para poder assertear sobre ellos, `mock.mock_calls`
@@ -64,7 +69,9 @@ def _supabase_mock(extraction_uuid: str) -> tuple[MagicMock, dict[str, MagicMock
     def _table(nombre):
         if nombre not in tablas:
             tabla_mock = MagicMock()
-            tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
+            tabla_mock.update.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
+                {"id": extraction_uuid}
+            ]
             tablas[nombre] = tabla_mock
         return tablas[nombre]
 
@@ -91,6 +98,7 @@ class TestPersistirConLicitacionId:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
+            extraction_id=uuid.UUID(extraction_uuid),
             session_id=uuid.uuid4(),
             doc_type="licitacion",
             rows=rows,
@@ -105,8 +113,8 @@ class TestPersistirConLicitacionId:
         assert result is not None
 
         tabla_er = tablas["extraction_results"]
-        tabla_er.insert.assert_called_once()
-        payload = tabla_er.insert.call_args[0][0]
+        tabla_er.update.assert_called_once()
+        payload = tabla_er.update.call_args[0][0]
         assert payload["proceso_comercial_id"] == lic_id
         assert "licitacion_id" not in payload
         assert "client_id" not in payload
@@ -122,6 +130,7 @@ class TestPersistirConLicitacionId:
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock_client)
 
         result = await persistent_output.persistir_output_final(
+            extraction_id=uuid.UUID(extraction_uuid),
             session_id=uuid.uuid4(),
             doc_type="licitacion",
             rows=rows,
@@ -135,7 +144,7 @@ class TestPersistirConLicitacionId:
 
         assert result is not None
 
-        payload = tablas["extraction_results"].insert.call_args[0][0]
+        payload = tablas["extraction_results"].update.call_args[0][0]
         assert "proceso_comercial_id" not in payload
 
 
@@ -156,6 +165,7 @@ class TestSchedulePersistOutputPropagaLicitacionId:
 
         await schedule_persist_output(
             bg,
+            extraction_id=uuid.uuid4(),
             session_id=session_id,
             doc_type="licitacion",
             rows=[{"col": "val"}],

@@ -564,6 +564,7 @@ CREATE TABLE extraction_results (
     csv_disk_path           TEXT            NULL,
     archivo_path            TEXT            NULL,
     status                  TEXT            NOT NULL DEFAULT 'completed',
+    error_msg               TEXT            NULL,
     validado                BOOLEAN         NOT NULL DEFAULT FALSE,
     validado_por            UUID            NULL,
     validado_at             TIMESTAMPTZ     NULL,
@@ -573,12 +574,13 @@ CREATE TABLE extraction_results (
     PRIMARY KEY (id),
     CONSTRAINT uq_er_drog_sha UNIQUE (drogueria_id, source_sha256),
     CONSTRAINT ck_er_doc_type CHECK (document_type IN ('comparativa', 'licitacion', 'cotizacion', 'orden_compra')),
-    CONSTRAINT ck_er_status CHECK (status IN ('completed', 'partial', 'failed'))
+    CONSTRAINT ck_er_status CHECK (status IN ('completed', 'partial', 'failed', 'processing'))
 );
 
 COMMENT ON COLUMN extraction_results.validado IS 'FALSE = extracción cruda sin revisar. TRUE = un humano validó y los datos se materializaron en las tablas de negocio (items_proceso / comparativas / ordenes_compra).';
 COMMENT ON COLUMN extraction_results.archivo_path IS 'El documento original. Los datos documentales viven acá, NO en las tablas de negocio.';
 COMMENT ON COLUMN extraction_results.grupo_id IS 'NULL = extracción suelta (caso normal). No NULL = esta fila es una parte de un documento repartido en varios archivos; todas las filas con el mismo grupo_id se validan juntas y producen UNA sola orden_compra (design.md D13). Agregada en 0025.';
+COMMENT ON COLUMN extraction_results.error_msg IS 'Mensaje de error legible (español) cuando status=''failed''. NULL en cualquier otro estado. Agregada en 0028 (procesamiento asíncrono).';
 
 CREATE TABLE chunk_results (
     id              UUID            NOT NULL DEFAULT gen_random_uuid(),

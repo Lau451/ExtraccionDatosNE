@@ -4,7 +4,10 @@ Tests para services/extraccion/persistent_output.py — SHA256 + deduplicación 
 Verifica:
 - calcular_sha256: mismo archivo → mismo hash; archivos distintos → hashes distintos
 - buscar_duplicado_con_lock: retorna UUID si hay duplicado, None si no hay
-- persistir_output_final: crea extraction_result, valida rows vacío, warning en >50k rows
+- crear_extraction_processing: INSERT en 'processing' antes de correr el robot (T1)
+- persistir_output_final: UPDATE por id a 'completed', valida rows vacío, warning en >50k rows
+- marcar_extraccion_fallida: UPDATE por id a 'failed' + error_msg
+- marcar_processing_interrumpidos: sweep de arranque, 'processing' viejos -> 'failed'
 """
 
 import uuid
@@ -52,18 +55,33 @@ def otro_archivo_temp():
 def mock_supabase_client(mocker):
     """
     Mock de supabase.Client para persistent_output. drogueria_id ya no se resuelve
-    acá -- lo enhebra explícito el caller. table(nombre).insert(...).execute() → una
-    fila con el id generado.
+    acá -- lo enhebra explícito el caller. table(...).insert(...).execute() → una
+    fila con el id generado. Un solo table("extraction_results") por invocación
+    -- mock.table.return_value referencia directamente ese mismo mock (sin
+    side_effect: no hace falta despachar por nombre de tabla acá), así los
+    tests pueden assertear sobre mock.table.return_value.insert.call_args.
     """
     mock = MagicMock()
     extraction_uuid = str(uuid.uuid4())
+    mock.table.return_value.insert.return_value.execute.return_value.data = [
+        {"id": extraction_uuid}
+    ]
+    mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+    return mock, extraction_uuid
 
-    def _table(nombre):
-        tabla_mock = MagicMock()
-        tabla_mock.insert.return_value.execute.return_value.data = [{"id": extraction_uuid}]
-        return tabla_mock
 
-    mock.table.side_effect = _table
+@pytest.fixture
+def mock_supabase_client_update(mocker):
+    """
+    Variante de mock_supabase_client para las funciones que hacen UPDATE por id
+    (persistir_output_final / marcar_extraccion_fallida, desde carga-asincrona T1):
+    table(...).update(...).eq(...).eq(...).execute() → una fila afectada.
+    """
+    mock = MagicMock()
+    extraction_uuid = str(uuid.uuid4())
+    mock.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
+        {"id": extraction_uuid}
+    ]
     mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
     return mock, extraction_uuid
 
@@ -197,23 +215,88 @@ class TestBuscarDuplicadoConLock:
 
 
 # ---------------------------------------------------------------------------
-# Tests de persistir_output_final
+# Tests de crear_extraction_processing (carga-asincrona, T1)
+# ---------------------------------------------------------------------------
+
+class TestCrearExtractionProcessing:
+    """Tests para crear_extraction_processing()."""
+
+    @pytest.mark.asyncio
+    async def test_crear_extraction_processing_success(self, mock_supabase_client):
+        mock, extraction_uuid = mock_supabase_client
+
+        resultado = await persistent_output.crear_extraction_processing(
+            drogueria_id="drogueria-1",
+            document_type="comparativa",
+            source_filename="comparativa.xlsx",
+            source_sha256="a" * 64,
+        )
+
+        assert resultado is not None
+        assert isinstance(resultado, UUID)
+        assert str(resultado) == extraction_uuid
+
+        payload = mock.table.return_value.insert.call_args[0][0]
+        assert payload["status"] == "processing"
+        assert payload["row_count"] == 0
+        assert "grupo_id" not in payload
+        assert "proceso_comercial_id" not in payload
+
+    @pytest.mark.asyncio
+    async def test_crear_extraction_processing_incluye_grupo_id_y_proceso_comercial_id(
+        self, mock_supabase_client
+    ):
+        mock, _ = mock_supabase_client
+        grupo_id = str(uuid.uuid4())
+        proceso_id = str(uuid.uuid4())
+
+        await persistent_output.crear_extraction_processing(
+            drogueria_id="drogueria-1",
+            document_type="orden_compra",
+            source_filename="orden.pdf",
+            source_sha256="b" * 64,
+            grupo_id=grupo_id,
+            proceso_comercial_id=proceso_id,
+        )
+
+        payload = mock.table.return_value.insert.call_args[0][0]
+        assert payload["grupo_id"] == grupo_id
+        assert payload["proceso_comercial_id"] == proceso_id
+
+    @pytest.mark.asyncio
+    async def test_crear_extraction_processing_client_none(self, mocker):
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
+
+        resultado = await persistent_output.crear_extraction_processing(
+            drogueria_id="drogueria-1",
+            document_type="comparativa",
+            source_filename="doc.pdf",
+            source_sha256="c" * 64,
+        )
+
+        assert resultado is None
+
+
+# ---------------------------------------------------------------------------
+# Tests de persistir_output_final (UPDATE por id desde la migración 0028)
 # ---------------------------------------------------------------------------
 
 class TestPersistirOutputFinal:
     """Tests para persistir_output_final()."""
 
     @pytest.mark.asyncio
-    async def test_persistir_output_final_success(self, mock_supabase_client, tmp_path):
+    async def test_persistir_output_final_success(self, mock_supabase_client_update, tmp_path):
         """
-        persistir_output_final con datos válidos → crea extraction_result
-        y retorna el UUID generado.
+        persistir_output_final con datos válidos → actualiza la fila 'processing'
+        ya existente (crear_extraction_processing) a 'completed' y retorna el
+        mismo extraction_id recibido.
         """
-        _, extraction_uuid = mock_supabase_client
+        _, extraction_uuid = mock_supabase_client_update
         csv_path = tmp_path / "resultado.csv"
         csv_path.touch()
 
         resultado = await persistent_output.persistir_output_final(
+            extraction_id=UUID(extraction_uuid),
             session_id=UUID("12345678-1234-5678-1234-567812345678"),
             doc_type="comparativa",
             rows=[{"proveedor": "ACME", "precio": "100"}],
@@ -229,15 +312,16 @@ class TestPersistirOutputFinal:
         assert str(resultado) == extraction_uuid
 
     @pytest.mark.asyncio
-    async def test_persistir_output_final_empty_rows(self, mock_supabase_client, tmp_path):
+    async def test_persistir_output_final_empty_rows(self, mock_supabase_client_update, tmp_path):
         """
-        rows vacío → retorna None (INSERT abortado, no se llama a Supabase).
+        rows vacío → retorna None (UPDATE abortado, no se llama a Supabase).
         """
-        mock, _ = mock_supabase_client
+        mock, extraction_uuid = mock_supabase_client_update
         csv_path = tmp_path / "resultado.csv"
         csv_path.touch()
 
         resultado = await persistent_output.persistir_output_final(
+            extraction_id=UUID(extraction_uuid),
             session_id=UUID("12345678-1234-5678-1234-567812345678"),
             doc_type="comparativa",
             rows=[],
@@ -250,19 +334,19 @@ class TestPersistirOutputFinal:
 
         assert resultado is None
         # No se debe haber llamado a table() en absoluto si rows está vacío
-        # (la validación corta antes de resolver drogueria_id o insertar)
+        # (la validación corta antes de resolver drogueria_id o actualizar)
         mock.table.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_persistir_output_final_many_rows_warning(
-        self, mock_supabase_client, tmp_path, caplog
+        self, mock_supabase_client_update, tmp_path, caplog
     ):
         """
-        Cuando rows > 50.000 → emite WARNING pero igual ejecuta el INSERT
-        y retorna el UUID.
+        Cuando rows > 50.000 → emite WARNING pero igual ejecuta el UPDATE
+        y retorna el extraction_id.
         """
         import logging
-        _, extraction_uuid = mock_supabase_client
+        _, extraction_uuid = mock_supabase_client_update
         csv_path = tmp_path / "resultado.csv"
         csv_path.touch()
 
@@ -271,6 +355,7 @@ class TestPersistirOutputFinal:
 
         with caplog.at_level(logging.WARNING, logger="services.extraccion.persistent_output"):
             resultado = await persistent_output.persistir_output_final(
+                extraction_id=UUID(extraction_uuid),
                 session_id=UUID("12345678-1234-5678-1234-567812345678"),
                 doc_type="comparativa",
                 rows=rows_grandes,
@@ -281,7 +366,7 @@ class TestPersistirOutputFinal:
                 drogueria_id="drogueria-1",
             )
 
-        # El resultado sigue siendo válido (INSERT se ejecutó)
+        # El resultado sigue siendo válido (UPDATE se ejecutó)
         assert resultado is not None
         # Debe haber un WARNING en los logs
         assert any("50" in msg for msg in caplog.messages), (
@@ -298,6 +383,7 @@ class TestPersistirOutputFinal:
         csv_path.touch()
 
         resultado = await persistent_output.persistir_output_final(
+            extraction_id=uuid.uuid4(),
             session_id=None,
             doc_type="comparativa",
             rows=[{"dato": "valor"}],
@@ -312,16 +398,17 @@ class TestPersistirOutputFinal:
 
     @pytest.mark.asyncio
     async def test_persistir_output_final_doc_type_invalido(
-        self, mock_supabase_client, tmp_path
+        self, mock_supabase_client_update, tmp_path
     ):
         """
         doc_type no reconocido → retorna None sin llamar a Supabase.
         """
-        mock, _ = mock_supabase_client
+        mock, extraction_uuid = mock_supabase_client_update
         csv_path = tmp_path / "resultado.csv"
         csv_path.touch()
 
         resultado = await persistent_output.persistir_output_final(
+            extraction_id=UUID(extraction_uuid),
             session_id=None,
             doc_type="tipo_invalido",
             rows=[{"dato": "valor"}],
@@ -333,3 +420,154 @@ class TestPersistirOutputFinal:
         )
 
         assert resultado is None
+
+    @pytest.mark.asyncio
+    async def test_persistir_output_final_update_filtra_por_extraction_id_y_drogueria(
+        self, mock_supabase_client_update, tmp_path
+    ):
+        """El UPDATE debe filtrar por id Y drogueria_id -- nunca debe poder
+        actualizar (ni mucho menos "completar") la fila de otra droguería."""
+        mock, extraction_uuid = mock_supabase_client_update
+        csv_path = tmp_path / "resultado.csv"
+        csv_path.touch()
+
+        await persistent_output.persistir_output_final(
+            extraction_id=UUID(extraction_uuid),
+            session_id=None,
+            doc_type="comparativa",
+            rows=[{"dato": "valor"}],
+            csv_path=csv_path,
+            client_id="cliente_a",
+            source_filename="doc.pdf",
+            source_sha256="j" * 64,
+            drogueria_id="drogueria-1",
+        )
+
+        tabla = mock.table.return_value
+        tabla.update.assert_called_once()
+        payload = tabla.update.call_args[0][0]
+        assert payload["status"] == "completed"
+        tabla.update.return_value.eq.assert_any_call("id", extraction_uuid)
+        tabla.update.return_value.eq.return_value.eq.assert_any_call("drogueria_id", "drogueria-1")
+
+
+# ---------------------------------------------------------------------------
+# Tests de marcar_extraccion_fallida (carga-asincrona, T1)
+# ---------------------------------------------------------------------------
+
+class TestMarcarExtraccionFallida:
+    """Tests para marcar_extraccion_fallida()."""
+
+    @pytest.mark.asyncio
+    async def test_marcar_extraccion_fallida_actualiza_status_y_error_msg(
+        self, mock_supabase_client_update
+    ):
+        mock, extraction_uuid = mock_supabase_client_update
+
+        await persistent_output.marcar_extraccion_fallida(
+            extraction_id=UUID(extraction_uuid),
+            drogueria_id="drogueria-1",
+            error_msg="No se detectaron proveedores en el documento",
+        )
+
+        payload = mock.table.return_value.update.call_args[0][0]
+        assert payload["status"] == "failed"
+        assert payload["error_msg"] == "No se detectaron proveedores en el documento"
+
+    @pytest.mark.asyncio
+    async def test_marcar_extraccion_fallida_extraction_id_none_no_llama_a_supabase(
+        self, mock_supabase_client_update
+    ):
+        """extraction_id=None (persistencia no disponible al crear la fila) es un
+        no-op -- no hay fila que actualizar."""
+        mock, _ = mock_supabase_client_update
+
+        await persistent_output.marcar_extraccion_fallida(
+            extraction_id=None,
+            drogueria_id="drogueria-1",
+            error_msg="Error interno del servidor",
+        )
+
+        mock.table.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_marcar_extraccion_fallida_client_none_no_crashea(self, mocker):
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
+
+        # No debe lanzar excepción
+        await persistent_output.marcar_extraccion_fallida(
+            extraction_id=uuid.uuid4(),
+            drogueria_id="drogueria-1",
+            error_msg="Error interno del servidor",
+        )
+
+    @pytest.mark.asyncio
+    async def test_marcar_extraccion_fallida_excepcion_no_propaga(self, mocker):
+        mock = MagicMock()
+        mock.table.side_effect = RuntimeError("Supabase caído")
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        # No debe lanzar excepción
+        await persistent_output.marcar_extraccion_fallida(
+            extraction_id=uuid.uuid4(),
+            drogueria_id="drogueria-1",
+            error_msg="Error interno del servidor",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests de marcar_processing_interrumpidos (sweep de arranque, carga-asincrona T1)
+# ---------------------------------------------------------------------------
+
+class TestMarcarProcessingInterrumpidos:
+    """Tests para marcar_processing_interrumpidos()."""
+
+    @pytest.mark.asyncio
+    async def test_marca_failed_las_filas_processing_devueltas(self, mocker):
+        mock = MagicMock()
+        tabla_mock = MagicMock()
+        tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = [
+            {"id": str(uuid.uuid4())},
+            {"id": str(uuid.uuid4())},
+        ]
+        mock.table.return_value = tabla_mock
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        afectadas = await persistent_output.marcar_processing_interrumpidos()
+
+        assert afectadas == 2
+        payload = tabla_mock.update.call_args[0][0]
+        assert payload["status"] == "failed"
+        assert "Procesamiento interrumpido" in payload["error_msg"]
+        tabla_mock.update.return_value.eq.assert_any_call("status", "processing")
+
+    @pytest.mark.asyncio
+    async def test_sin_filas_processing_retorna_cero(self, mocker):
+        mock = MagicMock()
+        tabla_mock = MagicMock()
+        tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = []
+        mock.table.return_value = tabla_mock
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        afectadas = await persistent_output.marcar_processing_interrumpidos()
+
+        assert afectadas == 0
+
+    @pytest.mark.asyncio
+    async def test_client_none_retorna_cero_sin_crash(self, mocker):
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
+
+        afectadas = await persistent_output.marcar_processing_interrumpidos()
+
+        assert afectadas == 0
+
+    @pytest.mark.asyncio
+    async def test_excepcion_no_propaga_y_retorna_cero(self, mocker):
+        mock = MagicMock()
+        mock.table.side_effect = RuntimeError("Supabase caído")
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        # No debe lanzar excepción
+        afectadas = await persistent_output.marcar_processing_interrumpidos()
+
+        assert afectadas == 0

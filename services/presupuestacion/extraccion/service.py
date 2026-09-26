@@ -166,6 +166,16 @@ def leer_filas_extraccion(
             f"document_type='{document_type}' no tiene lectura de filas implementada"
         )
 
+    # carga-asincrona (T1): default 'completed' -- retrocompatible con callers/tests
+    # que construyen el dict `extraction` a mano sin la clave 'status' (mismo
+    # criterio que 'validado' abajo). 'processing' (robot corriendo) y 'failed'
+    # nunca tienen csv_disk_path utilizable; 'partial' se deja pasar sin cambios.
+    status = extraction.get("status", "completed")
+    if status not in ("completed", "partial"):
+        raise ConflictError(
+            f"Esta extracción está en estado '{status}' -- todavía no se puede validar"
+        )
+
     # T2 (extraccion-duplicado-link) -- común a las dos ramas de abajo: la
     # pantalla de validación necesita saber si esta extracción ya fue validada
     # para no ofrecer una segunda confirmación.
@@ -1197,6 +1207,15 @@ def validar_extraccion(
         raise NotFoundError("No se encontró la extracción")
     if extraction["validado"]:
         raise ConflictError("Esta extracción ya fue validada")
+    # carga-asincrona (T1): el robot corre en background y esta fila puede seguir
+    # en 'processing' (todavía no terminó) o haber quedado en 'failed' (el robot
+    # o la persistencia fallaron) -- ninguna de las dos tiene datos utilizables
+    # para materializar (csv_disk_path es NULL en 'processing'). 'partial' se
+    # deja pasar sin cambios (comportamiento previo a esta tarea).
+    if extraction["status"] not in ("completed", "partial"):
+        raise ConflictError(
+            f"Esta extracción está en estado '{extraction['status']}' -- todavía no se puede validar"
+        )
 
     # D13.1 -- orden_compra ancla por cliente_id, no por proceso_comercial_id:
     # saltea por completo _resolver_proceso_comercial_id (D4). _materializar_licitacion

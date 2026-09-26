@@ -129,7 +129,7 @@ class TestProcesarEnhebraDrogueriaId:
             headers={"Accept": "application/json"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         assert mock_crear_sesion.await_args.kwargs["drogueria_id"] == "drogueria-a"
         assert mock_crear_sesion.await_args.kwargs["subido_por"] == "usuario-a"
         assert mock_schedule.await_args.kwargs["drogueria_id"] == "drogueria-a"

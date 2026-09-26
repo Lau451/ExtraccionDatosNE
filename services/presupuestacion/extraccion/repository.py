@@ -48,6 +48,12 @@ def listar_extracciones(
             "id, document_type, source_filename, row_count, status, validado, "
             "proceso_comercial_id, created_at, grupo_id, procesos_comerciales(nombre)"
         )
+        # carga-asincrona (T1): una extracción 'processing' (robot todavía corriendo
+        # en background) o 'failed' (robot/persistencia fallaron) nunca es una
+        # extracción ofrecible para validar -- se filtra acá, antes de que llegue al
+        # listado. 'partial' se deja pasar sin cambios (comportamiento previo a esta
+        # tarea: nunca se filtró por status).
+        .in_("status", ["completed", "partial"])
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
     )

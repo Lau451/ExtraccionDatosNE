@@ -7,9 +7,11 @@ Registra persistir_output_final como BackgroundTask de FastAPI con:
   - Errores logeados como ERROR con session_id + sha256 para reconciliacion
   - NUNCA propaga excepcion al caller (el CSV en disco siempre esta disponible)
 
-Uso en main.py:
+Uso en main.py (dentro de _procesar_documento_background, ya en background --
+carga-asincrona, T1):
     await schedule_persist_output(
-        bg_tasks,
+        bg_descartable,
+        extraction_id=extraction_id,
         session_id=session_id,
         doc_type="comparativa",
         rows=rows,
@@ -18,6 +20,7 @@ Uso en main.py:
         source_filename=nombre_original,
         source_sha256=sha256,
     )
+    await bg_descartable()
 """
 
 import asyncio
@@ -28,7 +31,7 @@ from uuid import UUID
 from fastapi import BackgroundTasks
 
 from services.extraccion.persistent_chunking import cerrar_sesion
-from services.extraccion.persistent_output import persistir_output_final
+from services.extraccion.persistent_output import marcar_extraccion_fallida, persistir_output_final
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ _MAX_ATTEMPTS = 3
 
 async def _retry_persist(
     *,
+    extraction_id: UUID | None,
     session_id: UUID | None,
     doc_type: str,
     rows: list[dict],
@@ -60,8 +64,12 @@ async def _retry_persist(
       intento 2 -> falla -> ERROR final, no se reintenta
 
     Args:
+        extraction_id:   UUID de la fila 'processing' a actualizar (carga-asincrona,
+                          T1 -- creada por crear_extraction_processing ANTES de
+                          correr el robot). None si la persistencia no estaba
+                          disponible al crearla.
         session_id:      UUID de la sesion (puede ser None).
-        doc_type:        "comparativa" | "licitacion".
+        doc_type:        "comparativa" | "licitacion" | "orden_compra".
         rows:            Filas extraidas del CSV.
         csv_path:        Path al CSV en disco.
         client_id:       Identificador del cliente.
@@ -71,8 +79,9 @@ async def _retry_persist(
         max_attempts:    Maximo de intentos permitidos.
     """
     try:
-        extraction_id = await asyncio.wait_for(
+        resultado = await asyncio.wait_for(
             persistir_output_final(
+                extraction_id=extraction_id,
                 session_id=session_id,
                 doc_type=doc_type,
                 rows=rows,
@@ -87,13 +96,13 @@ async def _retry_persist(
             timeout=60.0,
         )
 
-        if extraction_id is not None:
+        if resultado is not None:
             logger.info(
                 "Persistencia exitosa en intento %d/%d — "
                 "extraction_id=%s session_id=%s",
                 attempt + 1,
                 max_attempts,
-                extraction_id,
+                resultado,
                 session_id,
             )
             if session_id is not None:
@@ -111,12 +120,22 @@ async def _retry_persist(
             logger.error(
                 "Persistencia fallida definitivamente tras %d intentos. "
                 "El CSV en disco sigue disponible. "
-                "session_id=%s sha256=%s source_filename=%s error=%s",
+                "extraction_id=%s session_id=%s sha256=%s source_filename=%s error=%s",
                 max_attempts,
+                extraction_id,
                 session_id,
                 source_sha256[:12] + "..." if source_sha256 else "N/A",
                 source_filename,
                 exc,
+            )
+            mensaje_usuario = (
+                "No se pudo guardar el resultado de la extracción tras varios "
+                "intentos. Volvé a subir el documento."
+            )
+            await marcar_extraccion_fallida(
+                extraction_id=extraction_id,
+                drogueria_id=drogueria_id,
+                error_msg=mensaje_usuario,
             )
             if session_id is not None:
                 await cerrar_sesion(
@@ -130,10 +149,11 @@ async def _retry_persist(
         espera = 2 ** siguiente_intento
         logger.warning(
             "Persistencia fallida (intento %d/%d) — reintentando en %ds. "
-            "session_id=%s error=%s",
+            "extraction_id=%s session_id=%s error=%s",
             siguiente_intento,
             max_attempts,
             espera,
+            extraction_id,
             session_id,
             exc,
         )
@@ -141,6 +161,7 @@ async def _retry_persist(
         await asyncio.sleep(espera)
 
         await _retry_persist(
+            extraction_id=extraction_id,
             session_id=session_id,
             doc_type=doc_type,
             rows=rows,
@@ -159,6 +180,7 @@ async def _retry_persist(
 async def schedule_persist_output(
     bg: BackgroundTasks,
     *,
+    extraction_id: UUID | None,
     session_id: UUID | None,
     doc_type: str,
     rows: list[dict],
@@ -173,16 +195,24 @@ async def schedule_persist_output(
     """
     Registra la persistencia del resultado final como BackgroundTask de FastAPI.
 
-    La tarea se ejecuta DESPUES de que FastAPI envia la respuesta HTTP al cliente,
-    por lo que NO bloquea la descarga del CSV.
+    Desde carga-asincrona (T1), el caller (`services/extraccion/main.py::
+    _procesar_documento_background`) ya corre DENTRO de un BackgroundTask del
+    endpoint (el robot mismo pasó a ser asincrónico, no solo la persistencia) --
+    le pasa una `BackgroundTasks` descartable y la ejecuta en el acto (`await
+    bg()` inmediatamente después de este llamado) en vez de depender de que
+    FastAPI la dispare tras enviar la respuesta HTTP, porque para entonces la
+    respuesta 202 ya se envió hace rato.
 
     Si la persistencia falla 3 veces con backoff exponencial, se logea un ERROR
-    pero el usuario no recibe ninguna excepcion — el CSV en disco permanece intacto.
+    y la fila de extraction_results queda 'failed' con error_msg -- el usuario
+    no recibe ninguna excepcion, el CSV en disco permanece intacto.
 
     Args:
-        bg:              Instancia de BackgroundTasks inyectada por FastAPI.
+        bg:              Instancia de BackgroundTasks (puede ser descartable,
+                          ver docstring).
+        extraction_id:   UUID de la fila 'processing' a actualizar (puede ser None).
         session_id:      UUID de la sesion creada antes del robot (puede ser None).
-        doc_type:        Tipo de documento: "comparativa" | "licitacion".
+        doc_type:        Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
         rows:            Lista de dicts leidos del CSV generado.
         csv_path:        Path al CSV generado en disco.
         client_id:       Identificador del cliente/origen.
@@ -191,6 +221,7 @@ async def schedule_persist_output(
     """
     bg.add_task(
         _retry_persist,
+        extraction_id=extraction_id,
         session_id=session_id,
         doc_type=doc_type,
         rows=rows,
@@ -205,7 +236,8 @@ async def schedule_persist_output(
         max_attempts=_MAX_ATTEMPTS,
     )
     logger.debug(
-        "Background task registrada — session_id=%s doc_type=%s rows=%d",
+        "Background task registrada — extraction_id=%s session_id=%s doc_type=%s rows=%d",
+        extraction_id,
         session_id,
         doc_type,
         len(rows),
