@@ -25,3 +25,9 @@ __pycache__/
 Thumbs.db
 # Local Pi runtime state
 .atl/
+
+# Local tool artifacts
+.codegraph/
+.coverage
+.token_debug
+.pi/

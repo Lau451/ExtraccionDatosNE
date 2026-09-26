@@ -103,29 +103,41 @@ const FILAS_ORDEN_COMPRA = [
 ]
 
 describe('useFilasEditables — orden_compra (D6/D13.1, Phase 8)', () => {
-  it('trae una entrada orden_compra en CAMPOS_POR_DOCUMENT_TYPE con las columnas de D6', () => {
+  it('trae una entrada orden_compra con las columnas de renglón visibles para el operador', () => {
     const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_ORDEN_COMPRA))
     const nombresCampo = result.current.campos.map((c) => c.campo)
     expect(nombresCampo).toEqual(
-      expect.arrayContaining([
-        'numero_renglon',
-        'descripcion',
-        'cantidad',
-        'precio_unitario',
-        'entregas',
-        '_archivo',
-        '_extraction_id',
-      ]),
+      expect.arrayContaining(['numero_renglon', 'descripcion', 'cantidad', 'precio_unitario']),
     )
   })
 
-  it('numero_renglon/_archivo/_extraction_id/entregas son columnas de referencia no editables', () => {
+  it('oculta siempre entregas y _extraction_id: no aportan nada al validar (el dato sigue en el CSV)', () => {
+    const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_ORDEN_COMPRA))
+    const nombresCampo = result.current.campos.map((c) => c.campo)
+    expect(nombresCampo).not.toContain('entregas')
+    expect(nombresCampo).not.toContain('_extraction_id')
+  })
+
+  it('oculta _archivo cuando todas las filas vienen de un solo archivo', () => {
+    const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_ORDEN_COMPRA))
+    expect(result.current.campos.map((c) => c.campo)).not.toContain('_archivo')
+  })
+
+  it('muestra _archivo (no editable) cuando la OC agrupa más de un archivo (D13)', () => {
+    const filasGrupo = [
+      FILAS_ORDEN_COMPRA[0],
+      { ...FILAS_ORDEN_COMPRA[1], _archivo: 'oc-hospital-parte2.pdf', _extraction_id: 'ext-2' },
+    ]
+    const { result } = renderHook(() => useFilasEditables('orden_compra', filasGrupo))
+    const porCampo = Object.fromEntries(result.current.campos.map((c) => [c.campo, c]))
+    expect(porCampo._archivo).toBeDefined()
+    expect(porCampo._archivo.editable).toBe(false)
+  })
+
+  it('numero_renglon es columna de referencia no editable; descripción/cantidad/precio sí se editan', () => {
     const { result } = renderHook(() => useFilasEditables('orden_compra', FILAS_ORDEN_COMPRA))
     const porCampo = Object.fromEntries(result.current.campos.map((c) => [c.campo, c]))
     expect(porCampo.numero_renglon.editable).toBe(false)
-    expect(porCampo._archivo.editable).toBe(false)
-    expect(porCampo._extraction_id.editable).toBe(false)
-    expect(porCampo.entregas.editable).toBe(false)
     expect(porCampo.descripcion.editable).not.toBe(false)
     expect(porCampo.cantidad.editable).not.toBe(false)
     expect(porCampo.precio_unitario.editable).not.toBe(false)
