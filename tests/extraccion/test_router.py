@@ -506,3 +506,148 @@ def test_listar_extracciones_grupo_multiarchivo_solo_la_extraccion_ancla_tiene_o
     por_id = {r.id: r for r in resultado}
     assert por_id[ancla["id"]].orden_compra_id is not None
     assert por_id[miembro_2["id"]].orden_compra_id is None
+
+
+# =============================================================================
+# GET .../filas: validado + orden_compra_id (T2, extraccion-duplicado-link) --
+# la pantalla de validación necesita saber si esta extracción ya fue validada
+# (y, para OC, adónde ir) para no ofrecer una segunda confirmación que el
+# backend de todas formas rechaza (ck_oc_extraction_unica). Mismo lookup que
+# ExtraccionResumen.orden_compra_id (D11), resuelto por CUALQUIER miembro del
+# grupo cuando corresponde (D13/D13.1 -- ordenes_compra.extraction_id ancla
+# solo UNA fila del grupo).
+# =============================================================================
+
+
+@pytest.mark.integration
+def test_obtener_filas_extraccion_validada_con_oc_expone_validado_y_orden_compra_id(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, seed_cliente_factory,
+):
+    cliente_seed = seed_cliente_factory(drogueria_id=seed_drogueria["id"])
+    extraction = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        validado=True,
+    )
+    orden_compra = (
+        service_client.table("ordenes_compra")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "cliente_id": cliente_seed["cliente_id"],
+                "extraction_id": extraction["id"],
+                "numero_oc": "OC-FILAS-TEST-1",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    # Limpieza vía seed_extraction_result_factory (mismo patrón que los tests de
+    # listar_extracciones de arriba): su teardown ya borra en cascada cualquier
+    # ordenes_compra cuyo extraction_id apunte a una extracción sembrada por él.
+
+    resultado = router.obtener_filas_extraccion_endpoint(
+        extraction["id"],
+        usuario=_usuario(id=seed_usuario_sistema["id"], drogueria_id=seed_drogueria["id"]),
+        user_client=service_client,
+    )
+
+    assert resultado.validado is True
+    assert resultado.orden_compra_id == orden_compra["id"]
+
+
+@pytest.mark.integration
+def test_obtener_filas_extraccion_validada_sin_oc_expone_orden_compra_id_none(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    # Licitación/comparativa validadas: solo el aviso, nunca tienen OC (nunca
+    # crean fila en ordenes_compra, C7 no toca este campo).
+    extraction = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        validado=True,
+    )
+
+    resultado = router.obtener_filas_extraccion_endpoint(
+        extraction["id"],
+        usuario=_usuario(id=seed_usuario_sistema["id"], drogueria_id=seed_drogueria["id"]),
+        user_client=service_client,
+    )
+
+    assert resultado.validado is True
+    assert resultado.orden_compra_id is None
+
+
+@pytest.mark.integration
+def test_obtener_filas_extraccion_no_validada_expone_validado_false(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema,
+):
+    extraction = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+    )
+
+    resultado = router.obtener_filas_extraccion_endpoint(
+        extraction["id"],
+        usuario=_usuario(id=seed_usuario_sistema["id"], drogueria_id=seed_drogueria["id"]),
+        user_client=service_client,
+    )
+
+    assert resultado.validado is False
+    assert resultado.orden_compra_id is None
+
+
+@pytest.mark.integration
+def test_obtener_filas_extraccion_grupo_resuelve_orden_compra_por_cualquier_miembro(
+    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
+    seed_usuario_sistema, seed_cliente_factory,
+):
+    # La OC quedó anclada en el MIEMBRO 1 (_materializar_orden_compra), pero
+    # GET .../filas se pide sobre el MIEMBRO 2 -- debe resolver la misma OC
+    # igual, buscando por cualquier miembro del grupo (D13/D13.1).
+    cliente_seed = seed_cliente_factory(drogueria_id=seed_drogueria["id"])
+    grupo_id = str(uuid.uuid4())
+    columnas = ["numero_renglon", "descripcion", "cantidad"]
+    miembro_1 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=columnas,
+        grupo_id=grupo_id,
+        validado=True,
+    )
+    miembro_2 = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Amoxicilina 500mg", "cantidad": "5"}],
+        columnas=columnas,
+        grupo_id=grupo_id,
+        validado=True,
+    )
+
+    orden_compra = (
+        service_client.table("ordenes_compra")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "cliente_id": cliente_seed["cliente_id"],
+                "extraction_id": miembro_1["id"],
+                "numero_oc": "OC-GRUPO-FILAS-TEST-1",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    resultado = router.obtener_filas_extraccion_endpoint(
+        miembro_2["id"],
+        usuario=_usuario(id=seed_usuario_sistema["id"], drogueria_id=seed_drogueria["id"]),
+        user_client=service_client,
+    )
+
+    assert resultado.validado is True
+    assert resultado.orden_compra_id == orden_compra["id"]

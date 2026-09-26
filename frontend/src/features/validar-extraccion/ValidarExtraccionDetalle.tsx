@@ -133,6 +133,40 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
     )
   }
 
+  // T2 (extraccion-duplicado-link) -- abrir una extracción ya validada (desde
+  // el link del 409 duplicado, o navegación directa a la URL) no debe ofrecer
+  // una segunda confirmación: el backend la rechaza igual (una OC solo se
+  // ancla una vez, ck_oc_extraction_unica), pero mostrarla como pendiente
+  // confunde. Corte temprano ANTES de armar el resto de la pantalla -- ningún
+  // selector de cliente, cabecera editable, tabla ni "Confirmar validación" se
+  // renderiza en este caso (licitación/comparativa validadas: solo el aviso,
+  // nunca tienen OC).
+  if (filasQuery.data.validado) {
+    const ordenCompraId = filasQuery.data.orden_compra_id
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 px-6 py-10">
+        <h1 className="text-xl font-semibold text-slate-900">Validar extracción</h1>
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Esta extracción ya fue validada.
+        </p>
+        {ordenCompraId && (
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/ordenes-compra/$ordenCompraId/matching',
+                params: { ordenCompraId },
+              })
+            }
+            className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
+          >
+            Ir a la orden de compra
+          </button>
+        )}
+      </div>
+    )
+  }
+
   /** Arma `OrdenCompraOverride` (design.md § Interfaces) desde el estado del
    * container + el estado de `useFilasEditables`. `numero_renglon_documento`
    * viaja tal cual el documento lo declaró (o `null` si vino vacío, C10) --

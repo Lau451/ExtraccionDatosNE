@@ -168,6 +168,77 @@ def test_leer_filas_extraccion_csv_no_disponible_levanta_extraccion_no_disponibl
         )
 
 
+# --- validado / orden_compra_id en GET .../filas (T2, extraccion-duplicado-link) --
+# La pantalla de validación necesita saber si esta extracción ya fue validada (y,
+# para OC, adónde ir) para no ofrecer una segunda confirmación que el backend de
+# todas formas rechaza. client=None (default retrocompatible de leer_filas_extraccion)
+# se salta el lookup de ordenes_compra -- por eso estos tests unitarios siempre dan
+# orden_compra_id=None; el lookup real se cubre en test_router.py (integración).
+
+
+def test_leer_filas_extraccion_validado_true_sin_client_no_resuelve_orden_compra(tmp_path):
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Ibuprofeno"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-validada",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "validado": True,
+        }
+    )
+
+    assert resultado.validado is True
+    assert resultado.orden_compra_id is None
+
+
+def test_leer_filas_extraccion_no_validada_expone_validado_false(tmp_path):
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Ibuprofeno"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-pendiente",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "validado": False,
+        }
+    )
+
+    assert resultado.validado is False
+    assert resultado.orden_compra_id is None
+
+
+def test_leer_filas_extraccion_sin_clave_validado_default_false_retrocompatible(tmp_path):
+    # Los tests unitarios de arriba (Phase 3/5) construyen el dict a mano sin la
+    # clave "validado" -- .get("validado", False) los mantiene verdes.
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Ibuprofeno"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-sin-clave",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+        }
+    )
+
+    assert resultado.validado is False
+
+
 # --- _validar_filas_override (Phase 4, §3 del design) -----------------------------
 
 

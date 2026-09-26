@@ -154,6 +154,15 @@ class FilasExtraccionOut(BaseModel):
     grupo_id: str | None = None
     miembros: list[MiembroGrupo] = Field(default_factory=list)
     advertencias_cabecera: list[str] = Field(default_factory=list)
+    # NUEVO (T2, extraccion-duplicado-link) -- la pantalla de validación necesita
+    # saber si esta extracción ya fue validada (y, para OC, adónde ir) para no
+    # ofrecer una segunda confirmación que el backend de todas formas rechaza
+    # (ck_oc_extraction_unica). Mismo lookup que ExtraccionResumen.orden_compra_id
+    # (D11): aparte contra ordenes_compra.extraction_id, resuelto por CUALQUIER
+    # miembro del grupo cuando corresponde -- ordenes_compra.extraction_id ancla
+    # solo UNA fila del grupo multi-archivo (D13/D13.1).
+    validado: bool
+    orden_compra_id: str | None = None
 
 
 # -- Resolución de cliente (D3 / D3.1 / D3.2, Phase 3) -----------------------
