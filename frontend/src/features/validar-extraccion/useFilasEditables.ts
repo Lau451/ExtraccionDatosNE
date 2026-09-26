@@ -177,6 +177,27 @@ function idFilaNueva() {
   return `nueva-${contadorFilaNueva}`
 }
 
+/** Columnas de referencia de orden_compra que nunca se muestran al validar:
+ * `entregas` (la división en entregas salió de la validación y se hará en una
+ * fase posterior al matching -- el dato sigue en el CSV) y `_extraction_id`
+ * (UUID interno, sin valor para el operador). */
+const OCULTAS_ORDEN_COMPRA = new Set(['entregas', '_extraction_id'])
+
+/** `_archivo` solo aporta cuando la OC agrupa más de un archivo (D13): es lo
+ * único que dice de qué documento salió cada renglón. Con uno solo, se oculta. */
+function camposVisibles(
+  documentType: string,
+  filasOriginales: Record<string, string>[] | undefined,
+): CampoConfig[] {
+  const campos = CAMPOS_POR_DOCUMENT_TYPE[documentType] ?? []
+  if (documentType !== 'orden_compra') return campos
+  const archivos = new Set((filasOriginales ?? []).map((fila) => fila._extraction_id ?? ''))
+  return campos.filter(
+    ({ campo }) =>
+      !OCULTAS_ORDEN_COMPRA.has(campo) && (campo !== '_archivo' || archivos.size > 1),
+  )
+}
+
 /** Estado local de la tabla editable: diff contra el server (modificadas/
  * borradas/agregadas) + validación por celda (design.md §9.2). `filasOriginales`
  * es inmutable -- solo se lee para el diff y para `revertirCelda`. */
@@ -184,7 +205,10 @@ export function useFilasEditables(
   documentType: string,
   filasOriginales: Record<string, string>[] | undefined,
 ) {
-  const campos = CAMPOS_POR_DOCUMENT_TYPE[documentType] ?? []
+  const campos = useMemo(
+    () => camposVisibles(documentType, filasOriginales),
+    [documentType, filasOriginales],
+  )
 
   const [filas, setFilas] = useState<FilaEditable[]>([])
 
