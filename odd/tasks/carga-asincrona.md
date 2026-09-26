@@ -223,6 +223,5 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
 
 ## Next step
 
-T1d done. Next: parent review of T1d + the still-pending T4 slice (under_budget), then delivery-strategy chaining
-decision (branch forecast is ~900 lines, already over the ~400 budget).
-Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation.
+Delivered: user chose a single merge into dev -> PR #60 merged (merge commit f68e8d4) on 2026-09-26. No CI configured.
+Pending outside this feature: apply migration 0028 to production before deploying; manual end-to-end check in the app.
