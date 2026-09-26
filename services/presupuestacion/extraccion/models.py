@@ -13,10 +13,15 @@ MAX_FILAS_EDITABLES = 500
 # T1b (carga-asincrona) — único lugar donde vive el set de statuses "validables"
 # de extraction_results. Antes de esta tarea, `leer_filas_extraccion` y
 # `validar_extraccion` (service.py) tenían cada uno su propia tupla literal
-# `("completed", "partial")`, repetida y con riesgo de divergir. `repository.py`
-# usa la misma lista para el `.in_("status", ...)` de `listar_extracciones`.
+# `("completed", "partial")`, repetida y con riesgo de divergir.
 # 'processing' (robot corriendo en background, T1) y 'failed' quedan afuera --
 # ninguno de los dos tiene datos utilizables para materializar.
+#
+# T1 (validar-extraccion-organizacion): `repository.py::listar_extracciones` YA
+# NO filtra por este set -- el listado devuelve los 4 estados (para que la
+# pantalla muestre el estado real de cada extracción). ESTADOS_VALIDABLES sigue
+# siendo la única fuente de verdad para el guard de validación
+# (`leer_filas_extraccion` / `validar_extraccion` abajo).
 ESTADOS_VALIDABLES = ("completed", "partial")
 
 
@@ -122,6 +127,11 @@ class ExtraccionResumen(BaseModel):
     source_filename: str
     row_count: int
     status: str
+    # T1 (validar-extraccion-organizacion) -- mensaje legible cuando
+    # status='failed' (mismo campo que persiste
+    # services/extraccion/persistent_output.py::marcar_extraccion_fallida).
+    # None en cualquier otro estado.
+    error_msg: str | None = None
     validado: bool
     proceso_comercial_id: str | None
     proceso_comercial_nombre: str | None
@@ -140,6 +150,19 @@ class ExtraccionResumen(BaseModel):
     # de las N extracciones de un grupo multi-archivo (D13/D13.1 del cambio
     # padre) -- las N-1 restantes quedan en `None`, aceptado explícitamente.
     orden_compra_id: str | None = None
+    # T1 (validar-extraccion-organizacion) -- uploader (extraction_results.
+    # subido_por, migración 0029). None en filas creadas antes de la
+    # migración, o si la persistencia del uploader no estaba disponible al
+    # subir el documento; en ese caso nunca matchea el filtro "Solo mías"
+    # (decisión de usuario, 2026-09-26). No se expone `es_mia`: el frontend ya
+    # tiene el id del usuario autenticado (AuthContext.Perfil.id) y puede
+    # comparar `subido_por` contra ese id sin que el backend duplique el
+    # cálculo.
+    subido_por: str | None = None
+    # Nombre completo ("nombre apellido") resuelto por el embed
+    # `usuarios(nombre, apellido)` de `repository.listar_extracciones` --
+    # None cuando subido_por es None (extracción sin uploader conocido).
+    subido_por_nombre: str | None = None
 
 
 class MiembroGrupo(BaseModel):

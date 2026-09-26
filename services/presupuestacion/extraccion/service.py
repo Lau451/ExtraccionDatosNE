@@ -79,10 +79,28 @@ def _leer_filas_csv(csv_disk_path: str | None) -> list[dict[str, str]]:
     return filas
 
 
+def _nombre_completo_usuario(usuario_embed: dict[str, Any]) -> str | None:
+    """T1 (validar-extraccion-organizacion) -- "nombre apellido" a partir del
+    embed `usuarios(nombre, apellido)` de `repository.listar_extracciones`.
+    apellido es nullable en `usuarios` (docs/schema/rls_final.sql); se omite
+    si falta en vez de dejar un espacio colgando."""
+    nombre = (usuario_embed.get("nombre") or "").strip()
+    apellido = (usuario_embed.get("apellido") or "").strip()
+    completo = f"{nombre} {apellido}".strip()
+    return completo or None
+
+
 def listar_extracciones(
-    client: Client, *, validado: bool | None, limit: int, offset: int
+    client: Client,
+    *,
+    validado: bool | None,
+    limit: int,
+    offset: int,
+    solo_mias_usuario_id: str | None = None,
 ) -> list[ExtraccionResumen]:
-    filas = repo.listar_extracciones(client, validado=validado, limit=limit, offset=offset)
+    filas = repo.listar_extracciones(
+        client, validado=validado, limit=limit, offset=offset, subido_por=solo_mias_usuario_id
+    )
     # D11 (Phase 4) -- lookup aparte por extraction_id, no embebido: solo
     # UNA de las N extracciones de un grupo multi-archivo tiene fila en
     # ordenes_compra (el ancla que _materializar_orden_compra usó), así que
@@ -99,10 +117,12 @@ def listar_extracciones(
     resumenes = []
     for fila in filas:
         proceso_embed = fila.pop("procesos_comerciales", None) or {}
+        usuario_embed = fila.pop("usuarios", None) or {}
         resumenes.append(
             ExtraccionResumen(
                 **fila,
                 proceso_comercial_nombre=proceso_embed.get("nombre"),
+                subido_por_nombre=_nombre_completo_usuario(usuario_embed),
                 orden_compra_id=orden_compra_id_por_extraccion.get(fila["id"]),
             )
         )

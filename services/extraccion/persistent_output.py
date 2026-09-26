@@ -129,6 +129,7 @@ async def crear_extraction_processing(
     source_sha256: str,
     grupo_id: str | None = None,
     proceso_comercial_id: str | None = None,
+    usuario_id: str | None = None,
 ) -> UUID | None:
     """
     Crea la fila de extraction_results ANTES de invocar al robot, con
@@ -149,6 +150,13 @@ async def crear_extraction_processing(
         source_sha256:         SHA256 del archivo original.
         grupo_id:              UUID v4 ya validado (D13), solo si viene.
         proceso_comercial_id:  proceso_comercial_id ya validado, solo si viene.
+        usuario_id:            id del usuario autenticado que hizo POST /procesar
+                                (validar-extraccion-organizacion, T1) -- se persiste
+                                en extraction_results.subido_por (migración 0029),
+                                mismo criterio que `subido_por` de crear_sesion. None
+                                por retrocompatibilidad con callers que todavía no lo
+                                pasan (queda sin persistir, igual que grupo_id/
+                                proceso_comercial_id ausentes).
 
     Returns:
         UUID de la fila creada, o None si la persistencia no está disponible o
@@ -170,6 +178,8 @@ async def crear_extraction_processing(
         payload["grupo_id"] = grupo_id
     if proceso_comercial_id:
         payload["proceso_comercial_id"] = proceso_comercial_id
+    if usuario_id:
+        payload["subido_por"] = usuario_id
 
     try:
         respuesta = await asyncio.to_thread(

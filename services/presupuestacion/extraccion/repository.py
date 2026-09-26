@@ -2,8 +2,6 @@ from typing import Any, Iterable, TypeVar
 
 from supabase import Client
 
-from services.presupuestacion.extraccion.models import ESTADOS_VALIDABLES
-
 # .in_() codifica cada valor en la URL (GET): con un lote grande de
 # extraction_ids de golpe la URL supera el límite del servidor y PostgREST
 # devuelve 400 Bad Request. Mismo criterio y mismo tamaño que
@@ -37,30 +35,43 @@ def buscar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> di
 
 
 def listar_extracciones(
-    client: Client, *, validado: bool | None, limit: int, offset: int
+    client: Client,
+    *,
+    validado: bool | None,
+    limit: int,
+    offset: int,
+    subido_por: str | None = None,
 ) -> list[dict[str, Any]]:
     # Con validado=False el plan pega contra idx_er_sin_validar (drogueria_id,
     # created_at DESC) WHERE validado = FALSE -- índice parcial ya materializado
     # en ese orden, sin sort extra. RLS (er_sel / mismo_tenant) es la frontera de
     # tenant; no hay filtro manual por drogueria_id acá (§8.1 -- superadmin tiene
     # drogueria_id NULL y quedaría sin resultados si lo agregáramos).
+    #
+    # T1 (validar-extraccion-organizacion): el listado YA NO filtra por
+    # ESTADOS_VALIDABLES -- 'processing'/'failed' vuelven a aparecer para que la
+    # pantalla muestre el estado real de cada extracción (antes desaparecían sin
+    # dejar rastro). El guard de estados validables sigue intacto en
+    # leer_filas_extraccion / validar_extraccion (service.py): abrir el listado no
+    # habilita validar una fila no validable. error_msg/subido_por se agregan al
+    # select para el badge de error y el filtro "Solo mías"; el embed de
+    # `usuarios` (única FK de extraction_results a esa tabla, fk_er_subidopor,
+    # migración 0029) resuelve el nombre del uploader en el mismo viaje, mismo
+    # criterio que `procesos_comerciales(nombre)`.
     query = (
         client.table("extraction_results")
         .select(
-            "id, document_type, source_filename, row_count, status, validado, "
-            "proceso_comercial_id, created_at, grupo_id, procesos_comerciales(nombre)"
+            "id, document_type, source_filename, row_count, status, error_msg, "
+            "validado, proceso_comercial_id, created_at, grupo_id, subido_por, "
+            "procesos_comerciales(nombre), usuarios(nombre, apellido)"
         )
-        # carga-asincrona (T1): una extracción 'processing' (robot todavía corriendo
-        # en background) o 'failed' (robot/persistencia fallaron) nunca es una
-        # extracción ofrecible para validar -- se filtra acá, antes de que llegue al
-        # listado. 'partial' se deja pasar sin cambios (comportamiento previo a esta
-        # tarea: nunca se filtró por status).
-        .in_("status", list(ESTADOS_VALIDABLES))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
     )
     if validado is not None:
         query = query.eq("validado", validado)
+    if subido_por is not None:
+        query = query.eq("subido_por", subido_por)
     return query.execute().data
 
 

@@ -273,6 +273,44 @@ class TestCrearExtractionProcessing:
         assert payload["proceso_comercial_id"] == proceso_id
 
     @pytest.mark.asyncio
+    async def test_crear_extraction_processing_incluye_subido_por_cuando_viene_usuario_id(
+        self, mock_supabase_client
+    ):
+        """validar-extraccion-organizacion (T1) -- el uploader autenticado se
+        persiste en extraction_results.subido_por (migración 0029), mismo
+        criterio condicional que grupo_id/proceso_comercial_id (solo se
+        incluye en el payload si vino)."""
+        mock, _ = mock_supabase_client
+        usuario_id = str(uuid.uuid4())
+
+        await persistent_output.crear_extraction_processing(
+            drogueria_id="drogueria-1",
+            document_type="comparativa",
+            source_filename="comparativa.xlsx",
+            source_sha256="e" * 64,
+            usuario_id=usuario_id,
+        )
+
+        payload = mock.table.return_value.insert.call_args[0][0]
+        assert payload["subido_por"] == usuario_id
+
+    @pytest.mark.asyncio
+    async def test_crear_extraction_processing_sin_usuario_id_no_incluye_subido_por(
+        self, mock_supabase_client
+    ):
+        mock, _ = mock_supabase_client
+
+        await persistent_output.crear_extraction_processing(
+            drogueria_id="drogueria-1",
+            document_type="comparativa",
+            source_filename="comparativa.xlsx",
+            source_sha256="f" * 64,
+        )
+
+        payload = mock.table.return_value.insert.call_args[0][0]
+        assert "subido_por" not in payload
+
+    @pytest.mark.asyncio
     async def test_crear_extraction_processing_client_none(self, mocker):
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
 
