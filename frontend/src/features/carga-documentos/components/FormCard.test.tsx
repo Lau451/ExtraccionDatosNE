@@ -177,6 +177,27 @@ describe('FormCard — documento duplicado (409)', () => {
     expect(screen.queryByRole('button', { name: /ver extracción existente/i })).not.toBeInTheDocument()
   })
 
+  it('lote mixto (uno nuevo + un duplicado): espera solo el nuevo, ofrece el link y no navega', async () => {
+    vi.mocked(procesarDocumento).mockImplementation(async ({ archivo: file }) => {
+      if (file.name === 'repetido.pdf') {
+        throw new ApiError('Este documento ya fue procesado', 409, { extraction_id: 'ext-existente' })
+      }
+      return { ok: true, tipo: 'orden_compra' }
+    })
+
+    const { container } = renderConQueryClient(<FormCard />)
+    abrirTabOrdenes()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('nuevo.pdf'), archivo('repetido.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await screen.findByRole('button', { name: /ver extracción existente/i })
+    expect(listarDocumentosRecientes).toHaveBeenCalled()
+    expect(screen.getByText(/^nuevo\.pdf/).closest('li')).toHaveTextContent(/procesado correctamente/i)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
   it('si ningún archivo se procesó no espera un documento nuevo en "Cargas recientes"', async () => {
     vi.mocked(procesarDocumento).mockRejectedValue(
       new ApiError('Este documento ya fue procesado', 409, { extraction_id: 'ext-existente' }),
