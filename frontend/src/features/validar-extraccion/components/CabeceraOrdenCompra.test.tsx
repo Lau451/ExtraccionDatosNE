@@ -167,6 +167,15 @@ describe('CabeceraOrdenCompra — dirección de entrega es un valor único (T3b)
     expect(noFueCancelado).toBe(false)
   })
 
+  it('T1d: Enter mientras se compone con un IME no se bloquea (confirma la composición)', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    const noFueCancelado = fireEvent.keyDown(campo, { key: 'Enter', isComposing: true })
+
+    expect(noFueCancelado).toBe(true)
+  })
+
   it('un salto de línea que llega por otra vía (pegado, autocompletado) se normaliza a ", "', () => {
     render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
     const campo = screen.getByLabelText(/dirección de entrega/i)

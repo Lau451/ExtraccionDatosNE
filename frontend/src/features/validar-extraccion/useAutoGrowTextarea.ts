@@ -11,7 +11,15 @@ import { useCallback, useEffect, useRef } from 'react'
  * jsdom en tests): se guarda esa ausencia sin romper el resto. Usado por
  * `CeldaEditable` (columna "descripción") y `CabeceraOrdenCompra` (dirección
  * de entrega / observaciones): 3 sitios, de ahí el hook compartido en vez de
- * repetir el cálculo. */
+ * repetir el cálculo.
+ *
+ * T1d: la desconexión del observer vive SOLO en el callback `ref` de abajo
+ * (cuando React lo llama con `null` al desmontar o reasignar el ref), no en
+ * un `useEffect` de limpieza aparte -- ese efecto duplicado existió hasta T3b
+ * y causaba que, en StrictMode (dev), el doble mount/unmount simulado de
+ * React desconectara el observer sin que nada volviera a crearlo (el `ref`
+ * real no se reinvoca en esa simulación), perdiéndolo para el resto de la
+ * vida del componente. */
 export function useAutoGrowTextarea(value: string) {
   const elRef = useRef<HTMLTextAreaElement | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
@@ -58,12 +66,6 @@ export function useAutoGrowTextarea(value: string) {
   useEffect(() => {
     ajustarAltura()
   }, [value, ajustarAltura])
-
-  useEffect(() => {
-    return () => {
-      resizeObserverRef.current?.disconnect()
-    }
-  }, [])
 
   return { ref, ajustarAltura }
 }

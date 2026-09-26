@@ -30,9 +30,10 @@ describe('useAutoGrowTextarea', () => {
   })
 
   it('sin ResizeObserver disponible en el entorno (ej. jsdom por default) no rompe', () => {
-    // jsdom no implementa ResizeObserver -- este es justamente el entorno de
-    // test por default, sin ningún stub global.
-    expect('ResizeObserver' in globalThis).toBe(false)
+    // jsdom no implementa ResizeObserver por default -- se stubea explícito en
+    // vez de asertar sobre el entorno de test, para no depender de un detalle
+    // de jsdom que podría cambiar en una futura versión.
+    vi.stubGlobal('ResizeObserver', undefined)
 
     expect(() => {
       const { result } = renderHook(() => useAutoGrowTextarea('valor'))
@@ -108,7 +109,14 @@ describe('useAutoGrowTextarea', () => {
     expect(el.style.height).toBe('30px')
   })
 
-  it('desconecta el ResizeObserver al desmontar', () => {
+  it('desconecta el ResizeObserver al desmontar (ref callback recibiendo null)', () => {
+    // T1d: React llama al ref callback con `null` al desmontar (o reasignar el
+    // ref) -- ese es el mecanismo real de limpieza del hook, ya no un
+    // `useEffect` de limpieza aparte (ver comentario en useAutoGrowTextarea.ts).
+    // `renderHook().unmount()` no sirve para probar esto: el elemento acá se
+    // asigna manualmente vía `result.current.ref(el)`, fuera del árbol que
+    // React realmente monta/desmonta, así que `unmount()` nunca dispara
+    // `ref(null)` sobre él -- se simula el mismo llamado que haría React.
     const disconnect = vi.fn()
     class FakeResizeObserver {
       constructor(_callback: ResizeObserverCallback) {}
@@ -118,11 +126,11 @@ describe('useAutoGrowTextarea', () => {
     }
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
 
-    const { result, unmount } = renderHook(() => useAutoGrowTextarea('valor'))
+    const { result } = renderHook(() => useAutoGrowTextarea('valor'))
     const el = crearTextarea(20)
     result.current.ref(el)
 
-    unmount()
+    result.current.ref(null)
 
     expect(disconnect).toHaveBeenCalledTimes(1)
   })

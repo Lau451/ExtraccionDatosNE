@@ -54,8 +54,13 @@ function normalizarSaltosDeLineaDeDireccion(valor: string): string {
     .join(', ')
 }
 
+/** T1d: no bloquear Enter mientras el usuario está componiendo con un IME
+ * (teclados de japonés/chino/coreano, entre otros) -- en esos editores, Enter
+ * confirma la conversión de la composición en curso, no inserta un salto de
+ * línea; `preventDefault()` interrumpía esa confirmación. `isComposing` vive
+ * en el evento nativo (`KeyboardEvent`), no en el SyntheticEvent de React. */
 function bloquearEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
     event.preventDefault()
   }
 }
