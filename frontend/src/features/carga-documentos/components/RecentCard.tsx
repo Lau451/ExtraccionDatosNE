@@ -41,7 +41,13 @@ export function RecentCard() {
     refetchInterval: (query) => (haySinTerminar(query.state.data?.documentos ?? []) ? 3000 : false),
   })
 
-  const documentos = data?.documentos.slice(0, 3) ?? []
+  // T3 (revisión de T2): la región aria-live y `refetchInterval` deben leer
+  // la MISMA lista -- antes el resumen contaba solo sobre el top-3 visible
+  // (`documentos`) mientras el polling miraba la lista completa; con más de
+  // 3 documentos recientes, un "processing" fuera del top-3 se pisaba sin
+  // que el lector de pantalla se enterara.
+  const todosLosDocumentos = data?.documentos ?? []
+  const documentos = todosLosDocumentos.slice(0, 3)
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -51,7 +57,7 @@ export function RecentCard() {
        * siguen procesándose sin depender de que el usuario mire el color de
        * cada badge (WCAG 4.1.3). Visualmente oculta (sr-only). */}
       <div aria-live="polite" role="status" className="sr-only">
-        {documentos.length > 0 ? resumenEstado(documentos) : ''}
+        {todosLosDocumentos.length > 0 ? resumenEstado(todosLosDocumentos) : ''}
       </div>
 
       {isLoading && <p className="text-sm text-slate-500">Cargando…</p>}

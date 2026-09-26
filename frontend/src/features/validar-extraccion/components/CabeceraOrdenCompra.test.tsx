@@ -133,3 +133,22 @@ describe('CabeceraOrdenCompra — observaciones (T2)', () => {
     expect(screen.getByLabelText(/observaciones/i)).toHaveValue('')
   })
 })
+
+// T3 (carga-asincrona) — direccion_entrega era un <input> de una sola línea:
+// una dirección larga quedaba cortada. Pasa a ser un textarea auto-creciente
+// que muestra la dirección completa.
+describe('CabeceraOrdenCompra — dirección de entrega multilínea (T3)', () => {
+  it('el campo "Dirección de entrega" es un textarea que muestra el valor completo', () => {
+    const direccionLarga =
+      'Avenida Presidente Roque Sáenz Peña 1234, Piso 8 Oficina B, Ciudad Autónoma de Buenos Aires'
+    render(
+      <ArnesConBotonConfirmar
+        filas={[{ ...MIEMBRO_A, direccion_entrega: direccionLarga }]}
+      />,
+    )
+
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+    expect(campo.tagName).toBe('TEXTAREA')
+    expect(campo).toHaveValue(direccionLarga)
+  })
+})

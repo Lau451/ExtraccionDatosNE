@@ -225,7 +225,12 @@ describe('FormCard — confirmación asincrónica, sin auto-navegación (carga-a
     expect(navigateMock).not.toHaveBeenCalled()
     // Formulario reseteado -- vuelve a mostrar el placeholder del dropzone.
     expect(screen.getByText(/seleccionar archivo/i)).toBeInTheDocument()
-    expect(input.value).toBe('')
+    // `input.value` no sirve como aserción acá: jsdom no refleja el
+    // `fileInputRef.current.value = ''` del componente sobre `input` (la
+    // misma referencia de nodo), así que la comparación nunca podía fallar.
+    // El reset real se observa en el estado derivado: sin archivos
+    // seleccionados, "Procesar archivo(s)" vuelve a estar deshabilitado.
+    expect(screen.getByRole('button', { name: /procesar archivo/i })).toBeDisabled()
   })
 
   it('N archivos agrupados (mismo grupoId), TODOS exitosos: no navega y reporta cada uno', async () => {

@@ -198,7 +198,9 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
     : !hook.tieneErrores && procesoComercialId !== null
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
+    // T3: la tabla de orden_compra tiene 7+ columnas -- max-w-4xl la apretaba
+    // (descripción truncada, Borrar/Deshacer detrás del scroll horizontal).
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-10">
       <header>
         <h1 className="text-xl font-semibold text-slate-900">Validar extracción</h1>
         <p className="text-sm text-slate-500">
@@ -246,18 +248,20 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         onAgregarFila={hook.agregarFila}
       />
 
-      {mutation.isError && (
-        <p className="text-sm text-red-600">
-          {mutation.error instanceof Error ? mutation.error.message : 'No se pudo validar.'}
-        </p>
-      )}
+      {/* T3: barra de acción sticky -- con tablas largas, "Confirmar
+       * validación" quedaba fuera de vista sin scrollear hasta el final. */}
+      <div className="sticky bottom-0 z-20 -mx-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
+        {mutation.isError && (
+          <p className="mr-auto text-sm text-red-600">
+            {mutation.error instanceof Error ? mutation.error.message : 'No se pudo validar.'}
+          </p>
+        )}
 
-      <div className="flex justify-end">
         <button
           type="button"
           disabled={!puedeConfirmar}
           onClick={() => setConfirmando(true)}
-          className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="cursor-pointer rounded-md bg-navy px-4 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Confirmar validación
         </button>

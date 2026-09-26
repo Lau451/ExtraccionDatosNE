@@ -126,4 +126,93 @@ describe('TablaEditable — columnas de referencia no editables (D13.1, Phase 8)
 
     expect(screen.getByTestId('original-0:numero_renglon')).toHaveTextContent('')
   })
+
+  it('las columnas de referencia envuelven el valor completo en vez de truncarlo (T3)', () => {
+    const archivoLargo = 'orden-de-compra-hospital-central-septiembre-2026-version-final.pdf'
+    render(<TablaEditable {...props([filaOrdenCompra({ _archivo: archivoLargo })])} />)
+
+    const celda = screen.getByTestId('original-0:_archivo')
+    expect(celda).toHaveTextContent(archivoLargo)
+    expect(celda.className).not.toMatch(/truncate/)
+    expect(celda.className).toMatch(/whitespace-pre-wrap|break-words/)
+  })
+})
+
+// T3 (carga-asincrona) — la pantalla de validación se veía apretada:
+// descripción se truncaba dentro de un <input> de una sola línea, las
+// columnas numéricas no tenían ancho propio, y Borrar/Deshacer quedaba
+// detrás del scroll horizontal.
+describe('TablaEditable — layout ancho por columna (T3)', () => {
+  const CAMPOS_OC_COMPLETOS: CampoConfig[] = [
+    { campo: 'numero_renglon', tipo: 'texto-opcional', editable: false },
+    { campo: 'descripcion', tipo: 'texto' },
+    { campo: 'cantidad', tipo: 'decimal' },
+    { campo: 'precio_unitario', tipo: 'decimal-positivo' },
+    { campo: 'importe_total', tipo: 'texto-opcional', editable: false },
+  ]
+
+  function filaCompleta(overrides: Partial<FilaEditable> = {}): FilaEditable {
+    return {
+      _id: 'original-0',
+      _nueva: false,
+      _borrada: false,
+      numero_renglon: '1',
+      descripcion:
+        'Amoxicilina 500mg comprimidos recubiertos, caja x 21 unidades, laboratorio nacional homologado',
+      cantidad: '100',
+      precio_unitario: '1250,00',
+      importe_total: '125000,00',
+      ...overrides,
+    }
+  }
+
+  it('descripción se edita en un textarea multilínea que muestra el texto completo, sin truncar', () => {
+    render(
+      <TablaEditable {...props([filaCompleta()])} campos={CAMPOS_OC_COMPLETOS} />,
+    )
+
+    const campo = screen.getByRole('textbox', { name: /descripción fila 1/i })
+    expect(campo.tagName).toBe('TEXTAREA')
+    expect((campo as HTMLTextAreaElement).value).toBe(filaCompleta().descripcion)
+  })
+
+  it('Enter en la descripción (textarea) sigue moviendo el foco a la fila siguiente, sin insertar salto de línea', () => {
+    render(
+      <TablaEditable
+        {...props([filaCompleta({ _id: 'original-0' }), filaCompleta({ _id: 'original-1' })])}
+        campos={CAMPOS_OC_COMPLETOS}
+      />,
+    )
+
+    const filaUno = screen.getByRole('textbox', { name: /descripción fila 1/i })
+    const filaDos = screen.getByRole('textbox', { name: /descripción fila 2/i })
+
+    fireEvent.keyDown(filaUno, { key: 'Enter' })
+
+    expect(filaDos).toHaveFocus()
+    expect((filaUno as HTMLTextAreaElement).value).toBe(filaCompleta().descripcion)
+  })
+
+  it('cantidad/precio_unitario/importe_total quedan alineados a la derecha con tabular-nums', () => {
+    render(
+      <TablaEditable {...props([filaCompleta()])} campos={CAMPOS_OC_COMPLETOS} />,
+    )
+
+    const cantidad = screen.getByRole('textbox', { name: /cantidad fila 1/i })
+    expect(cantidad.className).toMatch(/text-right/)
+    expect(cantidad.className).toMatch(/tabular-nums/)
+
+    const importe = screen.getByTestId('original-0:importe_total')
+    expect(importe.className).toMatch(/text-right/)
+    expect(importe.className).toMatch(/tabular-nums/)
+  })
+
+  it('la columna de acciones (Borrar/Deshacer) queda sticky al borde derecho', () => {
+    render(<TablaEditable {...props([filaCompleta()])} campos={CAMPOS_OC_COMPLETOS} />)
+
+    const boton = screen.getByRole('button', { name: /^borrar fila 1$/i })
+    const celda = boton.closest('td')
+    expect(celda?.className).toMatch(/sticky/)
+    expect(celda?.className).toMatch(/right-0/)
+  })
 })

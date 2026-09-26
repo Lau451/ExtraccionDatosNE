@@ -74,11 +74,18 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   - RecentCard: status badge (Procesando / Listo / Error with message), polls while anything is
     `processing`, "Validar" action on completed unvalidated rows.
   - Duplicate link behavior kept.
-- [ ] **T3 — Validar extracción layout** (route: delegated writer)
+- [x] **T3 — Validar extracción layout** (route: delegated writer)
   - Wider container, per-column min widths, auto-growing description, numeric columns right-aligned with
     tabular-nums, sticky actions column, auto-growing address textarea in the OC header.
   - T2 review advisories: RecentCard live region and polling predicate must use the same list; make the FormCard reset
     assertion meaningful; test the fallback message for a failed row with null `error_msg`.
+- [ ] **T1c — Follow-ups from the T1b review** (route: small, inline or one writer)
+  - Startup sweep has no age filter: unsafe if a second process (e.g. a local dev server) shares the same DB.
+    Consider a periodic sweep with a generous age threshold instead.
+  - 503 path: guard `cerrar_sesion` with try/finally so temp cleanup and the 503 always happen.
+  - `leer_filas_extraccion` defaults a missing status to 'completed' while `validar_extraccion` rejects it; align them.
+  - In-flight 409 test is tautological (mocks the RPC); the `processing` = taken rule lives only in SQL.
+  - Hoist the fixed ParserError/GeminiAPIError messages to constants shared with the tests.
 - [ ] **T4 — Address / notes formatting** (blocked: needs a real example from the user)
 
 ## Progress / evidence
@@ -107,7 +114,16 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   Parent evidence: `pytest tests -q -m "not integration"` → 489 passed; `pytest tests/extraccion -q` (live TEST) → 175 passed.
   RED evidence was not recoverable from the lost report.
 
+- T1b commit `885c930`. Review: `high` → consent granted → 4-lens **approved** and acknowledged
+  (lineage review-6c6b5af9be1d03e9). Advisories → T1c.
+
+- T3 implemented (delegated writer). max-w-7xl; per-column ESTILO_COLUMNA (descripción min 22rem multiline auto-grow,
+  numeric right-aligned tabular-nums, reference columns wrap); sticky right actions column; OC header 2-col grid with
+  auto-growing dirección/observaciones (shared useAutoGrowTextarea hook); sticky bottom confirm bar. T2 advisories fixed.
+  Evidence: RED 6 failing → GREEN; parent spot check `vitest run` → 317 passed, `tsc -b --noEmit` clean; oxlint clean (writer).
+
 ## Next step
 
-T1b (backend hardening) in progress; then T3 (+ T2 advisories); then T4 needs an example from the user.
-Migration 0028 still needs user confirmation to apply on the TEST project.
+T3 review, then T1c. T4 needs an example from the user.
+Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation; verified CHECK, error_msg column,
+RPC blocking 'processing'; the 5 existing rows (all completed) are untouched.

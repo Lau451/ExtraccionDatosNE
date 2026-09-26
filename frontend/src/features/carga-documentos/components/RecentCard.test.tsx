@@ -213,4 +213,40 @@ describe('RecentCard — accesibilidad', () => {
     expect(liveRegion).not.toBeNull()
     expect(liveRegion?.textContent).toMatch(/procesándose/i)
   })
+
+  // T3 (revisión de T2): el resumen del aria-live contaba solo sobre las 3
+  // filas visibles (`documentos.slice(0, 3)`) mientras `refetchInterval` mira
+  // la lista completa -- con más de 3 documentos recientes, un "processing"
+  // fuera del top-3 hacía pollear en segundo plano sin que el lector de
+  // pantalla se enterara. Ambos deben leer la misma lista completa.
+  it('el resumen del aria-live cuenta también un "processing" fuera de las 3 filas visibles', async () => {
+    vi.mocked(listarDocumentosRecientes).mockResolvedValue({
+      documentos: [
+        documentoReciente({ id: 'a', status: 'completed' }),
+        documentoReciente({ id: 'b', status: 'completed' }),
+        documentoReciente({ id: 'c', status: 'completed' }),
+        documentoReciente({ id: 'd', status: 'processing' }),
+      ],
+    })
+
+    const { container } = renderConQueryClient(<RecentCard />)
+
+    await waitFor(() => {
+      const liveRegion = container.querySelector('[aria-live="polite"]')
+      expect(liveRegion?.textContent).toMatch(/1 documento procesándose/i)
+    })
+  })
+})
+
+describe('RecentCard — mensaje de error con fallback (T3)', () => {
+  it('una fila "failed" con error_msg null muestra el mensaje de fallback', async () => {
+    vi.mocked(listarDocumentosRecientes).mockResolvedValue({
+      documentos: [documentoReciente({ status: 'failed', error_msg: null })],
+    })
+
+    renderConQueryClient(<RecentCard />)
+
+    await screen.findByText(/^error$/i)
+    expect(screen.getByText(/no se pudo procesar el documento/i)).toBeInTheDocument()
+  })
 })
