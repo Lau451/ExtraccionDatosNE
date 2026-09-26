@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ValidarExtraccionListado, puedeAgruparSeleccion, grupoIdDe } from './ValidarExtraccionListado'
 import type { ExtraccionResumen, ListarExtraccionesParams } from '@/lib/api/extracciones'
@@ -40,21 +40,24 @@ function renderConQueryClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
+// T2 (validar-extraccion-organizacion) -- GET /extracciones ya no se separa
+// por validado=true/false (T1): un único query devuelve las 4 status y ambos
+// valores de `validado`. La fábrica de fixtures/mocks se actualiza para ese
+// contrato -- ver ExtraccionResumen (lib/api/extracciones.ts).
 const OC_1: ExtraccionResumen = {
   id: 'ex-1',
   document_type: 'orden_compra',
   source_filename: 'oc1.pdf',
   row_count: 2,
-  status: 'completado',
+  status: 'completed',
+  error_msg: null,
   validado: false,
   proceso_comercial_id: null,
   proceso_comercial_nombre: null,
   created_at: '2026-01-01T00:00:00Z',
-  // Phase 6 (D11, tasks.md 6.2) hizo el campo requerido en el tipo TS al
-  // sincronizarlo con el backend; se agrega acá solo para que el fixture siga
-  // tipando -- Phase 8 es quien consume este campo para el link de
-  // re-entrada, fuera del alcance de esta tarea.
   orden_compra_id: null,
+  subido_por: 'user-1',
+  subido_por_nombre: 'Ana Gómez',
 }
 const OC_2: ExtraccionResumen = { ...OC_1, id: 'ex-2', source_filename: 'oc2.pdf' }
 const LICITACION_1: ExtraccionResumen = {
@@ -75,19 +78,43 @@ const OC_VALIDADA_1: ExtraccionResumen = {
   orden_compra_id: 'oc-abc',
 }
 
-/** `listarExtracciones` real distingue por `params.validado`: la fábrica
- * arma un mock único con ambas ramas en vez de duplicar el `mockReset()` +
- * `mockImplementation()` en cada test (D11 agrega una segunda query junto a
- * la ya existente `{ validado: false }`). */
-function mockListarExtracciones({
-  pendientes = [OC_1, OC_2, LICITACION_1],
-  validadas = [] as ExtraccionResumen[],
-} = {}) {
+const PROCESANDO_1: ExtraccionResumen = {
+  ...OC_1,
+  id: 'ex-procesando-1',
+  source_filename: 'oc-procesando.pdf',
+  status: 'processing',
+}
+
+const ERROR_1: ExtraccionResumen = {
+  ...OC_1,
+  id: 'ex-error-1',
+  source_filename: 'oc-error.pdf',
+  status: 'failed',
+  error_msg: 'El documento no tiene un formato reconocido.',
+}
+
+const SIN_UPLOADER: ExtraccionResumen = {
+  ...OC_1,
+  id: 'ex-sin-uploader',
+  source_filename: 'oc-sin-uploader.pdf',
+  subido_por: null,
+  subido_por_nombre: null,
+}
+
+/** T2 (corrección) -- el componente vuelve a llamar `listarExtracciones` dos
+ * veces (pendientes `validado:false` + validadas `validado:true`), como el
+ * backend real. La fábrica toma UN array con el fixture completo (mezclando
+ * filas validadas y sin validar, como antes de la corrección) y lo separa
+ * por `extraccion.validado` según qué rama pida cada llamada -- así los
+ * tests existentes que ya arman fixtures con ambas clases de fila no
+ * necesitan reescribirse. */
+function mockListarExtracciones(extracciones: ExtraccionResumen[] = [OC_1, OC_2, LICITACION_1]) {
   vi.mocked(listarExtracciones)
     .mockReset()
     .mockImplementation((params: ListarExtraccionesParams = {}) => {
-      if (params.validado === true) return Promise.resolve(validadas)
-      return Promise.resolve(pendientes)
+      if (params.validado === false) return Promise.resolve(extracciones.filter((e) => !e.validado))
+      if (params.validado === true) return Promise.resolve(extracciones.filter((e) => e.validado))
+      return Promise.resolve(extracciones)
     })
 }
 
@@ -133,9 +160,214 @@ describe('grupoIdDe (7.13 — prioriza override local sobre el grupo_id persisti
   })
 })
 
-describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
+async function irATab(nombre: RegExp) {
+  fireEvent.click(screen.getByRole('tab', { name: nombre }))
+}
+
+describe('ValidarExtraccionListado (T2, corrección) — carga de datos en dos queries', () => {
+  // Corrección (coordinador): un único query `limit:200` ordenado por
+  // `created_at DESC` comparte la ventana entre pendientes y validadas -- una
+  // vez que se acumulan ~200 filas más nuevas (las validadas nunca se borran),
+  // una extracción PENDIENTE más vieja desaparece silenciosamente de la
+  // pantalla. Se vuelve al split: pendientes con su propio límite alto,
+  // validadas con el tope de 50 que ya tenía el diseño anterior (D11).
+  it('pide pendientes (validado:false, limit:200) y validadas (validado:true, limit:50) por separado', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    expect(listarExtracciones).toHaveBeenCalledTimes(2)
+    expect(listarExtracciones).toHaveBeenCalledWith({ validado: false, limit: 200 })
+    expect(listarExtracciones).toHaveBeenCalledWith({ validado: true, limit: 50 })
+  })
+
+  it('"Solo mías" activado pasa solo_mias:true a AMBAS queries (pendientes y validadas)', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByLabelText(/solo mías/i))
+
+    await waitFor(() =>
+      expect(listarExtracciones).toHaveBeenCalledWith({ validado: false, limit: 200, solo_mias: true }),
+    )
+    await waitFor(() =>
+      expect(listarExtracciones).toHaveBeenCalledWith({ validado: true, limit: 50, solo_mias: true }),
+    )
+  })
+
+  it('"Actualizar" refetchea ambas queries', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    vi.mocked(listarExtracciones).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /actualizar/i }))
+
+    await waitFor(() => expect(listarExtracciones).toHaveBeenCalledWith({ validado: false, limit: 200 }))
+    await waitFor(() => expect(listarExtracciones).toHaveBeenCalledWith({ validado: true, limit: 50 }))
+  })
+})
+
+describe('ValidarExtraccionListado (T2) — tabs por tipo de documento', () => {
+  it('muestra una tab por tipo con la cantidad de extracciones de ese tipo', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    expect(screen.getByRole('tab', { name: /licitación \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /directa \(0\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /comparativa \(0\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /orden de compra \(2\)/i })).toBeInTheDocument()
+  })
+
+  it('arranca en la tab Licitación y cambia el contenido al hacer click en otra tab', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    expect(screen.getByRole('tab', { name: /licitación/i })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('oc1.pdf')).not.toBeInTheDocument()
+
+    await irATab(/orden de compra/i)
+
+    expect(screen.getByText('oc1.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('lici1.pdf')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /orden de compra/i })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
+describe('ValidarExtraccionListado (T2) — estado por fila y chips de filtro', () => {
+  it('cada fila muestra un badge con su estado derivado', async () => {
+    mockListarExtracciones([OC_1, PROCESANDO_1, ERROR_1, OC_VALIDADA_1])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    const filaProcesado = screen.getByText('oc1.pdf').closest('tr') as HTMLElement
+    expect(within(filaProcesado).getByText('Procesado')).toBeInTheDocument()
+
+    const filaProcesando = screen.getByText('oc-procesando.pdf').closest('tr') as HTMLElement
+    expect(within(filaProcesando).getByText('Procesando')).toBeInTheDocument()
+
+    const filaError = screen.getByText('oc-error.pdf').closest('tr') as HTMLElement
+    expect(within(filaError).getByText('Error')).toBeInTheDocument()
+    expect(within(filaError).getByText(ERROR_1.error_msg as string)).toBeInTheDocument()
+
+    const filaValidada = screen.getByText('oc-validada-1.pdf').closest('tr') as HTMLElement
+    expect(within(filaValidada).getByText('Validada')).toBeInTheDocument()
+  })
+
+  it('una fila failed sin error_msg muestra un mensaje genérico', async () => {
+    const errorSinMensaje: ExtraccionResumen = { ...ERROR_1, id: 'ex-error-2', error_msg: null }
+    mockListarExtracciones([errorSinMensaje])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc-error.pdf')).toBeInTheDocument())
+
+    expect(screen.getByText(/no se pudo procesar/i)).toBeInTheDocument()
+  })
+
+  it('los chips de estado filtran las filas de la tab activa y muestran la cuenta', async () => {
+    mockListarExtracciones([OC_1, PROCESANDO_1, ERROR_1, OC_VALIDADA_1])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: /^todos \(4\)$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^error \(1\)$/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^error \(1\)$/i }))
+
+    expect(screen.getByText('oc-error.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('oc1.pdf')).not.toBeInTheDocument()
+    expect(screen.queryByText('oc-procesando.pdf')).not.toBeInTheDocument()
+    expect(screen.queryByText('oc-validada-1.pdf')).not.toBeInTheDocument()
+  })
+})
+
+describe('ValidarExtraccionListado (T2) — acciones por fila', () => {
+  it('procesado/procesado con advertencias tienen link "Revisar"; procesando/error no', async () => {
+    const advertencia: ExtraccionResumen = { ...OC_1, id: 'ex-adv', source_filename: 'oc-adv.pdf', status: 'partial' }
+    mockListarExtracciones([OC_1, advertencia, PROCESANDO_1, ERROR_1])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    const filaProcesado = screen.getByText('oc1.pdf').closest('tr') as HTMLElement
+    expect(within(filaProcesado).getByRole('link', { name: /revisar/i })).toHaveAttribute(
+      'href',
+      '/validar-extraccion/ex-1',
+    )
+
+    const filaAdvertencia = screen.getByText('oc-adv.pdf').closest('tr') as HTMLElement
+    expect(within(filaAdvertencia).getByRole('link', { name: /revisar/i })).toBeInTheDocument()
+
+    const filaProcesando = screen.getByText('oc-procesando.pdf').closest('tr') as HTMLElement
+    expect(within(filaProcesando).queryByRole('link')).not.toBeInTheDocument()
+
+    const filaError = screen.getByText('oc-error.pdf').closest('tr') as HTMLElement
+    expect(within(filaError).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('una OC validada con orden_compra_id muestra el link de matching', async () => {
+    mockListarExtracciones([OC_VALIDADA_1])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
+
+    const link = screen.getByRole('link', { name: /matching/i })
+    expect(link).toHaveAttribute('href', '/ordenes-compra/oc-abc/matching')
+  })
+
+  it('una OC validada sin orden_compra_id (miembro no ancla) no muestra un link roto', async () => {
+    const sinAncla: ExtraccionResumen = { ...OC_VALIDADA_1, id: 'ex-validada-2', orden_compra_id: null }
+    mockListarExtracciones([sinAncla])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
+
+    expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
+  })
+
+  it('una licitación validada es informativa: badge "Validada" sin ninguna acción', async () => {
+    const licitacionValidada: ExtraccionResumen = {
+      ...LICITACION_1,
+      id: 'ex-lici-validada',
+      validado: true,
+      source_filename: 'lici-validada.pdf',
+    }
+    mockListarExtracciones([LICITACION_1, licitacionValidada])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici-validada.pdf')).toBeInTheDocument())
+
+    const fila = screen.getByText('lici-validada.pdf').closest('tr') as HTMLElement
+    expect(within(fila).getByText('Validada')).toBeInTheDocument()
+    expect(within(fila).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('muestra quién subió cada extracción, o "—" cuando no hay uploader', async () => {
+    mockListarExtracciones([OC_1, SIN_UPLOADER])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    const filaConUploader = screen.getByText('oc1.pdf').closest('tr') as HTMLElement
+    expect(within(filaConUploader).getByText('Ana Gómez')).toBeInTheDocument()
+
+    const filaSinUploader = screen.getByText('oc-sin-uploader.pdf').closest('tr') as HTMLElement
+    expect(within(filaSinUploader).getAllByText('—').length).toBeGreaterThan(0)
+  })
+})
+
+describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en la tab Orden de compra', () => {
+  it('los botones Agrupar/Desagrupar y los checkboxes no aparecen fuera de la tab Orden de compra', async () => {
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+
+    expect(screen.queryByRole('button', { name: /agrupar seleccionadas/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^desagrupar$/i })).not.toBeInTheDocument()
+  })
+
   it('"Agrupar seleccionadas" arranca deshabilitado y se habilita al tildar 2 filas orden_compra', async () => {
     renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+    await irATab(/orden de compra/i)
     await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
 
     const boton = screen.getByRole('button', { name: /agrupar seleccionadas/i })
@@ -148,17 +380,24 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
     expect(boton).not.toBeDisabled()
   })
 
-  it('las filas de tipo licitacion no tienen checkbox para seleccionar', async () => {
+  it('solo las filas orden_compra en estado validable tienen checkbox (no procesando/error/validada)', async () => {
+    mockListarExtracciones([OC_1, PROCESANDO_1, ERROR_1, OC_VALIDADA_1])
     renderConQueryClient(<ValidarExtraccionListado />)
-    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
 
-    expect(screen.queryByLabelText(/seleccionar lici1\.pdf/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/seleccionar oc1\.pdf/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/seleccionar oc-procesando\.pdf/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/seleccionar oc-error\.pdf/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/seleccionar oc-validada-1\.pdf/i)).not.toBeInTheDocument()
   })
 
   it('tras agrupar, las filas muestran el indicador de grupo y "Desagrupar" se habilita al reseleccionarlas', async () => {
     vi.mocked(agruparExtracciones).mockResolvedValue({ grupo_id: 'grupo-1' })
 
     renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+    await irATab(/orden de compra/i)
     await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
 
     fireEvent.click(screen.getByLabelText(/seleccionar oc1\.pdf/i))
@@ -184,9 +423,11 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
   it('7.13: el indicador de grupo y "Desagrupar" leen el grupo_id persistido de un refetch/recarga, sin pasar por agrupar/desagrupar primero', async () => {
     const OC_1_AGRUPADA: ExtraccionResumen = { ...OC_1, grupo_id: 'grupo-persistido' }
     const OC_2_AGRUPADA: ExtraccionResumen = { ...OC_2, grupo_id: 'grupo-persistido' }
-    mockListarExtracciones({ pendientes: [OC_1_AGRUPADA, OC_2_AGRUPADA, LICITACION_1] })
+    mockListarExtracciones([OC_1_AGRUPADA, OC_2_AGRUPADA, LICITACION_1])
 
     renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
+    await irATab(/orden de compra/i)
     await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
 
     // El grupo viene de la respuesta del listado (simula un reload), no de
@@ -198,60 +439,5 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar', () => {
     fireEvent.click(screen.getByLabelText(/seleccionar oc2\.pdf/i))
 
     expect(screen.getByRole('button', { name: /^desagrupar$/i })).not.toBeDisabled()
-  })
-})
-
-describe('ValidarExtraccionListado (D11) — sección "Órdenes de compra validadas"', () => {
-  it('consulta { validado: true, limit: 50 } y muestra un link a la pantalla de matching por fila con orden_compra_id', async () => {
-    mockListarExtracciones({ validadas: [OC_VALIDADA_1] })
-
-    renderConQueryClient(<ValidarExtraccionListado />)
-    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
-
-    expect(listarExtracciones).toHaveBeenCalledWith({ validado: true, limit: 50 })
-
-    const link = screen.getByRole('link', { name: /matching/i })
-    expect(link).toHaveAttribute('href', '/ordenes-compra/oc-abc/matching')
-  })
-
-  it('una fila con orden_compra_id null (miembro no-ancla de un grupo, D11) no muestra un link roto', async () => {
-    const OC_VALIDADA_SIN_ANCLA: ExtraccionResumen = {
-      ...OC_VALIDADA_1,
-      id: 'ex-validada-2',
-      source_filename: 'oc-validada-2.pdf',
-      orden_compra_id: null,
-    }
-    mockListarExtracciones({ validadas: [OC_VALIDADA_SIN_ANCLA] })
-
-    renderConQueryClient(<ValidarExtraccionListado />)
-    await waitFor(() => expect(screen.getByText('oc-validada-2.pdf')).toBeInTheDocument())
-
-    // Convención ya establecida en PendientesTable (proceso_comercial_nombre
-    // ?? '—'): la fila se muestra igual, sin acción rota, en vez de
-    // ocultarse por completo.
-    expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
-  })
-
-  it('filtra document_type === orden_compra en el cliente -- licitación/comparativa validadas no aparecen en la sección', async () => {
-    const LICITACION_VALIDADA: ExtraccionResumen = {
-      ...OC_VALIDADA_1,
-      id: 'ex-validada-lici',
-      document_type: 'licitacion',
-      source_filename: 'lici-validada.pdf',
-      orden_compra_id: null,
-    }
-    mockListarExtracciones({ validadas: [OC_VALIDADA_1, LICITACION_VALIDADA] })
-
-    renderConQueryClient(<ValidarExtraccionListado />)
-    await waitFor(() => expect(screen.getByText('oc-validada-1.pdf')).toBeInTheDocument())
-
-    expect(screen.queryByText('lici-validada.pdf')).not.toBeInTheDocument()
-  })
-
-  it('sin órdenes de compra validadas, la sección no muestra ningún link de matching', async () => {
-    renderConQueryClient(<ValidarExtraccionListado />)
-    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
-
-    expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
   })
 })

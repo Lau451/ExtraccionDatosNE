@@ -88,11 +88,23 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - `GET /extracciones`: return `processing`, `completed`, `partial`, `failed`; expose `error_msg`, `subido_por`
     and the uploader's display name; new optional `solo_mias` param filtering by the caller.
   - Validation still rejects non-validatable states (existing tests stay green).
-- [ ] **T2 — Frontend: tabs by type, state badges/filters, "Solo mías"** (route: delegated writer; trigger: 2+
+- [x] **T2 — Frontend: tabs by type, state badges/filters, "Solo mías"** (route: delegated writer; trigger: 2+
   non-trivial files in `frontend/src/features/validar-extraccion/`)
   - Tabs with counts; state filter chips; state badge per row; error message visible for Error rows.
   - Only Procesado / Procesado con advertencias rows link to validation.
   - "Solo mías" toggle; Agrupar/Desagrupar only in the OC tab; validated OCs keep the matching link.
+  - Result: `estadoExtraccion.ts` (pure derived state, `validado` wins over `status`); `ExtraccionesTable.tsx`
+    replaces `PendientesTable`/`ValidadasTable` (deleted, no other importers); accessible tabs + state chips with
+    counts; uploader column; "Revisar" only for Procesado/advertencias, "Matching" for validated OCs; checkboxes
+    and Agrupar/Desagrupar only in the OC tab. "Tipo" column dropped (the tab conveys it); partial badge orange,
+    processing amber.
+  - Data loading: two queries — pending `validado=false, limit=200` and validated `validado=true, limit=50`, both
+    honoring `solo_mias`. A first single `limit=200` query was rejected by the parent: validated rows accumulate and
+    would push older pending rows out of the window. Conditional `refetchInterval` 5s only while a pending row is
+    `processing` (same pattern as `carga-documentos/RecentCard.tsx`).
+  - Evidence: RED→GREEN for `estadoExtraccion.test.ts` (8) and the listing (17 failed → 24 passed; two-query
+    correction 3 failed → green). Parent spot check: `npx vitest run` 351 passed; `npx tsc -b` clean. oxlint: 26
+    findings, identical to baseline (writer report).
 
 ## Progress
 
