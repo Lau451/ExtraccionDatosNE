@@ -58,9 +58,12 @@ function normalizarSaltosDeLineaDeDireccion(valor: string): string {
  * (teclados de japonés/chino/coreano, entre otros) -- en esos editores, Enter
  * confirma la conversión de la composición en curso, no inserta un salto de
  * línea; `preventDefault()` interrumpía esa confirmación. `isComposing` vive
- * en el evento nativo (`KeyboardEvent`), no en el SyntheticEvent de React. */
+ * en el evento nativo (`KeyboardEvent`), no en el SyntheticEvent de React.
+ * Safari manda el Enter que confirma la composición con `isComposing=false` y
+ * `keyCode` 229, así que ese caso también se deja pasar. */
 function bloquearEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
-  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+  const componiendo = event.nativeEvent.isComposing || event.keyCode === 229
+  if (event.key === 'Enter' && !componiendo) {
     event.preventDefault()
   }
 }

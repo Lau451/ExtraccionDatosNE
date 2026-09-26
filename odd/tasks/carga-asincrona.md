@@ -214,6 +214,13 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   Parent: git stash list empty; spot check 70 backend + 111 validar-extraccion tests passed.
   Open: no direct test reproduces the StrictMode double-mount scenario.
 
+- T4+T1d slice review: `medium` → consent granted → 1-lens **approved** and acknowledged (range 2dd506d..31bced3).
+  Refuted by the parent: "heartbeat stops before persist" (persist_bg() is awaited inside the same try, main.py:393) and
+  "missing asyncio marker" (pytest.ini asyncio_mode=auto). Applied: the live sweep test now uses a 30-min threshold with a
+  2-hour-old seed so it can never fail a live job of another process sharing TEST; Safari IME (keyCode 229) no longer
+  blocks Enter (RED 1 failed → GREEN, `vitest run` 330, tsc clean; live sweep test 1 passed).
+  Left as-is: the post-failure cancel test only compares task counts (weak but not wrong).
+
 ## Next step
 
 T1d done. Next: parent review of T1d + the still-pending T4 slice (under_budget), then delivery-strategy chaining

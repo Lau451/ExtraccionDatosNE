@@ -720,7 +720,7 @@ async def test_sweep_contra_la_rest_real_falla_solo_la_fila_con_updated_at_viejo
 
     sha_vieja = secrets.token_hex(32)
     sha_fresca = secrets.token_hex(32)
-    hace_una_hora = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
 
     huerfana = (
         service_client.table("extraction_results")
@@ -732,7 +732,7 @@ async def test_sweep_contra_la_rest_real_falla_solo_la_fila_con_updated_at_viejo
                 "source_sha256": sha_vieja,
                 "row_count": 0,
                 "status": "processing",
-                "updated_at": hace_una_hora,
+                "updated_at": hace_dos_horas,
             }
         )
         .execute()
@@ -755,10 +755,12 @@ async def test_sweep_contra_la_rest_real_falla_solo_la_fila_con_updated_at_viejo
     )
 
     try:
-        # Umbral corto (60s): la fila "en vuelo" (updated_at recién insertado)
-        # queda muy por debajo, la "huérfana" (1 hora) muy por encima.
+        # El sweep es global y la base TEST es compartida: con un umbral de 30
+        # min solo toca filas sin latido hace media hora (huérfanas de verdad,
+        # que el sweep real ya fallaría a los 5 min), nunca un job vivo de otro
+        # proceso (late cada 60s). La "huérfana" (2 horas) queda muy por encima.
         afectadas = await persistent_output.marcar_processing_interrumpidos(
-            edad_minima_segundos=60
+            edad_minima_segundos=30 * 60
         )
 
         assert afectadas >= 1
