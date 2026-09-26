@@ -47,6 +47,17 @@ export interface FilasExtraccionOut {
   grupo_id?: string | null
   miembros?: MiembroGrupo[]
   advertencias_cabecera?: string[]
+  // NUEVO (T2, extraccion-duplicado-link) -- ¿ya fue validada esta extracción?
+  // Si es así, la pantalla de validación muestra un aviso en vez de ofrecer una
+  // segunda confirmación (el backend la rechaza igual). Opcional por
+  // retrocompat con mocks/tests existentes que construyen este objeto a mano
+  // sin esta clave (mismo criterio que grupo_id/miembros arriba).
+  validado?: boolean
+  // Solo no-null cuando validado=true Y hay una OC ya confirmada para esta
+  // extracción -- resuelto por CUALQUIER miembro del grupo cuando corresponde
+  // (mismo backend lookup que ExtraccionResumen.orden_compra_id, D11/D13.1).
+  // Licitación/comparativa validadas: siempre null (nunca tienen OC).
+  orden_compra_id?: string | null
 }
 
 /** Mismos nombres de columna que `services/presupuestacion/extraccion/models.py`

@@ -77,7 +77,7 @@ def obtener_filas_extraccion_endpoint(
         usuario=usuario,
         extraction_id=extraction_id,
         select="id, drogueria_id, document_type, csv_disk_path, row_count, grupo_id, "
-        "source_filename",
+        "source_filename, validado",
     )
     return leer_filas_extraccion(extraccion, client=user_client)
 

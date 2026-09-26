@@ -137,6 +137,26 @@ def _advertencias_cabecera_para_lectura(filas_por_miembro: list[dict[str, str]])
     return advertencias
 
 
+def _resolver_orden_compra_id(
+    client: Client | None,
+    *,
+    extraction_id: str,
+    miembros: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Mismo lookup que listar_extracciones (D11) para GET .../filas: aparte
+    contra ordenes_compra.extraction_id, resuelto por CUALQUIER miembro del
+    grupo cuando corresponde -- ordenes_compra.extraction_id ancla solo UNA
+    fila del grupo multi-archivo (D13/D13.1), así que la extracción pedida
+    puede no ser esa (§8.2, T2). client=None (default retrocompatible de
+    leer_filas_extraccion, usado por los tests unitarios sin DB real) se salta
+    el lookup."""
+    if client is None:
+        return None
+    ids = [m["id"] for m in miembros] if miembros is not None else [extraction_id]
+    ordenes = repo.listar_ordenes_compra_por_extraction_ids(client, extraction_ids=ids)
+    return ordenes[0]["id"] if ordenes else None
+
+
 def leer_filas_extraccion(
     extraction: dict[str, Any], *, client: Client | None = None
 ) -> FilasExtraccionOut:
@@ -145,6 +165,11 @@ def leer_filas_extraccion(
         raise ValidationError(
             f"document_type='{document_type}' no tiene lectura de filas implementada"
         )
+
+    # T2 (extraccion-duplicado-link) -- común a las dos ramas de abajo: la
+    # pantalla de validación necesita saber si esta extracción ya fue validada
+    # para no ofrecer una segunda confirmación.
+    validado = extraction.get("validado", False)
 
     if document_type == "orden_compra":
         # D13 -- concatena el grupo (grupo_id=NULL se comporta como un archivo
@@ -169,6 +194,10 @@ def leer_filas_extraccion(
                 for m in miembros
             ],
             advertencias_cabecera=advertencias_cabecera,
+            validado=validado,
+            orden_compra_id=_resolver_orden_compra_id(
+                client, extraction_id=extraction["id"], miembros=miembros
+            ),
         )
 
     columnas, filas_completas = _leer_filas_csv_con_columnas(extraction["csv_disk_path"])
@@ -186,6 +215,12 @@ def leer_filas_extraccion(
         # (§8.2) -- el frontend ya bloquea la edición antes de pedir esto, esto es
         # la red de seguridad del servidor.
         filas=filas_completas if editable else [],
+        validado=validado,
+        # licitación/comparativa nunca crean fila en ordenes_compra (C7 no toca
+        # este campo), así que el lookup siempre da None acá -- se llama igual
+        # por consistencia con la rama orden_compra, mismo criterio que
+        # listar_extracciones (D11).
+        orden_compra_id=_resolver_orden_compra_id(client, extraction_id=extraction["id"]),
     )
 
 

@@ -4,11 +4,15 @@ const EXTRACCION_BASE_URL = import.meta.env.VITE_EXTRACCION_API_URL ?? 'http://l
 
 export class ApiError extends Error {
   status: number
+  /** Body JSON de la respuesta de error (p.ej. el 409 de duplicado de
+   * /procesar trae `extraction_id`); `null` si no era JSON. */
+  body: unknown
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body: unknown = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.body = body
   }
 }
 
@@ -38,7 +42,7 @@ export async function extraccionFetch<T>(path: string, init?: RequestInit): Prom
 
   if (!response.ok) {
     const message = body?.error ?? `Error ${response.status} al llamar ${path}`
-    throw new ApiError(message, response.status)
+    throw new ApiError(message, response.status, body)
   }
 
   return body as T

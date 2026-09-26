@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/lib/api/client'
 import type { DocumentoReciente } from '@/lib/api/extraccion'
 import { FormCard } from './FormCard'
 
@@ -132,6 +133,85 @@ describe('FormCard — carga múltiple de órdenes de compra (D13)', () => {
     )
     expect(screen.getByText(/^a\.pdf/).closest('li')).toHaveTextContent(/procesado correctamente/i)
     expect(screen.getByText(/^c\.pdf/).closest('li')).toHaveTextContent(/procesado correctamente/i)
+  })
+})
+
+describe('FormCard — documento duplicado (409)', () => {
+  it('ofrece ir a la extracción existente que devuelve el 409', async () => {
+    vi.mocked(procesarDocumento).mockRejectedValue(
+      new ApiError('Este documento ya fue procesado', 409, { extraction_id: 'ext-existente' }),
+    )
+
+    const { container } = renderConQueryClient(<FormCard />)
+    abrirTabOrdenes()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('repetido.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    const boton = await screen.findByRole('button', { name: /ver extracción existente/i })
+    expect(screen.getByText(/repetido\.pdf/).closest('li')).toHaveTextContent(/ya fue procesado/i)
+
+    fireEvent.click(boton)
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/validar-extraccion/$extractionId',
+      params: { extractionId: 'ext-existente' },
+      search: { rowCount: 0 },
+    })
+  })
+
+  it('un error sin extraction_id no ofrece el link', async () => {
+    vi.mocked(procesarDocumento).mockRejectedValue(new ApiError('Error 500', 500, null))
+
+    const { container } = renderConQueryClient(<FormCard />)
+    abrirTabOrdenes()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('roto.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/roto\.pdf/).closest('li')).toHaveTextContent(/error 500/i),
+    )
+    expect(screen.queryByRole('button', { name: /ver extracción existente/i })).not.toBeInTheDocument()
+  })
+
+  it('lote mixto (uno nuevo + un duplicado): espera solo el nuevo, ofrece el link y no navega', async () => {
+    vi.mocked(procesarDocumento).mockImplementation(async ({ archivo: file }) => {
+      if (file.name === 'repetido.pdf') {
+        throw new ApiError('Este documento ya fue procesado', 409, { extraction_id: 'ext-existente' })
+      }
+      return { ok: true, tipo: 'orden_compra' }
+    })
+
+    const { container } = renderConQueryClient(<FormCard />)
+    abrirTabOrdenes()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('nuevo.pdf'), archivo('repetido.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await screen.findByRole('button', { name: /ver extracción existente/i })
+    expect(listarDocumentosRecientes).toHaveBeenCalled()
+    expect(screen.getByText(/^nuevo\.pdf/).closest('li')).toHaveTextContent(/procesado correctamente/i)
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('si ningún archivo se procesó no espera un documento nuevo en "Cargas recientes"', async () => {
+    vi.mocked(procesarDocumento).mockRejectedValue(
+      new ApiError('Este documento ya fue procesado', 409, { extraction_id: 'ext-existente' }),
+    )
+
+    const { container } = renderConQueryClient(<FormCard />)
+    abrirTabOrdenes()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('repetido.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await screen.findByRole('button', { name: /ver extracción existente/i })
+    expect(listarDocumentosRecientes).not.toHaveBeenCalled()
   })
 })
 

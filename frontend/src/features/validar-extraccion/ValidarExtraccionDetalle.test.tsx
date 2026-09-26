@@ -435,3 +435,72 @@ describe('ValidarExtraccionDetalle — reconciliación manual de grupo (D13.1, t
     expect(screen.queryByRole('combobox', { name: /fusi/i })).not.toBeInTheDocument()
   })
 })
+
+// T2 (extraccion-duplicado-link) — al abrir una extracción ya validada (desde
+// el link del 409 duplicado, o navegación directa a la URL) la pantalla debe
+// avisar en vez de ofrecer una segunda confirmación que el backend rechaza
+// igual (ck_oc_extraction_unica). GET .../filas expone validado/orden_compra_id
+// (backend, T2); acá se cablea la UI que reacciona a esos dos campos.
+describe('ValidarExtraccionDetalle — extracción ya validada (T2)', () => {
+  it('validado=true con orden_compra_id: aviso + botón "Ir a la orden de compra", sin selector/cabecera/tabla/confirmar', async () => {
+    vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+      extraction_id: 'abc',
+      document_type: 'orden_compra',
+      row_count: 1,
+      filas_leidas: 1,
+      editable: true,
+      columnas: Object.keys(FILA_OC()),
+      filas: [FILA_OC()],
+      grupo_id: null,
+      miembros: [],
+      advertencias_cabecera: [],
+      validado: true,
+      orden_compra_id: 'oc-777',
+    })
+
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    expect(await screen.findByText(/esta extracción ya fue validada/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /ir a la orden de compra/i }))
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/ordenes-compra/$ordenCompraId/matching',
+      params: { ordenCompraId: 'oc-777' },
+    })
+
+    expect(screen.queryByRole('button', { name: /^confirmar validación$/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('orden-compra-selector-stub')).not.toBeInTheDocument()
+    expect(screen.queryByText('cabecera-orden-compra-stub')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /agregar fila/i })).not.toBeInTheDocument()
+  })
+
+  it('validado=true sin orden_compra_id (licitación/comparativa): solo el aviso, sin botón de ir a la OC', async () => {
+    vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+      extraction_id: 'abc',
+      document_type: 'licitacion',
+      row_count: 1,
+      filas_leidas: 1,
+      editable: true,
+      columnas: ['item', 'descripcion', 'cantidad'],
+      filas: [{ item: '1', descripcion: 'Test', cantidad: '1' }],
+      validado: true,
+      orden_compra_id: null,
+    })
+
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    expect(await screen.findByText(/esta extracción ya fue validada/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /ir a la orden de compra/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^confirmar validación$/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/proceso comercial/i)).not.toBeInTheDocument()
+  })
+
+  it('validado=false (u omitido, retrocompat) sigue mostrando el flujo normal de edición, sin el aviso', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    expect(screen.queryByText(/esta extracción ya fue validada/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^confirmar validación$/i })).toBeInTheDocument()
+  })
+})
