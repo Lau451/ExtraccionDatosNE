@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 _JSON_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
     max_output_tokens=65_536,
+    # Extraer no es una tarea creativa: con la temperatura por default la misma
+    # OC variaba entre corridas (observaciones con líneas omitidas, renglones de
+    # más o de menos). 0 minimiza esa variación (T4, carga-asincrona).
+    temperature=0,
 )
 
 # Orden de columnas del CSV — D6. No reordenar: main.py y la lectura de
@@ -78,9 +82,9 @@ Return ONLY valid JSON with this exact structure:
   "fecha_emision": "issue date normalized to DD/MM/AAAA, or empty string if not found",
   "cuit_cliente": "the customer's CUIT — digits ONLY, no dashes/dots/spaces (11 digits), or empty string if not found",
   "razon_social_cliente": "the customer's legal/business name as written, or empty string",
-  "direccion_entrega": "delivery address as written, or empty string",
+  "direccion_entrega": "delivery address as written, or empty string — see FORMATTING RULES below",
   "cantidad_entregas": "how many deliveries the document declares in total (a plain number), or empty string if not stated",
-  "observaciones": "free-text notes/remarks printed on the order that are NOT specific to a single line — general conditions, delivery instructions, stock notes, authorization notes, etc. (e.g. a field labeled 'Observación'/'Observaciones'/'Notas'/'Condiciones'). Empty string if the document has none. Never invent or summarize — transcribe as written.",
+  "observaciones": "free-text notes/remarks printed on the order that are NOT specific to a single line — general conditions, delivery instructions, stock notes, authorization notes, etc. (e.g. a field labeled 'Observación'/'Observaciones'/'Notas'/'Condiciones'). Empty string if the document has none. Faithful transcription of the document's content — never invent, summarize or drop information — see FORMATTING RULES below for spacing/accents/line-structure repair.",
   "renglones": [
     {
       "numero_renglon": "the line number EXACTLY as declared in the document, or empty string — see CRITICAL RULE below",
@@ -120,6 +124,28 @@ RULE ABOUT LINE TOTAL (importe_total):
 - You are STRICTLY FORBIDDEN from computing cantidad × precio_unitario yourself when the
   document does not print an explicit total for that line — leave "importe_total" as an empty
   string instead.
+
+FORMATTING RULES FOR "direccion_entrega" AND "observaciones" (readability):
+- Source text may come from OCR and have words glued together (e.g. "LugardeEntrega:HOSPITALPCIAL.SAYAGO",
+  "FRENCH5090", "7A14HS"). Restore the missing spaces between words, numbers and punctuation so it reads naturally
+  ("Lugar de Entrega: HOSPITAL PCIAL. SAYAGO", "FRENCH 5090", "7 a 14 hs"). Also restore obvious missing accents in
+  Spanish words (e.g. "Dias" -> "Días", "Citese" -> "Cítese", "numero" -> "número"). Keep the original letter case of
+  proper names, codes and CUITs; never change digits, names or meaning, never add or drop information.
+- "direccion_entrega": a single line. Street and number first, then place/department, locality if present, and
+  delivery schedule (horario) if the document states one for that address, separated by " - " (keeping the
+  document's wording and case). Locality and postal code belong here ONLY when they come from a field that
+  describes the DELIVERY address itself (e.g. a "Lugar de Entrega"/"Dirección de Entrega" block). NEVER take the
+  locality or postal code from the document's issue place/date line (e.g. a header like "Lugar: <city>, <date>")
+  or from the supplier's (our) own address block — those describe where the order was ISSUED or ADDRESSED TO, not
+  where it must be delivered. When the delivery block names the customer's own institution (e.g. "Lugar de Entrega:
+  HOSPITAL X - FARMACIA") but gives no street, take the street and number from that SAME institution's address
+  stated elsewhere in the document (e.g. "Organismo Destino: HOSPITAL X" + "Domicilio: <street>"), so the delivery
+  address is still complete.
+- "observaciones": one remark per line, separated by "\\n", in document order, each as "Label: value" when the
+  document labels it. Section headings (e.g. "Datos para facturar:") stay on their own line. Drop empty lines and
+  stray bullets. Transcribe EVERY labeled remark independently, even one whose value overlaps or repeats something
+  already captured in "direccion_entrega" (e.g. a "Domicilio:" line inside "Datos para facturar:") — never omit a
+  remark just because it looks redundant with another field.
 
 GENERAL RULES:
 - Never invent data. Any field not found in the document is an empty string ("").
@@ -202,6 +228,21 @@ def _llamar_gemini_orden_compra(markdown: str, *, prompt: str = _PROMPT) -> dict
 # ======================
 
 
+def _normalizar_direccion_entrega(valor: str) -> str:
+    """T4: direccion_entrega es de línea única por contrato (D6, CabeceraOrdenCompra.tsx
+    la edita en un textarea de una sola línea lógica). El prompt le pide a Gemini una
+    única línea, pero si igual devuelve saltos de línea (el modelo desobedece, o un
+    remark de observaciones se filtra acá), se normalizan a ", " en vez de dejarlos
+    crudos — mismo criterio defensivo que `normalizarSaltosDeLineaDeDireccion` en el
+    frontend (CabeceraOrdenCompra.tsx)."""
+    if not valor:
+        return valor
+    if not any(salto in valor for salto in ("\r\n", "\r", "\n")):
+        return valor
+    partes = [linea.strip() for linea in valor.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return ", ".join(parte for parte in partes if parte)
+
+
 def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
     """Convierte el JSON de Gemini en filas listas para csv.DictWriter (D6).
 
@@ -209,6 +250,11 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
     en cada fila (D6: "una fila por renglón, los campos de cabecera se repiten
     en cada fila"). `numero_renglon` se preserva tal cual llegó — nunca se
     autoincrementa ni se deriva del orden de aparición (C10).
+
+    T4: `observaciones` conserva sus saltos de línea internos tal cual (un remark
+    por línea, D6/design del prompt) — `.strip()` solo recorta los extremos.
+    `direccion_entrega` se normaliza defensivamente vía `_normalizar_direccion_entrega`
+    porque debe ser de línea única (ver su docstring).
 
     Args:
         datos: dict con las claves de cabecera + "renglones": list[dict].
@@ -222,7 +268,9 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         "fecha_emision": str(datos.get("fecha_emision") or "").strip(),
         "cuit_cliente": str(datos.get("cuit_cliente") or "").strip(),
         "razon_social_cliente": str(datos.get("razon_social_cliente") or "").strip(),
-        "direccion_entrega": str(datos.get("direccion_entrega") or "").strip(),
+        "direccion_entrega": _normalizar_direccion_entrega(
+            str(datos.get("direccion_entrega") or "").strip()
+        ),
         "cantidad_entregas": str(datos.get("cantidad_entregas") or "").strip(),
         "observaciones": str(datos.get("observaciones") or "").strip(),
     }

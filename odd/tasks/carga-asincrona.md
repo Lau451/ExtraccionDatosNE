@@ -92,14 +92,23 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   - Dirección is now a textarea with no Enter handling: newlines can leak into direccion_entrega. Keep it
     single-value (Enter does not insert newlines, pasted newlines normalized to ", ") until T4 decides the format.
   - Enter "no newline" test is tautological in jsdom: assert on fireEvent's return value (defaultPrevented).
-- [ ] **T4 — Address / notes formatting** (route: delegated writer, after T1c/T3b; approved by user 2026-09-26)
+- [ ] **T1d — Heartbeat-based sweep** (route: delegated writer, after T4)
+  - Review of T1c (approved, advisory): a 60-min threshold on created_at leaves restart orphans stuck ~65 min (blocking
+    re-upload via 409) and can fail long-queued jobs behind _GEMINI_SEMAPHORE. Replace with a heartbeat: the background
+    job touches `extraction_results.updated_at` every ~60 s from before acquiring the semaphore until it finishes (the
+    trigger t_u_er already maintains updated_at, no migration); the sweep (startup + every 5 min) fails `processing` rows
+    whose updated_at is older than ~5 min. Add a live-DB test of the timestamp filter (PostgREST '+' encoding).
+  - Minor advisories: move _SWEEP_INTERVALO_SEGUNDOS next to _sweep_periodico; misleading test docstring
+    (tests/test_persistent_output.py ~585); line-number reference in tests/extraccion/test_service.py ~209;
+    useAutoGrowTextarea StrictMode reconnect (rely on ref(null) instead of a mount-only cleanup); skip the Enter block
+    while IME composing (event.nativeEvent.isComposing); stub ResizeObserver as undefined instead of asserting the env.
+- [x] **T4 — Address / notes formatting** (route: delegated writer, after T1c/T3b; approved by user 2026-09-26)
   - Root cause (verified on Pruebas/oc_sayago.pdf): scanned PDF → RapidOCR drops spaces between words; the prompt says
     "transcribe as written", so Gemini copies the glued text and flattens multi-line remarks into one line.
   - Prompt (robot_orden_compra._PROMPT): restore OCR-lost spaces and obvious Spanish accents without changing digits, names,
     case or meaning; direccion_entrega single line "street number - place - department/schedule"; locality/postal code
     ONLY from delivery-address fields (never from the issue place/date line, e.g. Tandil "Lugar:"); observaciones one
-    remark per line ("
-"), "Label: value", section headings on their own line.
+    remark per line (joined with a newline character), "Label: value", section headings on their own line.
   - Prototype validated in scratchpad on the 3 Pruebas OCs (renglon counts unchanged: 2/7/32).
   - UI: observaciones rendered preserving line breaks wherever OC notes are shown (validation header + OC/matching screens).
   - Existing extractions are not reprocessed.
@@ -152,7 +161,20 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   reserve_extraction integration 3. Parent: `pytest -m "not integration"` → 495 passed; `vitest run` → 328 passed;
   `tsc -b --noEmit` clean; TEST DB left with only the 5 original completed rows.
 
+- T1c+T3b review: `high` → consent granted → 4-lens **approved** and acknowledged (range 3fb167c..2dd506d). Advisories → T1d.
+
+- T4 implemented (delegated writer + parent). Prompt rules (OCR re-spacing/accents, delivery-only locality, one remark per
+  line, never drop a remark as redundant), defensive single-line direccion_entrega in _construir_filas, CSV round-trip test.
+  No read-only OC notes view exists in the frontend (the validation textarea already renders newlines), so no UI change.
+  Parent additions: `temperature=0` on the OC Gemini config (default temperature made observaciones drop lines and
+  Tandil return 31 vs 32 renglones), and a rule to complete the street from the same institution's Domicilio when the
+  delivery block has none (with temperature 0, Sayago consistently lost "FRENCH 5090").
+  Evidence: RED (writer 8 tests; parent temperature test failed) → GREEN; `pytest -m "not integration"` → see commit;
+  live 3x: Sayago 7/7/7 renglones, 9 obs lines, dir "FRENCH 5090 - HOSPITAL PCIAL. SAYAGO - FARMACIA - Horario: 7 a 14 hs";
+  Tandil 32/32/32, dir without "Tandil" (1 of 3 runs added extra delivery/payment lines to observaciones — residual
+  model variance); Nueva Era 2 renglones, empty dir.
+
 ## Next step
 
-T4 (approved design above).
+T1d (heartbeat sweep).
 Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation.
