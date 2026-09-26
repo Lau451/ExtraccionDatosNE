@@ -152,3 +152,47 @@ describe('CabeceraOrdenCompra — dirección de entrega multilínea (T3)', () =>
     expect(campo).toHaveValue(direccionLarga)
   })
 })
+
+// T3b (carga-asincrona) -- el textarea de T3 no manejaba Enter: un Enter real
+// insertaba un salto de línea crudo en direccion_entrega. La dirección sigue
+// siendo un único valor lógico (a diferencia de Observaciones, que sí es
+// multilínea a propósito) hasta que T4 decida un formato real.
+describe('CabeceraOrdenCompra — dirección de entrega es un valor único (T3b)', () => {
+  it('Enter en el textarea de dirección no inserta un salto de línea', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    const noFueCancelado = fireEvent.keyDown(campo, { key: 'Enter' })
+
+    expect(noFueCancelado).toBe(false)
+  })
+
+  it('un salto de línea que llega por otra vía (pegado, autocompletado) se normaliza a ", "', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    fireEvent.change(campo, {
+      target: { value: 'Calle Falsa 123\nPiso 4to\n\nDepto B' },
+    })
+
+    expect(campo).toHaveValue('Calle Falsa 123, Piso 4to, Depto B')
+  })
+
+  it('un valor sin saltos de línea no se altera', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A]} />)
+    const campo = screen.getByLabelText(/dirección de entrega/i)
+
+    fireEvent.change(campo, { target: { value: 'Calle Falsa 123' } })
+
+    expect(campo).toHaveValue('Calle Falsa 123')
+  })
+
+  it('observaciones sigue permitiendo saltos de línea reales (a diferencia de dirección)', () => {
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A_CON_OBSERVACIONES]} />)
+    const campo = screen.getByLabelText(/observaciones/i)
+
+    fireEvent.change(campo, { target: { value: 'Línea 1\nLínea 2' } })
+
+    expect(campo).toHaveValue('Línea 1\nLínea 2')
+  })
+})

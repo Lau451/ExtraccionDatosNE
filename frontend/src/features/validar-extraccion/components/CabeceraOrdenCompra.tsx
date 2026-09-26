@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { useAutoGrowTextarea } from '../useAutoGrowTextarea'
 
@@ -35,6 +35,30 @@ const CAMPOS_ADVERTENCIA: { campo: string; etiqueta: string }[] = [
   { campo: 'cantidad_entregas', etiqueta: 'Cantidad de entregas' },
   { campo: 'observaciones', etiqueta: 'Observaciones' }, // T2
 ]
+
+/** T3b: dirección de entrega sigue siendo un único valor lógico (a diferencia
+ * de Observaciones, que sí es multilínea a propósito), aunque desde T3 vive en
+ * un textarea auto-creciente para no truncar direcciones largas. Un salto de
+ * línea real nunca debe terminar adentro: Enter se bloquea en el keydown (ver
+ * `bloquearEnter` más abajo, mismo contrato que `CeldaEditable`), y uno que
+ * entre por otra vía (pegado, drag&drop, autocompletado) se normaliza acá a
+ * ", " en vez de guardarse crudo -- el formato final de dirección/notas queda
+ * para T4, esto solo evita que direccion_entrega termine con "\n" adentro
+ * mientras tanto. */
+function normalizarSaltosDeLineaDeDireccion(valor: string): string {
+  if (!/\r\n|\r|\n/.test(valor)) return valor
+  return valor
+    .split(/\r\n|\r|\n/)
+    .map((linea) => linea.trim())
+    .filter((linea) => linea.length > 0)
+    .join(', ')
+}
+
+function bloquearEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+  }
+}
 
 /** Espejo de `_valor_mas_frecuente` (empate -> gana el primer miembro). */
 function valorMasFrecuente(valores: string[]): string {
@@ -166,7 +190,10 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
           id="cabecera-direccion-entrega"
           ref={direccionAutoGrow.ref}
           value={direccionEntrega}
-          onChange={(event) => setDireccionEntrega(event.target.value)}
+          onChange={(event) =>
+            setDireccionEntrega(normalizarSaltosDeLineaDeDireccion(event.target.value))
+          }
+          onKeyDown={bloquearEnter}
           rows={1}
           className="w-full resize-none overflow-hidden rounded-md border border-slate-300 px-3 py-2 text-sm leading-normal"
         />

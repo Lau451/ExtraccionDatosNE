@@ -187,10 +187,17 @@ describe('TablaEditable — layout ancho por columna (T3)', () => {
     const filaUno = screen.getByRole('textbox', { name: /descripción fila 1/i })
     const filaDos = screen.getByRole('textbox', { name: /descripción fila 2/i })
 
-    fireEvent.keyDown(filaUno, { key: 'Enter' })
+    // T1c/T3b: en jsdom, Enter nunca inserta un salto de línea en un textarea
+    // por sí solo (no hay input nativo que simular), así que comparar el
+    // `.value` antes/después no puede fallar aunque se saque el
+    // `event.preventDefault()` real -- lo que sí se puede observar es que el
+    // evento efectivamente se canceló: `fireEvent` devuelve `false` cuando
+    // algún handler llamó `preventDefault()` (semántica de
+    // `dispatchEvent` estándar).
+    const noFueCancelado = fireEvent.keyDown(filaUno, { key: 'Enter' })
 
     expect(filaDos).toHaveFocus()
-    expect((filaUno as HTMLTextAreaElement).value).toBe(filaCompleta().descripcion)
+    expect(noFueCancelado).toBe(false)
   })
 
   it('cantidad/precio_unitario/importe_total quedan alineados a la derecha con tabular-nums', () => {
