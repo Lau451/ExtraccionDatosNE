@@ -354,6 +354,7 @@ def test_leer_filas_extraccion_orden_compra_agrupada_no_bloquea_por_numero_oc_di
         "source_filename": "a.pdf",
         "row_count": 1,
         "grupo_id": "grupo-1",
+        "status": "completed",
     }
 
     resultado = service.leer_filas_extraccion(extraction, client=MagicMock())

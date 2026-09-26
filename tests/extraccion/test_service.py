@@ -71,6 +71,7 @@ def test_leer_filas_extraccion_licitacion_devuelve_columnas_y_filas_del_csv(tmp_
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 2,
+            "status": "completed",
         }
     )
 
@@ -96,6 +97,7 @@ def test_leer_filas_extraccion_comparativa_devuelve_columnas_propias(tmp_path):
             "document_type": "comparativa",
             "csv_disk_path": csv_path,
             "row_count": 1,
+            "status": "completed",
         }
     )
 
@@ -116,6 +118,7 @@ def test_leer_filas_extraccion_mas_de_500_filas_no_es_editable_y_no_manda_filas(
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 501,
+            "status": "completed",
         }
     )
 
@@ -145,6 +148,7 @@ def test_leer_filas_extraccion_orden_compra_grupo_id_null_lee_su_propio_csv(tmp_
             "row_count": 1,
             "source_filename": "test.pdf",
             "grupo_id": None,
+            "status": "completed",
         }
     )
 
@@ -164,6 +168,7 @@ def test_leer_filas_extraccion_csv_no_disponible_levanta_extraccion_no_disponibl
                 "document_type": "licitacion",
                 "csv_disk_path": None,
                 "row_count": 0,
+                "status": "completed",
             }
         )
 
@@ -196,6 +201,24 @@ def test_leer_filas_extraccion_status_failed_levanta_conflict_error():
                 "csv_disk_path": None,
                 "row_count": 0,
                 "status": "failed",
+            }
+        )
+
+
+def test_leer_filas_extraccion_sin_clave_status_no_es_validable():
+    """T1c: alinea `leer_filas_extraccion` con `validar_extraccion` (service.py
+    ~1220), que trata un dict sin 'status' como no validable (`.get("status")`,
+    sin default 'completed'). El único select real que alimenta esta función
+    (`GET .../filas`, router.py) siempre trae 'status' -- un dict sin esa clave
+    solo pasa acá en tests unitarios que construyen el dict a mano, así que este
+    cambio no puede romper ningún path real."""
+    with pytest.raises(ConflictError):
+        leer_filas_extraccion(
+            {
+                "id": "extraction-sin-status",
+                "document_type": "licitacion",
+                "csv_disk_path": None,
+                "row_count": 0,
             }
         )
 
@@ -244,6 +267,7 @@ def test_leer_filas_extraccion_validado_true_sin_client_no_resuelve_orden_compra
             "csv_disk_path": csv_path,
             "row_count": 1,
             "validado": True,
+            "status": "completed",
         }
     )
 
@@ -265,6 +289,7 @@ def test_leer_filas_extraccion_no_validada_expone_validado_false(tmp_path):
             "csv_disk_path": csv_path,
             "row_count": 1,
             "validado": False,
+            "status": "completed",
         }
     )
 
@@ -287,6 +312,7 @@ def test_leer_filas_extraccion_sin_clave_validado_default_false_retrocompatible(
             "document_type": "licitacion",
             "csv_disk_path": csv_path,
             "row_count": 1,
+            "status": "completed",
         }
     )
 

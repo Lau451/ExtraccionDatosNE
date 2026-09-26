@@ -12,6 +12,7 @@ Todos los tests usan mocks para:
 - No hacer requests reales a Supabase
 """
 
+import asyncio
 import io
 import uuid
 from pathlib import Path
@@ -21,6 +22,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+import services.extraccion.main as main_module
 import services.extraccion.supabase_client as sc_module
 from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.gemini_errors import GeminiAPIError
@@ -82,6 +84,14 @@ def xlsx_bytes():
 # ---------------------------------------------------------------------------
 # Helpers de mock comunes
 # ---------------------------------------------------------------------------
+
+async def _esperar_llamadas(mock: AsyncMock, *, minimo: int) -> None:
+    """Poll con sleeps reales (no mockeados) hasta que `mock` acumule al menos
+    `minimo` awaits -- usado para esperar a una tarea de background (T1c,
+    `_sweep_periodico`) sin acoplarse a cuántos ticks del loop hacen falta."""
+    while mock.await_count < minimo:
+        await asyncio.sleep(0.01)
+
 
 def _mock_csv_output(tmp_path: Path, contenido: str = "") -> Path:
     """Crea un CSV temporal que el robot devolvería como resultado."""
@@ -233,6 +243,58 @@ class TestProcesarSinFilaProcessing:
         # El archivo temporal (y el directorio, al quedar vacío) se limpiaron.
         assert not tmp_path.exists()
 
+    def test_503_ocurre_igual_si_cerrar_sesion_explota(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """T1c: si `cerrar_sesion` en sí lanza (ej. el propio client de Supabase
+        rompe antes de llegar a su try/except interno), el cleanup del archivo
+        temporal y la respuesta 503 NO deben perderse -- antes de esta tarea,
+        una excepción acá se propagaba y el request terminaba en un 500 sin
+        cleanup, en vez del 503 esperado."""
+        session_uuid = uuid.uuid4()
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="9" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch("services.extraccion.main.get_tmp_dir", return_value=tmp_path)
+        mock_robot = mocker.patch("services.extraccion.main.procesar_archivo")
+        mock_cerrar_sesion = mocker.patch(
+            "services.extraccion.main.cerrar_sesion",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Supabase caído justo acá"),
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 503
+        body = response.json()
+        assert body["ok"] is False
+        assert body["error"]
+
+        mock_robot.assert_not_called()
+        mock_cerrar_sesion.assert_awaited_once()
+
+        # El cleanup del archivo temporal corrió igual, pese a la excepción.
+        assert not tmp_path.exists()
+
 
 # ---------------------------------------------------------------------------
 # 4.5.2 — Segundo upload igual → HTTP 409
@@ -284,9 +346,15 @@ class TestProcesarFileDuplicateBlocks:
         """T1b (carga-asincrona): un segundo upload del mismo archivo mientras el
         primero todavía está 'processing' (robot corriendo en background) también
         debe recibir 409 con el extraction_id de esa fila en curso -- mismo camino
-        que un duplicado 'completed' (reserve_extraction, migración 0028, trata
-        'processing' como tomada), pero probado acá explícitamente para el caso
-        de un upload todavía en vuelo, no uno ya terminado."""
+        que un duplicado 'completed'.
+
+        T1c: este test es tautológico respecto de la regla "'processing' cuenta
+        como tomada" -- mockea `buscar_duplicado_con_lock` para que directamente
+        devuelva el id, así que solo prueba que /procesar traduce ESE id a un 409
+        (wiring del endpoint), nunca la regla de la RPC `reserve_extraction`
+        (migración 0028) en sí, que vive en SQL. Esa regla la cubre
+        `test_reserve_extraction_trata_processing_como_tomada` en
+        test_extraccion_auth.py, contra la base real."""
         in_flight_uuid = uuid.uuid4()
 
         mocker.patch(
@@ -440,7 +508,7 @@ class TestProcesarFileGeminiFailsChunk1:
         mock_marcar_fallida.assert_awaited_once()
         error_msg = mock_marcar_fallida.await_args.kwargs["error_msg"]
         assert detalle_sensible not in error_msg
-        assert error_msg == "No se pudo procesar el archivo. Verificá el formato del documento."
+        assert error_msg == main_module._MENSAJE_PARSER_ERROR
 
     def test_procesar_file_gemini_api_error_guarda_mensaje_fijo_no_el_texto_crudo(
         self, client, headers_json, pdf_bytes, mocker
@@ -487,7 +555,7 @@ class TestProcesarFileGeminiFailsChunk1:
         mock_marcar_fallida.assert_awaited_once()
         error_msg = mock_marcar_fallida.await_args.kwargs["error_msg"]
         assert detalle_sensible not in error_msg
-        assert error_msg == "Error en el servicio de IA. Intente nuevamente en unos momentos."
+        assert error_msg == main_module._MENSAJE_GEMINI_API_ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -1126,3 +1194,83 @@ class TestRutasLegacyRetiradas:
     def test_static_no_esta_montado(self, client):
         response = client.get("/static/main.js")
         assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# T1c (carga-asincrona) — sweep periódico además del de arranque
+# ---------------------------------------------------------------------------
+
+class TestSweepPeriodico:
+    """`_sweep_periodico` corre `marcar_processing_interrumpidos` cada
+    `_SWEEP_INTERVALO_SEGUNDOS` mientras el proceso está vivo -- el sweep de
+    arranque (T1/T1b) solo cubre un reinicio, no una fila que se vuelve huérfana
+    (ej. el proceso del robot muere) mientras el servicio sigue corriendo."""
+
+    @pytest.mark.asyncio
+    async def test_llama_a_marcar_processing_interrumpidos_en_cada_iteracion(self, mocker):
+        # Intervalo real pero mínimo (no se mockea asyncio.sleep en sí -- es el
+        # mismo objeto módulo que usaría nuestro propio polling de abajo, así que
+        # mockearlo también nos dejaría sin forma de ceder control real al loop).
+        mocker.patch("services.extraccion.main._SWEEP_INTERVALO_SEGUNDOS", 0)
+        mock_marcar = mocker.patch(
+            "services.extraccion.main.marcar_processing_interrumpidos",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
+
+        tarea = asyncio.create_task(main_module._sweep_periodico())
+        try:
+            await asyncio.wait_for(_esperar_llamadas(mock_marcar, minimo=1), timeout=2)
+        finally:
+            tarea.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await tarea
+
+        assert mock_marcar.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_una_excepcion_en_una_iteracion_no_mata_el_loop(self, mocker):
+        mocker.patch("services.extraccion.main._SWEEP_INTERVALO_SEGUNDOS", 0)
+        mock_marcar = mocker.patch(
+            "services.extraccion.main.marcar_processing_interrumpidos",
+            new_callable=AsyncMock,
+            side_effect=[RuntimeError("Supabase caído"), 0, 0],
+        )
+
+        tarea = asyncio.create_task(main_module._sweep_periodico())
+        try:
+            # Si la excepción del primer intento matara el loop, esto nunca
+            # llegaría a 2 llamados y el wait_for expiraría.
+            await asyncio.wait_for(_esperar_llamadas(mock_marcar, minimo=2), timeout=2)
+        finally:
+            tarea.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await tarea
+
+        assert mock_marcar.await_count >= 2
+
+
+class TestLifespanArrancaYCancelaElSweepPeriodico:
+    @pytest.mark.asyncio
+    async def test_lifespan_crea_la_tarea_y_la_cancela_limpiamente_al_salir(self, mocker):
+        mocker.patch(
+            "services.extraccion.main.marcar_processing_interrumpidos",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
+
+        tareas_creadas = []
+        create_task_original = asyncio.create_task
+
+        def _capturar_tarea(coro, *args, **kwargs):
+            tarea = create_task_original(coro, *args, **kwargs)
+            tareas_creadas.append(tarea)
+            return tarea
+
+        mocker.patch("services.extraccion.main.asyncio.create_task", side_effect=_capturar_tarea)
+
+        async with main_module._lifespan(main_module.app):
+            assert len(tareas_creadas) == 1
+            assert not tareas_creadas[0].done()
+
+        assert tareas_creadas[0].cancelled()

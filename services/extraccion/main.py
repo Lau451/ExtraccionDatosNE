@@ -31,6 +31,7 @@ from services.extraccion.persistent_output import (
     crear_extraction_processing,
     marcar_extraccion_fallida,
     marcar_processing_interrumpidos,
+    _SWEEP_INTERVALO_SEGUNDOS,
 )
 from services.extraccion.persistent_chunking import crear_sesion, cerrar_sesion
 from services.extraccion.background_tasks import schedule_persist_output
@@ -49,14 +50,52 @@ logger = logging.getLogger(__name__)
 # APP
 # ======================
 
+async def _sweep_periodico() -> None:
+    """T1c (carga-asincrona): corre `marcar_processing_interrumpidos` cada
+    `_SWEEP_INTERVALO_SEGUNDOS` mientras el proceso está vivo -- el sweep de
+    arranque (T1/T1b) solo limpia huérfanas al reiniciar el servicio; una fila
+    puede quedar huérfana (ej. el proceso que corría el robot muere) sin que el
+    servicio se reinicie, y esa fila necesita este loop para no quedar
+    'processing' para siempre hasta el próximo deploy.
+
+    Tolerante a fallos: una excepción en una iteración (ej. Supabase caído en
+    ese momento) se logea y el loop sigue en la próxima iteración -- aunque
+    `marcar_processing_interrumpidos` ya atrapa sus propios errores y nunca
+    debería propagar, este try/except es la red de seguridad del loop en sí
+    (para no perder el sweep periódico entero por un cambio futuro ahí)."""
+    while True:
+        await asyncio.sleep(_SWEEP_INTERVALO_SEGUNDOS)
+        try:
+            await marcar_processing_interrumpidos()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "_sweep_periodico: error inesperado en una iteración, se reintenta "
+                "en la próxima (cada %ds)",
+                _SWEEP_INTERVALO_SEGUNDOS,
+            )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """carga-asincrona (T1): al levantar el servicio, cualquier extraction_results
-    en 'processing' que haya quedado huérfana de un reinicio/crash anterior se
-    marca 'failed' -- ver persistent_output.marcar_processing_interrumpidos.
-    Nunca bloquea el arranque (esa función atrapa sus propios errores)."""
+    """carga-asincrona (T1/T1c): al levantar el servicio, cualquier extraction_results
+    en 'processing' que haya quedado huérfana (reinicio/crash anterior, o más vieja
+    que el umbral de `marcar_processing_interrumpidos`) se marca 'failed'. Además se
+    arranca `_sweep_periodico` para seguir barriendo huérfanas mientras el proceso
+    sigue corriendo (T1c: el sweep de solo-arranque de T1b es inseguro si un segundo
+    proceso comparte la misma base -- ver persistent_output.marcar_processing_interrumpidos).
+    La tarea periódica se cancela limpiamente al apagar el servicio."""
     await marcar_processing_interrumpidos()
-    yield
+    tarea_sweep = asyncio.create_task(_sweep_periodico())
+    try:
+        yield
+    finally:
+        tarea_sweep.cancel()
+        try:
+            await tarea_sweep
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Extractor de Documentos", lifespan=_lifespan)
@@ -85,6 +124,13 @@ _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 _MENSAJE_PERSISTENCIA_NO_DISPONIBLE = (
     "No se pudo registrar el documento para su procesamiento. Intente nuevamente en unos instantes."
 )
+
+# T1c: mismos mensajes fijos que T1b introdujo inline en las ramas `except` de
+# `_procesar_documento_background` -- hoisteados a constantes (junto a
+# `_MENSAJE_PERSISTENCIA_NO_DISPONIBLE` arriba) para que los tests los reusen en vez
+# de repetir el literal, y para que un cambio de copy quede en un solo lugar.
+_MENSAJE_PARSER_ERROR = "No se pudo procesar el archivo. Verificá el formato del documento."
+_MENSAJE_GEMINI_API_ERROR = "Error en el servicio de IA. Intente nuevamente en unos momentos."
 
 # ======================
 # HELPERS
@@ -304,7 +350,7 @@ async def _procesar_documento_background(
         logger.error("Parser error: %s - %s", e.filepath, e.cause)
         await _fallar_extraccion(
             extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
-            mensaje="No se pudo procesar el archivo. Verificá el formato del documento.",
+            mensaje=_MENSAJE_PARSER_ERROR,
         )
 
     except NoProvidersDetectedError as e:
@@ -340,7 +386,7 @@ async def _procesar_documento_background(
         logger.error("Gemini API error: %s", e.message)
         await _fallar_extraccion(
             extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
-            mensaje="Error en el servicio de IA. Intente nuevamente en unos momentos.",
+            mensaje=_MENSAJE_GEMINI_API_ERROR,
         )
 
     except Exception as e:
@@ -474,9 +520,21 @@ async def procesar(
         # marcar_extraccion_fallida son no-op con extraction_id=None). Se corta acá,
         # ANTES de agendar el background task.
         if session_id is not None:
-            await cerrar_sesion(
-                session_id=session_id, status="failed", error_msg=_MENSAJE_PERSISTENCIA_NO_DISPONIBLE
-            )
+            # T1c: si cerrar_sesion en sí explota (no su propio try/except interno,
+            # sino algo antes, ej. el client de Supabase), el cleanup del archivo
+            # temporal y el 503 de abajo NUNCA deben perderse por eso -- antes de
+            # esta guarda, una excepción acá se propagaba como 500 sin cleanup.
+            try:
+                await cerrar_sesion(
+                    session_id=session_id, status="failed", error_msg=_MENSAJE_PERSISTENCIA_NO_DISPONIBLE
+                )
+            except Exception as exc:
+                logger.error(
+                    "procesar: error al cerrar la sesión tras 503 (persistencia no "
+                    "disponible) — %s. session_id=%s",
+                    exc,
+                    session_id,
+                )
         _limpiar_archivos_temporales(destino, tmp_dir)
         return _procesar_response(
             {"error": _MENSAJE_PERSISTENCIA_NO_DISPONIBLE, "tipo": tipo},

@@ -79,14 +79,30 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
     tabular-nums, sticky actions column, auto-growing address textarea in the OC header.
   - T2 review advisories: RecentCard live region and polling predicate must use the same list; make the FormCard reset
     assertion meaningful; test the fallback message for a failed row with null `error_msg`.
-- [ ] **T1c — Follow-ups from the T1b review** (route: small, inline or one writer)
+- [x] **T1c — Follow-ups from the T1b review** (route: small, inline or one writer)
   - Startup sweep has no age filter: unsafe if a second process (e.g. a local dev server) shares the same DB.
     Consider a periodic sweep with a generous age threshold instead.
   - 503 path: guard `cerrar_sesion` with try/finally so temp cleanup and the 503 always happen.
   - `leer_filas_extraccion` defaults a missing status to 'completed' while `validar_extraccion` rejects it; align them.
   - In-flight 409 test is tautological (mocks the RPC); the `processing` = taken rule lives only in SQL.
   - Hoist the fixed ParserError/GeminiAPIError messages to constants shared with the tests.
-- [ ] **T4 — Address / notes formatting** (blocked: needs a real example from the user)
+- [x] **T3b — Follow-ups from the T3 review** (route: same writer as T1c)
+  - useAutoGrowTextarea only re-measures on value change: re-measure on width changes too (ResizeObserver), or
+    text gets clipped after a resize (overflow-hidden) — the exact symptom the user reported.
+  - Dirección is now a textarea with no Enter handling: newlines can leak into direccion_entrega. Keep it
+    single-value (Enter does not insert newlines, pasted newlines normalized to ", ") until T4 decides the format.
+  - Enter "no newline" test is tautological in jsdom: assert on fireEvent's return value (defaultPrevented).
+- [ ] **T4 — Address / notes formatting** (route: delegated writer, after T1c/T3b; approved by user 2026-09-26)
+  - Root cause (verified on Pruebas/oc_sayago.pdf): scanned PDF → RapidOCR drops spaces between words; the prompt says
+    "transcribe as written", so Gemini copies the glued text and flattens multi-line remarks into one line.
+  - Prompt (robot_orden_compra._PROMPT): restore OCR-lost spaces and obvious Spanish accents without changing digits, names,
+    case or meaning; direccion_entrega single line "street number - place - department/schedule"; locality/postal code
+    ONLY from delivery-address fields (never from the issue place/date line, e.g. Tandil "Lugar:"); observaciones one
+    remark per line ("
+"), "Label: value", section headings on their own line.
+  - Prototype validated in scratchpad on the 3 Pruebas OCs (renglon counts unchanged: 2/7/32).
+  - UI: observaciones rendered preserving line breaks wherever OC notes are shown (validation header + OC/matching screens).
+  - Existing extractions are not reprocessed.
 
 ## Progress / evidence
 
@@ -122,8 +138,21 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   auto-growing dirección/observaciones (shared useAutoGrowTextarea hook); sticky bottom confirm bar. T2 advisories fixed.
   Evidence: RED 6 failing → GREEN; parent spot check `vitest run` → 317 passed, `tsc -b --noEmit` clean; oxlint clean (writer).
 
+- T3 commit `3fb167c`. Review: `medium` → consent granted → 1-lens **approved** and acknowledged
+  (lineage review-d8cdff3a2e1394fd). Advisories → T3b.
+
+- T1c + T3b implemented (one delegated writer). T1c: sweep with age threshold 60 min (worst-case Gemini backoff
+  280s/call-site x ~3 + persist retries + semaphore queueing, rounded up), runs at startup and every 5 min from the lifespan,
+  failure-tolerant; 503 path guards cerrar_sesion; leer_filas/validar aligned on "missing status = not validable";
+  real live-DB test for reserve_extraction treating 'processing' as taken; hoisted error-message constants.
+  Tradeoff: a row orphaned by a restart stays 'processing' (and blocks re-upload with 409) for up to 60 min.
+  T3b: ResizeObserver re-measure (parent narrowed it to width changes only, to avoid re-measuring on its own height
+  change); dirección blocks Enter and normalizes pasted newlines to ", "; non-tautological Enter test.
+  Evidence (writer): RED per behavior → GREEN; `pytest -m "not integration"` 495, `pytest tests/extraccion` 176 (live),
+  reserve_extraction integration 3. Parent: `pytest -m "not integration"` → 495 passed; `vitest run` → 328 passed;
+  `tsc -b --noEmit` clean; TEST DB left with only the 5 original completed rows.
+
 ## Next step
 
-T3 review, then T1c. T4 needs an example from the user.
-Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation; verified CHECK, error_msg column,
-RPC blocking 'processing'; the 5 existing rows (all completed) are untouched.
+T4 (approved design above).
+Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation.

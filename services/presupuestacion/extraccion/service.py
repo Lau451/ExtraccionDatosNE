@@ -167,11 +167,15 @@ def leer_filas_extraccion(
             f"document_type='{document_type}' no tiene lectura de filas implementada"
         )
 
-    # carga-asincrona (T1): default 'completed' -- retrocompatible con callers/tests
-    # que construyen el dict `extraction` a mano sin la clave 'status' (mismo
-    # criterio que 'validado' abajo). 'processing' (robot corriendo) y 'failed'
-    # nunca tienen csv_disk_path utilizable; 'partial' se deja pasar sin cambios.
-    status = extraction.get("status", "completed")
+    # T1c: alineado con `validar_extraccion` de abajo -- `.get("status")` sin
+    # default (antes T1 defaulteaba a 'completed'). El único select real que
+    # alimenta esta función es GET .../filas (router.py), que siempre trae
+    # 'status'; un dict sin esa clave (típicamente un test unitario armado a
+    # mano) ahora se trata como no validable en vez de asumir 'completed', igual
+    # que un `status` faltante en `validar_extraccion`. 'processing' (robot
+    # corriendo) y 'failed' nunca tienen csv_disk_path utilizable; 'partial' se
+    # deja pasar sin cambios.
+    status = extraction.get("status")
     if status not in ESTADOS_VALIDABLES:
         raise ConflictError(
             f"Esta extracción está en estado '{status}' -- todavía no se puede validar"

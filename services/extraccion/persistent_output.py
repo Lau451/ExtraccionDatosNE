@@ -9,7 +9,8 @@ Funciones:
   persistir_output_final()      — UPDATE de metadata en extraction_results a
                                    status='completed' (por id, no INSERT desde 0028)
   marcar_extraccion_fallida()   — UPDATE a status='failed' + error_msg
-  marcar_processing_interrumpidos() — sweep de arranque: 'processing' huérfanos -> 'failed'
+  marcar_processing_interrumpidos() — sweep (arranque + periódico): 'processing'
+                                   más viejos que un umbral -> 'failed' (T1c)
 
 Todas las funciones retornan None/0 (sin propagar excepcion) si el cliente Supabase
 no esta disponible. El CSV en disco es siempre la fuente de verdad: las filas
@@ -20,6 +21,7 @@ extraidas (`rows`) NO se persisten en Supabase, solo la metadata del documento.
 import asyncio
 import hashlib
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -413,44 +415,82 @@ async def marcar_extraccion_fallida(
 
 _SWEEP_PROCESSING_MENSAJE = "Procesamiento interrumpido, volvé a subir el documento"
 
+# T1c (carga-asincrona): umbral de antigüedad por default para el sweep, dimensionado
+# por encima del peor caso realista de un `/procesar` en background, no un número
+# arbitrario:
+#   - `handle_gemini_errors(max_retries=4, backoff_factor=40.0)` (ver
+#     services/extraccion/gemini_errors.py), usado por robot.py/robot_comparativas.py/
+#     robot_orden_compra.py: en el peor caso (rate limit sostenido) los intentos 0/1/2
+#     duermen 40s + 80s + 160s = 280s antes del intento final (que ya no duerme).
+#   - Un documento puede disparar más de un call-site de Gemini en secuencia
+#     (robot_comparativas divide en chunks y sub-chunks) -- se estima un máximo
+#     razonable de 3 call-sites encadenados: ~3 × 280s ≈ 14 min de solo backoff, sin
+#     contar el tiempo real de red de cada llamada.
+#   - `_retry_persist` (background_tasks.py) agrega hasta ~3 intentos con timeout de
+#     60s y esperas de 2s/4s ≈ 3 min más tras terminar el robot.
+#   - `_GEMINI_SEMAPHORE` (main.py) permite 15 robots concurrentes: un request que
+#     llega de 16° en adelante puede esperar en cola hasta que se libere un slot, en
+#     el peor caso un ciclo completo de job (mismo orden que los ~17 min de arriba).
+# Sumando con margen de seguridad (latencia de red real, no solo el backoff) se
+# redondea a 60 minutos -- generoso a propósito: es preferible tardar en detectar un
+# proceso realmente huérfano que marcar 'failed' un robot que todavía está corriendo
+# de verdad (el bug de T1c: el sweep de T1b no filtraba por antigüedad, lo cual es
+# inseguro si un segundo proceso -- ej. un server local de desarrollo -- comparte la
+# misma base de TEST mientras otro server todavía está procesando).
+_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT = 60 * 60
 
-async def marcar_processing_interrumpidos() -> int:
+# T1c: intervalo del sweep periódico (`_sweep_periodico` en main.py) -- 5 minutos es
+# un compromiso entre detectar filas huérfanas con razonable prontitud y no generar
+# carga extra en la base; con un umbral de 60 min, este intervalo agrega como mucho
+# ~5 min de latencia adicional a la detección.
+_SWEEP_INTERVALO_SEGUNDOS = 5 * 60
+
+
+async def marcar_processing_interrumpidos(
+    *, edad_minima_segundos: int = _SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT
+) -> int:
     """
-    Sweep de arranque (carga-asincrona, T1/T1b): si el servicio se reinició (deploy,
-    crash) mientras una extracción estaba en 'processing', esa fila queda huérfana
-    para siempre -- ningún background task va a terminar de actualizarla porque el
-    proceso que la corría ya no existe. Se corre una vez al levantar el servicio
-    (lifespan de FastAPI en `services/extraccion/main.py`) y marca 'failed'
-    **cualquier** fila 'processing', sin filtrar por antigüedad.
+    Sweep de extracciones huérfanas (carga-asincrona, T1/T1b/T1c): si el servicio se
+    reinició (deploy, crash) mientras una extracción estaba en 'processing', o si el
+    robot murió sin poder actualizar su fila, esa fila queda huérfana -- ningún
+    background task va a terminar de actualizarla. Se corre una vez al levantar el
+    servicio Y periódicamente mientras el proceso está vivo (`_sweep_periodico`,
+    lifespan de FastAPI en `services/extraccion/main.py`), marcando 'failed'
+    cualquier fila 'processing' con más de `edad_minima_segundos` de antigüedad
+    (columna `created_at`).
 
-    Decisión T1b (reemplaza el umbral de 10 min de T1): `docker-compose.yml` define
-    UNA sola instancia por servicio (`container_name` fijo, sin `deploy.replicas`) y
-    el `Dockerfile` arranca uvicorn sin `--workers` -- un solo proceso del sistema
-    operativo ejecuta alguna vez los background tasks de `/procesar`. Cuando el
-    lifespan de un proceso nuevo corre este sweep, el proceso anterior (si lo hubo)
-    ya terminó por completo: no puede haber un robot todavía corriendo de verdad
-    que este sweep pise. Por eso una fila 'processing' encontrada acá es SIEMPRE
-    huérfana, sin importar su antigüedad -- el umbral de T1 dejaba huérfanas para
-    siempre las filas más jóvenes que el umbral (el bug que motivó esta tarea).
-    Si en el futuro se agregan `--workers` o más de una instancia compartiendo esta
-    base, este sweep deja de ser seguro tal cual está: un proceso hermano todavía
-    vivo sí podría tener un robot en curso, y este startup sweep necesitaría volver
-    a un umbral de antigüedad (dimensionado por encima del peor caso de
-    `handle_gemini_errors`, ver `services/extraccion/gemini_errors.py`) corrido de
-    forma periódica, no solo al arrancar.
+    Decisión T1c (reemplaza el "barre todo sin filtrar" de T1b): T1b asumía una
+    única instancia de proceso (sin `--workers`, sin `deploy.replicas`) para
+    justificar que CUALQUIER fila 'processing' encontrada al arrancar era huérfana,
+    sin importar su antigüedad. Eso es inseguro apenas dos procesos comparten la
+    misma base -- por ejemplo, un servidor de desarrollo local corriendo contra el
+    proyecto de Supabase de TEST compartido mientras otro servidor todavía está
+    procesando un documento: el sweep de arranque del primero marcaría 'failed' un
+    robot legítimamente en curso en el segundo. El filtro de antigüedad vuelve a
+    aplicarse (como en T1), pero con un umbral muy por encima del peor caso real de
+    un job (ver `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` arriba) en vez del umbral de
+    10 min de T1, que dejaba huérfanas para siempre las filas más jóvenes que el
+    umbral -- y corriendo también de forma periódica, no solo al arrancar, para
+    seguir limpiando huérfanas reales sin depender de un reinicio del proceso.
 
     Usa el service client (bypassea RLS): es un mantenimiento global entre
-    droguerías al arrancar el proceso, no una operación scopeada a un usuario
-    -- no hay tenant en un startup hook.
+    droguerías, no una operación scopeada a un usuario.
+
+    Args:
+        edad_minima_segundos: antigüedad mínima (según `created_at`) para considerar
+            una fila 'processing' huérfana. Default: `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT`.
 
     Returns:
-        Cantidad de filas marcadas 'failed'. 0 si no había ninguna, si la
-        persistencia no está disponible, o si la query falla (se logea, nunca
-        se propaga -- un sweep fallido no debe impedir que el servicio arranque).
+        Cantidad de filas marcadas 'failed'. 0 si no había ninguna lo bastante vieja,
+        si la persistencia no está disponible, o si la query falla (se logea, nunca
+        se propaga -- un sweep fallido no debe impedir que el servicio arranque ni
+        matar el loop periódico).
     """
     client = get_client()
     if client is None:
         return 0
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=edad_minima_segundos)).isoformat()
 
     try:
         respuesta = await asyncio.to_thread(
@@ -458,18 +498,21 @@ async def marcar_processing_interrumpidos() -> int:
                 client.table("extraction_results")
                 .update({"status": "failed", "error_msg": _SWEEP_PROCESSING_MENSAJE})
                 .eq("status", "processing")
+                .lt("created_at", cutoff)
                 .execute()
             )
         )
         afectadas = len(respuesta.data or [])
         if afectadas:
             logger.warning(
-                "Sweep de arranque: %d extraccion(es) en 'processing' interrumpidas -> 'failed'",
+                "Sweep de 'processing' huérfanos: %d extraccion(es) con más de %ds "
+                "interrumpidas -> 'failed'",
                 afectadas,
+                edad_minima_segundos,
             )
         return afectadas
     except Exception as exc:
         logger.error(
-            "marcar_processing_interrumpidos: error en el sweep de arranque — %s", exc
+            "marcar_processing_interrumpidos: error en el sweep — %s", exc
         )
         return 0
