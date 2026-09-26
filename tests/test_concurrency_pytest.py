@@ -7,16 +7,33 @@ el servidor se bloquee. Mockea procesar_archivo para no consumir quota de Gemini
 
 import asyncio
 import time
+import uuid
 import pytest
 import pytest_asyncio
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
 
 from services.extraccion.auth import UsuarioPerfil, get_current_user
 from services.extraccion.main import app
+
+# T1b (carga-asincrona): estos tests no configuran un Supabase real utilizable
+# ("drogueria-test" no es un UUID válido) -- antes de esta tarea eso no importaba
+# porque crear_extraction_processing devolviendo None se ignoraba y el robot
+# corría igual en background. Ahora ese caso responde 503 sin agendar el robot
+# (ver TestProcesarSinFilaProcessing, tests/test_main_integration.py), así que acá
+# se mockean las dos llamadas de persistencia que preceden al robot para que estos
+# tests puedan seguir ejercitando lo que en verdad les importa: concurrencia y el
+# semáforo de Gemini, no el camino de persistencia.
+def _mocks_persistencia():
+    dup_mock = AsyncMock(return_value=None)
+    crear_mock = AsyncMock(side_effect=lambda **_: uuid.uuid4())
+    return (
+        patch("services.extraccion.main.buscar_duplicado_con_lock", dup_mock),
+        patch("services.extraccion.main.crear_extraction_processing", crear_mock),
+    )
 
 # Auth obligatoria (extraccion-multi-tenant, T1): /procesar ya no acepta caller
 # anónimo. Estos tests ejercitan concurrencia/semáforo, no el gate de auth --
@@ -89,7 +106,10 @@ async def test_concurrent_uploads(num_users: int, test_pdf: Path, tmp_path: Path
     Criterio: el tiempo total debe ser menor a (num_users * tiempo_individual),
     lo que confirma que los requests corren en paralelo y no en serie.
     """
-    with patch("services.extraccion.main.procesar_archivo", side_effect=_fake_procesar):
+    mock_dup, mock_crear = _mocks_persistencia()
+    with mock_dup, mock_crear, patch(
+        "services.extraccion.main.procesar_archivo", side_effect=_fake_procesar
+    ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), timeout=30
         ) as client:
@@ -130,7 +150,10 @@ async def test_semaforo_limita_concurrencia(test_pdf: Path):
         csv.write_text("item;cantidad;descripcion;origen\n1;5;Producto;CLIENTE\n")
         return csv
 
-    with patch("services.extraccion.main.procesar_archivo", side_effect=_fake_con_contador):
+    mock_dup, mock_crear = _mocks_persistencia()
+    with mock_dup, mock_crear, patch(
+        "services.extraccion.main.procesar_archivo", side_effect=_fake_con_contador
+    ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), timeout=30
         ) as client:

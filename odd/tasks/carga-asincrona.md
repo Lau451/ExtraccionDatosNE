@@ -60,7 +60,7 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   - `listar_extracciones` (presupuestacion) and the validation detail only offer `completed` rows.
   - Acceptance: 202 returns in upload time; status transitions covered by tests; duplicates of an
     in-flight upload get 409 with its id; existing tests are updated, not deleted.
-- [ ] **T1b — Backend hardening from review advisories** (route: delegated writer, after T2)
+- [x] **T1b — Backend hardening from review advisories** (route: delegated writer, after T2)
   - If `crear_extraction_processing` returns None, respond 503 instead of running the robot with no row to update.
   - Startup sweep leaves rows younger than the threshold stuck forever → sweep all `processing` rows at startup
     (no request survives a restart) or add a periodic sweep.
@@ -77,6 +77,8 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
 - [ ] **T3 — Validar extracción layout** (route: delegated writer)
   - Wider container, per-column min widths, auto-growing description, numeric columns right-aligned with
     tabular-nums, sticky actions column, auto-growing address textarea in the OC header.
+  - T2 review advisories: RecentCard live region and polling predicate must use the same list; make the FormCard reset
+    assertion meaningful; test the fallback message for a failed row with null `error_msg`.
 - [ ] **T4 — Address / notes formatting** (blocked: needs a real example from the user)
 
 ## Progress / evidence
@@ -94,8 +96,18 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
 - T2 implemented (delegated writer). Evidence: RED FormCard 7 failed / RecentCard 11 failed → GREEN 25/25;
   whole frontend suite 309 passed; `tsc -b --noEmit` clean; scoped oxlint clean (repo lint has pre-existing errors elsewhere).
   Parent spot check: `vitest run src/features/carga-documentos` → 25 passed. `partial` rows also get the Validar action.
+  Commit `bd83f10`. Review: `medium` → consent granted → 1-lens (reliability) **approved** and acknowledged
+  (lineage review-1aed2420d105537d). Advisories folded into T3: live region vs polling use different lists (top-3 slice vs
+  full list); FormCard reset assertion on input.value cannot fail; no test for failed row with null error_msg.
+
+- T1b implemented (delegated writer; its final report was lost to a session limit, so the parent verified from the diff).
+  503 + session failed + temp cleanup when the processing row can't be created; startup sweep fails ALL `processing`
+  rows (verified: services/extraccion/Dockerfile runs uvicorn without --workers, a single process); shared
+  `ESTADOS_VALIDABLES`; fixed Spanish messages for ParserError/GeminiAPIError; comment fixes; in-flight 409 test.
+  Parent evidence: `pytest tests -q -m "not integration"` → 489 passed; `pytest tests/extraccion -q` (live TEST) → 175 passed.
+  RED evidence was not recoverable from the lost report.
 
 ## Next step
 
-Review consent for T1, then T2 (FormCard/RecentCard). RecentCard STATUS_STYLES keys are Spanish words that never match
-the English DB statuses (pre-existing bug) — fix in T2.
+T1b (backend hardening) in progress; then T3 (+ T2 advisories); then T4 needs an example from the user.
+Migration 0028 still needs user confirmation to apply on the TEST project.

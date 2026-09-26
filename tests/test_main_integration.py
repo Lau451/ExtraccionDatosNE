@@ -23,7 +23,9 @@ from fastapi.testclient import TestClient
 
 import services.extraccion.supabase_client as sc_module
 from services.extraccion.auth import UsuarioPerfil, get_current_user
+from services.extraccion.gemini_errors import GeminiAPIError
 from services.extraccion.main import app
+from services.extraccion.parsers import ParserError
 
 # Auth obligatoria (extraccion-multi-tenant, T1): /procesar y /api/documentos ya no
 # aceptan caller anónimo -- el HTML viejo que lo hacía se retira en T2. Estos tests
@@ -164,6 +166,75 @@ class TestProcesarFileSmallSuccess:
 
 
 # ---------------------------------------------------------------------------
+# T1b (carga-asincrona) — crear_extraction_processing devuelve None
+# ---------------------------------------------------------------------------
+
+class TestProcesarSinFilaProcessing:
+    """Advisory T1b: si `crear_extraction_processing` devuelve None (Supabase no
+    disponible al insertar la fila 'processing'), no existe ninguna fila que el
+    robot pueda actualizar al terminar -- antes de esta tarea el robot corría
+    igual en background y el resultado se perdía en silencio."""
+
+    def test_procesar_sin_fila_processing_responde_503_sin_agendar_robot(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """
+        Cuando crear_extraction_processing retorna None:
+        1. La respuesta HTTP es 503 con ok=False y un mensaje en español
+        2. El robot NUNCA se invoca (no hay fila 'processing' que actualizar)
+        3. La sesión se cierra como 'failed'
+        4. El archivo temporal ya guardado en disco se borra
+        """
+        session_uuid = uuid.uuid4()
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="d" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        # Persistencia no disponible: la fila 'processing' nunca se crea
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        # Directorio temporal aislado, para poder verificar el cleanup
+        mocker.patch("services.extraccion.main.get_tmp_dir", return_value=tmp_path)
+        mock_robot = mocker.patch("services.extraccion.main.procesar_archivo")
+        mock_cerrar_sesion = mocker.patch(
+            "services.extraccion.main.cerrar_sesion",
+            new_callable=AsyncMock,
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 503
+        body = response.json()
+        assert body["ok"] is False
+        assert body["error"]
+
+        mock_robot.assert_not_called()
+
+        mock_cerrar_sesion.assert_awaited_once()
+        assert mock_cerrar_sesion.await_args.kwargs["session_id"] == session_uuid
+        assert mock_cerrar_sesion.await_args.kwargs["status"] == "failed"
+
+        # El archivo temporal (y el directorio, al quedar vacío) se limpiaron.
+        assert not tmp_path.exists()
+
+
+# ---------------------------------------------------------------------------
 # 4.5.2 — Segundo upload igual → HTTP 409
 # ---------------------------------------------------------------------------
 
@@ -206,6 +277,42 @@ class TestProcesarFileDuplicateBlocks:
         # duplicado perdía extraction_id al armar el JSON -- el frontend lo necesita
         # (mismo id que buscar_duplicado_con_lock encontró).
         assert body["extraction_id"] == str(existing_uuid)
+
+    def test_procesar_file_duplicado_en_processing_devuelve_409_con_su_id(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        """T1b (carga-asincrona): un segundo upload del mismo archivo mientras el
+        primero todavía está 'processing' (robot corriendo en background) también
+        debe recibir 409 con el extraction_id de esa fila en curso -- mismo camino
+        que un duplicado 'completed' (reserve_extraction, migración 0028, trata
+        'processing' como tomada), pero probado acá explícitamente para el caso
+        de un upload todavía en vuelo, no uno ya terminado."""
+        in_flight_uuid = uuid.uuid4()
+
+        mocker.patch(
+            "services.extraccion.main.calcular_sha256",
+            return_value="e" * 64,
+        )
+        # buscar_duplicado_con_lock envuelve la RPC reserve_extraction, que devuelve
+        # el id de la fila 'processing' igual que si estuviera 'completed' -- el
+        # endpoint no distingue, así que mockearla alcanza para simular este caso.
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=in_flight_uuid,
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 409
+        body = response.json()
+        assert body["ok"] is False
+        assert body["extraction_id"] == str(in_flight_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +390,104 @@ class TestProcesarFileGeminiFailsChunk1:
         mock_cerrar_sesion.assert_awaited_once()
         assert mock_cerrar_sesion.await_args.kwargs["session_id"] == session_uuid
         assert mock_cerrar_sesion.await_args.kwargs["status"] == "failed"
+
+    def test_procesar_file_parser_error_guarda_mensaje_fijo_no_el_texto_crudo(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        """T1b (carga-asincrona): `error_msg` de extraction_results lo ve cualquier
+        usuario de la droguería (GET /api/documentos) -- un ParserError NUNCA debe
+        persistir el texto crudo de la excepción original ahí, solo un mensaje fijo
+        en español. El detalle crudo se sigue logueando (ver logger.error de la
+        rama except), no se pierde, solo deja de exponerse al usuario final."""
+        session_uuid = uuid.uuid4()
+        extraction_uuid = uuid.uuid4()
+        detalle_sensible = "Traceback interno con detalles de infraestructura"
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="f" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=extraction_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            side_effect=ParserError(Path("documento.pdf"), ValueError(detalle_sensible)),
+        )
+        mock_marcar_fallida = mocker.patch(
+            "services.extraccion.main.marcar_extraccion_fallida",
+            new_callable=AsyncMock,
+        )
+        mocker.patch("services.extraccion.main.cerrar_sesion", new_callable=AsyncMock)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        mock_marcar_fallida.assert_awaited_once()
+        error_msg = mock_marcar_fallida.await_args.kwargs["error_msg"]
+        assert detalle_sensible not in error_msg
+        assert error_msg == "No se pudo procesar el archivo. Verificá el formato del documento."
+
+    def test_procesar_file_gemini_api_error_guarda_mensaje_fijo_no_el_texto_crudo(
+        self, client, headers_json, pdf_bytes, mocker
+    ):
+        """Mismo criterio que ParserError arriba, para GeminiAPIError."""
+        session_uuid = uuid.uuid4()
+        extraction_uuid = uuid.uuid4()
+        detalle_sensible = "500 Internal error de la API interna de Google con IDs de proyecto"
+
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="1" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=session_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=extraction_uuid,
+        )
+        mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            side_effect=GeminiAPIError(detalle_sensible),
+        )
+        mock_marcar_fallida = mocker.patch(
+            "services.extraccion.main.marcar_extraccion_fallida",
+            new_callable=AsyncMock,
+        )
+        mocker.patch("services.extraccion.main.cerrar_sesion", new_callable=AsyncMock)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": ""},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        mock_marcar_fallida.assert_awaited_once()
+        error_msg = mock_marcar_fallida.await_args.kwargs["error_msg"]
+        assert detalle_sensible not in error_msg
+        assert error_msg == "Error en el servicio de IA. Intente nuevamente en unos momentos."
 
 
 # ---------------------------------------------------------------------------

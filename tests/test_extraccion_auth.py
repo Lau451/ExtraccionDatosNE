@@ -117,6 +117,14 @@ class TestProcesarEnhebraDrogueriaId:
             "services.extraccion.main.crear_sesion",
             new_callable=AsyncMock, return_value=session_uuid,
         )
+        # T1b (carga-asincrona): crear_extraction_processing devolviendo None hoy
+        # significa 503 sin agendar el robot -- este test no ejercita ese camino
+        # (ver TestProcesarSinFilaProcessing en test_main_integration.py), así que
+        # se mockea para simular la fila 'processing' creada con éxito.
+        mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock, return_value=uuid.uuid4(),
+        )
         mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
         mock_schedule = mocker.patch(
             "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock,

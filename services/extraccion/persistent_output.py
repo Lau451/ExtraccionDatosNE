@@ -20,7 +20,6 @@ extraidas (`rows`) NO se persisten en Supabase, solo la metadata del documento.
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -246,9 +245,14 @@ async def persistir_output_final(
 
     Args:
         extraction_id:   UUID de la fila ya creada en 'processing' por
-                          `crear_extraction_processing`. None si la persistencia
-                          no estaba disponible al crearla (en ese caso `client`
-                          también es None acá, y se retorna temprano igual).
+                          `crear_extraction_processing`. Nunca None en el flujo real
+                          de `/procesar` desde T1b (carga-asincrona): si
+                          `crear_extraction_processing` devuelve None, `/procesar`
+                          responde 503 y NUNCA agenda el background job que termina
+                          llamando a esta función. El chequeo de `client is None` de
+                          abajo sigue cubriendo el caso en que la persistencia se cae
+                          DESPUÉS de crear la fila (entre el INSERT y este UPDATE),
+                          no un `extraction_id` None de entrada.
         session_id:      Aceptado por compatibilidad, no se persiste (ver NOTA).
         doc_type:        "comparativa" | "licitacion" | "orden_compra".
         rows:            Lista de dicts con los datos extraidos (leidos del CSV).
@@ -375,8 +379,9 @@ async def marcar_extraccion_fallida(
         drogueria_id:   droguería dueña de la fila -- nunca actualiza una fila
                         de otra droguería aunque el id coincidiera.
         error_msg:      Mensaje de error en español, ya mapeado desde la
-                        excepción original (ver `_mapear_error_procesamiento`
-                        en main.py) -- nunca el texto crudo de la excepción.
+                        excepción original (ver las ramas `except` de
+                        `_procesar_documento_background` en main.py) -- nunca el
+                        texto crudo de la excepción.
     """
     if extraction_id is None:
         return
@@ -406,23 +411,33 @@ async def marcar_extraccion_fallida(
         )
 
 
-_SWEEP_PROCESSING_MINUTOS_UMBRAL = 10
 _SWEEP_PROCESSING_MENSAJE = "Procesamiento interrumpido, volvé a subir el documento"
 
 
-async def marcar_processing_interrumpidos(
-    *, minutos_umbral: int = _SWEEP_PROCESSING_MINUTOS_UMBRAL
-) -> int:
+async def marcar_processing_interrumpidos() -> int:
     """
-    Sweep de arranque (carga-asincrona, T1): si el servicio se reinició (deploy,
-    crash) mientras una extracción estaba en 'processing', esa fila queda
-    huérfana para siempre -- ningún background task va a terminar de
-    actualizarla porque el proceso que la corría ya no existe. Se corre una vez
-    al levantar el servicio (lifespan de FastAPI en `services/extraccion/main.py`)
-    y marca 'failed' cualquier fila 'processing' con más de `minutos_umbral`
-    minutos de antigüedad -- el margen evita pisar un robot que todavía está
-    corriendo de verdad en un proceso vivo (Gemini con documentos grandes puede
-    tardar varios minutos).
+    Sweep de arranque (carga-asincrona, T1/T1b): si el servicio se reinició (deploy,
+    crash) mientras una extracción estaba en 'processing', esa fila queda huérfana
+    para siempre -- ningún background task va a terminar de actualizarla porque el
+    proceso que la corría ya no existe. Se corre una vez al levantar el servicio
+    (lifespan de FastAPI en `services/extraccion/main.py`) y marca 'failed'
+    **cualquier** fila 'processing', sin filtrar por antigüedad.
+
+    Decisión T1b (reemplaza el umbral de 10 min de T1): `docker-compose.yml` define
+    UNA sola instancia por servicio (`container_name` fijo, sin `deploy.replicas`) y
+    el `Dockerfile` arranca uvicorn sin `--workers` -- un solo proceso del sistema
+    operativo ejecuta alguna vez los background tasks de `/procesar`. Cuando el
+    lifespan de un proceso nuevo corre este sweep, el proceso anterior (si lo hubo)
+    ya terminó por completo: no puede haber un robot todavía corriendo de verdad
+    que este sweep pise. Por eso una fila 'processing' encontrada acá es SIEMPRE
+    huérfana, sin importar su antigüedad -- el umbral de T1 dejaba huérfanas para
+    siempre las filas más jóvenes que el umbral (el bug que motivó esta tarea).
+    Si en el futuro se agregan `--workers` o más de una instancia compartiendo esta
+    base, este sweep deja de ser seguro tal cual está: un proceso hermano todavía
+    vivo sí podría tener un robot en curso, y este startup sweep necesitaría volver
+    a un umbral de antigüedad (dimensionado por encima del peor caso de
+    `handle_gemini_errors`, ver `services/extraccion/gemini_errors.py`) corrido de
+    forma periódica, no solo al arrancar.
 
     Usa el service client (bypassea RLS): es un mantenimiento global entre
     droguerías al arrancar el proceso, no una operación scopeada a un usuario
@@ -437,15 +452,12 @@ async def marcar_processing_interrumpidos(
     if client is None:
         return 0
 
-    corte = (datetime.now(timezone.utc) - timedelta(minutes=minutos_umbral)).isoformat()
-
     try:
         respuesta = await asyncio.to_thread(
             lambda: (
                 client.table("extraction_results")
                 .update({"status": "failed", "error_msg": _SWEEP_PROCESSING_MENSAJE})
                 .eq("status", "processing")
-                .lt("created_at", corte)
                 .execute()
             )
         )

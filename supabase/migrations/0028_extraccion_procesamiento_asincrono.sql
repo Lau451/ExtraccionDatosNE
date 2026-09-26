@@ -79,9 +79,11 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- 'completed' (ya termino) o 'processing' (hay un robot corriendo ahora mismo
-  -- para este mismo archivo+drogueria) -> tomada: devolver su id, el caller
-  -- responde 409 con ese extraction_id.
+  -- 'completed' (ya termino), 'processing' (hay un robot corriendo ahora mismo
+  -- para este mismo archivo+drogueria), o 'partial' (sin productor hoy, pero ya
+  -- validable -- borrarla podria violar las FKs sin cascade desde items_proceso/
+  -- comparativas/ordenes_compra, ver el bloque de comentarios de arriba) -> tomada:
+  -- devolver su id, el caller responde 409 con ese extraction_id.
   IF v_status IN ('completed', 'processing', 'partial') THEN
     RETURN v_id;
   END IF;

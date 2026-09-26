@@ -520,13 +520,23 @@ class TestMarcarExtraccionFallida:
 # ---------------------------------------------------------------------------
 
 class TestMarcarProcessingInterrumpidos:
-    """Tests para marcar_processing_interrumpidos()."""
+    """Tests para marcar_processing_interrumpidos().
+
+    T1b (carga-asincrona): el sweep de arranque barre TODAS las filas 'processing',
+    sin filtrar por antigüedad -- docker-compose.yml define una sola instancia por
+    servicio (container_name fijo, sin deploy.replicas) y el Dockerfile arranca
+    uvicorn sin --workers, así que un solo proceso corre alguna vez los background
+    tasks. Cuando el lifespan de este proceso arranca, el proceso anterior (si lo
+    hubo) ya terminó por completo -- ningún robot sigue vivo -- así que CUALQUIER
+    fila 'processing' encontrada acá es huérfana, sin importar cuán reciente sea.
+    Antes de esta tarea, un umbral de antigüedad (10 min) dejaba huérfanas para
+    siempre las filas más jóvenes que el umbral (el bug que motivó T1b)."""
 
     @pytest.mark.asyncio
     async def test_marca_failed_las_filas_processing_devueltas(self, mocker):
         mock = MagicMock()
         tabla_mock = MagicMock()
-        tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = [
+        tabla_mock.update.return_value.eq.return_value.execute.return_value.data = [
             {"id": str(uuid.uuid4())},
             {"id": str(uuid.uuid4())},
         ]
@@ -542,10 +552,31 @@ class TestMarcarProcessingInterrumpidos:
         tabla_mock.update.return_value.eq.assert_any_call("status", "processing")
 
     @pytest.mark.asyncio
+    async def test_sweep_no_filtra_por_antiguedad(self, mocker):
+        """El bug de T1b: una fila 'processing' recién creada (segundos de
+        antigüedad) también debe barrerse -- no hay ningún `.lt("created_at", ...)`
+        en la query, porque en esta topología (una sola instancia, sin --workers)
+        el proceso que la creó ya no existe cuando el sweep corre."""
+        mock = MagicMock()
+        tabla_mock = MagicMock()
+        tabla_mock.update.return_value.eq.return_value.execute.return_value.data = [
+            {"id": str(uuid.uuid4())},
+        ]
+        mock.table.return_value = tabla_mock
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        afectadas = await persistent_output.marcar_processing_interrumpidos()
+
+        assert afectadas == 1
+        # La cadena de la query es SOLO update().eq("status", "processing").execute() --
+        # ningún método .lt(...) se invoca (sin filtro de antigüedad).
+        tabla_mock.update.return_value.eq.return_value.lt.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_sin_filas_processing_retorna_cero(self, mocker):
         mock = MagicMock()
         tabla_mock = MagicMock()
-        tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = []
+        tabla_mock.update.return_value.eq.return_value.execute.return_value.data = []
         mock.table.return_value = tabla_mock
         mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
 

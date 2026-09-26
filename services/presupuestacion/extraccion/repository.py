@@ -2,6 +2,8 @@ from typing import Any, Iterable, TypeVar
 
 from supabase import Client
 
+from services.presupuestacion.extraccion.models import ESTADOS_VALIDABLES
+
 # .in_() codifica cada valor en la URL (GET): con un lote grande de
 # extraction_ids de golpe la URL supera el límite del servidor y PostgREST
 # devuelve 400 Bad Request. Mismo criterio y mismo tamaño que
@@ -53,7 +55,7 @@ def listar_extracciones(
         # extracción ofrecible para validar -- se filtra acá, antes de que llegue al
         # listado. 'partial' se deja pasar sin cambios (comportamiento previo a esta
         # tarea: nunca se filtró por status).
-        .in_("status", ["completed", "partial"])
+        .in_("status", list(ESTADOS_VALIDABLES))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
     )

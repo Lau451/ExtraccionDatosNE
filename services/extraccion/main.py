@@ -79,6 +79,13 @@ app.add_middleware(
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
 
+# T1b (carga-asincrona): mensaje fijo cuando `crear_extraction_processing` devuelve
+# None (Supabase no disponible o el INSERT falló) -- no hay fila 'processing' que el
+# robot pueda actualizar, así que /procesar responde 503 antes de agendarlo.
+_MENSAJE_PERSISTENCIA_NO_DISPONIBLE = (
+    "No se pudo registrar el documento para su procesamiento. Intente nuevamente en unos instantes."
+)
+
 # ======================
 # HELPERS
 # ======================
@@ -92,6 +99,27 @@ def _procesar_response(context: dict, status_code: int = 200) -> JSONResponse:
         if key in context:
             payload[key] = context[key]
     return JSONResponse(payload, status_code=status_code)
+
+
+def _limpiar_archivos_temporales(destino: Path, tmp_dir: Path) -> None:
+    """Borra el archivo temporal ya guardado en disco y el directorio tmp si quedó
+    vacío (T1b, carga-asincrona) -- extraído del `finally` de
+    `_procesar_documento_background` porque `/procesar` necesita el mismo cleanup
+    cuando `crear_extraction_processing` devuelve None y el background job nunca
+    llega a agendarse (no hay fila 'processing' que el robot pueda actualizar)."""
+    if destino.exists():
+        try:
+            destino.unlink()
+            logger.debug("Deleted temp file: %s", destino)
+        except Exception as cleanup_error:
+            logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
+
+    try:
+        if tmp_dir.exists() and not any(tmp_dir.iterdir()):
+            tmp_dir.rmdir()
+            logger.debug("Deleted empty tmp directory: %s", tmp_dir)
+    except Exception as cleanup_error:
+        logger.debug("Could not remove tmp directory: %s", cleanup_error)
 
 # ======================
 # RUTAS
@@ -270,10 +298,13 @@ async def _procesar_documento_background(
         )
 
     except ParserError as e:
+        # T1b: el detalle crudo de la excepción queda en el log, no en error_msg --
+        # extraction_results.error_msg lo ve cualquier usuario de la droguería
+        # (GET /api/documentos), así que es un mensaje fijo en español.
         logger.error("Parser error: %s - %s", e.filepath, e.cause)
         await _fallar_extraccion(
             extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
-            mensaje=f"No se pudo procesar el archivo: {str(e.cause)[:100]}",
+            mensaje="No se pudo procesar el archivo. Verificá el formato del documento.",
         )
 
     except NoProvidersDetectedError as e:
@@ -305,10 +336,11 @@ async def _procesar_documento_background(
         )
 
     except GeminiAPIError as e:
+        # T1b: mismo criterio que ParserError arriba -- detalle crudo solo al log.
         logger.error("Gemini API error: %s", e.message)
         await _fallar_extraccion(
             extraction_id=extraction_id, drogueria_id=drogueria_id, session_id=session_id,
-            mensaje=f"Error en el servicio de IA: {e.message[:80]}",
+            mensaje="Error en el servicio de IA. Intente nuevamente en unos momentos.",
         )
 
     except Exception as e:
@@ -319,20 +351,7 @@ async def _procesar_documento_background(
         )
 
     finally:
-        if destino.exists():
-            try:
-                destino.unlink()
-                logger.debug("Deleted temp file: %s", destino)
-            except Exception as cleanup_error:
-                logger.warning("Failed to delete temp file %s: %s", destino, cleanup_error)
-
-        # Clean up empty tmp directory
-        try:
-            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
-                tmp_dir.rmdir()
-                logger.debug("Deleted empty tmp directory: %s", tmp_dir)
-        except Exception as cleanup_error:
-            logger.debug("Could not remove tmp directory: %s", cleanup_error)
+        _limpiar_archivos_temporales(destino, tmp_dir)
 
 
 @app.post("/procesar")
@@ -447,6 +466,22 @@ async def procesar(
         grupo_id=grupo_id_validado,
         proceso_comercial_id=licitacion_id_validado,
     )
+
+    if extraction_id is None:
+        # T1b: sin fila 'processing' no hay nada que el robot pueda actualizar al
+        # terminar -- antes de esta guarda el robot corría igual en background y el
+        # resultado (o el error) se perdía en silencio (persistir_output_final /
+        # marcar_extraccion_fallida son no-op con extraction_id=None). Se corta acá,
+        # ANTES de agendar el background task.
+        if session_id is not None:
+            await cerrar_sesion(
+                session_id=session_id, status="failed", error_msg=_MENSAJE_PERSISTENCIA_NO_DISPONIBLE
+            )
+        _limpiar_archivos_temporales(destino, tmp_dir)
+        return _procesar_response(
+            {"error": _MENSAJE_PERSISTENCIA_NO_DISPONIBLE, "tipo": tipo},
+            status_code=503,
+        )
 
     bg_tasks.add_task(
         _procesar_documento_background,

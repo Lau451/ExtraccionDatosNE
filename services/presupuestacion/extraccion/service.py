@@ -21,6 +21,7 @@ from services.presupuestacion.core.exceptions import (
 from services.presupuestacion.core.texto import normalizar_descripcion
 from services.presupuestacion.extraccion import repository as repo
 from services.presupuestacion.extraccion.models import (
+    ESTADOS_VALIDABLES,
     MAX_FILAS_EDITABLES,
     CandidatoCliente,
     CandidatoClienteOut,
@@ -171,7 +172,7 @@ def leer_filas_extraccion(
     # criterio que 'validado' abajo). 'processing' (robot corriendo) y 'failed'
     # nunca tienen csv_disk_path utilizable; 'partial' se deja pasar sin cambios.
     status = extraction.get("status", "completed")
-    if status not in ("completed", "partial"):
+    if status not in ESTADOS_VALIDABLES:
         raise ConflictError(
             f"Esta extracción está en estado '{status}' -- todavía no se puede validar"
         )
@@ -1212,9 +1213,14 @@ def validar_extraccion(
     # o la persistencia fallaron) -- ninguna de las dos tiene datos utilizables
     # para materializar (csv_disk_path es NULL en 'processing'). 'partial' se
     # deja pasar sin cambios (comportamiento previo a esta tarea).
-    if extraction["status"] not in ("completed", "partial"):
+    # T1b: `.get("status")` en vez de `extraction["status"]` -- un dict sin la
+    # clave (un select que la haya omitido, o un caller que la arme a mano) ya no
+    # hace KeyError, se trata como no validable igual que cualquier otro status
+    # fuera de ESTADOS_VALIDABLES.
+    status_actual = extraction.get("status")
+    if status_actual not in ESTADOS_VALIDABLES:
         raise ConflictError(
-            f"Esta extracción está en estado '{extraction['status']}' -- todavía no se puede validar"
+            f"Esta extracción está en estado '{status_actual}' -- todavía no se puede validar"
         )
 
     # D13.1 -- orden_compra ancla por cliente_id, no por proceso_comercial_id:

@@ -478,6 +478,32 @@ def test_validar_extraccion_status_processing_levanta_conflict_error(monkeypatch
         )
 
 
+def test_validar_extraccion_status_ausente_no_hace_keyerror(monkeypatch):
+    """T1b (carga-asincrona): antes de esta tarea el chequeo de estado hacía
+    `extraction["status"]` directo -- un dict sin la clave 'status' (un select que
+    la haya omitido, o un test que arme el dict a mano) hacía KeyError en vez del
+    ConflictError esperado. Un status ausente se trata como no validable, igual
+    que cualquier otro valor fuera de ESTADOS_VALIDABLES."""
+    monkeypatch.setattr(
+        repo,
+        "buscar_extraction_result",
+        lambda client, *, extraction_id: {
+            "id": extraction_id,
+            "document_type": "licitacion",
+            "validado": False,
+            # sin "status"
+        },
+    )
+
+    with pytest.raises(ConflictError):
+        validar_extraccion(
+            MagicMock(),
+            extraction_id="extraccion-sin-status",
+            usuario_id="usuario-1",
+            proceso_comercial_id="proceso-1",
+        )
+
+
 @pytest.mark.integration
 def test_validar_extraccion_status_failed_levanta_conflict_error(
     service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
