@@ -31,7 +31,7 @@ from services.extraccion.persistent_output import (
     crear_extraction_processing,
     marcar_extraccion_fallida,
     marcar_processing_interrumpidos,
-    _SWEEP_INTERVALO_SEGUNDOS,
+    latido_extraccion,
 )
 from services.extraccion.persistent_chunking import crear_sesion, cerrar_sesion
 from services.extraccion.background_tasks import schedule_persist_output
@@ -49,6 +49,13 @@ logger = logging.getLogger(__name__)
 # ======================
 # APP
 # ======================
+
+# T1c (carga-asincrona): intervalo del sweep periódico de abajo -- 5 minutos es un
+# compromiso entre detectar filas huérfanas con razonable prontitud y no generar carga
+# extra en la base. Vive acá (no en persistent_output.py, T1d advisory) porque solo
+# `_sweep_periodico` lo usa para programar su propio loop.
+_SWEEP_INTERVALO_SEGUNDOS = 5 * 60
+
 
 async def _sweep_periodico() -> None:
     """T1c (carga-asincrona): corre `marcar_processing_interrumpidos` cada
@@ -117,6 +124,15 @@ app.add_middleware(
 )
 
 _GEMINI_SEMAPHORE = asyncio.Semaphore(15)
+
+# T1d (carga-asincrona): intervalo del heartbeat de `_procesar_documento_background`
+# (`_latir_periodicamente` más abajo) -- mientras el job corre, se refresca
+# `extraction_results.updated_at` (`latido_extraccion`) cada este tanto para que el
+# sweep (`marcar_processing_interrumpidos`) nunca confunda un job vivo con uno
+# huérfano. `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` en persistent_output.py es ~5x este
+# valor a propósito, para tolerar demoras normales del loop de eventos sin marcar
+# 'failed' una fila con un job vivo.
+_LATIDO_INTERVALO_SEGUNDOS = 60
 
 # T1b (carga-asincrona): mensaje fijo cuando `crear_extraction_processing` devuelve
 # None (Supabase no disponible o el INSERT falló) -- no hay fila 'processing' que el
@@ -249,6 +265,34 @@ async def _fallar_extraccion(
         await cerrar_sesion(session_id=session_id, status="failed", error_msg=mensaje)
 
 
+async def _latir_periodicamente(*, extraction_id: UUID, drogueria_id: str) -> None:
+    """T1d (carga-asincrona): mientras `_procesar_documento_background` corre, refresca
+    `extraction_results.updated_at` cada `_LATIDO_INTERVALO_SEGUNDOS` llamando a
+    `latido_extraccion` -- así el sweep (`marcar_processing_interrumpidos`) nunca
+    confunde un job vivo (por más que el robot tarde, o quede encolado en
+    `_GEMINI_SEMAPHORE`) con uno huérfano. Se cancela desde el `finally` de
+    `_procesar_documento_background` apenas el job termina (éxito o falla) -- para un
+    job más corto que el intervalo, el primer `sleep` nunca llega a completar, lo cual
+    es esperado (no se necesitó ningún latido).
+
+    Tolerante a fallos igual que `_sweep_periodico`: `latido_extraccion` ya atrapa sus
+    propios errores, pero este try/except es la red de seguridad del loop en sí (para
+    no perder el heartbeat entero por un cambio futuro ahí)."""
+    while True:
+        await asyncio.sleep(_LATIDO_INTERVALO_SEGUNDOS)
+        try:
+            await latido_extraccion(extraction_id=extraction_id, drogueria_id=drogueria_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "_latir_periodicamente: error inesperado en un latido, se reintenta "
+                "en el próximo (cada %ds) -- extraction_id=%s",
+                _LATIDO_INTERVALO_SEGUNDOS,
+                extraction_id,
+            )
+
+
 async def _procesar_documento_background(
     *,
     tipo: str,
@@ -280,8 +324,20 @@ async def _procesar_documento_background(
     El cleanup del archivo temporal (que antes vivía en el `finally` del
     endpoint) se movió acá porque ahora es este job, no el endpoint, quien
     termina de usar `destino`.
+
+    T1d: desde ANTES de tomar `_GEMINI_SEMAPHORE` y hasta que este job termina (éxito
+    o falla), corre en paralelo una tarea de heartbeat (`_latir_periodicamente`) que
+    mantiene fresco el `updated_at` de la fila 'processing', para que el sweep nunca
+    la confunda con una huérfana mientras el robot tarda o queda encolado en el
+    semáforo. Se cancela siempre en el `finally` de abajo.
     """
+    tarea_latido: asyncio.Task | None = None
     try:
+        if extraction_id is not None:
+            tarea_latido = asyncio.create_task(
+                _latir_periodicamente(extraction_id=extraction_id, drogueria_id=drogueria_id)
+            )
+
         async with _GEMINI_SEMAPHORE:
             if tipo == "comparativas":
                 csv_generado = await asyncio.to_thread(
@@ -397,6 +453,12 @@ async def _procesar_documento_background(
         )
 
     finally:
+        if tarea_latido is not None:
+            tarea_latido.cancel()
+            try:
+                await tarea_latido
+            except asyncio.CancelledError:
+                pass
         _limpiar_archivos_temporales(destino, tmp_dir)
 
 

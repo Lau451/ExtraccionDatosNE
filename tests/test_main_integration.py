@@ -14,6 +14,7 @@ Todos los tests usan mocks para:
 
 import asyncio
 import io
+import time
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1194,6 +1195,135 @@ class TestRutasLegacyRetiradas:
     def test_static_no_esta_montado(self, client):
         response = client.get("/static/main.js")
         assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# T1d (carga-asincrona) — heartbeat de _procesar_documento_background
+# ---------------------------------------------------------------------------
+
+class TestLatidoDeProcesarDocumentoBackground:
+    """`_procesar_documento_background` corre un heartbeat concurrente
+    (`_latir_periodicamente`) desde antes de tomar `_GEMINI_SEMAPHORE` y hasta que
+    termina, para que `marcar_processing_interrumpidos` nunca confunda un job vivo
+    (el robot corriendo, o encolado en el semáforo) con uno huérfano."""
+
+    @pytest.mark.asyncio
+    async def test_latido_se_llama_mientras_el_robot_corre_y_recibe_los_ids_correctos(
+        self, mocker, tmp_path
+    ):
+        mocker.patch("services.extraccion.main._LATIDO_INTERVALO_SEGUNDOS", 0)
+        mock_latido = mocker.patch(
+            "services.extraccion.main.latido_extraccion", new_callable=AsyncMock
+        )
+        csv_path = tmp_path / "resultado.csv"
+        csv_path.write_text("proveedor;precio\nACME;100\n", encoding="utf-8")
+
+        def _robot_lento(*args, **kwargs):
+            # Corre en un thread real (asyncio.to_thread) mientras el heartbeat
+            # (intervalo 0) tiene chance de tickear en el loop de eventos, libre
+            # mientras tanto -- sin este sleep, el robot (un mock) retornaría antes
+            # de que el heartbeat alcance a correr ni una vez.
+            time.sleep(0.1)
+            return str(csv_path)
+
+        mocker.patch("services.extraccion.main.procesar_archivo", side_effect=_robot_lento)
+        mock_schedule = mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        extraction_id = uuid.uuid4()
+        await main_module._procesar_documento_background(
+            tipo="",
+            destino=tmp_path / "documento.pdf",
+            tmp_dir=tmp_path,
+            nombre_original="documento.pdf",
+            session_id=None,
+            extraction_id=extraction_id,
+            doc_type="licitacion",
+            drogueria_id="drogueria-1",
+            origen_id="cliente-1",
+            source_sha256="a" * 64,
+            instrucciones_prompt=None,
+            licitacion_id=None,
+            grupo_id=None,
+        )
+
+        mock_latido.assert_awaited()
+        assert mock_latido.await_args.kwargs["extraction_id"] == extraction_id
+        assert mock_latido.await_args.kwargs["drogueria_id"] == "drogueria-1"
+        mock_schedule.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_latido_se_cancela_incluso_si_el_robot_falla(self, mocker, tmp_path):
+        """El heartbeat no debe seguir corriendo (ni la tarea quedar huérfana) cuando
+        el robot levanta una excepción -- el `finally` de
+        `_procesar_documento_background` cancela el heartbeat en cualquier salida."""
+        mocker.patch("services.extraccion.main._LATIDO_INTERVALO_SEGUNDOS", 0)
+        mocker.patch("services.extraccion.main.latido_extraccion", new_callable=AsyncMock)
+        mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            side_effect=ParserError(filepath=Path("doc.pdf"), cause=Exception("boom")),
+        )
+        mock_fallar = mocker.patch(
+            "services.extraccion.main.marcar_extraccion_fallida", new_callable=AsyncMock
+        )
+
+        extraction_id = uuid.uuid4()
+        tareas_antes = len(asyncio.all_tasks())
+
+        await main_module._procesar_documento_background(
+            tipo="",
+            destino=tmp_path / "documento.pdf",
+            tmp_dir=tmp_path,
+            nombre_original="documento.pdf",
+            session_id=None,
+            extraction_id=extraction_id,
+            doc_type="licitacion",
+            drogueria_id="drogueria-1",
+            origen_id="cliente-1",
+            source_sha256="a" * 64,
+            instrucciones_prompt=None,
+            licitacion_id=None,
+            grupo_id=None,
+        )
+
+        mock_fallar.assert_awaited_once()
+        # Ninguna tarea de heartbeat quedó viva colgada del loop de eventos.
+        assert len(asyncio.all_tasks()) == tareas_antes
+
+    @pytest.mark.asyncio
+    async def test_sin_extraction_id_no_arranca_heartbeat(self, mocker, tmp_path):
+        """T1b: `crear_extraction_processing` devolviendo None significa que nunca se
+        agenda este background job en el flujo real -- pero si llegara a correr con
+        extraction_id=None (defensivo), no tiene sentido latir una fila que no existe."""
+        mocker.patch("services.extraccion.main._LATIDO_INTERVALO_SEGUNDOS", 0)
+        mock_latido = mocker.patch(
+            "services.extraccion.main.latido_extraccion", new_callable=AsyncMock
+        )
+        csv_path = tmp_path / "resultado.csv"
+        csv_path.write_text("proveedor;precio\nACME;100\n", encoding="utf-8")
+        mocker.patch("services.extraccion.main.procesar_archivo", return_value=str(csv_path))
+        mocker.patch(
+            "services.extraccion.main.schedule_persist_output", new_callable=AsyncMock
+        )
+
+        await main_module._procesar_documento_background(
+            tipo="",
+            destino=tmp_path / "documento.pdf",
+            tmp_dir=tmp_path,
+            nombre_original="documento.pdf",
+            session_id=None,
+            extraction_id=None,
+            doc_type="licitacion",
+            drogueria_id="drogueria-1",
+            origen_id="cliente-1",
+            source_sha256="a" * 64,
+            instrucciones_prompt=None,
+            licitacion_id=None,
+            grupo_id=None,
+        )
+
+        mock_latido.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

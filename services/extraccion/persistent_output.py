@@ -9,8 +9,10 @@ Funciones:
   persistir_output_final()      — UPDATE de metadata en extraction_results a
                                    status='completed' (por id, no INSERT desde 0028)
   marcar_extraccion_fallida()   — UPDATE a status='failed' + error_msg
+  latido_extraccion()           — UPDATE de no-op que refresca `updated_at` de una
+                                   fila 'processing' viva (heartbeat, T1d)
   marcar_processing_interrumpidos() — sweep (arranque + periódico): 'processing'
-                                   más viejos que un umbral -> 'failed' (T1c)
+                                   sin heartbeat reciente (`updated_at`) -> 'failed' (T1d)
 
 Todas las funciones retornan None/0 (sin propagar excepcion) si el cliente Supabase
 no esta disponible. El CSV en disco es siempre la fuente de verdad: las filas
@@ -413,72 +415,116 @@ async def marcar_extraccion_fallida(
         )
 
 
+async def latido_extraccion(*, extraction_id: UUID, drogueria_id: str) -> None:
+    """
+    "Late" (heartbeat) de una extracción en curso (carga-asincrona, T1d): un UPDATE de
+    no-op sobre la misma fila 'processing' -- el trigger `t_u_er` (BEFORE UPDATE ->
+    trg_set_updated_at, ver docs/schema/extractor_final.sql) traduce cualquier UPDATE
+    en un `updated_at` fresco, sin que haga falta tocar ninguna otra columna. Llamado
+    periódicamente por `_latir_periodicamente` (`services/extraccion/main.py`) mientras
+    el robot corre, para que `marcar_processing_interrumpidos` nunca confunda un job
+    vivo con uno huérfano.
+
+    El filtro `.eq("status", "processing")` es lo que hace este UPDATE seguro de
+    "resucitar" una fila: si el job ya terminó (la fila pasó a 'completed'/'failed' vía
+    `persistir_output_final`/`marcar_extraccion_fallida` en un tick anterior a que se
+    cancele la tarea de heartbeat), este UPDATE no afecta ninguna fila y el
+    `updated_at` de la fila ya finalizada queda intacto.
+
+    Nunca propaga excepción ni retorna nada sobre su éxito: es un side-effect de
+    mantenimiento, tolerante a fallos -- un latido que falla (ej. Supabase caído por un
+    instante) simplemente no refresca `updated_at` esta vez; si el próximo tampoco
+    llega a tiempo, el sweep (`marcar_processing_interrumpidos`) se encarga de marcar
+    'failed' la fila cuando corresponda.
+
+    Args:
+        extraction_id: UUID de la fila 'processing' a mantener viva.
+        drogueria_id:  droguería dueña de la fila -- nunca actualiza una fila de otra
+                        droguería aunque el id coincidiera.
+    """
+    client = get_client()
+    if client is None:
+        return
+
+    try:
+        await asyncio.to_thread(
+            lambda: (
+                client.table("extraction_results")
+                .update({"status": "processing"})
+                .eq("id", str(extraction_id))
+                .eq("drogueria_id", drogueria_id)
+                .eq("status", "processing")
+                .execute()
+            )
+        )
+    except Exception as exc:
+        logger.error(
+            "latido_extraccion: error al latir — extraction_id=%s — %s",
+            extraction_id,
+            exc,
+        )
+
+
 _SWEEP_PROCESSING_MENSAJE = "Procesamiento interrumpido, volvé a subir el documento"
 
-# T1c (carga-asincrona): umbral de antigüedad por default para el sweep, dimensionado
-# por encima del peor caso realista de un `/procesar` en background, no un número
-# arbitrario:
-#   - `handle_gemini_errors(max_retries=4, backoff_factor=40.0)` (ver
-#     services/extraccion/gemini_errors.py), usado por robot.py/robot_comparativas.py/
-#     robot_orden_compra.py: en el peor caso (rate limit sostenido) los intentos 0/1/2
-#     duermen 40s + 80s + 160s = 280s antes del intento final (que ya no duerme).
-#   - Un documento puede disparar más de un call-site de Gemini en secuencia
-#     (robot_comparativas divide en chunks y sub-chunks) -- se estima un máximo
-#     razonable de 3 call-sites encadenados: ~3 × 280s ≈ 14 min de solo backoff, sin
-#     contar el tiempo real de red de cada llamada.
-#   - `_retry_persist` (background_tasks.py) agrega hasta ~3 intentos con timeout de
-#     60s y esperas de 2s/4s ≈ 3 min más tras terminar el robot.
-#   - `_GEMINI_SEMAPHORE` (main.py) permite 15 robots concurrentes: un request que
-#     llega de 16° en adelante puede esperar en cola hasta que se libere un slot, en
-#     el peor caso un ciclo completo de job (mismo orden que los ~17 min de arriba).
-# Sumando con margen de seguridad (latencia de red real, no solo el backoff) se
-# redondea a 60 minutos -- generoso a propósito: es preferible tardar en detectar un
-# proceso realmente huérfano que marcar 'failed' un robot que todavía está corriendo
-# de verdad (el bug de T1c: el sweep de T1b no filtraba por antigüedad, lo cual es
-# inseguro si un segundo proceso -- ej. un server local de desarrollo -- comparte la
-# misma base de TEST mientras otro server todavía está procesando).
-_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT = 60 * 60
-
-# T1c: intervalo del sweep periódico (`_sweep_periodico` en main.py) -- 5 minutos es
-# un compromiso entre detectar filas huérfanas con razonable prontitud y no generar
-# carga extra en la base; con un umbral de 60 min, este intervalo agrega como mucho
-# ~5 min de latencia adicional a la detección.
-_SWEEP_INTERVALO_SEGUNDOS = 5 * 60
+# T1d (carga-asincrona): reemplaza el umbral de T1c dimensionado sobre `created_at`
+# (60 min, sobre el peor caso de backoff de Gemini + cola del semáforo). Con el
+# heartbeat (`latido_extraccion`, llamado cada `_LATIDO_INTERVALO_SEGUNDOS` -- ~60s --
+# por `_latir_periodicamente` en main.py desde ANTES de tomar `_GEMINI_SEMAPHORE`
+# hasta que el job termina), una fila 'processing' con un job vivo nunca deja de
+# actualizar su `updated_at`, sin importar cuánto tarde el robot o cuánto encole el
+# semáforo -- el sweep ya no necesita cubrir ese peor caso, solo el margen normal
+# entre dos heartbeats. Un múltiplo generoso (~5x) del intervalo del heartbeat tolera
+# demoras normales del loop de eventos sin marcar 'failed' una fila con un job vivo,
+# mientras que una fila realmente huérfana (el proceso murió, o el servicio se
+# reinició) deja de latir y cae fuera de la ventana enseguida -- a diferencia del
+# umbral de T1c, que dejaba una fila huérfana por reinicio bloqueando el 409 de
+# `reserve_extraction` hasta el umbral completo (60 min).
+_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT = 5 * 60
 
 
 async def marcar_processing_interrumpidos(
     *, edad_minima_segundos: int = _SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT
 ) -> int:
     """
-    Sweep de extracciones huérfanas (carga-asincrona, T1/T1b/T1c): si el servicio se
-    reinició (deploy, crash) mientras una extracción estaba en 'processing', o si el
-    robot murió sin poder actualizar su fila, esa fila queda huérfana -- ningún
+    Sweep de extracciones huérfanas (carga-asincrona, T1/T1b/T1c/T1d): si el servicio
+    se reinició (deploy, crash) mientras una extracción estaba en 'processing', o si
+    el robot murió sin poder actualizar su fila, esa fila queda huérfana -- ningún
     background task va a terminar de actualizarla. Se corre una vez al levantar el
     servicio Y periódicamente mientras el proceso está vivo (`_sweep_periodico`,
     lifespan de FastAPI en `services/extraccion/main.py`), marcando 'failed'
-    cualquier fila 'processing' con más de `edad_minima_segundos` de antigüedad
-    (columna `created_at`).
+    cualquier fila 'processing' cuyo `updated_at` tenga más de `edad_minima_segundos`
+    de antigüedad.
 
-    Decisión T1c (reemplaza el "barre todo sin filtrar" de T1b): T1b asumía una
-    única instancia de proceso (sin `--workers`, sin `deploy.replicas`) para
-    justificar que CUALQUIER fila 'processing' encontrada al arrancar era huérfana,
-    sin importar su antigüedad. Eso es inseguro apenas dos procesos comparten la
-    misma base -- por ejemplo, un servidor de desarrollo local corriendo contra el
-    proyecto de Supabase de TEST compartido mientras otro servidor todavía está
-    procesando un documento: el sweep de arranque del primero marcaría 'failed' un
-    robot legítimamente en curso en el segundo. El filtro de antigüedad vuelve a
-    aplicarse (como en T1), pero con un umbral muy por encima del peor caso real de
-    un job (ver `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` arriba) en vez del umbral de
-    10 min de T1, que dejaba huérfanas para siempre las filas más jóvenes que el
-    umbral -- y corriendo también de forma periódica, no solo al arrancar, para
-    seguir limpiando huérfanas reales sin depender de un reinicio del proceso.
+    Decisión T1d (reemplaza el umbral sobre `created_at` de T1c): un job vivo llama a
+    `latido_extraccion` cada `_LATIDO_INTERVALO_SEGUNDOS` (~60s, ver main.py) desde
+    ANTES de tomar `_GEMINI_SEMAPHORE` hasta que termina -- ese heartbeat es un UPDATE
+    sobre la misma fila, así que el trigger `t_u_er` (BEFORE UPDATE -> trg_set_updated_at,
+    ver docs/schema/extractor_final.sql) mantiene `updated_at` fresco mientras el job
+    sigue corriendo, sin importar cuánto tarde el robot o cuánto encole el semáforo.
+    Filtrar por `updated_at` (en vez de `created_at`, fijo desde el INSERT) hace que el
+    sweep solo alcance filas realmente huérfanas: una fila cuyo proceso murió (o el
+    servicio se reinició) deja de latir y su `updated_at` envejece, mientras que un job
+    legítimamente largo sigue actualizándose y nunca cae en la ventana. Esto también
+    resuelve el problema de T1c: con el umbral sobre `created_at`, una fila huérfana
+    por un reinicio quedaba bloqueando el 409 de `reserve_extraction` hasta el umbral
+    completo (60 min); ahora cae fuera de la ventana apenas pasan unos minutos sin
+    heartbeat (ver `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` arriba).
+
+    Sigue siendo seguro con múltiples procesos compartiendo la misma base (ej. un
+    servidor de desarrollo local corriendo contra el proyecto de Supabase de TEST
+    compartido mientras otro servidor todavía está procesando un documento): el robot
+    en curso en el otro proceso sigue latiendo su propia fila, así que el sweep de
+    este proceso nunca la alcanza -- sin depender, como en T1b, de que ningún otro
+    proceso comparta la base.
 
     Usa el service client (bypassea RLS): es un mantenimiento global entre
     droguerías, no una operación scopeada a un usuario.
 
     Args:
-        edad_minima_segundos: antigüedad mínima (según `created_at`) para considerar
-            una fila 'processing' huérfana. Default: `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT`.
+        edad_minima_segundos: antigüedad mínima (según `updated_at`) para considerar
+            una fila 'processing' huérfana. Default: `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT`
+            (~5x `_LATIDO_INTERVALO_SEGUNDOS`, ver main.py).
 
     Returns:
         Cantidad de filas marcadas 'failed'. 0 si no había ninguna lo bastante vieja,
@@ -498,7 +544,7 @@ async def marcar_processing_interrumpidos(
                 client.table("extraction_results")
                 .update({"status": "failed", "error_msg": _SWEEP_PROCESSING_MENSAJE})
                 .eq("status", "processing")
-                .lt("created_at", cutoff)
+                .lt("updated_at", cutoff)
                 .execute()
             )
         )

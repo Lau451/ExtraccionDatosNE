@@ -206,8 +206,8 @@ def test_leer_filas_extraccion_status_failed_levanta_conflict_error():
 
 
 def test_leer_filas_extraccion_sin_clave_status_no_es_validable():
-    """T1c: alinea `leer_filas_extraccion` con `validar_extraccion` (service.py
-    ~1220), que trata un dict sin 'status' como no validable (`.get("status")`,
+    """T1c: alinea `leer_filas_extraccion` con la función `validar_extraccion`
+    (service.py), que trata un dict sin 'status' como no validable (`.get("status")`,
     sin default 'completed'). El único select real que alimenta esta función
     (`GET .../filas`, router.py) siempre trae 'status' -- un dict sin esa clave
     solo pasa acá en tests unitarios que construyen el dict a mano, así que este

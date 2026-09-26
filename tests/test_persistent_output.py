@@ -7,7 +7,8 @@ Verifica:
 - crear_extraction_processing: INSERT en 'processing' antes de correr el robot (T1)
 - persistir_output_final: UPDATE por id a 'completed', valida rows vacío, warning en >50k rows
 - marcar_extraccion_fallida: UPDATE por id a 'failed' + error_msg
-- marcar_processing_interrumpidos: sweep de arranque, 'processing' viejos -> 'failed'
+- latido_extraccion: UPDATE de no-op que refresca updated_at de una fila 'processing' (T1d)
+- marcar_processing_interrumpidos: sweep, 'processing' sin heartbeat reciente -> 'failed' (T1d)
 """
 
 import uuid
@@ -19,6 +20,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# T1d: importado solo por su side-effect (`load_dotenv()` en el import del módulo) --
+# persistent_output.get_client() lee SUPABASE_URL/SUPABASE_SERVICE_KEY directo de
+# os.environ (sin dotenv propio), así que el test de integración de más abajo, que
+# pega contra la DB real, necesita este import para correr aislado (sin depender de
+# que algún otro módulo de test que sí importe services.extraccion.main haya cargado
+# el .env antes, por orden de collection de pytest).
+import services.extraccion.config  # noqa: F401
 import services.extraccion.supabase_client as sc_module
 from services.extraccion import persistent_output
 
@@ -517,23 +525,84 @@ class TestMarcarExtraccionFallida:
 
 
 # ---------------------------------------------------------------------------
-# Tests de marcar_processing_interrumpidos (sweep de arranque, carga-asincrona T1)
+# Tests de latido_extraccion (heartbeat, carga-asincrona T1d)
+# ---------------------------------------------------------------------------
+
+class TestLatidoExtraccion:
+    """Tests para latido_extraccion(): el UPDATE de no-op que
+    `_latir_periodicamente` (main.py) llama periódicamente mientras el robot
+    corre, para que `marcar_processing_interrumpidos` nunca confunda un job
+    vivo con uno huérfano (el trigger t_u_er refresca `updated_at` en
+    cualquier UPDATE, sin que haga falta cambiar ninguna otra columna)."""
+
+    @pytest.mark.asyncio
+    async def test_latido_actualiza_filtrando_por_id_drogueria_y_status_processing(self, mocker):
+        mock = MagicMock()
+        tabla_mock = MagicMock()
+        (
+            tabla_mock.update.return_value.eq.return_value.eq.return_value.eq.return_value
+            .execute.return_value.data
+        ) = [{"id": "extraction-1"}]
+        mock.table.return_value = tabla_mock
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        extraction_id = uuid.uuid4()
+        await persistent_output.latido_extraccion(
+            extraction_id=extraction_id, drogueria_id="drogueria-1"
+        )
+
+        payload = tabla_mock.update.call_args[0][0]
+        assert payload["status"] == "processing"
+        tabla_mock.update.return_value.eq.assert_any_call("id", str(extraction_id))
+        tabla_mock.update.return_value.eq.return_value.eq.assert_any_call(
+            "drogueria_id", "drogueria-1"
+        )
+        # El tercer .eq("status", "processing") es lo que evita "resucitar" una
+        # fila que ya terminó (completed/failed) en un tick anterior al cancel.
+        tabla_mock.update.return_value.eq.return_value.eq.return_value.eq.assert_any_call(
+            "status", "processing"
+        )
+
+    @pytest.mark.asyncio
+    async def test_latido_client_none_no_crashea(self, mocker):
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=None)
+
+        # No debe lanzar excepción
+        await persistent_output.latido_extraccion(
+            extraction_id=uuid.uuid4(), drogueria_id="drogueria-1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_latido_excepcion_no_propaga(self, mocker):
+        mock = MagicMock()
+        mock.table.side_effect = RuntimeError("Supabase caído")
+        mocker.patch("services.extraccion.persistent_output.get_client", return_value=mock)
+
+        # No debe lanzar excepción
+        await persistent_output.latido_extraccion(
+            extraction_id=uuid.uuid4(), drogueria_id="drogueria-1"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests de marcar_processing_interrumpidos (sweep, carga-asincrona T1/T1d)
 # ---------------------------------------------------------------------------
 
 class TestMarcarProcessingInterrumpidos:
     """Tests para marcar_processing_interrumpidos().
 
-    T1c (carga-asincrona): T1b barría TODAS las filas 'processing' sin filtrar por
-    antigüedad, asumiendo una única instancia sin --workers -- eso es inseguro en
-    desarrollo, donde un segundo proceso (ej. un server local corriendo contra la
-    misma base de TEST compartida) puede tener un robot legítimamente en curso.
-    El sweep vuelve a filtrar por antigüedad (`.lt("created_at", cutoff)`), pero
-    con un umbral generoso dimensionado por el peor caso de
-    `handle_gemini_errors` (ver services/extraccion/gemini_errors.py) + el
-    encolado del `_GEMINI_SEMAPHORE`, no el umbral de 10 min de T1 que dejaba
-    huérfanas las filas más jóvenes. Este mismo sweep corre al arrancar Y
-    periódicamente (`_sweep_periodico` en main.py) para no depender solo del
-    arranque del proceso."""
+    T1d (carga-asincrona): filtra por `updated_at` (`.lt("updated_at", cutoff)`), no
+    por `created_at` como en T1c -- un job vivo llama a `latido_extraccion` cada
+    `_LATIDO_INTERVALO_SEGUNDOS` (main.py) y ese UPDATE mantiene `updated_at` fresco
+    mientras corre, sin importar cuánto tarde el robot o cuánto encole el
+    `_GEMINI_SEMAPHORE`. Eso permite un umbral corto (ver
+    `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT`, ~5x el intervalo del heartbeat) en vez del
+    umbral de 60 min dimensionado sobre el peor caso de Gemini/semaphore que usaba
+    T1c -- y sigue siendo seguro con un segundo proceso compartiendo la misma base
+    (ej. un server local de desarrollo), porque un robot legítimamente en curso en
+    ese otro proceso sigue latiendo su propia fila. Este mismo sweep corre al
+    arrancar Y periódicamente (`_sweep_periodico` en main.py) para no depender solo
+    del arranque del proceso."""
 
     @pytest.mark.asyncio
     async def test_marca_failed_las_filas_processing_mas_viejas_que_el_umbral(self, mocker):
@@ -555,11 +624,12 @@ class TestMarcarProcessingInterrumpidos:
         tabla_mock.update.return_value.eq.assert_any_call("status", "processing")
 
     @pytest.mark.asyncio
-    async def test_sweep_filtra_por_antiguedad_con_el_umbral_default(self, mocker):
-        """T1c: la query SÍ agrega `.lt("created_at", cutoff)` -- una fila
-        'processing' más joven que el umbral default nunca llega a este mock
-        (se filtra del lado del servidor), así que solo se verifica que la
-        query pida ese filtro con un cutoff coherente con el umbral default."""
+    async def test_sweep_filtra_por_antiguedad_de_updated_at_con_el_umbral_default(self, mocker):
+        """T1d: la query agrega `.lt("updated_at", cutoff)`, no `.lt("created_at", ...)`
+        (T1c) -- una fila 'processing' cuyo `updated_at` es más reciente que el umbral
+        default (porque su heartbeat la sigue refrescando) nunca llega a este mock (se
+        filtra del lado del servidor), así que solo se verifica que la query pida ese
+        filtro sobre `updated_at` con un cutoff coherente con el umbral default."""
         mock = MagicMock()
         tabla_mock = MagicMock()
         tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = [
@@ -574,15 +644,17 @@ class TestMarcarProcessingInterrumpidos:
 
         assert afectadas == 1
         campo, cutoff_iso = tabla_mock.update.return_value.eq.return_value.lt.call_args[0]
-        assert campo == "created_at"
+        assert campo == "updated_at"
         cutoff = datetime.fromisoformat(cutoff_iso)
         umbral = timedelta(seconds=persistent_output._SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT)
         assert antes - umbral <= cutoff <= despues - umbral
 
     @pytest.mark.asyncio
     async def test_sweep_acepta_un_umbral_de_antiguedad_custom(self, mocker):
-        """El sweep periódico (main.py) reusa esta misma función -- necesita poder
-        pasar su propio umbral en vez de depender del default hardcodeado."""
+        """El parámetro `edad_minima_segundos` permite testear el filtro con un umbral
+        corto sin esperar minutos reales -- hoy ni `_sweep_periodico` ni el sweep de
+        arranque (lifespan) en main.py lo usan: ambos llaman esta función sin
+        argumentos y dependen siempre de `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT`."""
         mock = MagicMock()
         tabla_mock = MagicMock()
         tabla_mock.update.return_value.eq.return_value.lt.return_value.execute.return_value.data = []
@@ -627,3 +699,87 @@ class TestMarcarProcessingInterrumpidos:
         afectadas = await persistent_output.marcar_processing_interrumpidos()
 
         assert afectadas == 0
+
+
+@pytest.mark.integration
+async def test_sweep_contra_la_rest_real_falla_solo_la_fila_con_updated_at_viejo(
+    service_client, seed_drogueria
+):
+    """T1d: contra la REST real (no mockeada, a diferencia de toda la clase de
+    arriba) -- el review de T1c señaló que un cutoff isoformat con offset
+    '+00:00' (`datetime.isoformat()` en UTC) podría no percent-encodearse bien
+    en la URL que arma PostgREST/postgrest-py, rompiendo `.lt(...)` en
+    silencio (ej. si el '+' llega literal, PostgREST podría leerlo como un
+    espacio y fallar el parseo del timestamp). Este test ejercita esa query
+    contra la base real: una fila 'processing' con `updated_at` viejo (el
+    trigger t_u_er solo pisa `updated_at` en UPDATE, nunca en INSERT -- por
+    eso se puede setear un valor viejo directo en el INSERT) debe terminar
+    'failed', y una fila 'processing' fresca (heartbeat reciente, en la
+    práctica) debe quedar intacta."""
+    import secrets
+
+    sha_vieja = secrets.token_hex(32)
+    sha_fresca = secrets.token_hex(32)
+    hace_una_hora = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+    huerfana = (
+        service_client.table("extraction_results")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "document_type": "licitacion",
+                "source_filename": "huerfana.pdf",
+                "source_sha256": sha_vieja,
+                "row_count": 0,
+                "status": "processing",
+                "updated_at": hace_una_hora,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    en_vuelo = (
+        service_client.table("extraction_results")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "document_type": "licitacion",
+                "source_filename": "en-vuelo.pdf",
+                "source_sha256": sha_fresca,
+                "row_count": 0,
+                "status": "processing",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    try:
+        # Umbral corto (60s): la fila "en vuelo" (updated_at recién insertado)
+        # queda muy por debajo, la "huérfana" (1 hora) muy por encima.
+        afectadas = await persistent_output.marcar_processing_interrumpidos(
+            edad_minima_segundos=60
+        )
+
+        assert afectadas >= 1
+
+        estado_huerfana = (
+            service_client.table("extraction_results")
+            .select("status")
+            .eq("id", huerfana["id"])
+            .execute()
+            .data
+        )
+        assert estado_huerfana == [{"status": "failed"}]
+
+        estado_en_vuelo = (
+            service_client.table("extraction_results")
+            .select("status")
+            .eq("id", en_vuelo["id"])
+            .execute()
+            .data
+        )
+        assert estado_en_vuelo == [{"status": "processing"}]
+    finally:
+        service_client.table("extraction_results").delete().eq("id", huerfana["id"]).execute()
+        service_client.table("extraction_results").delete().eq("id", en_vuelo["id"]).execute()

@@ -92,7 +92,7 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   - Dirección is now a textarea with no Enter handling: newlines can leak into direccion_entrega. Keep it
     single-value (Enter does not insert newlines, pasted newlines normalized to ", ") until T4 decides the format.
   - Enter "no newline" test is tautological in jsdom: assert on fireEvent's return value (defaultPrevented).
-- [ ] **T1d — Heartbeat-based sweep** (route: delegated writer, after T4)
+- [x] **T1d — Heartbeat-based sweep** (route: delegated writer, after T4)
   - Review of T1c (approved, advisory): a 60-min threshold on created_at leaves restart orphans stuck ~65 min (blocking
     re-upload via 409) and can fail long-queued jobs behind _GEMINI_SEMAPHORE. Replace with a heartbeat: the background
     job touches `extraction_results.updated_at` every ~60 s from before acquiring the semaphore until it finishes (the
@@ -174,7 +174,48 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   Tandil 32/32/32, dir without "Tandil" (1 of 3 runs added extra delivery/payment lines to observaciones — residual
   model variance); Nueva Era 2 renglones, empty dir.
 
+- T4 commit `e6bf13b`: review assessed `medium`, review_due=false (`under_budget`, 198 lines) → pending in the slice,
+  to be reviewed together with T1d (last reviewed boundary: 2dd506d).
+
+- T1d implemented (delegated writer). Backend: new `latido_extraccion` (persistent_output.py) does a no-op UPDATE
+  filtered by `id` + `drogueria_id` + `status='processing'` (never resurrects a finished row) -- the trigger t_u_er
+  refreshes `updated_at` on any UPDATE. `_procesar_documento_background` (main.py) starts a concurrent
+  `_latir_periodicamente` task (heartbeat every `_LATIDO_INTERVALO_SEGUNDOS=60`) before entering
+  `_GEMINI_SEMAPHORE`, cancelled in the existing `finally` regardless of outcome. Sweep
+  (`marcar_processing_interrumpidos`) now filters `.lt("updated_at", cutoff)` instead of `created_at`, with
+  `_SWEEP_EDAD_MINIMA_SEGUNDOS_DEFAULT` dropped from 60 min to 5 min (5x the heartbeat interval). `_SWEEP_INTERVALO_SEGUNDOS`
+  moved from persistent_output.py to main.py (next to `_sweep_periodico`, the only place that uses it). Added a
+  live-DB integration test (`tests/test_persistent_output.py`) that inserts a 'processing' row with a stale
+  `updated_at` and a fresh one, runs the sweep, and asserts only the stale one becomes 'failed' -- it passed, so the
+  PostgREST '+00:00' offset encoding the review flagged is not actually broken; no fix was needed there.
+  Minor advisories: fixed the misleading test docstring implying main.py already passes a custom threshold; replaced
+  the stale line-number reference in tests/extraccion/test_service.py with the function name; useAutoGrowTextarea.ts
+  now relies solely on the ref callback's `disconnect()` on `ref(null)` (removed the separate mount-only cleanup
+  effect that lost the observer in StrictMode dev); CabeceraOrdenCompra's Enter guard now skips
+  `event.nativeEvent.isComposing`; useAutoGrowTextarea.test.ts stubs `ResizeObserver` as undefined instead of
+  asserting the jsdom environment lacks it.
+  Evidence: RED (function/attribute errors + `created_at` vs `updated_at` assertion mismatches, backend; IME test,
+  frontend) via a temporary `git stash` of the implementation-only files → GREEN after restoring.
+  `pytest -m "not integration"` → 511 passed; `pytest tests/extraccion` (live TEST DB) → 176 passed; the new
+  integration test → 1 passed (isolated run); `vitest run` → 329 passed; `tsc -b --noEmit` clean. TEST DB left with
+  only the 5 original completed rows (no leftover 'processing'/'failed' test debris).
+  Open item: the StrictMode-losing-the-observer bug itself isn't directly reproducible in jsdom via `renderHook`
+  (React doesn't re-invoke a manually-set callback ref the way it would a real rendered element's ref during its
+  dev double-invoke simulation) -- the test coverage for that fix is the ref(null)-disconnects unit test, not a
+  StrictMode reproduction; not fixed further, flagged for the next review.
+
+- T1d implemented (delegated writer). Heartbeat every 60 s from before the semaphore until the job ends (no-op UPDATE
+  filtered by id+drogueria_id+status='processing'; trigger t_u_er bumps updated_at); sweep on updated_at older than 5 min,
+  at startup and every 5 min — restart orphans now clear in ~5 min and queued jobs stay alive. Live test confirmed the
+  PostgREST '+00:00' cutoff filter works. Minor advisories applied (constant placement, docstrings, StrictMode-safe
+  observer disconnect via ref(null), IME-composing Enter, ResizeObserver stub).
+  Evidence (writer): RED via reverting impl files → GREEN; `pytest -m "not integration"` 511; `pytest tests/extraccion`
+  176 (live); new integration test 1; `vitest run` 329; tsc clean; TEST DB left with 5 completed rows.
+  Parent: git stash list empty; spot check 70 backend + 111 validar-extraccion tests passed.
+  Open: no direct test reproduces the StrictMode double-mount scenario.
+
 ## Next step
 
-T1d (heartbeat sweep).
+T1d done. Next: parent review of T1d + the still-pending T4 slice (under_budget), then delivery-strategy chaining
+decision (branch forecast is ~900 lines, already over the ~400 budget).
 Migration 0028 applied on TEST (grnamollopxdlstcpxhc) on 2026-09-26 with user confirmation.
