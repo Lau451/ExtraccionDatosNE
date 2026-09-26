@@ -48,7 +48,7 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
 
 ## Tasks
 
-- [ ] **T1 — Backend async processing** (route: delegated writer; trigger: 2+ non-trivial files)
+- [x] **T1 — Backend async processing** (route: delegated writer; trigger: 2+ non-trivial files)
   - Migration 0028: `extraction_results.status` accepts `processing` (plus `failed`), add `error_msg`;
     `reserve_extraction` treats `processing` as taken (returns its id) like `completed`.
   - `/procesar`: after dedup + session, insert the `extraction_results` row as `processing`, respond `202`
@@ -60,7 +60,16 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
   - `listar_extracciones` (presupuestacion) and the validation detail only offer `completed` rows.
   - Acceptance: 202 returns in upload time; status transitions covered by tests; duplicates of an
     in-flight upload get 409 with its id; existing tests are updated, not deleted.
-- [ ] **T2 — Frontend non-blocking upload + live status** (route: delegated writer)
+- [ ] **T1b — Backend hardening from review advisories** (route: delegated writer, after T2)
+  - If `crear_extraction_processing` returns None, respond 503 instead of running the robot with no row to update.
+  - Startup sweep leaves rows younger than the threshold stuck forever → sweep all `processing` rows at startup
+    (no request survives a restart) or add a periodic sweep.
+  - `validar_extraccion` status check can KeyError when `status` is missing from the select; one shared constant for
+    the validable statuses.
+  - ParserError/GeminiAPIError store raw exception text in `error_msg` → fixed Spanish messages.
+  - Minor: dangling helper reference in persistent_output docstring, the `extraction_id=None` contract comment,
+    and in-flight 409 test coverage.
+- [x] **T2 — Frontend non-blocking upload + live status** (route: delegated writer)
   - FormCard: submit returns right after upload(s), no auto-navigation; the form resets for the next document.
   - RecentCard: status badge (Procesando / Listo / Error with message), polls while anything is
     `processing`, "Validar" action on completed unvalidated rows.
@@ -72,8 +81,21 @@ Strategy: ask-on-risk. Forecast is about 900 authored lines (T1 ~450, T2 ~250, T
 
 ## Progress / evidence
 
-(none yet)
+- T1 implemented (commit `5d12c22`, delegated writer). Evidence: `pytest tests -q -m "not integration"` → 483 passed;
+  `pytest tests/extraccion/` (live TEST DB) → 174 passed; parent spot check of main/persistent_output/background_tasks
+  tests → 62 passed. Parent correction: reserve_extraction deletes only `failed` rows; `partial` counts as taken,
+  because deleting a validated partial row would violate the non-cascading FKs from items_proceso/comparativas/ordenes_compra.
+  BackgroundTasks runs the whole job; the migration is NOT applied remotely yet.
+  Review: assessed `high` (hot_path auth test) → consent granted → 4-lens review **approved** and acknowledged
+  (lineage review-47925d1b46a8b9a5). Advisory (non-blocking) findings → task T1b.
+- Known gaps (flagged, not fixed): check-then-insert race on near-simultaneous identical uploads (pre-existing);
+  docs/modulos/extraccion_api/* are stale (pre-existing); mixed statuses inside a multi-file OC group are not specially handled.
+
+- T2 implemented (delegated writer). Evidence: RED FormCard 7 failed / RecentCard 11 failed → GREEN 25/25;
+  whole frontend suite 309 passed; `tsc -b --noEmit` clean; scoped oxlint clean (repo lint has pre-existing errors elsewhere).
+  Parent spot check: `vitest run src/features/carga-documentos` → 25 passed. `partial` rows also get the Validar action.
 
 ## Next step
 
-T1 delegated writer.
+Review consent for T1, then T2 (FormCard/RecentCard). RecentCard STATUS_STYLES keys are Spanish words that never match
+the English DB statuses (pre-existing bug) — fix in T2.

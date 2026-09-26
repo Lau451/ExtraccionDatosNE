@@ -7,12 +7,19 @@ export interface Cliente {
   nombre: string
 }
 
+// Espejo de `extraction_results.status` (migración 0028, carga-asincrona T1).
+export type EstadoExtraccion = 'processing' | 'completed' | 'failed' | 'partial'
+
 export interface DocumentoReciente {
   id: string
   source_filename: string
   document_type: 'licitacion' | 'comparativa' | 'orden_compra'
   row_count: number
-  status: string
+  status: EstadoExtraccion
+  // Mensaje en español para el usuario cuando status='failed' (mapeo de
+  // excepciones existente en services/extraccion/main.py, ahora escrito acá
+  // en vez de devuelto sincrónicamente -- carga-asincrona T1/T2).
+  error_msg: string | null
   created_at: string
   proceso_comercial: { id: string; nombre: string } | null
 }
@@ -31,6 +38,10 @@ export interface ProcesarResultado {
   ok: boolean
   tipo: string
   error?: string
+  // 202 (carga-asincrona T1): id de la fila 'processing' recién creada, para
+  // que el frontend pueda referenciarla (p.ej. el link a "Ver extracción
+  // existente" en un 409 reusa el mismo campo del body de error).
+  extraction_id?: string | null
 }
 
 export function listarClientes(): Promise<Cliente[]> {
