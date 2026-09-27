@@ -141,6 +141,17 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - Evidence: RED `estadoGrupoDe` 3 failed, group UI 6 failed (right reason) → GREEN. Parent spot check:
     `npx vitest run` 359 passed; `npx tsc -b` clean; oxlint 26 = baseline (writer). Browser: collapsed header for
     the existing group, expands to 2 members, header checkbox ticks both and enables Desagrupar (not clicked).
+  - Commit `cbb167a`. RDD: medium, `slice_budget_reached` (629 lines from `aaea6d7`) → user granted →
+    reliability lens approved, acknowledged (lineage `review-0bf6b16a36484efb`). Findings:
+    - WARNING (introduced → F4): with "Solo mías" (server filter) a group mixing uploaders shows only the caller's
+      members ("Grupo · 1 archivos") and Desagrupar sends a partial id list.
+    - SUGGESTIONS (→ F5): `estadoGrupoDe` throws on empty input; no tests for header partial selection /
+      indeterminate / collapsed-but-selected members.
+- [ ] **F4 — "Solo mías" returns whole groups** (route: delegated writer on slice 01; backend repository + tests).
+  User chose (2026-09-27) to treat a group as a unit server-side: with `solo_mias=true`, return the caller's rows
+  plus every member of any group that contains at least one of the caller's rows.
+- [ ] **F5 — Review suggestions from T3** (route: inline on slice 02): guard `estadoGrupoDe` against empty input;
+  tests for header partial selection.
 
 ## Manual check (browser, 2026-09-27, local servers against TEST)
 
