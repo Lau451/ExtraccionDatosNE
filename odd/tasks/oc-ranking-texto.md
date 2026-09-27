@@ -103,3 +103,17 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
 - Advisory (non-blocking) findings, follow-up candidates:
   - WARNING `service.py:422-424` — `_top_presupuesto_sugerido` (matching-screen fallback) now ranks text-then-price and reads `items_proceso`, but no test covers that path; only the candidates endpoint is tested end to end.
   - SUGGESTION `SelectorPresupuesto.test.tsx:80-81` — label assertions use partial regexes; assert the full label string.
+
+### Review follow-ups (user-authorized)
+
+- `944f634` → slice `8670990`: `test_top_presupuesto_sugerido_prioriza_texto_sobre_precio_como_el_ranking` covers the matching-screen fallback (text-first order, one `items_proceso` lookup).
+- `921d695` → slice `e454d4e`: `SelectorPresupuesto` asserts the full label string.
+- Characterization tests (behavior already existed): proven by mutation. Swapping the sort to price-first failed the backend test (1 failed); rendering totals instead of the price count failed the frontend test (1 failed). Code restored.
+- `pytest tests/oc_presupuesto -q` → 76 passed; `npm test` → 373 passed; `npx oxlint src/features/oc-matching` clean.
+
+## Delivery
+
+- Strategy `ask-on-risk` → chain `feature-branch-chain` (cached user choice). Tracker PR (draft) `feat/oc-ranking-texto` → `dev`.
+- `01-backend`: ranking + model + repository + tests (a1b5057, 2619117, 8670990). +467/-68 — over the 400 budget: 266 lines are tests and 80 the feature record; the ranking signature change and its tests cannot land apart. `size:exception` requested.
+- `02-frontend`: mirror type + label + review record + label test (74f9423, 41ca543, b9d4daf, e454d4e, this record). ~+80/-4.
+- Slices rebuilt by cherry-pick from the linear branch; final tree identical to it.
