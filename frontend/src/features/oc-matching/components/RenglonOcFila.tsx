@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import type { RenglonOrdenCompra } from '@/lib/api/ocMatching'
+import type { CandidatoVinculo, RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 
 interface Props {
   renglon: RenglonOrdenCompra
   seleccionado: boolean
   isPending: boolean
+  /** Renglones del presupuesto por `presupuesto_item_id` (design.md D13):
+   * el container ya tiene `renglones_presupuesto` completo, así que esta fila
+   * resuelve cada candidato contra el mapa en vez de volver a pedirlo. */
+  presupuestoPorId: Map<string, RenglonPresupuesto>
   onSeleccionar: () => void
   onConfirmar: (presupuestoItemId: string) => void
   onDeshacer: () => void
@@ -15,6 +19,21 @@ const ETIQUETA_ESTADO: Record<RenglonOrdenCompra['estado'], string> = {
   pendiente: 'Pendiente',
   confirmado: 'Confirmado',
   sin_presupuesto: 'No está en el presupuesto',
+}
+
+/** Etiqueta legible de un candidato (nunca el UUID crudo, spec § "No UUIDs
+ * visibles"). Si el mapa no tiene el renglón -- no debería pasar en uso
+ * normal, ya que los candidatos siempre vienen de `renglones_presupuesto` --
+ * se degrada a un texto neutro en vez de mostrar el id. */
+function etiquetaCandidato(
+  candidato: CandidatoVinculo,
+  presupuestoPorId: Map<string, RenglonPresupuesto>,
+): string {
+  const renglonPresupuesto = presupuestoPorId.get(candidato.presupuesto_item_id)
+  const base = renglonPresupuesto
+    ? `Renglón ${renglonPresupuesto.numero_renglon} — ${renglonPresupuesto.descripcion} — $${renglonPresupuesto.precio_unitario}`
+    : 'Renglón del presupuesto no disponible'
+  return candidato.similitud !== null ? `${base} — ${candidato.similitud}% similitud` : base
 }
 
 /** Una fila de la columna derecha (design.md D4/D13, spec
@@ -28,6 +47,7 @@ export function RenglonOcFila({
   renglon,
   seleccionado,
   isPending,
+  presupuestoPorId,
   onSeleccionar,
   onConfirmar,
   onDeshacer,
@@ -117,10 +137,7 @@ export function RenglonOcFila({
                     checked={candidatoElegidoId === candidato.presupuesto_item_id}
                     onChange={() => setCandidatoElegidoId(candidato.presupuesto_item_id)}
                   />
-                  <span>
-                    {candidato.presupuesto_item_id}
-                    {candidato.similitud !== null ? ` — ${candidato.similitud}% similitud` : ''}
-                  </span>
+                  <span>{etiquetaCandidato(candidato, presupuestoPorId)}</span>
                 </label>
               ))}
               <button
