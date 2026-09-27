@@ -167,3 +167,12 @@ because of the pre-existing unrelated failures documented above.
   `npx vitest run src/features/oc-matching` -> 26 passed; `npm test` -> 39 files / 372 passed;
   `npx oxlint src/features/oc-matching` -> exit 0; `tsc --noEmit` clean; `npm run build` OK.
 - Route: direct inline (2 files, already-understood fix).
+
+## Delivery
+
+- Strategy: `ask-on-risk` → chain strategy `feature-branch-chain` (user choice, 2026-09-27).
+- Tracker PR #66 (draft, `feat/oc-matching-pantalla` → `dev`).
+- #67 `01-candidatos` (T1, 40ba8ba + 867f4ff) → base tracker, +162/-8.
+- #68 `02-busqueda` (T2, T3, T5: 5b5d6dd, 3b39463, 762219b, c2cd3b0, 9e4fc3d) → base #67, +336/-4.
+- #69 `03-vinculo-manual` (T4: 2e9442d + this record) → base #68, +150/-6.
+- Slices were rebuilt by cherry-pick from the original linear branch; the final tree of #69 is identical to it (`git diff --quiet`). Tests and `tsc` were re-run green on #67 and #68.
