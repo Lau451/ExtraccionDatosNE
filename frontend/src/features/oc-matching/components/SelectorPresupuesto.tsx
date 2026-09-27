@@ -51,7 +51,7 @@ export function SelectorPresupuesto({ data, presupuestoIdSeleccionado, onSelecci
           <span>
             {candidato.numero_presupuesto ?? candidato.nombre_proceso}
             {' — '}
-            {candidato.renglones_oc_con_coincidencia}/{candidato.renglones_oc_totales} coincidencias
+            {candidato.renglones_oc_con_coincidencia_texto} de {candidato.renglones_oc_totales} por precio y descripción · {candidato.renglones_oc_con_coincidencia} por precio
             {candidato.presupuesto_id === data.presupuesto_sugerido_id ? ' (sugerido)' : ''}
           </span>
         </label>

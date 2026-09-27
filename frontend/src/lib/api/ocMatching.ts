@@ -22,6 +22,10 @@ export interface CandidatoPresupuesto {
   // Puntaje del ranking (D2): cuántos renglones de ESTA OC coinciden exacto
   // en precio contra algún renglón de ESTE presupuesto.
   renglones_oc_con_coincidencia: number
+  // Ranking-texto: de esos mismos renglones que ya coinciden en precio,
+  // cuántos además superan el umbral de similitud de descripción. Nunca
+  // mayor a renglones_oc_con_coincidencia.
+  renglones_oc_con_coincidencia_texto: number
   renglones_oc_totales: number
 }
 

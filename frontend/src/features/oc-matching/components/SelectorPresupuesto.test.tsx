@@ -34,6 +34,7 @@ describe('SelectorPresupuesto (design.md D2, spec oc-presupuesto-candidato)', ()
               generado_at: '2026-01-01T00:00:00Z',
               cantidad_items: 2,
               renglones_oc_con_coincidencia: 2,
+              renglones_oc_con_coincidencia_texto: 2,
               renglones_oc_totales: 2,
             },
           ],
@@ -46,6 +47,39 @@ describe('SelectorPresupuesto (design.md D2, spec oc-presupuesto-candidato)', ()
     expect(screen.getByText(/00246033/)).toBeInTheDocument()
     expect(screen.getByText(/sugerido/i)).toBeInTheDocument()
     expect(screen.getByRole('radio')).not.toBeChecked()
+  })
+
+  it('muestra la coincidencia de precio+descripción y la de solo precio por separado (ranking-texto)', () => {
+    render(
+      <SelectorPresupuesto
+        data={candidatosOut({
+          presupuestos_del_cliente: 1,
+          presupuesto_sugerido_id: 'pre-1',
+          candidatos: [
+            {
+              presupuesto_id: 'pre-1',
+              proceso_comercial_id: 'proc-1',
+              nombre_proceso: 'Compra hospital',
+              numero_presupuesto: '00246033',
+              estado: 'generado',
+              generado_at: '2026-01-01T00:00:00Z',
+              cantidad_items: 10,
+              renglones_oc_con_coincidencia: 9,
+              renglones_oc_con_coincidencia_texto: 8,
+              renglones_oc_totales: 10,
+            },
+          ],
+        })}
+        presupuestoIdSeleccionado={null}
+        onSeleccionar={vi.fn()}
+      />,
+    )
+
+    // El texto (precio + descripción) nunca supera al de solo precio (D-texto):
+    // se muestran los dos números por separado, no un único "X/Y coincidencias".
+    expect(
+      screen.getByText('00246033 — 8 de 10 por precio y descripción · 9 por precio (sugerido)'),
+    ).toBeInTheDocument()
   })
 
   it('un click en un candidato lo reporta al padre, no lo marca elegido por sí mismo', () => {
@@ -65,6 +99,7 @@ describe('SelectorPresupuesto (design.md D2, spec oc-presupuesto-candidato)', ()
               generado_at: '2026-01-01T00:00:00Z',
               cantidad_items: 2,
               renglones_oc_con_coincidencia: 2,
+              renglones_oc_con_coincidencia_texto: 2,
               renglones_oc_totales: 2,
             },
           ],

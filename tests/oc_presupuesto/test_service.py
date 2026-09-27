@@ -53,19 +53,36 @@ def _presupuesto(
     }
 
 
-def _item(presupuesto_id: str, precio: str | None) -> dict:
-    return {"presupuesto_id": presupuesto_id, "precio_unitario": precio}
+def _item(presupuesto_id: str, precio: str | None, *, descripcion: str = "") -> dict:
+    return {
+        "presupuesto_id": presupuesto_id,
+        # item_proceso_id: presente en toda fila real de presupuesto_items
+        # (repo.listar_presupuesto_items_por_precio la selecciona siempre) --
+        # _presupuesto_items_con_descripcion la necesita para resolver la
+        # descripción (ranking-texto).
+        "item_proceso_id": f"ip-{presupuesto_id}-{precio}",
+        "precio_unitario": precio,
+        "descripcion": descripcion,
+    }
+
+
+def _renglones(precios: list[str], *, descripcion: str = "") -> list[dict]:
+    """Renglones de OC (ranking-texto): cada uno trae "precio_unitario" ya
+    normalizado a escala 2 (D3) y "descripcion". Descripción "" por defecto
+    -- el puntaje de texto queda en 0 para todos, comportamiento previo a
+    ranking-texto intacto para los tests que solo ejercitan precio."""
+    return [{"precio_unitario": service._q2(precio), "descripcion": descripcion} for precio in precios]
 
 
 def test_rankear_ordena_por_cantidad_de_coincidencias_desc():
     presupuestos = [_presupuesto("A"), _presupuesto("B"), _presupuesto("C")]
     items = [_item("A", "100.00"), _item("A", "200.00"), _item("B", "100.00")]
-    precios_oc = [Decimal("100.00"), Decimal("200.00")]
+    renglones_oc = _renglones(["100.00", "200.00"])
 
-    resultado = service._rankear_presupuestos(presupuestos, items, precios_oc)
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
 
-    puntajes = {presupuesto["id"]: score for presupuesto, score in resultado}
-    assert [presupuesto["id"] for presupuesto, _ in resultado] == ["A", "B", "C"]
+    puntajes = {presupuesto["id"]: precio for presupuesto, _texto, precio in resultado}
+    assert [presupuesto["id"] for presupuesto, _texto, _precio in resultado] == ["A", "B", "C"]
     assert puntajes == {"A": 2, "B": 1, "C": 0}
 
 
@@ -76,13 +93,13 @@ def test_rankear_desempata_por_generado_at_desc_luego_presupuesto_id_asc():
         _presupuesto("M", generado_at="2026-06-01T00:00:00+00:00"),
     ]
     items = [_item("Z", "50.00"), _item("A", "50.00"), _item("M", "50.00")]
-    precios_oc = [Decimal("50.00")]
+    renglones_oc = _renglones(["50.00"])
 
-    resultado = service._rankear_presupuestos(presupuestos, items, precios_oc)
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
 
-    # A y M empatan en puntaje (1) y generado_at -- desempate final determinista
-    # por presupuesto_id ASC (D2).
-    assert [presupuesto["id"] for presupuesto, _ in resultado] == ["A", "M", "Z"]
+    # A y M empatan en puntaje de texto (0), precio (1) y generado_at --
+    # desempate final determinista por presupuesto_id ASC (D2).
+    assert [presupuesto["id"] for presupuesto, _texto, _precio in resultado] == ["A", "M", "Z"]
 
 
 def test_rankear_precio_unitario_none_en_presupuesto_item_queda_fuera_sin_romper():
@@ -90,11 +107,11 @@ def test_rankear_precio_unitario_none_en_presupuesto_item_queda_fuera_sin_romper
     # lanzar excepción ni contar como coincidencia.
     presupuestos = [_presupuesto("A")]
     items = [_item("A", None), _item("A", "100.00")]
-    precios_oc = [Decimal("100.00")]
+    renglones_oc = _renglones(["100.00"])
 
-    resultado = service._rankear_presupuestos(presupuestos, items, precios_oc)
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
 
-    assert resultado[0][1] == 1
+    assert resultado[0][2] == 1
 
 
 def test_rankear_cuenta_renglones_de_oc_no_presupuesto_items_repetidos():
@@ -103,11 +120,11 @@ def test_rankear_cuenta_renglones_de_oc_no_presupuesto_items_repetidos():
     # no 1 -- el puntaje es sobre renglones de LA OC, no sobre presupuesto_items.
     presupuestos = [_presupuesto("A")]
     items = [_item("A", "100.00")]
-    precios_oc = [Decimal("100.00"), Decimal("100.00")]
+    renglones_oc = _renglones(["100.00", "100.00"])
 
-    resultado = service._rankear_presupuestos(presupuestos, items, precios_oc)
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
 
-    assert resultado[0][1] == 2
+    assert resultado[0][2] == 2
 
 
 def test_rankear_presupuesto_sin_ningun_item_puntua_cero_sin_excepcion():
@@ -115,13 +132,89 @@ def test_rankear_presupuesto_sin_ningun_item_puntua_cero_sin_excepcion():
     # precio con un presupuesto dado": no se excluye, aparece con puntaje 0.
     presupuestos = [_presupuesto("A"), _presupuesto("B")]
     items = [_item("A", "100.00")]
-    precios_oc = [Decimal("100.00")]
+    renglones_oc = _renglones(["100.00"])
 
-    resultado = service._rankear_presupuestos(presupuestos, items, precios_oc)
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
 
-    puntajes = {presupuesto["id"]: score for presupuesto, score in resultado}
+    puntajes = {presupuesto["id"]: precio for presupuesto, _texto, precio in resultado}
     assert puntajes["B"] == 0
     assert "B" in puntajes  # no se excluye del resultado de la función pura
+
+
+# =============================================================================
+# ranking-texto -- _rankear_presupuestos puntúa TAMBIÉN por descripción, sobre
+# los renglones que YA matchearon precio (D-texto). El texto nunca filtra,
+# solo reordena/desempata; el score de precio (D2 original) queda intacto.
+# =============================================================================
+
+
+def test_rankear_prioriza_texto_sobre_precio_en_el_desempate():
+    # A: 1 sola coincidencia de precio, pero con descripción calcada -> texto=1.
+    # B: 2 coincidencias de precio, ninguna con descripción parecida -> texto=0.
+    # El desempate por texto tiene que poner a A primero, aunque B tenga más
+    # coincidencias de precio -- ese es el bug que este feature resuelve.
+    presupuestos = [_presupuesto("A"), _presupuesto("B")]
+    items = [
+        _item("A", "100.00", descripcion="AMOXICILINA 500MG X 21 COMPRIMIDOS"),
+        _item("B", "100.00", descripcion="PRODUCTO SIN NINGUNA RELACION"),
+        _item("B", "200.00", descripcion="OTRO PRODUCTO TOTALMENTE DISTINTO"),
+    ]
+    renglones_oc = [
+        {"precio_unitario": Decimal("100.00"), "descripcion": "Amoxicilina 500mg x 21 comprimidos"},
+        {"precio_unitario": Decimal("200.00"), "descripcion": "Amoxicilina 500mg x 21 comprimidos"},
+    ]
+
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
+
+    assert [presupuesto["id"] for presupuesto, _texto, _precio in resultado] == ["A", "B"]
+    puntajes = {presupuesto["id"]: (texto, precio) for presupuesto, texto, precio in resultado}
+    assert puntajes["A"] == (1, 1)
+    assert puntajes["B"] == (0, 2)
+
+
+def test_rankear_sin_coincidencia_de_texto_sigue_apareciendo_ordenado_por_precio():
+    # Ninguno de los dos presupuestos tiene descripciones parecidas a la OC
+    # (texto=0 para ambos): el texto NUNCA filtra -- ambos siguen en la lista,
+    # ordenados por el score de precio de siempre (D2).
+    presupuestos = [_presupuesto("A"), _presupuesto("B")]
+    items = [
+        _item("A", "100.00", descripcion="PRODUCTO X"),
+        _item("A", "200.00", descripcion="PRODUCTO Y"),
+        _item("B", "100.00", descripcion="PRODUCTO Z"),
+    ]
+    renglones_oc = [
+        {"precio_unitario": Decimal("100.00"), "descripcion": "ALGO TOTALMENTE DISTINTO E INCOMPARABLE"},
+        {"precio_unitario": Decimal("200.00"), "descripcion": "ALGO TOTALMENTE DISTINTO E INCOMPARABLE"},
+    ]
+
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
+
+    assert [presupuesto["id"] for presupuesto, _texto, _precio in resultado] == ["A", "B"]
+    puntajes = {presupuesto["id"]: (texto, precio) for presupuesto, texto, precio in resultado}
+    assert puntajes == {"A": (0, 2), "B": (0, 1)}
+
+
+def test_rankear_puntaje_texto_usa_la_mejor_descripcion_entre_renglones_al_mismo_precio():
+    # Dos renglones de LA OC al mismo precio -> puntaje de texto sobre cada
+    # uno (con repeticiones, igual que el de precio). Entre los 2
+    # presupuesto_items al mismo precio, uno no tiene nada que ver y el otro
+    # es una descripción calcada: el algoritmo tiene que usar la MEJOR
+    # similitud entre los candidatos al precio, no la primera ni la peor.
+    presupuestos = [_presupuesto("A")]
+    items = [
+        _item("A", "100.00", descripcion="PRODUCTO SIN NINGUNA RELACION"),
+        _item("A", "100.00", descripcion="AMOXICILINA 500MG X 21 COMPRIMIDOS"),
+    ]
+    renglones_oc = [
+        {"precio_unitario": Decimal("100.00"), "descripcion": "Amoxicilina 500mg x 21 comprimidos"},
+        {"precio_unitario": Decimal("100.00"), "descripcion": "Amoxicilina 500mg x 21 comprimidos"},
+    ]
+
+    resultado = service._rankear_presupuestos(presupuestos, items, renglones_oc)
+
+    _presupuesto_a, texto, precio = resultado[0]
+    assert precio == 2  # ambos renglones de la OC matchean precio
+    assert texto == 2  # ambos usan la mejor descripción entre los 2 candidatos
 
 
 # =============================================================================
@@ -205,6 +298,10 @@ def _parchear_dependencias_basicas(monkeypatch, *, oc: dict, oc_items: list[dict
     monkeypatch.setattr(repo, "listar_oc_items_precios", lambda client, **kw: oc_items)
     monkeypatch.setattr(service, "get_service_client", lambda: MagicMock())
     monkeypatch.setattr(repo, "buscar_numeros_presupuesto_legacy", lambda client, **kw: {})
+    # Ranking-texto: default sin descripciones -- los tests que no ejercitan
+    # el desempate por texto no necesitan mockear items_proceso; los que sí
+    # lo hacen sobreescriben esto explícitamente.
+    monkeypatch.setattr(repo, "listar_items_proceso_por_ids", lambda client, **kw: [])
 
 
 def test_cliente_sin_ningun_presupuesto_devuelve_candidatos_vacio_con_advertencia_a(monkeypatch):
@@ -366,6 +463,135 @@ def test_presupuesto_sugerido_id_nunca_autoconfirma_incluso_con_un_solo_candidat
     # elección la hace el usuario en una llamada posterior (Phase 3, D8).
     assert resultado.presupuesto_sugerido_id == "UNICO"
     assert len(resultado.candidatos) == 1
+
+
+# =============================================================================
+# ranking-texto -- rankear_presupuestos_candidatos: wiring de extremo a
+# extremo (descripciones de items_proceso -> _rankear_presupuestos -> modelo)
+# y el criterio de aceptación "sin query extra sin matches de precio".
+# =============================================================================
+
+
+def test_rankear_presupuestos_candidatos_no_consulta_items_proceso_sin_matches_de_precio(
+    monkeypatch,
+):
+    _parchear_dependencias_basicas(
+        monkeypatch, oc=_stub_oc(), oc_items=[{"id": "i1", "precio_unitario": "100.00"}]
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_procesos_comerciales_del_cliente",
+        lambda client, **kw: [{"id": "proc-A", "nombre": "Proceso A"}],
+    )
+    monkeypatch.setattr(
+        repo, "listar_presupuestos_de_procesos", lambda client, **kw: [_presupuesto("A")]
+    )
+    monkeypatch.setattr(repo, "listar_presupuesto_items_por_precio", lambda client, **kw: [])
+
+    llamadas = []
+    monkeypatch.setattr(
+        repo, "listar_items_proceso_por_ids", lambda client, **kw: llamadas.append(kw) or []
+    )
+
+    service.rankear_presupuestos_candidatos(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert llamadas == []  # sin presupuesto_items, ni una sola query a items_proceso
+
+
+def test_rankear_presupuestos_candidatos_expone_renglones_oc_con_coincidencia_texto(monkeypatch):
+    _parchear_dependencias_basicas(
+        monkeypatch,
+        oc=_stub_oc(),
+        oc_items=[
+            {
+                "id": "i1",
+                "precio_unitario": "100.00",
+                "descripcion": "AMOXICILINA 500MG X 21 COMPRIMIDOS",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_procesos_comerciales_del_cliente",
+        lambda client, **kw: [{"id": "proc-A", "nombre": "Proceso A"}],
+    )
+    monkeypatch.setattr(
+        repo, "listar_presupuestos_de_procesos", lambda client, **kw: [_presupuesto("A")]
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_presupuesto_items_por_precio",
+        lambda client, **kw: [
+            {"presupuesto_id": "A", "item_proceso_id": "ip-1", "precio_unitario": "100.00"}
+        ],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_items_proceso_por_ids",
+        lambda client, **kw: [{"id": "ip-1", "descripcion": "Amoxicilina 500mg x 21 comprimidos"}],
+    )
+
+    resultado = service.rankear_presupuestos_candidatos(
+        MagicMock(), orden_compra_id="oc-1", drogueria_id="d1"
+    )
+
+    candidato = resultado.candidatos[0]
+    assert candidato.renglones_oc_con_coincidencia == 1
+    assert candidato.renglones_oc_con_coincidencia_texto == 1
+
+
+def test_top_presupuesto_sugerido_prioriza_texto_sobre_precio_como_el_ranking(monkeypatch):
+    """El fallback de la pantalla de matching (D8.3) usa el mismo ranking
+    texto+precio que `rankear_presupuestos_candidatos`: A coincide en precio
+    en 1 renglón pero también en descripción; B coincide en precio en 2
+    renglones, sin descripción parecida. Gana A, y las descripciones salen de
+    items_proceso."""
+    oc_items = [
+        {"id": "i1", "precio_unitario": "100.00", "descripcion": "AMOXICILINA 500MG X 21"},
+        {"id": "i2", "precio_unitario": "200.00", "descripcion": "IBUPROFENO 400MG X 20"},
+    ]
+    monkeypatch.setattr(
+        repo,
+        "listar_procesos_comerciales_del_cliente",
+        lambda client, **kw: [{"id": "proc-1", "nombre": "Proceso"}],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_presupuestos_de_procesos",
+        lambda client, **kw: [
+            _presupuesto("A", generado_at="2026-01-01T00:00:00+00:00"),
+            _presupuesto("B", generado_at="2026-06-01T00:00:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_presupuesto_items_por_precio",
+        lambda client, **kw: [
+            {"presupuesto_id": "A", "item_proceso_id": "ip-a1", "precio_unitario": "100.00"},
+            {"presupuesto_id": "B", "item_proceso_id": "ip-b1", "precio_unitario": "100.00"},
+            {"presupuesto_id": "B", "item_proceso_id": "ip-b2", "precio_unitario": "200.00"},
+        ],
+    )
+    llamadas_items_proceso: list[dict] = []
+
+    def _items_proceso(client, **kw):
+        llamadas_items_proceso.append(kw)
+        return [
+            {"id": "ip-a1", "descripcion": "Amoxicilina 500mg x 21"},
+            {"id": "ip-b1", "descripcion": "Guantes de latex talle M"},
+            {"id": "ip-b2", "descripcion": "Jeringa descartable 10ml"},
+        ]
+
+    monkeypatch.setattr(repo, "listar_items_proceso_por_ids", _items_proceso)
+
+    presupuestos_del_cliente, sugerido = service._top_presupuesto_sugerido(
+        MagicMock(), drogueria_id="d1", cliente_id="cli-1", oc_items=oc_items
+    )
+
+    assert presupuestos_del_cliente == 2
+    assert sugerido == "A"
+    assert len(llamadas_items_proceso) == 1
+    assert set(llamadas_items_proceso[0]["item_proceso_ids"]) == {"ip-a1", "ip-b1", "ip-b2"}
 
 
 # =============================================================================
