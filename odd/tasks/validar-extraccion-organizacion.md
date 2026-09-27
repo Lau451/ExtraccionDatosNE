@@ -126,6 +126,15 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - Leftover in TEST from the failed teardown before the fix: droguería `b1229d42-…` and auth user `133a8ed2-…`
     (not deleted; needs user OK).
 
+- [ ] **T3 — Collapsible group rows in the OC tab** (route: delegated writer; trigger: 2+ non-trivial files —
+  table component, listing, tests). User request 2026-09-27 before push: with the generic "Grupo" tag you cannot
+  tell which OCs belong to the same group. User chose option B (collapsible group row) over a numbered tag.
+  - Defaults chosen by the parent (user may adjust): collapsed by default; header shows "Grupo · N archivos",
+    member filenames and a group state; expand/collapse toggle; header checkbox selects/deselects all members
+    (member checkboxes remain for partial ungroup); "Revisar" on the header opens the detail of a member (the
+    detail screen already loads the whole group from any member); a state filter shows the group when any member
+    matches.
+
 ## Manual check (browser, 2026-09-27, local servers against TEST)
 
 - Tabs with counts, state chips and badges, OC-only checkboxes, "Grupo" tag, validated OC → "Matching": OK.
