@@ -115,6 +115,16 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   from review).
   - Evidence: RED — new test received `['ex-1','ex-2','ex-mia-1','ex-mia-2']`; GREEN after the fix. `npx vitest run`
     352 passed; `npx tsc -b` clean; oxlint 26 findings (baseline 26).
+- [x] **F3 — Disambiguate the uploader embed** (route: inline; found after applying 0029 to TEST).
+  - Migration 0029 applied to TEST (`grnamollopxdlstcpxhc`) with user OK on 2026-09-26; column verified.
+  - The real DB also has `fk_er_validadopor` → `usuarios` (the repo docs said `validado_por` had no FK), so the
+    plain `usuarios(...)` embed failed with PGRST201. Pinned to `usuarios!fk_er_subidopor(...)`. The `solo_mias`
+    integration test's fixture order deleted the user before its extractions; reordered.
+  - Evidence: RED — `pytest tests/extraccion/test_router.py` 6 failed + 1 teardown error (PGRST201 / FK on user
+    delete); GREEN — 20 passed. Unit: 109 passed. Commit `e83012d` on slice 01; slice 02 rebased on it
+    (T2 → `aaea6d7`, F2 → `bdd3889`). Assessed `under_budget` from `848ec08`.
+  - Leftover in TEST from the failed teardown before the fix: droguería `b1229d42-…` and auth user `133a8ed2-…`
+    (not deleted; needs user OK).
 
 ## Progress
 
