@@ -25,6 +25,12 @@ class CandidatoPresupuesto(BaseModel):
     # Puntaje del ranking (D2): cuántos renglones de ESTA OC coinciden exacto
     # en precio contra algún renglón de ESTE presupuesto.
     renglones_oc_con_coincidencia: int
+    # Ranking-texto: de esos MISMOS renglones que ya coinciden en precio,
+    # cuántos además superan el umbral de similitud de descripción
+    # (fuzz.WRatio sobre normalizar_descripcion, D-texto). Nunca mayor a
+    # renglones_oc_con_coincidencia -- el texto solo desempata, nunca suma
+    # matches que el precio no encontró primero.
+    renglones_oc_con_coincidencia_texto: int
     renglones_oc_totales: int
 
 

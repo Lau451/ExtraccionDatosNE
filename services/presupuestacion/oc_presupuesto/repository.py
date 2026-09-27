@@ -30,13 +30,15 @@ def buscar_orden_compra(client: Client, *, orden_compra_id: str) -> dict[str, An
 
 
 def listar_oc_items_precios(client: Client, *, orden_compra_id: str) -> list[dict[str, Any]]:
-    """Solo `id` + `precio_unitario`: es lo único que el ranking necesita
-    (D2/D3). `oc_items.precio_unitario` es NOT NULL (a diferencia de
-    presupuesto_items.precio_unitario, C4), así que acá no hace falta
-    filtrar None."""
+    """`id` + `precio_unitario` + `descripcion`: lo que el ranking necesita
+    (D2/D3, ranking-texto). `oc_items.precio_unitario` es NOT NULL (a
+    diferencia de presupuesto_items.precio_unitario, C4), así que acá no hace
+    falta filtrar None. `descripcion` alimenta el desempate por texto -- se
+    trae siempre, aunque solo se use cuando hay matches de precio (el caller
+    decide si vale la pena resolver descripciones del lado del presupuesto)."""
     return (
         client.table("oc_items")
-        .select("id, precio_unitario")
+        .select("id, precio_unitario, descripcion")
         .eq("orden_compra_id", orden_compra_id)
         .execute()
         .data
