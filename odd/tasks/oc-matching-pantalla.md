@@ -64,4 +64,4 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   `RenglonOcFila`; replaced the raw id span with `etiquetaCandidato(...)`.
   Ran: `npx vitest run src/features/oc-matching` -> 4 files / 16 tests passed.
   `npx tsc --noEmit -p .` -> clean.
-- Commit: (recorded below after commit).
+- Commit: `40ba8ba`.
