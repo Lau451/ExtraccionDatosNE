@@ -183,6 +183,65 @@ def test_listar_extracciones_solo_mias_filtra_por_uploader(
     assert sin_uploader["id"] not in ids
 
 
+@pytest.mark.integration
+def test_listar_extracciones_solo_mias_devuelve_grupo_completo_con_otro_uploader(
+    service_client, seed_drogueria, seed_proceso_comercial, crear_usuario_autenticado,
+    seed_extraction_result_factory, seed_usuario_sistema,
+):
+    # Mismo orden deliberado que test_listar_extracciones_solo_mias_filtra_por_uploader:
+    # crear_usuario_autenticado ANTES que seed_extraction_result_factory, así el
+    # teardown borra las extracciones (fk_er_subidopor) antes que los usuarios.
+    """F4 (validar-extraccion-organizacion) -- "grupo = unidad": un grupo OC
+    (grupo_id) es una única orden de compra partida en varios archivos: si
+    "Solo mías" cortara el grupo a la mitad, la pantalla mostraría una OC
+    incompleta y "Desagrupar" mandaría una lista parcial de ids. Con al menos
+    una fila propia en el grupo, se devuelve el grupo ENTERO -- incluida la
+    fila subida por otro usuario -- pero una fila suelta ajena, sin relación
+    de grupo con el caller, sigue sin aparecer."""
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+    otro_usuario_id, _otro_cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+
+    grupo_id = str(uuid.uuid4())
+    propia_del_grupo = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        grupo_id=grupo_id,
+        subido_por=usuario_id,
+    )
+    ajena_del_mismo_grupo = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Amoxicilina 500mg", "cantidad": "5"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        grupo_id=grupo_id,
+        subido_por=otro_usuario_id,
+    )
+    ajena_sin_relacion = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        subido_por=otro_usuario_id,
+    )
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        solo_mias=True,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+    ids = {r.id for r in resultado}
+
+    assert propia_del_grupo["id"] in ids
+    assert ajena_del_mismo_grupo["id"] in ids
+    assert ajena_sin_relacion["id"] not in ids
+
+
 def test_listar_extracciones_endpoint_solo_mias_pasa_el_id_del_usuario(monkeypatch):
     """Unit (sin DB) -- solo_mias=True debe convertirse en
     solo_mias_usuario_id=usuario.id al llamar al service."""

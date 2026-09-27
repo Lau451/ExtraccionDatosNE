@@ -34,6 +34,33 @@ def buscar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> di
     return resultado.data[0] if resultado.data else None
 
 
+def _grupos_del_usuario(client: Client, *, subido_por: str) -> list[str]:
+    """F4 (validar-extraccion-organizacion) -- grupos (D13/D13.1) a los que
+    pertenece al menos una fila subida por `subido_por`, para que "Solo
+    mías" trate al grupo como unidad (decisión de usuario: si el usuario
+    subió una parte de una OC partida en varios archivos, "Solo mías"
+    devuelve el grupo ENTERO, no solo su fila).
+
+    Sin filtro de `validado` acá a propósito: el estado validado de la fila
+    PROPIA del usuario dentro de un grupo puede no coincidir con el
+    `validado` que está pidiendo `listar_extracciones` (p. ej. la fila
+    propia ya quedó validada pero otro miembro del mismo grupo, subido por
+    otro usuario, sigue pendiente). Si este lookup filtrara por el mismo
+    `validado`, ese grupo quedaría sin ningún criterio que lo traiga y el
+    otro miembro se perdería -- justo lo que "grupo = unidad" busca evitar.
+    El `validado` de `listar_extracciones` se sigue aplicando en la query
+    principal, así que incluir de más acá nunca cuela una fila con el
+    `validado` equivocado."""
+    resultado = (
+        client.table("extraction_results")
+        .select("grupo_id")
+        .eq("subido_por", subido_por)
+        .not_.is_("grupo_id", None)
+        .execute()
+    )
+    return sorted({fila["grupo_id"] for fila in resultado.data})
+
+
 def listar_extracciones(
     client: Client,
     *,
@@ -60,6 +87,23 @@ def listar_extracciones(
     # obligatorio: la base real también tiene fk_er_validadopor hacia
     # `usuarios`, y sin el hint PostgREST rechaza el embed por ambiguo
     # (PGRST201). La clave del resultado sigue siendo `usuarios`.
+    #
+    # F4 (validar-extraccion-organizacion): "Solo mías" (subido_por) trata al
+    # grupo (D13/D13.1) como unidad -- un grupo es una sola OC partida en
+    # varios archivos, y antes de F4 un grupo con miembros subidos por
+    # distintos usuarios quedaba cortado a la mitad en "Solo mías" (la
+    # pantalla mostraba una OC incompleta y "Desagrupar" mandaba una lista
+    # parcial de ids). Con `_grupos_del_usuario` se resuelven primero los
+    # grupos a los que el caller pertenece y se arma `.or_(subido_por.eq.<id>
+    # ,grupo_id.in.(<ids>))`: fila propia O cualquier fila de un grupo
+    # propio. Sin grupos, se mantiene el `.eq("subido_por", ...)` plano de
+    # siempre. No se trocea en `_TAMANO_LOTE`/`_en_lotes` como
+    # `listar_ordenes_compra_por_extraction_ids`: esto es UNA query paginada
+    # con `.range()`, no una serie de `.in_()` sueltos -- trocear implicaría
+    # fusionar a mano resultados de páginas distintas. La cantidad de grupos
+    # de un usuario es chica en la práctica (D13.1); si algún día no lo es,
+    # el problema real es de UX (demasiados grupos abiertos a la vez), no de
+    # esta query.
     query = (
         client.table("extraction_results")
         .select(
@@ -73,7 +117,12 @@ def listar_extracciones(
     if validado is not None:
         query = query.eq("validado", validado)
     if subido_por is not None:
-        query = query.eq("subido_por", subido_por)
+        grupos = _grupos_del_usuario(client, subido_por=subido_por)
+        if grupos:
+            ids_grupos = ",".join(grupos)
+            query = query.or_(f"subido_por.eq.{subido_por},grupo_id.in.({ids_grupos})")
+        else:
+            query = query.eq("subido_por", subido_por)
     return query.execute().data
 
 

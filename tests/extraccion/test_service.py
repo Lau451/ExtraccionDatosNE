@@ -1907,19 +1907,83 @@ def test_repository_listar_extracciones_select_incluye_error_msg_subido_por_y_em
     assert "usuarios!fk_er_subidopor(" in campos
 
 
-def test_repository_listar_extracciones_solo_mias_filtra_por_subido_por():
+def _mock_lookup_grupos(grupo_ids: list[str]) -> MagicMock:
+    """Mock del SEGUNDO `client.table("extraction_results")` que abre
+    `listar_extracciones` cuando hay `subido_por`: el primero arma la query
+    principal (select/order/range), el segundo es el lookup liviano de
+    `_grupos_del_usuario` (F4)."""
+    lookup = MagicMock()
+    lookup.select.return_value = lookup
+    lookup.eq.return_value = lookup
+    lookup.not_.is_.return_value = lookup
+    lookup.execute.return_value.data = [{"grupo_id": gid} for gid in grupo_ids]
+    return lookup
+
+
+def _mock_query_principal() -> MagicMock:
     query = MagicMock()
     query.select.return_value = query
     query.order.return_value = query
     query.range.return_value = query
     query.eq.return_value = query
+    query.or_.return_value = query
     query.execute.return_value.data = []
+    return query
+
+
+def test_repository_listar_extracciones_solo_mias_sin_grupo_filtra_por_subido_por():
+    """F4 -- si el usuario no tiene ninguna fila agrupada, la query principal
+    sigue usando el `.eq("subido_por", ...)` plano de siempre (sin `.or_()`)."""
+    lookup = _mock_lookup_grupos([])
+    principal = _mock_query_principal()
     client = MagicMock()
-    client.table.return_value = query
+    client.table.side_effect = [principal, lookup]
 
     repo.listar_extracciones(client, validado=None, limit=50, offset=0, subido_por="usuario-1")
 
-    query.eq.assert_any_call("subido_por", "usuario-1")
+    principal.eq.assert_any_call("subido_por", "usuario-1")
+    principal.or_.assert_not_called()
+
+
+def test_repository_listar_extracciones_solo_mias_con_grupo_usa_or_con_grupo_id():
+    """F4 (validar-extraccion-organizacion) -- "grupo = unidad": si al menos
+    una fila propia pertenece a un grupo, la query principal trae el grupo
+    ENTERO vía `.or_()` (subido_por propio U grupo_id de los grupos
+    propios), no solo la fila propia. Los grupo_id duplicados del lookup se
+    deduplican y ordenan antes de armar el filtro."""
+    lookup = _mock_lookup_grupos(["g2", "g1", "g1"])
+    principal = _mock_query_principal()
+    client = MagicMock()
+    client.table.side_effect = [principal, lookup]
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0, subido_por="usuario-1")
+
+    principal.or_.assert_called_once_with("subido_por.eq.usuario-1,grupo_id.in.(g1,g2)")
+    # el filtro va por `.or_()`: no debe quedar además un `.eq("subido_por", ...)`
+    # plano en la query principal, o el `.or_()` sería redundante/confuso.
+    for llamada in principal.eq.call_args_list:
+        assert llamada.args[0] != "subido_por"
+
+
+def test_repository_listar_extracciones_solo_mias_aplica_validado_solo_en_query_principal():
+    """F4 -- el filtro `validado` de `listar_extracciones` se sigue aplicando
+    en la query principal como siempre. El lookup de grupos (`_grupos_del_usuario`)
+    deliberadamente NO filtra por `validado`: el estado validado de la fila
+    propia del usuario dentro de un grupo puede no coincidir con el
+    `validado` pedido acá (p. ej. la fila propia ya está validada pero otro
+    miembro del grupo, subido por otro usuario, sigue pendiente) -- filtrar
+    el lookup por `validado` dejaría a ese miembro sin ningún criterio que lo
+    devuelva y rompería la regla "grupo = unidad"."""
+    lookup = _mock_lookup_grupos(["g1"])
+    principal = _mock_query_principal()
+    client = MagicMock()
+    client.table.side_effect = [principal, lookup]
+
+    repo.listar_extracciones(client, validado=True, limit=50, offset=0, subido_por="usuario-1")
+
+    principal.eq.assert_any_call("validado", True)
+    for llamada in lookup.eq.call_args_list:
+        assert llamada.args[0] != "validado"
 
 
 def test_repository_listar_extracciones_sin_solo_mias_no_filtra_por_subido_por():
