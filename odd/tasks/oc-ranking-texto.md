@@ -95,3 +95,11 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
   - `OcMatchingDetalle.test.tsx` and `ColumnaPresupuesto.test.tsx` don't construct
     `CandidatoPresupuesto` objects (only `CandidatoVinculo`), so they needed no fixture
     changes; confirmed by the full suite and `npm run build` (tsc) below.
+
+### Native review (RDD)
+
+- Assess on `0ec2571..c5011ee`: risk `medium`, `review_due` (`slice_budget_reached`, 538 changed lines).
+- Consent: granted. Lens: reliability. Outcome: approved and acknowledged (lineage `review-bb6dbad4b14ca583`). Reviewed boundary advances to `c5011ee`.
+- Advisory (non-blocking) findings, follow-up candidates:
+  - WARNING `service.py:422-424` — `_top_presupuesto_sugerido` (matching-screen fallback) now ranks text-then-price and reads `items_proceso`, but no test covers that path; only the candidates endpoint is tested end to end.
+  - SUGGESTION `SelectorPresupuesto.test.tsx:80-81` — label assertions use partial regexes; assert the full label string.
