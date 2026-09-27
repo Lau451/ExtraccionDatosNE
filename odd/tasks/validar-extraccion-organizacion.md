@@ -48,11 +48,14 @@ Mode: strict (source: global user CLAUDE.md). Runners: `pytest` (backend, `pytes
 Strategy: ask-on-risk. Forecast ~700 authored lines (T1 ~300, T2 ~400). Running count after T1: 561 → over budget.
 Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must reach `dev` together (review finding).
 
-- Tracker: `feat/validar-extraccion-organizacion` (reset to `dev` `8cb031b`; draft/no-merge PR → `dev`).
-- Slice 01 `feat/validar-extraccion-organizacion-01-backend` → tracker: T1 (`848ec08`) + F1. Over 400 lines
-  (~560, about half tests, plus migration comments); no cohesive split — `size:exception` recommended.
-- Slice 02 `feat/validar-extraccion-organizacion-02-frontend` → slice 01: T2.
-- Nothing pushed; push and PR creation are the user's decision.
+- Tracker: `feat/validar-extraccion-organizacion` (`dev` + empty opening commit; draft/no-merge PR → `dev`).
+- Slice 01 `feat/validar-extraccion-organizacion-01-backend` → tracker: T1, F1, F3, F4. ~803 lines (480 tests).
+- Slice 02 `feat/validar-extraccion-organizacion-02-frontend` → slice 01: T2, F2 + docs. ~1193 lines (415 tests,
+  154 deleted from the replaced tables).
+- Slice 03 `feat/validar-extraccion-organizacion-03-grupos` → slice 02: T3, F5 + docs. ~604 lines (151 tests).
+- One slicing pass done (frontend split into states vs groups); no further cohesive split fits 400 without
+  separating code from its tests → `size:exception` requested on each child PR.
+- Pushed and PRs opened with user OK on 2026-09-27.
 
 ## Tasks
 
