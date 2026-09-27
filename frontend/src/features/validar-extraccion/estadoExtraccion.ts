@@ -50,6 +50,29 @@ export function esEstadoValidable(estado: EstadoDerivado): boolean {
   return estado === 'procesado' || estado === 'procesado_advertencias'
 }
 
+/** T3 -- orden de "menos avanzado" (decisión de usuario, 2026-09-27) para el
+ * estado agregado del encabezado de un grupo de OC agrupadas: si todos los
+ * miembros comparten el mismo estado derivado, ese es el estado del grupo;
+ * si no, gana el que aparece antes en este orden. Distinto de
+ * `ESTADOS_DERIVADOS` (ese es el orden de los chips de filtro, no una
+ * prioridad). */
+const ORDEN_ESTADO_GRUPO: readonly EstadoDerivado[] = [
+  'procesando',
+  'error',
+  'procesado_advertencias',
+  'procesado',
+  'validada',
+]
+
+/** Pura y testeada aparte (T3): estado agregado para el badge del encabezado
+ * colapsable de un grupo. `estados` es la lista de `estadoDerivadoDe(...)`
+ * ya calculados para cada miembro del grupo. */
+export function estadoGrupoDe(estados: EstadoDerivado[]): EstadoDerivado {
+  return estados.reduce((menosAvanzado, actual) =>
+    ORDEN_ESTADO_GRUPO.indexOf(actual) < ORDEN_ESTADO_GRUPO.indexOf(menosAvanzado) ? actual : menosAvanzado,
+  )
+}
+
 export const ESTADO_META: Record<EstadoDerivado, { label: string; badgeClass: string; pulso?: boolean }> = {
   // El texto es siempre el indicador principal (WCAG 1.4.1); el color es
   // refuerzo. Mismo criterio de color que `RecentCard.tsx` para

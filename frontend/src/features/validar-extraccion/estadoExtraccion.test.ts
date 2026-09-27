@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ESTADO_META, ESTADOS_DERIVADOS, estadoDerivadoDe } from './estadoExtraccion'
+import { ESTADO_META, ESTADOS_DERIVADOS, estadoDerivadoDe, estadoGrupoDe } from './estadoExtraccion'
 
 describe('estadoDerivadoDe (T2, validar-extraccion-organizacion)', () => {
   it('validado=true manda "validada" sin importar el status subyacente', () => {
@@ -42,5 +42,25 @@ describe('ESTADO_META', () => {
     expect(ESTADO_META.procesado_advertencias.label).toBe('Procesado con advertencias')
     expect(ESTADO_META.error.label).toBe('Error')
     expect(ESTADO_META.validada.label).toBe('Validada')
+  })
+})
+
+describe('estadoGrupoDe (T3, validar-extraccion-organizacion) -- estado agregado del encabezado de grupo', () => {
+  it('si todos los miembros comparten el mismo estado derivado, ese es el estado del grupo', () => {
+    expect(estadoGrupoDe(['procesado', 'procesado'])).toBe('procesado')
+    expect(estadoGrupoDe(['validada', 'validada', 'validada'])).toBe('validada')
+  })
+
+  it('con estados mixtos, gana el "menos avanzado" según el orden decidido por el usuario (2026-09-27)', () => {
+    // procesando < error < procesado_advertencias < procesado < validada
+    expect(estadoGrupoDe(['procesando', 'validada'])).toBe('procesando')
+    expect(estadoGrupoDe(['error', 'procesado'])).toBe('error')
+    expect(estadoGrupoDe(['procesado_advertencias', 'procesado'])).toBe('procesado_advertencias')
+    expect(estadoGrupoDe(['procesado', 'validada'])).toBe('procesado')
+  })
+
+  it('el orden es transitivo con 3+ miembros de estados distintos', () => {
+    expect(estadoGrupoDe(['validada', 'procesado', 'error', 'procesando'])).toBe('procesando')
+    expect(estadoGrupoDe(['validada', 'procesado', 'procesado_advertencias'])).toBe('procesado_advertencias')
   })
 })

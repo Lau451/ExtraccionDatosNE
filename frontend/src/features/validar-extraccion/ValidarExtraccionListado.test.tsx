@@ -392,7 +392,7 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en l
     expect(screen.queryByLabelText(/seleccionar oc-validada-1\.pdf/i)).not.toBeInTheDocument()
   })
 
-  it('tras agrupar, las filas muestran el indicador de grupo y "Desagrupar" se habilita al reseleccionarlas', async () => {
+  it('tras agrupar, la tabla colapsa las filas en un encabezado de grupo (T3); reseleccionar con el checkbox del encabezado habilita "Desagrupar"', async () => {
     vi.mocked(agruparExtracciones).mockResolvedValue({ grupo_id: 'grupo-1' })
 
     renderConQueryClient(<ValidarExtraccionListado />)
@@ -405,19 +405,24 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en l
     fireEvent.click(screen.getByRole('button', { name: /agrupar seleccionadas/i }))
 
     await waitFor(() => expect(agruparExtracciones).toHaveBeenCalledWith(['ex-1', 'ex-2']))
-    await waitFor(() => expect(screen.getAllByText('Grupo').length).toBe(2))
+    // T3 -- ya no hay un tag "Grupo" por fila: las 2 filas se colapsan en UN
+    // encabezado de grupo, así que las filas individuales (con esos nombres
+    // de archivo exactos) dejan de estar en el documento.
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
+    expect(screen.queryByText('oc1.pdf')).not.toBeInTheDocument()
+    expect(screen.queryByText('oc2.pdf')).not.toBeInTheDocument()
 
     const botonDesagrupar = screen.getByRole('button', { name: /^desagrupar$/i })
     expect(botonDesagrupar).toBeDisabled()
 
-    fireEvent.click(screen.getByLabelText(/seleccionar oc1\.pdf/i))
-    fireEvent.click(screen.getByLabelText(/seleccionar oc2\.pdf/i))
-
+    fireEvent.click(screen.getByLabelText(/seleccionar grupo/i))
     expect(botonDesagrupar).not.toBeDisabled()
 
     fireEvent.click(botonDesagrupar)
     await waitFor(() => expect(desagruparExtracciones).toHaveBeenCalledWith(['ex-1', 'ex-2']))
-    await waitFor(() => expect(screen.queryAllByText('Grupo').length).toBe(0))
+    await waitFor(() => expect(screen.queryByText(/grupo · /i)).not.toBeInTheDocument())
+    expect(screen.getByText('oc1.pdf')).toBeInTheDocument()
+    expect(screen.getByText('oc2.pdf')).toBeInTheDocument()
   })
 
   it('agrupar envía solo las filas seleccionadas que siguen visibles (no las que ocultó "Solo mías")', async () => {
@@ -451,7 +456,7 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en l
     await waitFor(() => expect(agruparExtracciones).toHaveBeenCalledWith(['ex-mia-1', 'ex-mia-2']))
   })
 
-  it('7.13: el indicador de grupo y "Desagrupar" leen el grupo_id persistido de un refetch/recarga, sin pasar por agrupar/desagrupar primero', async () => {
+  it('7.13: el encabezado de grupo (T3) lee el grupo_id persistido de un refetch/recarga, sin pasar por agrupar/desagrupar primero', async () => {
     const OC_1_AGRUPADA: ExtraccionResumen = { ...OC_1, grupo_id: 'grupo-persistido' }
     const OC_2_AGRUPADA: ExtraccionResumen = { ...OC_2, grupo_id: 'grupo-persistido' }
     mockListarExtracciones([OC_1_AGRUPADA, OC_2_AGRUPADA, LICITACION_1])
@@ -459,16 +464,90 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en l
     renderConQueryClient(<ValidarExtraccionListado />)
     await waitFor(() => expect(screen.getByText('lici1.pdf')).toBeInTheDocument())
     await irATab(/orden de compra/i)
-    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
 
     // El grupo viene de la respuesta del listado (simula un reload), no de
     // haber pasado por el botón "Agrupar seleccionadas" en esta sesión.
     expect(agruparExtracciones).not.toHaveBeenCalled()
-    expect(screen.getAllByText('Grupo').length).toBe(2)
 
-    fireEvent.click(screen.getByLabelText(/seleccionar oc1\.pdf/i))
-    fireEvent.click(screen.getByLabelText(/seleccionar oc2\.pdf/i))
+    fireEvent.click(screen.getByLabelText(/seleccionar grupo/i))
 
     expect(screen.getByRole('button', { name: /^desagrupar$/i })).not.toBeDisabled()
+  })
+})
+
+describe('ValidarExtraccionListado (T3) — filas de grupo colapsables en la tab Orden de compra', () => {
+  const OC_A1: ExtraccionResumen = { ...OC_1, id: 'ex-a1', source_filename: 'grupoA-1.pdf', grupo_id: 'grupo-a' }
+  const OC_A2: ExtraccionResumen = { ...OC_1, id: 'ex-a2', source_filename: 'grupoA-2.pdf', grupo_id: 'grupo-a' }
+  const OC_B1: ExtraccionResumen = { ...OC_1, id: 'ex-b1', source_filename: 'grupoB-1.pdf', grupo_id: 'grupo-b' }
+  const OC_B2: ExtraccionResumen = { ...OC_1, id: 'ex-b2', source_filename: 'grupoB-2.pdf', grupo_id: 'grupo-b' }
+
+  it('dos grupos distintos se renderizan como dos encabezados separados, cada uno con su cantidad y sus archivos', async () => {
+    mockListarExtracciones([OC_A1, OC_A2, OC_B1, OC_B2])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getAllByText(/grupo · 2 archivos/i).length).toBe(2))
+
+    expect(screen.getByText(/grupoa-1\.pdf, grupoa-2\.pdf/i)).toBeInTheDocument()
+    expect(screen.getByText(/grupob-1\.pdf, grupob-2\.pdf/i)).toBeInTheDocument()
+  })
+
+  it('un grupo arranca colapsado; el toggle lo expande y lo vuelve a contraer', async () => {
+    mockListarExtracciones([OC_A1, OC_A2])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
+
+    expect(screen.queryByLabelText(/seleccionar grupoa-1\.pdf/i)).not.toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: /expandir grupo/i })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+
+    const toggleExpandido = screen.getByRole('button', { name: /contraer grupo/i })
+    expect(toggleExpandido).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText(/seleccionar grupoa-1\.pdf/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/seleccionar grupoa-2\.pdf/i)).toBeInTheDocument()
+
+    fireEvent.click(toggleExpandido)
+    expect(screen.queryByLabelText(/seleccionar grupoa-1\.pdf/i)).not.toBeInTheDocument()
+  })
+
+  it('el checkbox del encabezado selecciona todos los miembros; "Desagrupar" envía exactamente esos ids', async () => {
+    vi.mocked(desagruparExtracciones).mockResolvedValue(undefined)
+    mockListarExtracciones([OC_A1, OC_A2])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
+
+    const checkboxGrupo = screen.getByLabelText(/seleccionar grupo/i) as HTMLInputElement
+    expect(checkboxGrupo.checked).toBe(false)
+
+    fireEvent.click(checkboxGrupo)
+    expect(checkboxGrupo.checked).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: /^desagrupar$/i }))
+    await waitFor(() => expect(desagruparExtracciones).toHaveBeenCalledWith(['ex-a1', 'ex-a2']))
+  })
+
+  it('un chip de estado muestra el grupo si CUALQUIER miembro matchea; al expandirlo se ven TODOS los miembros, no solo el que matchea', async () => {
+    const A1_ERROR: ExtraccionResumen = { ...OC_A1, status: 'failed', error_msg: 'falló' }
+    const A2_OK: ExtraccionResumen = { ...OC_A2 }
+    mockListarExtracciones([A1_ERROR, A2_OK])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /^error \(1\)$/i }))
+    expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /expandir grupo/i }))
+    // grupoA-1 (el que matchea "Error") y grupoA-2 (el que NO matchea, pero
+    // es parte del mismo grupo) aparecen los dos como filas individuales.
+    expect(screen.getByText('grupoA-1.pdf')).toBeInTheDocument()
+    expect(screen.getByText('grupoA-2.pdf')).toBeInTheDocument()
+    // grupoA-2 quedó en estado "procesado" (validable), así que sigue
+    // teniendo su propio checkbox aunque no matchee el chip "Error".
+    expect(screen.getByLabelText(/seleccionar grupoa-2\.pdf/i)).toBeInTheDocument()
   })
 })
