@@ -126,6 +126,14 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - Leftover in TEST from the failed teardown before the fix: droguería `b1229d42-…` and auth user `133a8ed2-…`
     (not deleted; needs user OK).
 
+## Manual check (browser, 2026-09-27, local servers against TEST)
+
+- Tabs with counts, state chips and badges, OC-only checkboxes, "Grupo" tag, validated OC → "Matching": OK.
+- Uploaded a synthetic OC (`OC_prueba_validar_extraccion.xlsx`, user OK): showed "Procesando" with "Cargado por
+  Laureano Maidana", no checkbox/action; auto-refresh turned it into "Procesado" (3 rows) with "Revisar" without a
+  manual reload; "Solo mías" showed exactly that row. No console errors.
+- Not exercised: the Error state (needs a failing upload). The synthetic extraction stays in TEST, unvalidated.
+
 ## Progress
 
 - 2026-09-26: exploration done, decisions recorded, branch created. Next: T1.
