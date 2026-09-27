@@ -143,9 +143,12 @@ def test_listar_extracciones_incluye_status_failed_con_error_msg(
 
 @pytest.mark.integration
 def test_listar_extracciones_solo_mias_filtra_por_uploader(
-    service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
-    seed_usuario_sistema, crear_usuario_autenticado,
+    service_client, seed_drogueria, seed_proceso_comercial, crear_usuario_autenticado,
+    seed_extraction_result_factory, seed_usuario_sistema,
 ):
+    # Orden de fixtures deliberado: pytest desarma en orden inverso, así que las
+    # extracciones (que referencian al usuario vía fk_er_subidopor) se borran
+    # antes que el usuario autenticado. Con el orden inverso el teardown falla.
     """T1 (validar-extraccion-organizacion) -- "Solo mías": el filtro compara
     subido_por = usuario.id (migración 0029). Una extracción sin uploader
     (subido_por=NULL, comportamiento de filas pre-existentes) nunca matchea,

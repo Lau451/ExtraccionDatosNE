@@ -1902,7 +1902,9 @@ def test_repository_listar_extracciones_select_incluye_error_msg_subido_por_y_em
     campos = query.select.call_args[0][0]
     assert "error_msg" in campos
     assert "subido_por" in campos
-    assert "usuarios(" in campos
+    # Hint explícito: la base real tiene dos FK de extraction_results a usuarios
+    # (fk_er_subidopor y fk_er_validadopor); sin él, PostgREST responde PGRST201.
+    assert "usuarios!fk_er_subidopor(" in campos
 
 
 def test_repository_listar_extracciones_solo_mias_filtra_por_subido_por():

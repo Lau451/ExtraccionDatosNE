@@ -55,15 +55,17 @@ def listar_extracciones(
     # leer_filas_extraccion / validar_extraccion (service.py): abrir el listado no
     # habilita validar una fila no validable. error_msg/subido_por se agregan al
     # select para el badge de error y el filtro "Solo mías"; el embed de
-    # `usuarios` (única FK de extraction_results a esa tabla, fk_er_subidopor,
-    # migración 0029) resuelve el nombre del uploader en el mismo viaje, mismo
-    # criterio que `procesos_comerciales(nombre)`.
+    # `usuarios` resuelve el nombre del uploader en el mismo viaje, mismo
+    # criterio que `procesos_comerciales(nombre)`. Hint `!fk_er_subidopor`
+    # obligatorio: la base real también tiene fk_er_validadopor hacia
+    # `usuarios`, y sin el hint PostgREST rechaza el embed por ambiguo
+    # (PGRST201). La clave del resultado sigue siendo `usuarios`.
     query = (
         client.table("extraction_results")
         .select(
             "id, document_type, source_filename, row_count, status, error_msg, "
             "validado, proceso_comercial_id, created_at, grupo_id, subido_por, "
-            "procesos_comerciales(nombre), usuarios(nombre, apellido)"
+            "procesos_comerciales(nombre), usuarios!fk_er_subidopor(nombre, apellido)"
         )
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
