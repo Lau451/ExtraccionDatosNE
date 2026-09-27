@@ -191,7 +191,7 @@ function FilaGrupo({
   onAlternarExpandido,
 }: FilaGrupoProps) {
   const estadoGrupo = estadoGrupoDe(miembros.map((miembro) => estadoDerivadoDe(miembro)))
-  const meta = ESTADO_META[estadoGrupo]
+  const meta = estadoGrupo ? ESTADO_META[estadoGrupo] : null
 
   const miembrosSeleccionables = miembros.filter(
     (miembro) =>
@@ -264,17 +264,21 @@ function FilaGrupo({
           </div>
         </td>
         <td className="py-2">
-          <span
-            className={clsx(
-              'flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-              meta.badgeClass,
-            )}
-          >
-            {meta.pulso && (
-              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-500 motion-safe:animate-pulse" />
-            )}
-            {meta.label}
-          </span>
+          {meta ? (
+            <span
+              className={clsx(
+                'flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+                meta.badgeClass,
+              )}
+            >
+              {meta.pulso && (
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-500 motion-safe:animate-pulse" />
+              )}
+              {meta.label}
+            </span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          )}
         </td>
         <td className="py-2 text-slate-400">—</td>
         <td className="py-2 text-slate-400">—</td>

@@ -147,11 +147,20 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
       members ("Grupo · 1 archivos") and Desagrupar sends a partial id list.
     - SUGGESTIONS (→ F5): `estadoGrupoDe` throws on empty input; no tests for header partial selection /
       indeterminate / collapsed-but-selected members.
-- [ ] **F4 — "Solo mías" returns whole groups** (route: delegated writer on slice 01; backend repository + tests).
+- [x] **F4 — "Solo mías" returns whole groups** (route: delegated writer on slice 01; backend repository + tests).
   User chose (2026-09-27) to treat a group as a unit server-side: with `solo_mias=true`, return the caller's rows
   plus every member of any group that contains at least one of the caller's rows.
-- [ ] **F5 — Review suggestions from T3** (route: inline on slice 02): guard `estadoGrupoDe` against empty input;
+  - Result: `_grupos_del_usuario` looks up the caller's group ids (no `validado` filter, so a member is never
+    dropped when the caller's own row has a different validado state); main query uses
+    `or_(subido_por.eq.X,grupo_id.in.(...))`, plain `eq` when there are no groups.
+  - Evidence: RED — 3 unit + 1 integration failing for the right reason; GREEN — `pytest tests/extraccion/test_router.py`
+    21 passed (TEST DB); unit 111 passed (parent spot check). Commit `7adfa5a` on slice 01 (under_budget from
+    `848ec08`); slice 02 rebased on it.
+- [x] **F5 — Review suggestions from T3** (route: inline on slice 02): guard `estadoGrupoDe` against empty input;
   tests for header partial selection.
+  - Evidence: `estadoGrupoDe([])` RED (`Reduce of empty array`) → returns null, header shows "—". Partial-selection
+    test (indeterminate → select all → clear all) passed on first run: coverage for existing behavior, no RED.
+    `npx vitest run` 361 passed; `npx tsc -b` clean; oxlint 26 = baseline.
 
 ## Manual check (browser, 2026-09-27, local servers against TEST)
 

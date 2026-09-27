@@ -67,7 +67,10 @@ const ORDEN_ESTADO_GRUPO: readonly EstadoDerivado[] = [
 /** Pura y testeada aparte (T3): estado agregado para el badge del encabezado
  * colapsable de un grupo. `estados` es la lista de `estadoDerivadoDe(...)`
  * ya calculados para cada miembro del grupo. */
-export function estadoGrupoDe(estados: EstadoDerivado[]): EstadoDerivado {
+export function estadoGrupoDe(estados: EstadoDerivado[]): EstadoDerivado | null {
+  // F5 (revisión de T3): sin miembros no hay estado que mostrar -- null en vez
+  // de dejar que `reduce` sin valor inicial lance durante el render.
+  if (estados.length === 0) return null
   return estados.reduce((menosAvanzado, actual) =>
     ORDEN_ESTADO_GRUPO.indexOf(actual) < ORDEN_ESTADO_GRUPO.indexOf(menosAvanzado) ? actual : menosAvanzado,
   )

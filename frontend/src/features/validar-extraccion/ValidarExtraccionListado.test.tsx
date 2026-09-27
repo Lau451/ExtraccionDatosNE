@@ -530,6 +530,30 @@ describe('ValidarExtraccionListado (T3) — filas de grupo colapsables en la tab
     await waitFor(() => expect(desagruparExtracciones).toHaveBeenCalledWith(['ex-a1', 'ex-a2']))
   })
 
+  it('selección parcial: el encabezado queda indeterminado; tildarlo completa el grupo y destildarlo lo limpia (F5)', async () => {
+    mockListarExtracciones([OC_A1, OC_A2])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText(/grupo · 2 archivos/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /expandir grupo/i }))
+    fireEvent.click(screen.getByLabelText(/seleccionar grupoa-1\.pdf/i))
+
+    const checkboxGrupo = screen.getByLabelText(/seleccionar grupo \(/i) as HTMLInputElement
+    expect(checkboxGrupo.indeterminate).toBe(true)
+    expect(checkboxGrupo.checked).toBe(false)
+
+    fireEvent.click(checkboxGrupo)
+    expect(checkboxGrupo.checked).toBe(true)
+    expect(checkboxGrupo.indeterminate).toBe(false)
+    expect((screen.getByLabelText(/seleccionar grupoa-2\.pdf/i) as HTMLInputElement).checked).toBe(true)
+
+    fireEvent.click(checkboxGrupo)
+    expect(checkboxGrupo.checked).toBe(false)
+    expect((screen.getByLabelText(/seleccionar grupoa-1\.pdf/i) as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByRole('button', { name: /^desagrupar$/i })).toBeDisabled()
+  })
+
   it('un chip de estado muestra el grupo si CUALQUIER miembro matchea; al expandirlo se ven TODOS los miembros, no solo el que matchea', async () => {
     const A1_ERROR: ExtraccionResumen = { ...OC_A1, status: 'failed', error_msg: 'falló' }
     const A2_OK: ExtraccionResumen = { ...OC_A2 }

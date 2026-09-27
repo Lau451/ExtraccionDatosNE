@@ -51,7 +51,7 @@ describe('estadoGrupoDe (T3, validar-extraccion-organizacion) -- estado agregado
     expect(estadoGrupoDe(['validada', 'validada', 'validada'])).toBe('validada')
   })
 
-  it('con estados mixtos, gana el "menos avanzado" según el orden decidido por el usuario (2026-09-27)', () => {
+  it('con estados mixtos, gana el "menos avanzado" según el orden definido en T3', () => {
     // procesando < error < procesado_advertencias < procesado < validada
     expect(estadoGrupoDe(['procesando', 'validada'])).toBe('procesando')
     expect(estadoGrupoDe(['error', 'procesado'])).toBe('error')
@@ -62,5 +62,9 @@ describe('estadoGrupoDe (T3, validar-extraccion-organizacion) -- estado agregado
   it('el orden es transitivo con 3+ miembros de estados distintos', () => {
     expect(estadoGrupoDe(['validada', 'procesado', 'error', 'procesando'])).toBe('procesando')
     expect(estadoGrupoDe(['validada', 'procesado', 'procesado_advertencias'])).toBe('procesado_advertencias')
+  })
+
+  it('sin miembros devuelve null en vez de lanzar (F5, revisión de T3)', () => {
+    expect(estadoGrupoDe([])).toBeNull()
   })
 })
