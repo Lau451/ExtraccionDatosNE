@@ -1,10 +1,11 @@
-import type { RenglonOrdenCompra } from '@/lib/api/ocMatching'
+import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { RenglonOcFila } from './RenglonOcFila'
 
 interface Props {
   renglones: RenglonOrdenCompra[]
   renglonSeleccionadoId: string | null
   isPending: boolean
+  presupuestoPorId: Map<string, RenglonPresupuesto>
   onSeleccionar: (ocItemId: string) => void
   onConfirmar: (ocItemId: string, presupuestoItemId: string) => void
   onDeshacer: (ocItemId: string) => void
@@ -20,6 +21,7 @@ export function ColumnaOrdenCompra({
   renglones,
   renglonSeleccionadoId,
   isPending,
+  presupuestoPorId,
   onSeleccionar,
   onConfirmar,
   onDeshacer,
@@ -35,6 +37,7 @@ export function ColumnaOrdenCompra({
             renglon={renglon}
             seleccionado={renglon.oc_item_id === renglonSeleccionadoId}
             isPending={isPending}
+            presupuestoPorId={presupuestoPorId}
             onSeleccionar={() => onSeleccionar(renglon.oc_item_id)}
             onConfirmar={(presupuestoItemId) => onConfirmar(renglon.oc_item_id, presupuestoItemId)}
             onDeshacer={() => onDeshacer(renglon.oc_item_id)}
