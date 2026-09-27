@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { ColumnaPresupuesto } from './ColumnaPresupuesto'
 
@@ -103,9 +103,15 @@ describe('ColumnaPresupuesto — búsqueda y filtro (spec oc-presupuesto-vincula
 })
 
 describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vinculacion, T3)', () => {
-  it('al seleccionar un renglón de OC, hace scroll hasta su primer candidato', () => {
+  // jsdom no implementa scrollIntoView (T3): se mockea en el prototipo y se
+  // restaura después de cada test para no filtrarlo a otros archivos.
+  const scrollIntoViewOriginal = Element.prototype.scrollIntoView
+  afterEach(() => {
+    Element.prototype.scrollIntoView = scrollIntoViewOriginal
+  })
+
+  it('al seleccionar un renglón de OC, hace scroll hasta la fila de su primer candidato', () => {
     const scrollIntoViewMock = vi.fn()
-    // jsdom no implementa scrollIntoView (T3): se mockea en el prototipo.
     Element.prototype.scrollIntoView = scrollIntoViewMock
 
     const renglones = [
@@ -124,6 +130,42 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
         renglonOcSeleccionado={ordenCompra({
           candidatos: [{ presupuesto_item_id: 'pi-2', similitud: null }],
         })}
+      />,
+    )
+
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+    const filaDesplazada = scrollIntoViewMock.mock.contexts[0] as HTMLElement
+    expect(filaDesplazada).toHaveTextContent('Paracetamol')
+    expect(filaDesplazada).not.toHaveTextContent('Ibuprofeno')
+  })
+
+  it('no vuelve a hacer scroll si llega un objeto nuevo del mismo renglón de OC (p. ej. tras confirmar otro renglón)', () => {
+    const scrollIntoViewMock = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+
+    const renglones = [
+      presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' }),
+      presupuesto({ presupuesto_item_id: 'pi-2', descripcion: 'Paracetamol' }),
+    ]
+    const seleccionado = () =>
+      ordenCompra({ candidatos: [{ presupuesto_item_id: 'pi-2', similitud: null }] })
+
+    const { rerender } = render(
+      <ColumnaPresupuesto
+        renglones={renglones}
+        renglonOcSeleccionado={seleccionado()}
+        isPending={false}
+        onVincularManual={vi.fn()}
+      />,
+    )
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ColumnaPresupuesto
+        renglones={[...renglones]}
+        renglonOcSeleccionado={seleccionado()}
+        isPending={false}
+        onVincularManual={vi.fn()}
       />,
     )
 

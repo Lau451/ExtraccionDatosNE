@@ -61,12 +61,18 @@ export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) 
   // Al cambiar el renglón de OC resaltado, lleva a la vista su primer
   // candidato (T3): jsdom no implementa `scrollIntoView`, de ahí el
   // encadenado opcional -- en el navegador real siempre existe.
+  const ocItemIdSeleccionado = renglonOcSeleccionado?.oc_item_id
+  const primerCandidatoId = renglonOcSeleccionado?.candidatos[0]?.presupuesto_item_id
   useEffect(() => {
-    const primerCandidatoId = renglonOcSeleccionado?.candidatos[0]?.presupuesto_item_id
     if (!primerCandidatoId) return
     const nodo = filasRef.current.get(primerCandidatoId)
     nodo?.scrollIntoView?.({ block: 'nearest' })
-  }, [renglonOcSeleccionado])
+    // Solo al cambiar la SELECCIÓN (id), no la identidad del objeto: tras
+    // confirmar/deshacer/descartar el container reemplaza los datos con
+    // setQueryData y el renglón seleccionado llega como objeto nuevo -- no
+    // debe volver a mover la columna.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocItemIdSeleccionado])
 
   return (
     <section aria-label="Renglones del presupuesto" className="space-y-2">

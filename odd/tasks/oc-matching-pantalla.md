@@ -25,6 +25,7 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
 - [x] T1 — Candidate radios show `Renglón N — descripción — $precio` (+ similitud) resolved from `renglones_presupuesto`.
 - [x] T2 — Search box in the budget column filtering by description text or line number; "Solo candidatos" toggle when an OC line is selected.
 - [x] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
+- [x] T5 — Scroll only on OC-line selection change (review follow-up).
 - [ ] T4 — Manual link: with a pending OC line selected, each budget line offers "Vincular a renglón N de la OC"; calls the existing `confirmarVinculo`.
 
 ## Acceptance criteria
@@ -107,3 +108,13 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   for jsdom. Ran: `npx vitest run src/features/oc-matching` -> 5 files / 22
   tests passed. `npx tsc --noEmit -p .` -> clean.
 - Commit: `762219b`.
+
+### T5 — scroll follow-up (from review advisory R3-scroll-identity / R3-scroll-test-weak)
+- Authorized by the user ("corregilo ahora").
+- RED: new test "no vuelve a hacer scroll si llega un objeto nuevo del mismo renglón de OC" failed with
+  `expected "vi.fn()" to be called 1 times, but got 2 times`; T3 test now asserts the scrolled row is the
+  first candidate (`mock.contexts[0]` has "Paracetamol"), and `Element.prototype.scrollIntoView` is restored in `afterEach`.
+- GREEN: effect in `ColumnaPresupuesto.tsx` keyed on `oc_item_id` instead of the object reference.
+  `npx vitest run src/features/oc-matching` -> 26 passed; `npm test` -> 39 files / 372 passed;
+  `npx oxlint src/features/oc-matching` -> exit 0; `tsc --noEmit` clean; `npm run build` OK.
+- Route: direct inline (2 files, already-understood fix).
