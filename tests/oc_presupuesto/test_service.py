@@ -540,6 +540,60 @@ def test_rankear_presupuestos_candidatos_expone_renglones_oc_con_coincidencia_te
     assert candidato.renglones_oc_con_coincidencia_texto == 1
 
 
+def test_top_presupuesto_sugerido_prioriza_texto_sobre_precio_como_el_ranking(monkeypatch):
+    """El fallback de la pantalla de matching (D8.3) usa el mismo ranking
+    texto+precio que `rankear_presupuestos_candidatos`: A coincide en precio
+    en 1 renglón pero también en descripción; B coincide en precio en 2
+    renglones, sin descripción parecida. Gana A, y las descripciones salen de
+    items_proceso."""
+    oc_items = [
+        {"id": "i1", "precio_unitario": "100.00", "descripcion": "AMOXICILINA 500MG X 21"},
+        {"id": "i2", "precio_unitario": "200.00", "descripcion": "IBUPROFENO 400MG X 20"},
+    ]
+    monkeypatch.setattr(
+        repo,
+        "listar_procesos_comerciales_del_cliente",
+        lambda client, **kw: [{"id": "proc-1", "nombre": "Proceso"}],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_presupuestos_de_procesos",
+        lambda client, **kw: [
+            _presupuesto("A", generado_at="2026-01-01T00:00:00+00:00"),
+            _presupuesto("B", generado_at="2026-06-01T00:00:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(
+        repo,
+        "listar_presupuesto_items_por_precio",
+        lambda client, **kw: [
+            {"presupuesto_id": "A", "item_proceso_id": "ip-a1", "precio_unitario": "100.00"},
+            {"presupuesto_id": "B", "item_proceso_id": "ip-b1", "precio_unitario": "100.00"},
+            {"presupuesto_id": "B", "item_proceso_id": "ip-b2", "precio_unitario": "200.00"},
+        ],
+    )
+    llamadas_items_proceso: list[dict] = []
+
+    def _items_proceso(client, **kw):
+        llamadas_items_proceso.append(kw)
+        return [
+            {"id": "ip-a1", "descripcion": "Amoxicilina 500mg x 21"},
+            {"id": "ip-b1", "descripcion": "Guantes de latex talle M"},
+            {"id": "ip-b2", "descripcion": "Jeringa descartable 10ml"},
+        ]
+
+    monkeypatch.setattr(repo, "listar_items_proceso_por_ids", _items_proceso)
+
+    presupuestos_del_cliente, sugerido = service._top_presupuesto_sugerido(
+        MagicMock(), drogueria_id="d1", cliente_id="cli-1", oc_items=oc_items
+    )
+
+    assert presupuestos_del_cliente == 2
+    assert sugerido == "A"
+    assert len(llamadas_items_proceso) == 1
+    assert set(llamadas_items_proceso[0]["item_proceso_ids"]) == {"ip-a1", "ip-b1", "ip-b2"}
+
+
 # =============================================================================
 # 2.12 -- integración: fixture real SAMCo Rafaela contra el proyecto Supabase
 # de test.
