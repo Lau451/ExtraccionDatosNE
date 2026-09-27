@@ -88,11 +88,51 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - `GET /extracciones`: return `processing`, `completed`, `partial`, `failed`; expose `error_msg`, `subido_por`
     and the uploader's display name; new optional `solo_mias` param filtering by the caller.
   - Validation still rejects non-validatable states (existing tests stay green).
-- [ ] **T2 — Frontend: tabs by type, state badges/filters, "Solo mías"** (route: delegated writer; trigger: 2+
+- [x] **T2 — Frontend: tabs by type, state badges/filters, "Solo mías"** (route: delegated writer; trigger: 2+
   non-trivial files in `frontend/src/features/validar-extraccion/`)
   - Tabs with counts; state filter chips; state badge per row; error message visible for Error rows.
   - Only Procesado / Procesado con advertencias rows link to validation.
   - "Solo mías" toggle; Agrupar/Desagrupar only in the OC tab; validated OCs keep the matching link.
+  - Result: `estadoExtraccion.ts` (pure derived state, `validado` wins over `status`); `ExtraccionesTable.tsx`
+    replaces `PendientesTable`/`ValidadasTable` (deleted, no other importers); accessible tabs + state chips with
+    counts; uploader column; "Revisar" only for Procesado/advertencias, "Matching" for validated OCs; checkboxes
+    and Agrupar/Desagrupar only in the OC tab. "Tipo" column dropped (the tab conveys it); partial badge orange,
+    processing amber.
+  - Data loading: two queries — pending `validado=false, limit=200` and validated `validado=true, limit=50`, both
+    honoring `solo_mias`. A first single `limit=200` query was rejected by the parent: validated rows accumulate and
+    would push older pending rows out of the window. Conditional `refetchInterval` 5s only while a pending row is
+    `processing` (same pattern as `carga-documentos/RecentCard.tsx`).
+  - Evidence: RED→GREEN for `estadoExtraccion.test.ts` (8) and the listing (17 failed → 24 passed; two-query
+    correction 3 failed → green). Parent spot check: `npx vitest run` 351 passed; `npx tsc -b` clean. oxlint: 26
+    findings, identical to baseline (writer report).
+  - Commit `a5dbdc3` (with F1 `79deee4`). RDD: medium, `slice_budget_reached` (1184 lines from `848ec08`) → user
+    granted → reliability lens approved, acknowledged (lineage `review-014db91f88a94f93`). Reviewed boundary advances
+    to `a5dbdc3`. Findings:
+    - WARNING (introduced, fixed → F2): Agrupar/Desagrupar sent the raw selection set, including rows hidden by
+      "Solo mías" or no longer selectable after polling.
+    - SUGGESTION (open): no fake-timer test proves the conditional polling starts and stops.
+- [x] **F2 — Group actions use only visible, selectable selected rows** (route: inline; one component + its test,
+  from review).
+  - Evidence: RED — new test received `['ex-1','ex-2','ex-mia-1','ex-mia-2']`; GREEN after the fix. `npx vitest run`
+    352 passed; `npx tsc -b` clean; oxlint 26 findings (baseline 26).
+- [x] **F3 — Disambiguate the uploader embed** (route: inline; found after applying 0029 to TEST).
+  - Migration 0029 applied to TEST (`grnamollopxdlstcpxhc`) with user OK on 2026-09-26; column verified.
+  - The real DB also has `fk_er_validadopor` → `usuarios` (the repo docs said `validado_por` had no FK), so the
+    plain `usuarios(...)` embed failed with PGRST201. Pinned to `usuarios!fk_er_subidopor(...)`. The `solo_mias`
+    integration test's fixture order deleted the user before its extractions; reordered.
+  - Evidence: RED — `pytest tests/extraccion/test_router.py` 6 failed + 1 teardown error (PGRST201 / FK on user
+    delete); GREEN — 20 passed. Unit: 109 passed. Commit `e83012d` on slice 01; slice 02 rebased on it
+    (T2 → `aaea6d7`, F2 → `bdd3889`). Assessed `under_budget` from `848ec08`.
+  - Leftover in TEST from the failed teardown before the fix: droguería `b1229d42-…` and auth user `133a8ed2-…`
+    (not deleted; needs user OK).
+
+## Manual check (browser, 2026-09-27, local servers against TEST)
+
+- Tabs with counts, state chips and badges, OC-only checkboxes, "Grupo" tag, validated OC → "Matching": OK.
+- Uploaded a synthetic OC (`OC_prueba_validar_extraccion.xlsx`, user OK): showed "Procesando" with "Cargado por
+  Laureano Maidana", no checkbox/action; auto-refresh turned it into "Procesado" (3 rows) with "Revisar" without a
+  manual reload; "Solo mías" showed exactly that row. No console errors.
+- Not exercised: the Error state (needs a failing upload). The synthetic extraction stays in TEST, unvalidated.
 
 ## Progress
 
