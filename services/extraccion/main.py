@@ -573,6 +573,10 @@ async def procesar(
         source_sha256=sha256_doc,
         grupo_id=grupo_id_validado,
         proceso_comercial_id=licitacion_id_validado,
+        # validar-extraccion-organizacion (T1): mismo usuario.id que ya se
+        # persiste en processing_sessions.subido_por (crear_sesion, arriba) --
+        # ahora también en extraction_results.subido_por (migración 0029).
+        usuario_id=usuario.id,
     )
 
     if extraction_id is None:

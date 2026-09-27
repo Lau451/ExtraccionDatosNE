@@ -94,17 +94,19 @@ def test_listar_extracciones_validado_false_devuelve_solo_pendientes_de_la_propi
 
 
 @pytest.mark.integration
-def test_listar_extracciones_excluye_status_failed(
+def test_listar_extracciones_incluye_status_failed_con_error_msg(
     service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
     seed_usuario_sistema, crear_usuario_autenticado,
 ):
-    """carga-asincrona (T1): una extracción 'failed' (el robot/persistencia
-    fallaron en background) nunca es ofrecible para validar -- no debe aparecer
-    en el listado aunque validado=False. 'processing' no se siembra acá porque
-    ese valor todavía no está permitido por el CHECK del proyecto de test
-    (migración 0028 no aplicada al remoto) -- ver
-    test_leer_filas_extraccion_status_processing_levanta_conflict_error /
-    test_validar_extraccion_status_processing_levanta_conflict_error en
+    """validar-extraccion-organizacion (T1): decisión de usuario 2026-09-26 --
+    reemplaza la decisión anterior de carga-asincrona (T1: 'failed' excluida
+    del listado). Ahora el listado muestra TODOS los estados (Procesando/
+    Procesado/Procesado con advertencias/Error/Validada) para que la pantalla
+    organice por estado en vez de esconder documentos que fallaron o siguen en
+    curso. 'processing' no se siembra acá porque ese valor todavía no está
+    permitido por el CHECK del proyecto de test (migración 0028 no aplicada al
+    remoto) -- ver test_leer_filas_extraccion_status_processing_levanta_conflict_error
+    / test_validar_extraccion_status_processing_levanta_conflict_error en
     test_service.py para la cobertura de 'processing' (unit, sin DB real)."""
     usuario_id, cliente = crear_usuario_autenticado(
         rol="comercial", drogueria_id=seed_drogueria["id"]
@@ -120,6 +122,7 @@ def test_listar_extracciones_excluye_status_failed(
         filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
         columnas=["item", "cantidad", "descripcion", "origen"],
         status="failed",
+        error_msg="Gemini caído (test)",
     )
 
     resultado = router.listar_extracciones_endpoint(
@@ -129,10 +132,158 @@ def test_listar_extracciones_excluye_status_failed(
         usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
         user_client=cliente,
     )
+    por_id = {r.id: r for r in resultado}
+
+    assert pendiente["id"] in por_id
+    assert fallida["id"] in por_id
+    assert por_id[fallida["id"]].status == "failed"
+    assert por_id[fallida["id"]].error_msg == "Gemini caído (test)"
+    assert por_id[pendiente["id"]].error_msg is None
+
+
+@pytest.mark.integration
+def test_listar_extracciones_solo_mias_filtra_por_uploader(
+    service_client, seed_drogueria, seed_proceso_comercial, crear_usuario_autenticado,
+    seed_extraction_result_factory, seed_usuario_sistema,
+):
+    # Orden de fixtures deliberado: pytest desarma en orden inverso, así que las
+    # extracciones (que referencian al usuario vía fk_er_subidopor) se borran
+    # antes que el usuario autenticado. Con el orden inverso el teardown falla.
+    """T1 (validar-extraccion-organizacion) -- "Solo mías": el filtro compara
+    subido_por = usuario.id (migración 0029). Una extracción sin uploader
+    (subido_por=NULL, comportamiento de filas pre-existentes) nunca matchea,
+    sin importar quién pregunte -- decisión de usuario, 2026-09-26."""
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+
+    propia = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        subido_por=usuario_id,
+    )
+    sin_uploader = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+    )
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        solo_mias=True,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
     ids = {r.id for r in resultado}
 
-    assert pendiente["id"] in ids
-    assert fallida["id"] not in ids
+    assert propia["id"] in ids
+    assert sin_uploader["id"] not in ids
+
+
+@pytest.mark.integration
+def test_listar_extracciones_solo_mias_devuelve_grupo_completo_con_otro_uploader(
+    service_client, seed_drogueria, seed_proceso_comercial, crear_usuario_autenticado,
+    seed_extraction_result_factory, seed_usuario_sistema,
+):
+    # Mismo orden deliberado que test_listar_extracciones_solo_mias_filtra_por_uploader:
+    # crear_usuario_autenticado ANTES que seed_extraction_result_factory, así el
+    # teardown borra las extracciones (fk_er_subidopor) antes que los usuarios.
+    """F4 (validar-extraccion-organizacion) -- "grupo = unidad": un grupo OC
+    (grupo_id) es una única orden de compra partida en varios archivos: si
+    "Solo mías" cortara el grupo a la mitad, la pantalla mostraría una OC
+    incompleta y "Desagrupar" mandaría una lista parcial de ids. Con al menos
+    una fila propia en el grupo, se devuelve el grupo ENTERO -- incluida la
+    fila subida por otro usuario -- pero una fila suelta ajena, sin relación
+    de grupo con el caller, sigue sin aparecer."""
+    usuario_id, cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+    otro_usuario_id, _otro_cliente = crear_usuario_autenticado(
+        rol="comercial", drogueria_id=seed_drogueria["id"]
+    )
+
+    grupo_id = str(uuid.uuid4())
+    propia_del_grupo = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Ibuprofeno 400mg", "cantidad": "10"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        grupo_id=grupo_id,
+        subido_por=usuario_id,
+    )
+    ajena_del_mismo_grupo = seed_extraction_result_factory(
+        "orden_compra",
+        filas=[{"numero_renglon": "1", "descripcion": "Amoxicilina 500mg", "cantidad": "5"}],
+        columnas=["numero_renglon", "descripcion", "cantidad"],
+        grupo_id=grupo_id,
+        subido_por=otro_usuario_id,
+    )
+    ajena_sin_relacion = seed_extraction_result_factory(
+        "licitacion",
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+        subido_por=otro_usuario_id,
+    )
+
+    resultado = router.listar_extracciones_endpoint(
+        validado=False,
+        solo_mias=True,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id=usuario_id, drogueria_id=seed_drogueria["id"]),
+        user_client=cliente,
+    )
+    ids = {r.id for r in resultado}
+
+    assert propia_del_grupo["id"] in ids
+    assert ajena_del_mismo_grupo["id"] in ids
+    assert ajena_sin_relacion["id"] not in ids
+
+
+def test_listar_extracciones_endpoint_solo_mias_pasa_el_id_del_usuario(monkeypatch):
+    """Unit (sin DB) -- solo_mias=True debe convertirse en
+    solo_mias_usuario_id=usuario.id al llamar al service."""
+    llamada: dict = {}
+
+    def _fake_listar_extracciones(client, **kwargs):
+        llamada.update(kwargs)
+        return []
+
+    monkeypatch.setattr(router, "listar_extracciones", _fake_listar_extracciones)
+
+    router.listar_extracciones_endpoint(
+        validado=None,
+        solo_mias=True,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id="usuario-42", drogueria_id="drog-1"),
+        user_client=MagicMock(),
+    )
+
+    assert llamada["solo_mias_usuario_id"] == "usuario-42"
+
+
+def test_listar_extracciones_endpoint_sin_solo_mias_no_filtra_por_usuario(monkeypatch):
+    llamada: dict = {}
+
+    def _fake_listar_extracciones(client, **kwargs):
+        llamada.update(kwargs)
+        return []
+
+    monkeypatch.setattr(router, "listar_extracciones", _fake_listar_extracciones)
+
+    router.listar_extracciones_endpoint(
+        validado=None,
+        solo_mias=False,
+        limit=50,
+        offset=0,
+        usuario=_usuario(id="usuario-42", drogueria_id="drog-1"),
+        user_client=MagicMock(),
+    )
+
+    assert llamada["solo_mias_usuario_id"] is None
 
 
 @pytest.mark.integration
