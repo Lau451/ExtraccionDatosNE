@@ -8,7 +8,13 @@ import {
   type ExtraccionResumen,
 } from '@/lib/api/extracciones'
 import { ExtraccionesTable } from './components/ExtraccionesTable'
-import { ESTADO_META, ESTADOS_DERIVADOS, estadoDerivadoDe, type EstadoDerivado } from './estadoExtraccion'
+import {
+  ESTADO_META,
+  ESTADOS_DERIVADOS,
+  esEstadoValidable,
+  estadoDerivadoDe,
+  type EstadoDerivado,
+} from './estadoExtraccion'
 
 // T2 (validar-extraccion-organizacion) -- una tab por tipo de documento
 // (decisión de usuario, 2026-09-26), en este orden fijo. La columna "Tipo"
@@ -151,7 +157,18 @@ export function ValidarExtraccionListado() {
       ? filasPorTipo
       : filasPorTipo.filter((extraccion) => estadoDerivadoDe(extraccion) === filtroEstado)
 
-  const filasSeleccionadas = filas.filter((extraccion) => seleccionados.has(extraccion.id))
+  // Revisión (R3-stale-selection-sent-to-mutation): la selección efectiva son
+  // las filas tildadas que siguen VISIBLES y seleccionables. Una fila tildada
+  // que salió del listado ("Solo mías", filtro de estado) o que dejó de ser
+  // validable (el polling la pasó a error/validada) queda en `seleccionados`
+  // pero no habilita los botones ni viaja en el request.
+  const filasSeleccionadas = filasFiltradas.filter(
+    (extraccion) =>
+      seleccionados.has(extraccion.id) &&
+      extraccion.document_type === 'orden_compra' &&
+      esEstadoValidable(estadoDerivadoDe(extraccion)),
+  )
+  const idsSeleccionados = filasSeleccionadas.map((extraccion) => extraccion.id)
 
   const agruparMutation = useMutation({
     mutationFn: (ids: string[]) => agruparExtracciones(ids),
@@ -257,7 +274,7 @@ export function ValidarExtraccionListado() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => desagruparMutation.mutate(Array.from(seleccionados))}
+              onClick={() => desagruparMutation.mutate(idsSeleccionados)}
               disabled={!puedeDesagrupar || desagruparMutation.isPending}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -265,7 +282,7 @@ export function ValidarExtraccionListado() {
             </button>
             <button
               type="button"
-              onClick={() => agruparMutation.mutate(Array.from(seleccionados))}
+              onClick={() => agruparMutation.mutate(idsSeleccionados)}
               disabled={!puedeAgruparSeleccion(filasSeleccionadas) || agruparMutation.isPending}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >

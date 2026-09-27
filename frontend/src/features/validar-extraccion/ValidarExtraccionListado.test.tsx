@@ -420,6 +420,37 @@ describe('ValidarExtraccionListado (D13) — agrupar/desagrupar, ahora solo en l
     await waitFor(() => expect(screen.queryAllByText('Grupo').length).toBe(0))
   })
 
+  it('agrupar envía solo las filas seleccionadas que siguen visibles (no las que ocultó "Solo mías")', async () => {
+    // Revisión (R3-stale-selection-sent-to-mutation): una fila tildada que
+    // después sale del listado (filtro "Solo mías", o un cambio de estado por
+    // el polling) no debe viajar en el request de agrupar/desagrupar.
+    const MIA_1: ExtraccionResumen = { ...OC_1, id: 'ex-mia-1', source_filename: 'mia1.pdf' }
+    const MIA_2: ExtraccionResumen = { ...OC_1, id: 'ex-mia-2', source_filename: 'mia2.pdf' }
+    vi.mocked(listarExtracciones)
+      .mockReset()
+      .mockImplementation((params: ListarExtraccionesParams = {}) => {
+        if (params.validado === true) return Promise.resolve([])
+        return Promise.resolve(params.solo_mias ? [MIA_1, MIA_2] : [OC_1, OC_2, MIA_1, MIA_2])
+      })
+    vi.mocked(agruparExtracciones).mockResolvedValue({ grupo_id: 'grupo-1' })
+
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/orden de compra/i)
+    await waitFor(() => expect(screen.getByText('oc1.pdf')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByLabelText(/seleccionar oc1\.pdf/i))
+    fireEvent.click(screen.getByLabelText(/seleccionar oc2\.pdf/i))
+    fireEvent.click(screen.getByLabelText(/solo mías/i))
+    await waitFor(() => expect(screen.getByLabelText(/seleccionar mia1\.pdf/i)).toBeInTheDocument())
+    expect(screen.queryByText('oc1.pdf')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText(/seleccionar mia1\.pdf/i))
+    fireEvent.click(screen.getByLabelText(/seleccionar mia2\.pdf/i))
+    fireEvent.click(screen.getByRole('button', { name: /agrupar seleccionadas/i }))
+
+    await waitFor(() => expect(agruparExtracciones).toHaveBeenCalledWith(['ex-mia-1', 'ex-mia-2']))
+  })
+
   it('7.13: el indicador de grupo y "Desagrupar" leen el grupo_id persistido de un refetch/recarga, sin pasar por agrupar/desagrupar primero', async () => {
     const OC_1_AGRUPADA: ExtraccionResumen = { ...OC_1, grupo_id: 'grupo-persistido' }
     const OC_2_AGRUPADA: ExtraccionResumen = { ...OC_2, grupo_id: 'grupo-persistido' }

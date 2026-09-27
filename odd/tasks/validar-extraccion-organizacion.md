@@ -105,6 +105,16 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
   - Evidence: RED→GREEN for `estadoExtraccion.test.ts` (8) and the listing (17 failed → 24 passed; two-query
     correction 3 failed → green). Parent spot check: `npx vitest run` 351 passed; `npx tsc -b` clean. oxlint: 26
     findings, identical to baseline (writer report).
+  - Commit `a5dbdc3` (with F1 `79deee4`). RDD: medium, `slice_budget_reached` (1184 lines from `848ec08`) → user
+    granted → reliability lens approved, acknowledged (lineage `review-014db91f88a94f93`). Reviewed boundary advances
+    to `a5dbdc3`. Findings:
+    - WARNING (introduced, fixed → F2): Agrupar/Desagrupar sent the raw selection set, including rows hidden by
+      "Solo mías" or no longer selectable after polling.
+    - SUGGESTION (open): no fake-timer test proves the conditional polling starts and stops.
+- [x] **F2 — Group actions use only visible, selectable selected rows** (route: inline; one component + its test,
+  from review).
+  - Evidence: RED — new test received `['ex-1','ex-2','ex-mia-1','ex-mia-2']`; GREEN after the fix. `npx vitest run`
+    352 passed; `npx tsc -b` clean; oxlint 26 findings (baseline 26).
 
 ## Progress
 
