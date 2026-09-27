@@ -106,4 +106,4 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   'nearest' })` on the first candidate's row, guarded with optional chaining
   for jsdom. Ran: `npx vitest run src/features/oc-matching` -> 5 files / 22
   tests passed. `npx tsc --noEmit -p .` -> clean.
-- Commit: (recorded after commit).
+- Commit: `762219b`.
