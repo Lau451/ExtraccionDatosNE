@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { ColumnaPresupuesto } from './ColumnaPresupuesto'
 
@@ -99,5 +99,54 @@ describe('ColumnaPresupuesto — búsqueda y filtro (spec oc-presupuesto-vincula
 
     expect(screen.getByText('Ibuprofeno')).toBeInTheDocument()
     expect(screen.queryByText('Paracetamol')).not.toBeInTheDocument()
+  })
+})
+
+describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vinculacion, T3)', () => {
+  it('al seleccionar un renglón de OC, hace scroll hasta su primer candidato', () => {
+    const scrollIntoViewMock = vi.fn()
+    // jsdom no implementa scrollIntoView (T3): se mockea en el prototipo.
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+
+    const renglones = [
+      presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' }),
+      presupuesto({ presupuesto_item_id: 'pi-2', descripcion: 'Paracetamol' }),
+    ]
+
+    const { rerender } = render(
+      <ColumnaPresupuesto renglones={renglones} renglonOcSeleccionado={null} />,
+    )
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+
+    rerender(
+      <ColumnaPresupuesto
+        renglones={renglones}
+        renglonOcSeleccionado={ordenCompra({
+          candidatos: [{ presupuesto_item_id: 'pi-2', similitud: null }],
+        })}
+      />,
+    )
+
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('sin candidatos para el renglón seleccionado, no intenta hacer scroll', () => {
+    const scrollIntoViewMock = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+
+    const renglones = [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })]
+
+    const { rerender } = render(
+      <ColumnaPresupuesto renglones={renglones} renglonOcSeleccionado={null} />,
+    )
+
+    rerender(
+      <ColumnaPresupuesto
+        renglones={renglones}
+        renglonOcSeleccionado={ordenCompra({ candidatos: [] })}
+      />,
+    )
+
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { AvisoReutilizacion } from './AvisoReutilizacion'
 
@@ -38,6 +38,7 @@ export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) 
   const [busqueda, setBusqueda] = useState('')
   const [soloCandidatos, setSoloCandidatos] = useState(false)
   const haySeleccion = renglonOcSeleccionado !== null
+  const filasRef = useRef(new Map<string, HTMLDivElement>())
 
   const idsCandidatos = new Set(
     renglonOcSeleccionado?.candidatos.map((candidato) => candidato.presupuesto_item_id) ?? [],
@@ -56,6 +57,16 @@ export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [renglones, busqueda, soloCandidatos, haySeleccion, renglonOcSeleccionado],
   )
+
+  // Al cambiar el renglón de OC resaltado, lleva a la vista su primer
+  // candidato (T3): jsdom no implementa `scrollIntoView`, de ahí el
+  // encadenado opcional -- en el navegador real siempre existe.
+  useEffect(() => {
+    const primerCandidatoId = renglonOcSeleccionado?.candidatos[0]?.presupuesto_item_id
+    if (!primerCandidatoId) return
+    const nodo = filasRef.current.get(primerCandidatoId)
+    nodo?.scrollIntoView?.({ block: 'nearest' })
+  }, [renglonOcSeleccionado])
 
   return (
     <section aria-label="Renglones del presupuesto" className="space-y-2">
@@ -88,6 +99,10 @@ export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) 
         {renglonesFiltrados.map((renglon) => (
           <div
             key={renglon.presupuesto_item_id}
+            ref={(nodo) => {
+              if (nodo) filasRef.current.set(renglon.presupuesto_item_id, nodo)
+              else filasRef.current.delete(renglon.presupuesto_item_id)
+            }}
             role="listitem"
             className={`rounded-md border p-3 text-sm ${
               idsCandidatos.has(renglon.presupuesto_item_id)

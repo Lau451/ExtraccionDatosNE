@@ -24,7 +24,7 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
 
 - [x] T1 — Candidate radios show `Renglón N — descripción — $precio` (+ similitud) resolved from `renglones_presupuesto`.
 - [x] T2 — Search box in the budget column filtering by description text or line number; "Solo candidatos" toggle when an OC line is selected.
-- [ ] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
+- [x] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
 - [ ] T4 — Manual link: with a pending OC line selected, each budget line offers "Vincular a renglón N de la OC"; calls the existing `confirmarVinculo`.
 
 ## Acceptance criteria
@@ -90,3 +90,20 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   `src/features/oc-matching/`. Not introduced by this feature; out of scope
   for a frontend-only oc-matching change.
 - Commit: `5b5d6dd`.
+
+### T3 — done
+- Files: `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`,
+  `frontend/src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- RED: 2 new tests (scrolls to first candidate on selection change; does
+  nothing when the selected OC line has zero candidates), mocking
+  `Element.prototype.scrollIntoView` since jsdom lacks it. Failed 1/6 —
+  `expected "vi.fn()" to be called 1 times, but got 0 times` (no scroll effect
+  existed yet); the zero-candidate case passed vacuously as expected. Ran:
+  `npx vitest run src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- GREEN: added a `filasRef` map of `presupuesto_item_id -> HTMLDivElement`
+  (via a ref callback on each row) and a `useEffect` keyed on
+  `renglonOcSeleccionado` that calls `nodo?.scrollIntoView?.({ block:
+  'nearest' })` on the first candidate's row, guarded with optional chaining
+  for jsdom. Ran: `npx vitest run src/features/oc-matching` -> 5 files / 22
+  tests passed. `npx tsc --noEmit -p .` -> clean.
+- Commit: (recorded after commit).
