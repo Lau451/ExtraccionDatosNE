@@ -31,7 +31,7 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
 ## Tasks
 
 - [x] T1 — Backend: descriptions for price-matched budget lines + OC line descriptions; pure `_rankear_presupuestos` scores text+price then price; model field; tests.
-- [ ] T2 — Frontend: mirror type + candidate label shows both counts; tests.
+- [x] T2 — Frontend: mirror type + candidate label shows both counts; tests.
 
 ## Acceptance criteria
 
@@ -41,8 +41,11 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
 
 ## Checks
 
-- `venv/Scripts/python -m pytest tests/oc_presupuesto -q`
-- `npm test`, `npm run build`, `npx oxlint src/features/oc-matching` in `frontend/`
+- `venv/Scripts/python -m pytest tests/oc_presupuesto -q` → 75 passed in 99s.
+- `npm test` in `frontend/` → 373 passed (39 files).
+- `npm run build` in `frontend/` → built ok (tsc passes, no CandidatoPresupuesto
+  construction site left unmigrated).
+- `npx oxlint src/features/oc-matching` in `frontend/` → clean, exit 0.
 
 ## Route
 
@@ -78,3 +81,17 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
     `venv/Scripts/python -m pytest tests/oc_presupuesto -q` → 75 passed in 99s (baseline
     70 + 5 new tests; the `renglones_oc_con_coincidencia` integration assertion is
     unaffected since it reads the unchanged price score).
+- T2 done — commit `6db50b6` (`feat(oc-matching): show price+description match count in
+  candidate label`).
+  - `renglones_oc_con_coincidencia_texto: number` mirrored in
+    `frontend/src/lib/api/ocMatching.ts::CandidatoPresupuesto`.
+  - `SelectorPresupuesto.tsx` label changed from `{con_coincidencia}/{totales}
+    coincidencias` to `{con_coincidencia_texto} de {totales} por precio y descripción ·
+    {con_coincidencia} por precio`.
+  - RED: `npx vitest run src/features/oc-matching/components/SelectorPresupuesto.test.tsx`
+    → 1 failed (new label-format test), 3 passed (fixtures updated for the new required
+    field first, so only the new assertion was red).
+  - GREEN: same command → 4 passed.
+  - `OcMatchingDetalle.test.tsx` and `ColumnaPresupuesto.test.tsx` don't construct
+    `CandidatoPresupuesto` objects (only `CandidatoVinculo`), so they needed no fixture
+    changes; confirmed by the full suite and `npm run build` (tsc) below.
