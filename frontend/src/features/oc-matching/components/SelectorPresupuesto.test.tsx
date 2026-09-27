@@ -77,8 +77,9 @@ describe('SelectorPresupuesto (design.md D2, spec oc-presupuesto-candidato)', ()
 
     // El texto (precio + descripción) nunca supera al de solo precio (D-texto):
     // se muestran los dos números por separado, no un único "X/Y coincidencias".
-    expect(screen.getByText(/8 de 10 por precio y descripción/)).toBeInTheDocument()
-    expect(screen.getByText(/9 por precio/)).toBeInTheDocument()
+    expect(
+      screen.getByText('00246033 — 8 de 10 por precio y descripción · 9 por precio (sugerido)'),
+    ).toBeInTheDocument()
   })
 
   it('un click en un candidato lo reporta al padre, no lo marca elegido por sí mismo', () => {
