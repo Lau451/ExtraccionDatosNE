@@ -1839,3 +1839,231 @@ def test_listar_ordenes_compra_por_extraction_ids_vacio_no_llama_al_cliente():
 
     assert resultado == []
     client.table.assert_not_called()
+
+
+# =============================================================================
+# listar_extracciones: todos los estados + uploader (T1, validar-extraccion-
+# organizacion) -- el listado deja de filtrar por ESTADOS_VALIDABLES
+# ('processing'/'failed' ya no desaparecen del listado) y expone error_msg +
+# subido_por + subido_por_nombre (nombre completo resuelto por un embed de
+# `usuarios`, mismo criterio de embed que `procesos_comerciales(nombre)`).
+# =============================================================================
+
+
+def _fake_fila_extraccion(**overrides) -> dict:
+    base = {
+        "id": "extraccion-1",
+        "document_type": "licitacion",
+        "source_filename": "a.pdf",
+        "row_count": 1,
+        "status": "completed",
+        "error_msg": None,
+        "validado": False,
+        "proceso_comercial_id": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "grupo_id": None,
+        "subido_por": None,
+        "procesos_comerciales": None,
+        "usuarios": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_repository_listar_extracciones_no_filtra_por_status():
+    """El repository ya no aplica `.in_("status", ESTADOS_VALIDABLES)` -- el
+    guard de estados validables sigue viviendo en `leer_filas_extraccion` /
+    `validar_extraccion`, no en el listado."""
+    query = MagicMock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+    query.eq.return_value = query
+    query.execute.return_value.data = []
+    client = MagicMock()
+    client.table.return_value = query
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0)
+
+    query.in_.assert_not_called()
+
+
+def test_repository_listar_extracciones_select_incluye_error_msg_subido_por_y_embed_usuarios():
+    query = MagicMock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+    query.execute.return_value.data = []
+    client = MagicMock()
+    client.table.return_value = query
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0)
+
+    campos = query.select.call_args[0][0]
+    assert "error_msg" in campos
+    assert "subido_por" in campos
+    # Hint explícito: la base real tiene dos FK de extraction_results a usuarios
+    # (fk_er_subidopor y fk_er_validadopor); sin él, PostgREST responde PGRST201.
+    assert "usuarios!fk_er_subidopor(" in campos
+
+
+def _mock_lookup_grupos(grupo_ids: list[str]) -> MagicMock:
+    """Mock del SEGUNDO `client.table("extraction_results")` que abre
+    `listar_extracciones` cuando hay `subido_por`: el primero arma la query
+    principal (select/order/range), el segundo es el lookup liviano de
+    `_grupos_del_usuario` (F4)."""
+    lookup = MagicMock()
+    lookup.select.return_value = lookup
+    lookup.eq.return_value = lookup
+    lookup.not_.is_.return_value = lookup
+    lookup.execute.return_value.data = [{"grupo_id": gid} for gid in grupo_ids]
+    return lookup
+
+
+def _mock_query_principal() -> MagicMock:
+    query = MagicMock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+    query.eq.return_value = query
+    query.or_.return_value = query
+    query.execute.return_value.data = []
+    return query
+
+
+def test_repository_listar_extracciones_solo_mias_sin_grupo_filtra_por_subido_por():
+    """F4 -- si el usuario no tiene ninguna fila agrupada, la query principal
+    sigue usando el `.eq("subido_por", ...)` plano de siempre (sin `.or_()`)."""
+    lookup = _mock_lookup_grupos([])
+    principal = _mock_query_principal()
+    client = MagicMock()
+    client.table.side_effect = [principal, lookup]
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0, subido_por="usuario-1")
+
+    principal.eq.assert_any_call("subido_por", "usuario-1")
+    principal.or_.assert_not_called()
+
+
+def test_repository_listar_extracciones_solo_mias_con_grupo_usa_or_con_grupo_id():
+    """F4 (validar-extraccion-organizacion) -- "grupo = unidad": si al menos
+    una fila propia pertenece a un grupo, la query principal trae el grupo
+    ENTERO vía `.or_()` (subido_por propio U grupo_id de los grupos
+    propios), no solo la fila propia. Los grupo_id duplicados del lookup se
+    deduplican y ordenan antes de armar el filtro."""
+    lookup = _mock_lookup_grupos(["g2", "g1", "g1"])
+    principal = _mock_query_principal()
+    client = MagicMock()
+    client.table.side_effect = [principal, lookup]
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0, subido_por="usuario-1")
+
+    principal.or_.assert_called_once_with("subido_por.eq.usuario-1,grupo_id.in.(g1,g2)")
+    # el filtro va por `.or_()`: no debe quedar además un `.eq("subido_por", ...)`
+    # plano en la query principal, o el `.or_()` sería redundante/confuso.
+    for llamada in principal.eq.call_args_list:
+        assert llamada.args[0] != "subido_por"
+
+
+def test_repository_listar_extracciones_solo_mias_aplica_validado_solo_en_query_principal():
+    """F4 -- el filtro `validado` de `listar_extracciones` se sigue aplicando
+    en la query principal como siempre. El lookup de grupos (`_grupos_del_usuario`)
+    deliberadamente NO filtra por `validado`: el estado validado de la fila
+    propia del usuario dentro de un grupo puede no coincidir con el
+    `validado` pedido acá (p. ej. la fila propia ya está validada pero otro
+    miembro del grupo, subido por otro usuario, sigue pendiente) -- filtrar
+    el lookup por `validado` dejaría a ese miembro sin ningún criterio que lo
+    devuelva y rompería la regla "grupo = unidad"."""
+    lookup = _mock_lookup_grupos(["g1"])
+    principal = _mock_query_principal()
+    client = MagicMock()
+    client.table.side_effect = [principal, lookup]
+
+    repo.listar_extracciones(client, validado=True, limit=50, offset=0, subido_por="usuario-1")
+
+    principal.eq.assert_any_call("validado", True)
+    for llamada in lookup.eq.call_args_list:
+        assert llamada.args[0] != "validado"
+
+
+def test_repository_listar_extracciones_sin_solo_mias_no_filtra_por_subido_por():
+    query = MagicMock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+    query.execute.return_value.data = []
+    client = MagicMock()
+    client.table.return_value = query
+
+    repo.listar_extracciones(client, validado=None, limit=50, offset=0)
+
+    for llamada in query.eq.call_args_list:
+        assert llamada.args[0] != "subido_por"
+
+
+def test_service_listar_extracciones_arma_subido_por_nombre_desde_embed_usuarios(monkeypatch):
+    filas = [
+        _fake_fila_extraccion(
+            id="extraccion-1",
+            subido_por="usuario-1",
+            usuarios={"nombre": "Ana", "apellido": "Pérez"},
+        ),
+        _fake_fila_extraccion(
+            id="extraccion-2",
+            status="failed",
+            error_msg="Gemini caído",
+            subido_por=None,
+            usuarios=None,
+        ),
+    ]
+    monkeypatch.setattr(
+        repo, "listar_extracciones", lambda client, **kw: [dict(f) for f in filas]
+    )
+    monkeypatch.setattr(
+        repo, "listar_ordenes_compra_por_extraction_ids", lambda client, *, extraction_ids: []
+    )
+
+    resultado = listar_extracciones(MagicMock(), validado=None, limit=50, offset=0)
+
+    por_id = {r.id: r for r in resultado}
+    assert por_id["extraccion-1"].subido_por == "usuario-1"
+    assert por_id["extraccion-1"].subido_por_nombre == "Ana Pérez"
+    assert por_id["extraccion-2"].subido_por_nombre is None
+    assert por_id["extraccion-2"].error_msg == "Gemini caído"
+    assert por_id["extraccion-2"].status == "failed"
+
+
+def test_service_listar_extracciones_solo_mias_forwarda_usuario_id_al_repository(monkeypatch):
+    llamada: dict = {}
+
+    def _fake_listar(client, **kw):
+        llamada.update(kw)
+        return []
+
+    monkeypatch.setattr(repo, "listar_extracciones", _fake_listar)
+    monkeypatch.setattr(
+        repo, "listar_ordenes_compra_por_extraction_ids", lambda client, *, extraction_ids: []
+    )
+
+    listar_extracciones(
+        MagicMock(), validado=None, limit=50, offset=0, solo_mias_usuario_id="usuario-9"
+    )
+
+    assert llamada["subido_por"] == "usuario-9"
+
+
+def test_service_listar_extracciones_sin_solo_mias_no_forwarda_usuario_id(monkeypatch):
+    llamada: dict = {}
+
+    def _fake_listar(client, **kw):
+        llamada.update(kw)
+        return []
+
+    monkeypatch.setattr(repo, "listar_extracciones", _fake_listar)
+    monkeypatch.setattr(
+        repo, "listar_ordenes_compra_por_extraction_ids", lambda client, *, extraction_ids: []
+    )
+
+    listar_extracciones(MagicMock(), validado=None, limit=50, offset=0)
+
+    assert llamada["subido_por"] is None

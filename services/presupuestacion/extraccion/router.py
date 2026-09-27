@@ -58,12 +58,22 @@ def _verificar_pertenencia(
 @router.get("/extracciones", response_model=list[ExtraccionResumen])
 def listar_extracciones_endpoint(
     validado: bool | None = None,
+    # T1 (validar-extraccion-organizacion) -- "Solo mías": filtra por
+    # subido_por = usuario.id. RLS sigue siendo la frontera de tenant (§8.1);
+    # esto se suma, no reemplaza esa frontera.
+    solo_mias: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
     user_client: Client = Depends(get_user_client),
 ) -> list[ExtraccionResumen]:
-    return listar_extracciones(user_client, validado=validado, limit=limit, offset=offset)
+    return listar_extracciones(
+        user_client,
+        validado=validado,
+        limit=limit,
+        offset=offset,
+        solo_mias_usuario_id=usuario.id if solo_mias else None,
+    )
 
 
 @router.get("/extracciones/{extraction_id}/filas", response_model=FilasExtraccionOut)

@@ -2,12 +2,24 @@ import { presupuestacionFetch } from './presupuestacion'
 
 export type DocumentType = 'comparativa' | 'licitacion' | 'cotizacion' | 'orden_compra'
 
+// Espejo de `extraction_results.status` (migración 0028, carga-asincrona T1).
+// Duplicado a propósito de `EstadoExtraccion` en `lib/api/extraccion.ts`: ese
+// módulo habla con `services/extraccion` (el extractor), este con
+// `services/presupuestacion` -- son dos backends distintos, aunque comparten
+// la misma columna de origen.
+export type EstadoExtraccion = 'processing' | 'completed' | 'partial' | 'failed'
+
 export interface ExtraccionResumen {
   id: string
   document_type: DocumentType
   source_filename: string
   row_count: number
-  status: string
+  status: EstadoExtraccion
+  // T1 (validar-extraccion-organizacion) -- mensaje legible cuando
+  // status='failed' (mismo campo que persiste
+  // services/extraccion/persistent_output.py::marcar_extraccion_fallida).
+  // `null` en cualquier otro estado.
+  error_msg: string | null
   validado: boolean
   proceso_comercial_id: string | null
   proceso_comercial_nombre: string | null
@@ -25,6 +37,17 @@ export interface ExtraccionResumen {
   // `null` para licitación/comparativa y para los miembros no-ancla de un
   // grupo multi-archivo (D13 del cambio padre).
   orden_compra_id: string | null
+  // T1 (validar-extraccion-organizacion) -- uploader (extraction_results.
+  // subido_por, migración 0029). `null` en filas creadas antes de la
+  // migración, o si la persistencia del uploader no estaba disponible al
+  // subir el documento; en ese caso nunca matchea el filtro "Solo mías". Sin
+  // `es_mia`: el backend no duplica esa comparación -- el frontend ya tiene
+  // el id del usuario autenticado (`AuthContext` § `Perfil.id`).
+  subido_por: string | null
+  // Nombre completo ("nombre apellido") resuelto por el embed
+  // `usuarios(nombre, apellido)` de `repository.listar_extracciones`. `null`
+  // cuando `subido_por` es `null`.
+  subido_por_nombre: string | null
 }
 
 /** Espejo literal de `MiembroGrupo` (design.md § D13, Interfaces). */
@@ -177,6 +200,11 @@ export interface ListarExtraccionesParams {
   validado?: boolean
   limit?: number
   offset?: number
+  // T1 (validar-extraccion-organizacion) -- "Solo mías": filtra por
+  // subido_por = usuario autenticado (router.py: `solo_mias_usuario_id=usuario.id
+  // if solo_mias else None`). RLS sigue siendo la frontera de tenant; esto se
+  // suma, no la reemplaza.
+  solo_mias?: boolean
 }
 
 export function listarExtracciones(
@@ -186,6 +214,7 @@ export function listarExtracciones(
   if (params.validado !== undefined) query.set('validado', String(params.validado))
   if (params.limit !== undefined) query.set('limit', String(params.limit))
   if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.solo_mias !== undefined) query.set('solo_mias', String(params.solo_mias))
   const qs = query.toString()
   return presupuestacionFetch<ExtraccionResumen[]>(`/extracciones${qs ? `?${qs}` : ''}`)
 }

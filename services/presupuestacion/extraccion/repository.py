@@ -2,8 +2,6 @@ from typing import Any, Iterable, TypeVar
 
 from supabase import Client
 
-from services.presupuestacion.extraccion.models import ESTADOS_VALIDABLES
-
 # .in_() codifica cada valor en la URL (GET): con un lote grande de
 # extraction_ids de golpe la URL supera el límite del servidor y PostgREST
 # devuelve 400 Bad Request. Mismo criterio y mismo tamaño que
@@ -36,31 +34,95 @@ def buscar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> di
     return resultado.data[0] if resultado.data else None
 
 
+def _grupos_del_usuario(client: Client, *, subido_por: str) -> list[str]:
+    """F4 (validar-extraccion-organizacion) -- grupos (D13/D13.1) a los que
+    pertenece al menos una fila subida por `subido_por`, para que "Solo
+    mías" trate al grupo como unidad (decisión de usuario: si el usuario
+    subió una parte de una OC partida en varios archivos, "Solo mías"
+    devuelve el grupo ENTERO, no solo su fila).
+
+    Sin filtro de `validado` acá a propósito: el estado validado de la fila
+    PROPIA del usuario dentro de un grupo puede no coincidir con el
+    `validado` que está pidiendo `listar_extracciones` (p. ej. la fila
+    propia ya quedó validada pero otro miembro del mismo grupo, subido por
+    otro usuario, sigue pendiente). Si este lookup filtrara por el mismo
+    `validado`, ese grupo quedaría sin ningún criterio que lo traiga y el
+    otro miembro se perdería -- justo lo que "grupo = unidad" busca evitar.
+    El `validado` de `listar_extracciones` se sigue aplicando en la query
+    principal, así que incluir de más acá nunca cuela una fila con el
+    `validado` equivocado."""
+    resultado = (
+        client.table("extraction_results")
+        .select("grupo_id")
+        .eq("subido_por", subido_por)
+        .not_.is_("grupo_id", None)
+        .execute()
+    )
+    return sorted({fila["grupo_id"] for fila in resultado.data})
+
+
 def listar_extracciones(
-    client: Client, *, validado: bool | None, limit: int, offset: int
+    client: Client,
+    *,
+    validado: bool | None,
+    limit: int,
+    offset: int,
+    subido_por: str | None = None,
 ) -> list[dict[str, Any]]:
     # Con validado=False el plan pega contra idx_er_sin_validar (drogueria_id,
     # created_at DESC) WHERE validado = FALSE -- índice parcial ya materializado
     # en ese orden, sin sort extra. RLS (er_sel / mismo_tenant) es la frontera de
     # tenant; no hay filtro manual por drogueria_id acá (§8.1 -- superadmin tiene
     # drogueria_id NULL y quedaría sin resultados si lo agregáramos).
+    #
+    # T1 (validar-extraccion-organizacion): el listado YA NO filtra por
+    # ESTADOS_VALIDABLES -- 'processing'/'failed' vuelven a aparecer para que la
+    # pantalla muestre el estado real de cada extracción (antes desaparecían sin
+    # dejar rastro). El guard de estados validables sigue intacto en
+    # leer_filas_extraccion / validar_extraccion (service.py): abrir el listado no
+    # habilita validar una fila no validable. error_msg/subido_por se agregan al
+    # select para el badge de error y el filtro "Solo mías"; el embed de
+    # `usuarios` resuelve el nombre del uploader en el mismo viaje, mismo
+    # criterio que `procesos_comerciales(nombre)`. Hint `!fk_er_subidopor`
+    # obligatorio: la base real también tiene fk_er_validadopor hacia
+    # `usuarios`, y sin el hint PostgREST rechaza el embed por ambiguo
+    # (PGRST201). La clave del resultado sigue siendo `usuarios`.
+    #
+    # F4 (validar-extraccion-organizacion): "Solo mías" (subido_por) trata al
+    # grupo (D13/D13.1) como unidad -- un grupo es una sola OC partida en
+    # varios archivos, y antes de F4 un grupo con miembros subidos por
+    # distintos usuarios quedaba cortado a la mitad en "Solo mías" (la
+    # pantalla mostraba una OC incompleta y "Desagrupar" mandaba una lista
+    # parcial de ids). Con `_grupos_del_usuario` se resuelven primero los
+    # grupos a los que el caller pertenece y se arma `.or_(subido_por.eq.<id>
+    # ,grupo_id.in.(<ids>))`: fila propia O cualquier fila de un grupo
+    # propio. Sin grupos, se mantiene el `.eq("subido_por", ...)` plano de
+    # siempre. No se trocea en `_TAMANO_LOTE`/`_en_lotes` como
+    # `listar_ordenes_compra_por_extraction_ids`: esto es UNA query paginada
+    # con `.range()`, no una serie de `.in_()` sueltos -- trocear implicaría
+    # fusionar a mano resultados de páginas distintas. La cantidad de grupos
+    # de un usuario es chica en la práctica (D13.1); si algún día no lo es,
+    # el problema real es de UX (demasiados grupos abiertos a la vez), no de
+    # esta query.
     query = (
         client.table("extraction_results")
         .select(
-            "id, document_type, source_filename, row_count, status, validado, "
-            "proceso_comercial_id, created_at, grupo_id, procesos_comerciales(nombre)"
+            "id, document_type, source_filename, row_count, status, error_msg, "
+            "validado, proceso_comercial_id, created_at, grupo_id, subido_por, "
+            "procesos_comerciales(nombre), usuarios!fk_er_subidopor(nombre, apellido)"
         )
-        # carga-asincrona (T1): una extracción 'processing' (robot todavía corriendo
-        # en background) o 'failed' (robot/persistencia fallaron) nunca es una
-        # extracción ofrecible para validar -- se filtra acá, antes de que llegue al
-        # listado. 'partial' se deja pasar sin cambios (comportamiento previo a esta
-        # tarea: nunca se filtró por status).
-        .in_("status", list(ESTADOS_VALIDABLES))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
     )
     if validado is not None:
         query = query.eq("validado", validado)
+    if subido_por is not None:
+        grupos = _grupos_del_usuario(client, subido_por=subido_por)
+        if grupos:
+            ids_grupos = ",".join(grupos)
+            query = query.or_(f"subido_por.eq.{subido_por},grupo_id.in.({ids_grupos})")
+        else:
+            query = query.eq("subido_por", subido_por)
     return query.execute().data
 
 
