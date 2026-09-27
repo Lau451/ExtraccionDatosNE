@@ -162,11 +162,31 @@ export function ValidarExtraccionListado() {
   // que salió del listado ("Solo mías", filtro de estado) o que dejó de ser
   // validable (el polling la pasó a error/validada) queda en `seleccionados`
   // pero no habilita los botones ni viaja en el request.
-  const filasSeleccionadas = filasFiltradas.filter(
+  //
+  // T3 -- una fila agrupada cuenta como "visible" si SU GRUPO tiene al menos
+  // un miembro que matchea el chip activo, aunque esa fila puntual no
+  // matchee (la tabla puede mostrar el grupo entero al expandirlo, y el
+  // checkbox del encabezado selecciona TODOS los miembros sin necesidad de
+  // expandir primero) -- una fila sin grupo sigue necesitando matchear el
+  // chip ella misma, sin cambios sobre F2.
+  const idsFilasFiltradas = new Set(filasFiltradas.map((extraccion) => extraccion.id))
+  const gruposVisibles = new Set(
+    filasFiltradas
+      .map((extraccion) => grupoIdDe(extraccion, gruposLocales))
+      .filter((grupoId): grupoId is string => grupoId !== null),
+  )
+  function esFilaVisible(extraccion: ExtraccionResumen): boolean {
+    const grupoId = grupoIdDe(extraccion, gruposLocales)
+    if (grupoId === null) return idsFilasFiltradas.has(extraccion.id)
+    return gruposVisibles.has(grupoId)
+  }
+
+  const filasSeleccionadas = filasPorTipo.filter(
     (extraccion) =>
       seleccionados.has(extraccion.id) &&
       extraccion.document_type === 'orden_compra' &&
-      esEstadoValidable(estadoDerivadoDe(extraccion)),
+      esEstadoValidable(estadoDerivadoDe(extraccion)) &&
+      esFilaVisible(extraccion),
   )
   const idsSeleccionados = filasSeleccionadas.map((extraccion) => extraccion.id)
 
@@ -349,6 +369,7 @@ export function ValidarExtraccionListado() {
           {datosListos && (
             <ExtraccionesTable
               extracciones={filasFiltradas}
+              extraccionesDelTipo={filasPorTipo}
               tipoActivo={tipoActivo}
               seleccionados={seleccionados}
               onAlternarSeleccion={alternarSeleccion}

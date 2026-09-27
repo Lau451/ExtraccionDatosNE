@@ -48,11 +48,14 @@ Mode: strict (source: global user CLAUDE.md). Runners: `pytest` (backend, `pytes
 Strategy: ask-on-risk. Forecast ~700 authored lines (T1 ~300, T2 ~400). Running count after T1: 561 → over budget.
 Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must reach `dev` together (review finding).
 
-- Tracker: `feat/validar-extraccion-organizacion` (reset to `dev` `8cb031b`; draft/no-merge PR → `dev`).
-- Slice 01 `feat/validar-extraccion-organizacion-01-backend` → tracker: T1 (`848ec08`) + F1. Over 400 lines
-  (~560, about half tests, plus migration comments); no cohesive split — `size:exception` recommended.
-- Slice 02 `feat/validar-extraccion-organizacion-02-frontend` → slice 01: T2.
-- Nothing pushed; push and PR creation are the user's decision.
+- Tracker: `feat/validar-extraccion-organizacion` (`dev` + empty opening commit; draft/no-merge PR → `dev`).
+- Slice 01 `feat/validar-extraccion-organizacion-01-backend` → tracker: T1, F1, F3, F4. ~803 lines (480 tests).
+- Slice 02 `feat/validar-extraccion-organizacion-02-frontend` → slice 01: T2, F2 + docs. ~1193 lines (415 tests,
+  154 deleted from the replaced tables).
+- Slice 03 `feat/validar-extraccion-organizacion-03-grupos` → slice 02: T3, F5 + docs. ~604 lines (151 tests).
+- One slicing pass done (frontend split into states vs groups); no further cohesive split fits 400 without
+  separating code from its tests → `size:exception` requested on each child PR.
+- Pushed and PRs opened with user OK on 2026-09-27.
 
 ## Tasks
 
@@ -125,6 +128,42 @@ Chain strategy (user, 2026-09-26): `feature-branch-chain` — T1 and T2 must rea
     (T2 → `aaea6d7`, F2 → `bdd3889`). Assessed `under_budget` from `848ec08`.
   - Leftover in TEST from the failed teardown before the fix: droguería `b1229d42-…` and auth user `133a8ed2-…`
     (not deleted; needs user OK).
+
+- [x] **T3 — Collapsible group rows in the OC tab** (route: delegated writer; trigger: 2+ non-trivial files —
+  table component, listing, tests). User request 2026-09-27 before push: with the generic "Grupo" tag you cannot
+  tell which OCs belong to the same group. User chose option B (collapsible group row) over a numbered tag.
+  - Defaults chosen by the parent (user may adjust): collapsed by default; header shows "Grupo · N archivos",
+    member filenames and a group state; expand/collapse toggle; header checkbox selects/deselects all members
+    (member checkboxes remain for partial ungroup); "Revisar" on the header opens the detail of a member (the
+    detail screen already loads the whole group from any member); a state filter shows the group when any member
+    matches.
+  - Result: `ExtraccionesTable` builds individual/group entries; `FilaGrupo` header (toggle with `aria-expanded`,
+    "Grupo · N archivos", member filenames, aggregate state via pure `estadoGrupoDe` — least advanced wins,
+    indeterminate header checkbox, Revisar/Matching); per-row "Grupo" tag removed. Header numeric columns show "—".
+    F2 invariant kept: a grouped row counts as visible when any member matches the active chip.
+  - Evidence: RED `estadoGrupoDe` 3 failed, group UI 6 failed (right reason) → GREEN. Parent spot check:
+    `npx vitest run` 359 passed; `npx tsc -b` clean; oxlint 26 = baseline (writer). Browser: collapsed header for
+    the existing group, expands to 2 members, header checkbox ticks both and enables Desagrupar (not clicked).
+  - Commit `cbb167a`. RDD: medium, `slice_budget_reached` (629 lines from `aaea6d7`) → user granted →
+    reliability lens approved, acknowledged (lineage `review-0bf6b16a36484efb`). Findings:
+    - WARNING (introduced → F4): with "Solo mías" (server filter) a group mixing uploaders shows only the caller's
+      members ("Grupo · 1 archivos") and Desagrupar sends a partial id list.
+    - SUGGESTIONS (→ F5): `estadoGrupoDe` throws on empty input; no tests for header partial selection /
+      indeterminate / collapsed-but-selected members.
+- [x] **F4 — "Solo mías" returns whole groups** (route: delegated writer on slice 01; backend repository + tests).
+  User chose (2026-09-27) to treat a group as a unit server-side: with `solo_mias=true`, return the caller's rows
+  plus every member of any group that contains at least one of the caller's rows.
+  - Result: `_grupos_del_usuario` looks up the caller's group ids (no `validado` filter, so a member is never
+    dropped when the caller's own row has a different validado state); main query uses
+    `or_(subido_por.eq.X,grupo_id.in.(...))`, plain `eq` when there are no groups.
+  - Evidence: RED — 3 unit + 1 integration failing for the right reason; GREEN — `pytest tests/extraccion/test_router.py`
+    21 passed (TEST DB); unit 111 passed (parent spot check). Commit `7adfa5a` on slice 01 (under_budget from
+    `848ec08`); slice 02 rebased on it.
+- [x] **F5 — Review suggestions from T3** (route: inline on slice 02): guard `estadoGrupoDe` against empty input;
+  tests for header partial selection.
+  - Evidence: `estadoGrupoDe([])` RED (`Reduce of empty array`) → returns null, header shows "—". Partial-selection
+    test (indeterminate → select all → clear all) passed on first run: coverage for existing behavior, no RED.
+    `npx vitest run` 361 passed; `npx tsc -b` clean; oxlint 26 = baseline.
 
 ## Manual check (browser, 2026-09-27, local servers against TEST)
 
