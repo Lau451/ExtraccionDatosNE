@@ -25,6 +25,13 @@ from services.terceros import api as terceros_api
 # esconde al mejor. Ver design.md D2 § Alternatives (c).
 _TOPE_CANDIDATOS = 5
 
+# Ranking-texto: mismo umbral y misma maquinaria que
+# matching/service.py::_UMBRAL_SUGERIDO -- fuzz.WRatio sobre
+# normalizar_descripcion. El texto NUNCA filtra (D2 original sigue siendo el
+# filtro obligatorio); este umbral solo decide si un renglón con precio ya
+# matcheado SUMA además al puntaje de texto.
+_UMBRAL_SIMILITUD_TEXTO = 70
+
 
 def _q2(valor: Any) -> Decimal:
     """Normaliza escala de precio a 2 decimales (D3): ambas columnas son
@@ -51,45 +58,119 @@ def _epoch_ordenable(generado_at: Any) -> float:
     return dt.timestamp()
 
 
+def _mejor_similitud_texto(descripcion_oc: str, descripciones_candidatas: list[str]) -> float:
+    """WRatio máximo entre `descripcion_oc` y cada descripción CANDIDATA al
+    mismo precio (misma maquinaria y normalización que
+    matching/service.py::_generar_candidatos / _ordenar_por_similitud, D7).
+
+    Sin descripción de OC o sin ninguna candidata no vacía, no hay nada que
+    comparar: 0.0 -- nunca alcanza `_UMBRAL_SIMILITUD_TEXTO`, pero tampoco
+    rompe (ni max() sobre secuencia vacía)."""
+    candidatas_no_vacias = [normalizar_descripcion(d) for d in descripciones_candidatas if d]
+    if not descripcion_oc or not candidatas_no_vacias:
+        return 0.0
+    normalizado_oc = normalizar_descripcion(descripcion_oc)
+    return max(fuzz.WRatio(normalizado_oc, candidata) for candidata in candidatas_no_vacias)
+
+
 def _rankear_presupuestos(
     presupuestos: list[dict[str, Any]],
     presupuesto_items: list[dict[str, Any]],
-    precios_oc: list[Decimal],
-) -> list[tuple[dict[str, Any], int]]:
-    """Puntúa y ordena `presupuestos` (D2). Función pura: sin cliente
-    Supabase, sin tope de 5 (el tope se aplica después, en el caller).
+    renglones_oc: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], int, int]]:
+    """Puntúa y ordena `presupuestos` (D2 + ranking-texto). Función pura: sin
+    cliente Supabase, sin tope de 5 (el tope se aplica después, en el caller).
 
-    Puntaje = cantidad de renglones de LA OC (`precios_oc`, con repeticiones)
-    cuyo precio coincide con AL MENOS UN presupuesto_item de ESE presupuesto
-    -- no la cantidad de presupuesto_items que matchean, que sobre-cuenta si
-    el presupuesto repite el mismo precio en varios renglones.
+    `renglones_oc`: renglones de LA OC, CON REPETICIONES -- cada dict trae
+    "precio_unitario" (Decimal ya normalizado a escala 2, D3) y "descripcion"
+    (str, puede ser "").
 
-    `precio_unitario is None` en un presupuesto_item (C4, columna nullable)
-    queda fuera del conjunto de precios sin lanzar excepción: ese renglón
-    nunca puede ser el origen de un match exacto.
+    `presupuesto_items`: cada dict puede traer "descripcion" (agregada por el
+    caller desde items_proceso, C5); sin ella se trata como "" y nunca gana
+    el umbral de similitud. `precio_unitario is None` (C4, columna nullable)
+    queda fuera del agrupamiento por precio sin lanzar excepción.
+
+    Devuelve tuplas (presupuesto, puntaje_texto, puntaje_precio):
+    - puntaje_precio (D2 original, sin cambios de semántica): cantidad de
+      renglones de la OC cuyo precio coincide con AL MENOS UN
+      presupuesto_item de ESE presupuesto -- no la cantidad de
+      presupuesto_items que matchean, que sobre-cuenta si el presupuesto
+      repite el mismo precio en varios renglones. Sigue siendo el filtro
+      obligatorio: "ningún presupuesto coincide" se decide sobre este valor,
+      nunca sobre el de texto.
+    - puntaje_texto: de esos MISMOS renglones que ya matchean precio,
+      cuántos tienen -- contra los presupuesto_items al mismo precio -- una
+      mejor similitud (fuzz.WRatio sobre normalizar_descripcion) >=
+      `_UMBRAL_SIMILITUD_TEXTO`. Nunca puede superar a puntaje_precio: el
+      texto solo reordena renglones que el precio ya seleccionó, jamás
+      filtra ni suma matches nuevos.
+
+    Orden: (-texto, -precio, -generado_at desc, id asc). Un presupuesto con
+    texto=0 sigue apareciendo, ordenado por precio -- el texto nunca filtra.
     """
-    precios_por_presupuesto: dict[str, set[Decimal]] = {}
+    descripciones_por_presupuesto_y_precio: dict[str, dict[Decimal, list[str]]] = {}
     for item in presupuesto_items:
         precio = item.get("precio_unitario")
         if precio is None:
             continue
-        precios_por_presupuesto.setdefault(item["presupuesto_id"], set()).add(_q2(precio))
+        por_precio = descripciones_por_presupuesto_y_precio.setdefault(item["presupuesto_id"], {})
+        por_precio.setdefault(_q2(precio), []).append(item.get("descripcion") or "")
 
-    puntuados = [
-        (
-            presupuesto,
-            sum(
-                1
-                for precio in precios_oc
-                if precio in precios_por_presupuesto.get(presupuesto["id"], set())
-            ),
-        )
-        for presupuesto in presupuestos
-    ]
+    puntuados: list[tuple[dict[str, Any], int, int]] = []
+    for presupuesto in presupuestos:
+        por_precio = descripciones_por_presupuesto_y_precio.get(presupuesto["id"], {})
+        puntaje_precio = 0
+        puntaje_texto = 0
+        for renglon in renglones_oc:
+            descripciones_al_precio = por_precio.get(renglon["precio_unitario"])
+            if descripciones_al_precio is None:
+                continue
+            puntaje_precio += 1
+            similitud = _mejor_similitud_texto(
+                renglon.get("descripcion") or "", descripciones_al_precio
+            )
+            if similitud >= _UMBRAL_SIMILITUD_TEXTO:
+                puntaje_texto += 1
+        puntuados.append((presupuesto, puntaje_texto, puntaje_precio))
+
     puntuados.sort(
-        key=lambda par: (-par[1], -_epoch_ordenable(par[0].get("generado_at")), par[0]["id"])
+        key=lambda par: (
+            -par[1],
+            -par[2],
+            -_epoch_ordenable(par[0].get("generado_at")),
+            par[0]["id"],
+        )
     )
     return puntuados
+
+
+def _renglones_oc(oc_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Adapta renglones de OC (`listar_oc_items_precios` o
+    `listar_oc_items_completos`, ambos traen `precio_unitario` y
+    `descripcion`) al formato que espera `_rankear_presupuestos`."""
+    return [
+        {"precio_unitario": _q2(item["precio_unitario"]), "descripcion": item.get("descripcion") or ""}
+        for item in oc_items
+    ]
+
+
+def _presupuesto_items_con_descripcion(
+    client: Client, presupuesto_items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Agrega "descripcion" (de items_proceso, C5) a cada presupuesto_item ya
+    filtrado por precio, para el desempate por texto. Sin presupuesto_items
+    (ningún match de precio) no consulta items_proceso -- criterio de
+    aceptación de ranking-texto: sin query extra cuando la OC no matchea
+    ningún precio."""
+    if not presupuesto_items:
+        return presupuesto_items
+    item_proceso_ids = [pi["item_proceso_id"] for pi in presupuesto_items]
+    items_proceso = repo.listar_items_proceso_por_ids(client, item_proceso_ids=item_proceso_ids)
+    descripciones_por_item_proceso = {ip["id"]: ip["descripcion"] for ip in items_proceso}
+    return [
+        {**pi, "descripcion": descripciones_por_item_proceso.get(pi["item_proceso_id"], "")}
+        for pi in presupuesto_items
+    ]
 
 
 def rankear_presupuestos_candidatos(
@@ -118,7 +199,7 @@ def rankear_presupuestos_candidatos(
     )["razon_social"]
 
     oc_items = repo.listar_oc_items_precios(client, orden_compra_id=orden_compra_id)
-    precios_oc = [_q2(item["precio_unitario"]) for item in oc_items]
+    renglones_oc = _renglones_oc(oc_items)
 
     procesos = repo.listar_procesos_comerciales_del_cliente(
         client, drogueria_id=drogueria_id, cliente_id=cliente_id
@@ -140,7 +221,7 @@ def rankear_presupuestos_candidatos(
         )
 
     nombre_por_proceso = {proceso["id"]: proceso["nombre"] for proceso in procesos}
-    precios_distintos = sorted({str(precio) for precio in precios_oc})
+    precios_distintos = sorted({str(renglon["precio_unitario"]) for renglon in renglones_oc})
     presupuesto_items = (
         repo.listar_presupuesto_items_por_precio(
             client,
@@ -150,10 +231,11 @@ def rankear_presupuestos_candidatos(
         if precios_distintos
         else []
     )
+    presupuesto_items = _presupuesto_items_con_descripcion(client, presupuesto_items)
 
-    puntuados = _rankear_presupuestos(presupuestos, presupuesto_items, precios_oc)
+    puntuados = _rankear_presupuestos(presupuestos, presupuesto_items, renglones_oc)
 
-    if not puntuados or puntuados[0][1] == 0:
+    if not puntuados or puntuados[0][2] == 0:
         # D2 § Semántica de casos vacíos: presupuestos_del_cliente > 0 pero
         # NINGUNO coincide en precio -- candidatos=[] con advertencia propia,
         # distinta de "sin presupuestos cargados". Esto NO contradice el
@@ -178,7 +260,7 @@ def rankear_presupuestos_candidatos(
 
     top = puntuados[:_TOPE_CANDIDATOS]
     numeros_legacy = repo.buscar_numeros_presupuesto_legacy(
-        get_service_client(), presupuesto_ids=[presupuesto["id"] for presupuesto, _ in top]
+        get_service_client(), presupuesto_ids=[presupuesto["id"] for presupuesto, _, _ in top]
     )
 
     candidatos = [
@@ -190,10 +272,11 @@ def rankear_presupuestos_candidatos(
             estado=presupuesto["estado"],
             generado_at=presupuesto["generado_at"],
             cantidad_items=presupuesto["cantidad_items"],
-            renglones_oc_con_coincidencia=score,
+            renglones_oc_con_coincidencia=puntaje_precio,
+            renglones_oc_con_coincidencia_texto=puntaje_texto,
             renglones_oc_totales=len(oc_items),
         )
-        for presupuesto, score in top
+        for presupuesto, puntaje_texto, puntaje_precio in top
     ]
 
     return PresupuestosCandidatosOut(
@@ -311,11 +394,12 @@ def _candidatos_para_renglon(
 def _top_presupuesto_sugerido(
     client: Client, *, drogueria_id: str, cliente_id: str, oc_items: list[dict[str, Any]]
 ) -> tuple[int, str | None]:
-    """Mismo cálculo que `rankear_presupuestos_candidatos`, sin la
-    enriquecimiento de etiquetas (D2.1) ni el lookup de `razon_social` -- acá
-    solo hace falta el top del ranking para resolver D8.3. Devuelve
-    (presupuestos_del_cliente, presupuesto_id_sugerido_o_None)."""
-    precios_oc = [_q2(item["precio_unitario"]) for item in oc_items]
+    """Mismo cálculo que `rankear_presupuestos_candidatos` (D2 + ranking-texto),
+    sin el enriquecimiento de etiquetas (D2.1) ni el lookup de
+    `razon_social` -- acá solo hace falta el top del ranking para resolver
+    D8.3. Devuelve (presupuestos_del_cliente, presupuesto_id_sugerido_o_None).
+    `oc_items` (`listar_oc_items_completos`) ya trae `descripcion`."""
+    renglones_oc = _renglones_oc(oc_items)
     procesos = repo.listar_procesos_comerciales_del_cliente(
         client, drogueria_id=drogueria_id, cliente_id=cliente_id
     )
@@ -325,7 +409,7 @@ def _top_presupuesto_sugerido(
     if not presupuestos:
         return 0, None
 
-    precios_distintos = sorted({str(precio) for precio in precios_oc})
+    precios_distintos = sorted({str(renglon["precio_unitario"]) for renglon in renglones_oc})
     presupuesto_items = (
         repo.listar_presupuesto_items_por_precio(
             client,
@@ -335,8 +419,9 @@ def _top_presupuesto_sugerido(
         if precios_distintos
         else []
     )
-    puntuados = _rankear_presupuestos(presupuestos, presupuesto_items, precios_oc)
-    if not puntuados or puntuados[0][1] == 0:
+    presupuesto_items = _presupuesto_items_con_descripcion(client, presupuesto_items)
+    puntuados = _rankear_presupuestos(presupuestos, presupuesto_items, renglones_oc)
+    if not puntuados or puntuados[0][2] == 0:
         return len(presupuestos), None
     return len(presupuestos), puntuados[0][0]["id"]
 
