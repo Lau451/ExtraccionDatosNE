@@ -8,6 +8,11 @@ interface Props {
    * estado local del container): permite marcar del lado del presupuesto qué
    * filas son candidatas de ese renglón de OC. */
   renglonOcSeleccionado: RenglonOrdenCompra | null
+  isPending: boolean
+  /** Vínculo manual (T4, backend `confirmar_vinculo`): permite elegir
+   * cualquier renglón del presupuesto para el renglón de OC pendiente
+   * seleccionado, no solo los candidatos por coincidencia de precio. */
+  onVincularManual: (ocItemId: string, presupuestoItemId: string) => void
 }
 
 /** Quita diacríticos y normaliza mayúsculas para comparar texto de forma
@@ -34,7 +39,12 @@ function coincideBusqueda(renglon: RenglonPresupuesto, busqueda: string): boolea
  * frontend): descripción/cantidad/precio/estado por `RenglonPresupuesto`,
  * integrando el aviso de reutilización N:1 por fila (D5), con búsqueda y
  * filtro de candidatos para presupuestos largos (T2). */
-export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) {
+export function ColumnaPresupuesto({
+  renglones,
+  renglonOcSeleccionado,
+  isPending,
+  onVincularManual,
+}: Props) {
   const [busqueda, setBusqueda] = useState('')
   const [soloCandidatos, setSoloCandidatos] = useState(false)
   const haySeleccion = renglonOcSeleccionado !== null
@@ -121,6 +131,18 @@ export function ColumnaPresupuesto({ renglones, renglonOcSeleccionado }: Props) 
               Cant. {renglon.cantidad_ofertada ?? '—'} — ${renglon.precio_unitario}
             </p>
             <AvisoReutilizacion renglon={renglon} />
+            {renglonOcSeleccionado?.estado === 'pendiente' && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() =>
+                  onVincularManual(renglonOcSeleccionado.oc_item_id, renglon.presupuesto_item_id)
+                }
+                className="mt-2 rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40"
+              >
+                Vincular al renglón {renglonOcSeleccionado.numero_renglon} de la OC
+              </button>
+            )}
           </div>
         ))}
       </div>

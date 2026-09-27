@@ -36,7 +36,17 @@ function ordenCompra(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenC
 }
 
 function renderColumna(props: Partial<Parameters<typeof ColumnaPresupuesto>[0]> = {}) {
-  render(<ColumnaPresupuesto renglones={[]} renglonOcSeleccionado={null} {...props} />)
+  const onVincularManual = vi.fn()
+  render(
+    <ColumnaPresupuesto
+      renglones={[]}
+      renglonOcSeleccionado={null}
+      isPending={false}
+      onVincularManual={onVincularManual}
+      {...props}
+    />,
+  )
+  return { onVincularManual }
 }
 
 describe('ColumnaPresupuesto — búsqueda y filtro (spec oc-presupuesto-vinculacion, T2)', () => {
@@ -120,7 +130,12 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
     ]
 
     const { rerender } = render(
-      <ColumnaPresupuesto renglones={renglones} renglonOcSeleccionado={null} />,
+      <ColumnaPresupuesto
+        renglones={renglones}
+        renglonOcSeleccionado={null}
+        isPending={false}
+        onVincularManual={vi.fn()}
+      />,
     )
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
 
@@ -130,6 +145,8 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
         renglonOcSeleccionado={ordenCompra({
           candidatos: [{ presupuesto_item_id: 'pi-2', similitud: null }],
         })}
+        isPending={false}
+        onVincularManual={vi.fn()}
       />,
     )
 
@@ -179,16 +196,62 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
     const renglones = [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })]
 
     const { rerender } = render(
-      <ColumnaPresupuesto renglones={renglones} renglonOcSeleccionado={null} />,
+      <ColumnaPresupuesto
+        renglones={renglones}
+        renglonOcSeleccionado={null}
+        isPending={false}
+        onVincularManual={vi.fn()}
+      />,
     )
 
     rerender(
       <ColumnaPresupuesto
         renglones={renglones}
         renglonOcSeleccionado={ordenCompra({ candidatos: [] })}
+        isPending={false}
+        onVincularManual={vi.fn()}
       />,
     )
 
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('ColumnaPresupuesto — vínculo manual (spec oc-presupuesto-vinculacion, T4)', () => {
+  it('con un renglón de OC pendiente seleccionado, ofrece vincular manualmente cada renglón del presupuesto', () => {
+    const seleccionado = ordenCompra({
+      oc_item_id: 'item-9',
+      numero_renglon: 4,
+      estado: 'pendiente',
+      candidatos: [],
+    })
+
+    const { onVincularManual } = renderColumna({
+      renglones: [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })],
+      renglonOcSeleccionado: seleccionado,
+    })
+
+    const boton = screen.getByRole('button', { name: /vincular al renglón 4 de la oc/i })
+    fireEvent.click(boton)
+
+    expect(onVincularManual).toHaveBeenCalledWith('item-9', 'pi-1')
+  })
+
+  it('sin un renglón de OC pendiente seleccionado, no ofrece el botón de vínculo manual', () => {
+    renderColumna({
+      renglones: [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })],
+      renglonOcSeleccionado: null,
+    })
+
+    expect(screen.queryByRole('button', { name: /vincular al renglón/i })).not.toBeInTheDocument()
+  })
+
+  it('con un renglón de OC ya confirmado seleccionado, no ofrece el botón de vínculo manual', () => {
+    renderColumna({
+      renglones: [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })],
+      renglonOcSeleccionado: ordenCompra({ estado: 'confirmado', candidatos: [] }),
+    })
+
+    expect(screen.queryByRole('button', { name: /vincular al renglón/i })).not.toBeInTheDocument()
   })
 })
