@@ -23,8 +23,9 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
 ## Tasks
 
 - [x] T1 — Candidate radios show `Renglón N — descripción — $precio` (+ similitud) resolved from `renglones_presupuesto`.
-- [ ] T2 — Search box in the budget column filtering by description text or line number; "Solo candidatos" toggle when an OC line is selected.
-- [ ] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
+- [x] T2 — Search box in the budget column filtering by description text or line number; "Solo candidatos" toggle when an OC line is selected.
+- [x] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
+- [x] T5 — Scroll only on OC-line selection change (review follow-up).
 - [ ] T4 — Manual link: with a pending OC line selected, each budget line offers "Vincular a renglón N de la OC"; calls the existing `confirmarVinculo`.
 
 ## Acceptance criteria
@@ -65,3 +66,55 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   Ran: `npx vitest run src/features/oc-matching` -> 4 files / 16 tests passed.
   `npx tsc --noEmit -p .` -> clean.
 - Commit: `40ba8ba`.
+
+### T2 — done
+- Files: `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`,
+  `frontend/src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`
+  (new).
+- RED: new test file with 4 cases (text search, accent/case-insensitive, exact
+  line-number search, toggle disabled without selection, toggle filters with
+  selection) against the pre-T2 component; failed 4/4 —
+  `Unable to find a label with the text of: /buscar en el presupuesto/i` (no
+  search input existed yet). Ran:
+  `npx vitest run src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- GREEN: added local `busqueda`/`soloCandidatos` state, `normalizarTexto`
+  (NFD + strip diacritics) and `coincideBusqueda` helpers, a search `<input
+  type="search">` and a "Solo candidatos" checkbox (disabled without
+  `renglonOcSeleccionado`), and filtered the rendered list through
+  `renglonesFiltrados` (useMemo). Ran: `npx vitest run src/features/oc-matching`
+  -> 5 files / 20 tests passed. `npx tsc --noEmit -p .` -> clean.
+- Note (environmental, pre-existing): `npm run lint` (oxlint) exits 1 on this
+  branch and on the pre-T1 base (`git stash` + rerun reproduced identical exit
+  code and error set) due to `react-hooks(rules-of-hooks)` errors in unrelated
+  route files (`_authenticated.pcp.$pcpId.tsx` and 2 others) plus pre-existing
+  warnings across the app. No lint errors or warnings under
+  `src/features/oc-matching/`. Not introduced by this feature; out of scope
+  for a frontend-only oc-matching change.
+- Commit: `5b5d6dd`.
+
+### T3 — done
+- Files: `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`,
+  `frontend/src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- RED: 2 new tests (scrolls to first candidate on selection change; does
+  nothing when the selected OC line has zero candidates), mocking
+  `Element.prototype.scrollIntoView` since jsdom lacks it. Failed 1/6 —
+  `expected "vi.fn()" to be called 1 times, but got 0 times` (no scroll effect
+  existed yet); the zero-candidate case passed vacuously as expected. Ran:
+  `npx vitest run src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- GREEN: added a `filasRef` map of `presupuesto_item_id -> HTMLDivElement`
+  (via a ref callback on each row) and a `useEffect` keyed on
+  `renglonOcSeleccionado` that calls `nodo?.scrollIntoView?.({ block:
+  'nearest' })` on the first candidate's row, guarded with optional chaining
+  for jsdom. Ran: `npx vitest run src/features/oc-matching` -> 5 files / 22
+  tests passed. `npx tsc --noEmit -p .` -> clean.
+- Commit: `762219b`.
+
+### T5 — scroll follow-up (from review advisory R3-scroll-identity / R3-scroll-test-weak)
+- Authorized by the user ("corregilo ahora").
+- RED: new test "no vuelve a hacer scroll si llega un objeto nuevo del mismo renglón de OC" failed with
+  `expected "vi.fn()" to be called 1 times, but got 2 times`; T3 test now asserts the scrolled row is the
+  first candidate (`mock.contexts[0]` has "Paracetamol"), and `Element.prototype.scrollIntoView` is restored in `afterEach`.
+- GREEN: effect in `ColumnaPresupuesto.tsx` keyed on `oc_item_id` instead of the object reference.
+  `npx vitest run src/features/oc-matching` -> 26 passed; `npm test` -> 39 files / 372 passed;
+  `npx oxlint src/features/oc-matching` -> exit 0; `tsc --noEmit` clean; `npm run build` OK.
+- Route: direct inline (2 files, already-understood fix).
