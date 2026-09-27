@@ -31,7 +31,7 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
 ## Tasks
 
 - [x] T1 — Backend: descriptions for price-matched budget lines + OC line descriptions; pure `_rankear_presupuestos` scores text+price then price; model field; tests.
-- [ ] T2 — Frontend: mirror type + candidate label shows both counts; tests.
+- [x] T2 — Frontend: mirror type + candidate label shows both counts; tests.
 
 ## Acceptance criteria
 
@@ -41,8 +41,11 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
 
 ## Checks
 
-- `venv/Scripts/python -m pytest tests/oc_presupuesto -q`
-- `npm test`, `npm run build`, `npx oxlint src/features/oc-matching` in `frontend/`
+- `venv/Scripts/python -m pytest tests/oc_presupuesto -q` → 75 passed in 99s.
+- `npm test` in `frontend/` → 373 passed (39 files).
+- `npm run build` in `frontend/` → built ok (tsc passes, no CandidatoPresupuesto
+  construction site left unmigrated).
+- `npx oxlint src/features/oc-matching` in `frontend/` → clean, exit 0.
 
 ## Route
 
@@ -78,3 +81,39 @@ Rank candidate budgets for a purchase order by price **and** description, so coi
     `venv/Scripts/python -m pytest tests/oc_presupuesto -q` → 75 passed in 99s (baseline
     70 + 5 new tests; the `renglones_oc_con_coincidencia` integration assertion is
     unaffected since it reads the unchanged price score).
+- T2 done — commit `6db50b6` (`feat(oc-matching): show price+description match count in
+  candidate label`).
+  - `renglones_oc_con_coincidencia_texto: number` mirrored in
+    `frontend/src/lib/api/ocMatching.ts::CandidatoPresupuesto`.
+  - `SelectorPresupuesto.tsx` label changed from `{con_coincidencia}/{totales}
+    coincidencias` to `{con_coincidencia_texto} de {totales} por precio y descripción ·
+    {con_coincidencia} por precio`.
+  - RED: `npx vitest run src/features/oc-matching/components/SelectorPresupuesto.test.tsx`
+    → 1 failed (new label-format test), 3 passed (fixtures updated for the new required
+    field first, so only the new assertion was red).
+  - GREEN: same command → 4 passed.
+  - `OcMatchingDetalle.test.tsx` and `ColumnaPresupuesto.test.tsx` don't construct
+    `CandidatoPresupuesto` objects (only `CandidatoVinculo`), so they needed no fixture
+    changes; confirmed by the full suite and `npm run build` (tsc) below.
+
+### Native review (RDD)
+
+- Assess on `0ec2571..c5011ee`: risk `medium`, `review_due` (`slice_budget_reached`, 538 changed lines).
+- Consent: granted. Lens: reliability. Outcome: approved and acknowledged (lineage `review-bb6dbad4b14ca583`). Reviewed boundary advances to `c5011ee`.
+- Advisory (non-blocking) findings, follow-up candidates:
+  - WARNING `service.py:422-424` — `_top_presupuesto_sugerido` (matching-screen fallback) now ranks text-then-price and reads `items_proceso`, but no test covers that path; only the candidates endpoint is tested end to end.
+  - SUGGESTION `SelectorPresupuesto.test.tsx:80-81` — label assertions use partial regexes; assert the full label string.
+
+### Review follow-ups (user-authorized)
+
+- `944f634` → slice `8670990`: `test_top_presupuesto_sugerido_prioriza_texto_sobre_precio_como_el_ranking` covers the matching-screen fallback (text-first order, one `items_proceso` lookup).
+- `921d695` → slice `e454d4e`: `SelectorPresupuesto` asserts the full label string.
+- Characterization tests (behavior already existed): proven by mutation. Swapping the sort to price-first failed the backend test (1 failed); rendering totals instead of the price count failed the frontend test (1 failed). Code restored.
+- `pytest tests/oc_presupuesto -q` → 76 passed; `npm test` → 373 passed; `npx oxlint src/features/oc-matching` clean.
+
+## Delivery
+
+- Strategy `ask-on-risk` → chain `feature-branch-chain` (cached user choice). Tracker PR (draft) `feat/oc-ranking-texto` → `dev`.
+- `01-backend`: ranking + model + repository + tests (a1b5057, 2619117, 8670990). +467/-68 — over the 400 budget: 266 lines are tests and 80 the feature record; the ranking signature change and its tests cannot land apart. `size:exception` requested.
+- `02-frontend`: mirror type + label + review record + label test (74f9423, 41ca543, b9d4daf, e454d4e, this record). ~+80/-4.
+- Slices rebuilt by cherry-pick from the linear branch; final tree identical to it.
