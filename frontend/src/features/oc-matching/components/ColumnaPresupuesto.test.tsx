@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { ColumnaPresupuesto } from './ColumnaPresupuesto'
 
@@ -113,22 +113,44 @@ describe('ColumnaPresupuesto — búsqueda y filtro (spec oc-presupuesto-vincula
 })
 
 describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vinculacion, T3)', () => {
-  // jsdom no implementa scrollIntoView (T3): se mockea en el prototipo y se
-  // restaura después de cada test para no filtrarlo a otros archivos.
+  // La lista del presupuesto tiene su propio scroll: llevar el candidato a la
+  // vista mueve SOLO esa lista (scrollTo sobre el contenedor), nunca la página
+  // (scrollIntoView desplaza todos los ancestros y saca de la vista la OC).
+  // jsdom no implementa ninguno de los dos ni calcula layout: se mockean
+  // scrollTo/scrollIntoView y offsetTop, y se restauran después de cada test.
+  const scrollToOriginal = Element.prototype.scrollTo
   const scrollIntoViewOriginal = Element.prototype.scrollIntoView
-  afterEach(() => {
-    Element.prototype.scrollIntoView = scrollIntoViewOriginal
+  const offsetTopOriginal = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')
+  let scrollToMock: ReturnType<typeof vi.fn>
+  let scrollIntoViewMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    scrollToMock = vi.fn()
+    scrollIntoViewMock = vi.fn()
+    Element.prototype.scrollTo = scrollToMock as unknown as typeof Element.prototype.scrollTo
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.textContent?.includes('Paracetamol') && this.getAttribute('role') === 'listitem'
+          ? 240
+          : 0
+      },
+    })
   })
 
-  it('al seleccionar un renglón de OC, hace scroll hasta la fila de su primer candidato', () => {
-    const scrollIntoViewMock = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoViewMock
+  afterEach(() => {
+    Element.prototype.scrollTo = scrollToOriginal
+    Element.prototype.scrollIntoView = scrollIntoViewOriginal
+    if (offsetTopOriginal) Object.defineProperty(HTMLElement.prototype, 'offsetTop', offsetTopOriginal)
+  })
 
-    const renglones = [
-      presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' }),
-      presupuesto({ presupuesto_item_id: 'pi-2', descripcion: 'Paracetamol' }),
-    ]
+  const renglones = [
+    presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' }),
+    presupuesto({ presupuesto_item_id: 'pi-2', descripcion: 'Paracetamol' }),
+  ]
 
+  it('al seleccionar un renglón de OC, desplaza solo la lista del presupuesto hasta su primer candidato', () => {
     const { rerender } = render(
       <ColumnaPresupuesto
         renglones={renglones}
@@ -137,7 +159,7 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
         onVincularManual={vi.fn()}
       />,
     )
-    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+    expect(scrollToMock).not.toHaveBeenCalled()
 
     rerender(
       <ColumnaPresupuesto
@@ -150,20 +172,13 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
       />,
     )
 
-    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
-    const filaDesplazada = scrollIntoViewMock.mock.contexts[0] as HTMLElement
-    expect(filaDesplazada).toHaveTextContent('Paracetamol')
-    expect(filaDesplazada).not.toHaveTextContent('Ibuprofeno')
+    expect(scrollToMock).toHaveBeenCalledTimes(1)
+    expect(scrollToMock.mock.contexts[0]).toBe(screen.getByRole('list'))
+    expect(scrollToMock).toHaveBeenCalledWith(expect.objectContaining({ top: 240 }))
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
   })
 
   it('no vuelve a hacer scroll si llega un objeto nuevo del mismo renglón de OC (p. ej. tras confirmar otro renglón)', () => {
-    const scrollIntoViewMock = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoViewMock
-
-    const renglones = [
-      presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' }),
-      presupuesto({ presupuesto_item_id: 'pi-2', descripcion: 'Paracetamol' }),
-    ]
     const seleccionado = () =>
       ordenCompra({ candidatos: [{ presupuesto_item_id: 'pi-2', similitud: null }] })
 
@@ -175,7 +190,7 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
         onVincularManual={vi.fn()}
       />,
     )
-    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+    expect(scrollToMock).toHaveBeenCalledTimes(1)
 
     rerender(
       <ColumnaPresupuesto
@@ -186,15 +201,10 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
       />,
     )
 
-    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
+    expect(scrollToMock).toHaveBeenCalledTimes(1)
   })
 
   it('sin candidatos para el renglón seleccionado, no intenta hacer scroll', () => {
-    const scrollIntoViewMock = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoViewMock
-
-    const renglones = [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })]
-
     const { rerender } = render(
       <ColumnaPresupuesto
         renglones={renglones}
@@ -213,6 +223,7 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
       />,
     )
 
+    expect(scrollToMock).not.toHaveBeenCalled()
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
   })
 })

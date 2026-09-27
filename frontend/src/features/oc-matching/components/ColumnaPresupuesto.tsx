@@ -49,6 +49,7 @@ export function ColumnaPresupuesto({
   const [soloCandidatos, setSoloCandidatos] = useState(false)
   const haySeleccion = renglonOcSeleccionado !== null
   const filasRef = useRef(new Map<string, HTMLDivElement>())
+  const listaRef = useRef<HTMLDivElement>(null)
 
   const idsCandidatos = new Set(
     renglonOcSeleccionado?.candidatos.map((candidato) => candidato.presupuesto_item_id) ?? [],
@@ -69,14 +70,17 @@ export function ColumnaPresupuesto({
   )
 
   // Al cambiar el renglón de OC resaltado, lleva a la vista su primer
-  // candidato (T3): jsdom no implementa `scrollIntoView`, de ahí el
-  // encadenado opcional -- en el navegador real siempre existe.
+  // candidato (T3) desplazando SOLO la lista del presupuesto: `scrollIntoView`
+  // mueve también la página y saca de la vista el renglón de OC elegido. La
+  // lista es `relative`, así que `offsetTop` de la fila es relativo a ella.
+  // jsdom no implementa `scrollTo` en elementos, de ahí el encadenado opcional.
   const ocItemIdSeleccionado = renglonOcSeleccionado?.oc_item_id
   const primerCandidatoId = renglonOcSeleccionado?.candidatos[0]?.presupuesto_item_id
   useEffect(() => {
     if (!primerCandidatoId) return
     const nodo = filasRef.current.get(primerCandidatoId)
-    nodo?.scrollIntoView?.({ block: 'nearest' })
+    if (!nodo) return
+    listaRef.current?.scrollTo?.({ top: nodo.offsetTop })
     // Solo al cambiar la SELECCIÓN (id), no la identidad del objeto: tras
     // confirmar/deshacer/descartar el container reemplaza los datos con
     // setQueryData y el renglón seleccionado llega como objeto nuevo -- no
@@ -108,7 +112,11 @@ export function ColumnaPresupuesto({
         </label>
       </div>
 
-      <div role="list" className="space-y-2">
+      <div
+        ref={listaRef}
+        role="list"
+        className="relative max-h-[70vh] space-y-2 overflow-y-auto pr-1"
+      >
         {renglonesFiltrados.length === 0 && (
           <p className="text-sm text-slate-500">Ningún renglón del presupuesto coincide con la búsqueda.</p>
         )}

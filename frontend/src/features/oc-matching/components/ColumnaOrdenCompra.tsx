@@ -30,7 +30,7 @@ export function ColumnaOrdenCompra({
   return (
     <section aria-label="Renglones de la orden de compra" className="space-y-2">
       <h2 className="text-sm font-semibold text-slate-700">Orden de compra</h2>
-      <div role="list" className="space-y-2">
+      <div role="list" className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
         {renglones.map((renglon) => (
           <RenglonOcFila
             key={renglon.oc_item_id}
