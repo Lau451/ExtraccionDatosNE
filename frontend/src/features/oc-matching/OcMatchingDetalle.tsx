@@ -76,6 +76,14 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
   const isPending =
     confirmarMutation.isPending || deshacerMutation.isPending || descartarMutation.isPending
 
+  // Compartido entre el radio de candidatos (columna derecha) y el vínculo
+  // manual a cualquier renglón del presupuesto (columna izquierda, T4): ambos
+  // terminan en el mismo POST /vinculo -- el backend decide `vinculo_origen`
+  // según si el precio coincide o no.
+  function confirmarVinculoDe(ocItemId: string, presupuestoItemId: string) {
+    confirmarMutation.mutate({ ocItemId, presupuestoItemId })
+  }
+
   function elegirPresupuesto(id: string) {
     navigate({
       to: '/ordenes-compra/$ordenCompraId/matching',
@@ -128,6 +136,8 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
         <ColumnaPresupuesto
           renglones={matching.renglones_presupuesto}
           renglonOcSeleccionado={renglonSeleccionado}
+          isPending={isPending}
+          onVincularManual={confirmarVinculoDe}
         />
         <ColumnaOrdenCompra
           renglones={matching.renglones_oc}
@@ -136,7 +146,7 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
           presupuestoPorId={presupuestoPorId}
           onSeleccionar={setRenglonSeleccionadoId}
           onConfirmar={(ocItemId, presupuestoItemId) =>
-            confirmarMutation.mutate({ ocItemId, presupuestoItemId })
+            confirmarVinculoDe(ocItemId, presupuestoItemId)
           }
           onDeshacer={(ocItemId) => deshacerMutation.mutate(ocItemId)}
           onDescartar={(ocItemId) => descartarMutation.mutate(ocItemId)}

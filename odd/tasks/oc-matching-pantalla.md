@@ -25,8 +25,8 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
 - [x] T1 — Candidate radios show `Renglón N — descripción — $precio` (+ similitud) resolved from `renglones_presupuesto`.
 - [x] T2 — Search box in the budget column filtering by description text or line number; "Solo candidatos" toggle when an OC line is selected.
 - [x] T3 — Selecting an OC line scrolls the first candidate into view in the budget column.
+- [x] T4 — Manual link: with a pending OC line selected, each budget line offers "Vincular a renglón N de la OC"; calls the existing `confirmarVinculo`.
 - [x] T5 — Scroll only on OC-line selection change (review follow-up).
-- [ ] T4 — Manual link: with a pending OC line selected, each budget line offers "Vincular a renglón N de la OC"; calls the existing `confirmarVinculo`.
 
 ## Acceptance criteria
 
@@ -109,6 +109,55 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   tests passed. `npx tsc --noEmit -p .` -> clean.
 - Commit: `762219b`.
 
+### T4 — done
+- Files: `frontend/src/features/oc-matching/components/ColumnaPresupuesto.tsx`,
+  `frontend/src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`,
+  `frontend/src/features/oc-matching/OcMatchingDetalle.tsx`.
+- RED: 3 new tests (button present and wired for a pending selected OC line;
+  absent with no selection; absent for a confirmed OC line). Failed 1/9 —
+  `Unable to find an accessible element with the role "button" and name
+  /vincular al renglón 4 de la oc/i` (button did not exist yet); the two
+  "absent" cases passed vacuously. Ran:
+  `npx vitest run src/features/oc-matching/components/ColumnaPresupuesto.test.tsx`.
+- GREEN: added `isPending`/`onVincularManual` props to `ColumnaPresupuesto`,
+  rendered a "Vincular al renglón N de la OC" button per budget row when
+  `renglonOcSeleccionado?.estado === 'pendiente'`; in `OcMatchingDetalle`,
+  factored `confirmarVinculoDe(ocItemId, presupuestoItemId)` (calls the
+  existing `confirmarMutation`, unchanged backend contract) and reused it for
+  both `ColumnaOrdenCompra`'s `onConfirmar` and `ColumnaPresupuesto`'s
+  `onVincularManual`. Ran: `npx vitest run src/features/oc-matching` -> 5
+  files / 25 tests passed. `npx tsc --noEmit -p .` -> clean.
+- Commit: `7843dc2`.
+
+### Final verification (all tasks)
+
+Run in `frontend/`:
+
+- `npm test`: 39 files / 371 tests passed.
+- `npm run lint`: exit 1 — 3 pre-existing `react-hooks(rules-of-hooks)` errors
+  in `src/routes/_authenticated.pcp.$pcpId.tsx`,
+  `_authenticated.pcp.$pcpId.renglones.$renglonId.tsx`,
+  `_authenticated.pcp.consultas.$consultaId.tsx`, plus pre-existing warnings
+  across unrelated features (`only-export-components`, `set-state-in-effect`,
+  one `exhaustive-deps` in `AuthContext.tsx`). Verified pre-existing by
+  `git stash` back to the pre-T1 base commit (9755396) and rerunning: same
+  exit code, same 3 errors, same warning set. Zero errors/warnings under
+  `src/features/oc-matching/`. Not caused by this feature and out of scope for
+  a frontend-only oc-matching change.
+- `npm run build`: succeeded (`✓ built in 482ms`).
+
+### Status: done (functionally), `npm run lint` reported as partial only
+because of the pre-existing unrelated failures documented above.
+
+### Native review (RDD)
+
+- Assess on `9755396..a2b7225`: risk `medium`, `review_due` (`slice_budget_reached`, 586 changed lines).
+- Consent: granted. Lens: reliability. Outcome: approved and acknowledged (lineage `review-0ebd30c6b636fb28`). Reviewed boundary advances to `a2b7225`.
+- Advisory (non-blocking) findings, follow-up candidates:
+  - WARNING `ColumnaPresupuesto.tsx:74-79` — scroll effect keys on the `renglonOcSeleccionado` object reference; after confirm/undo/discard `setQueryData` yields a new object, so the column may jump back to the first candidate without a selection change.
+  - WARNING `ColumnaPresupuesto.test.tsx:116-148` — T3 test does not assert which row scrolled, never restores `Element.prototype.scrollIntoView`.
+  - SUGGESTION — empty-state message when search matches nothing; fallback candidate label and manual-link pending state untested.
+
 ### T5 — scroll follow-up (from review advisory R3-scroll-identity / R3-scroll-test-weak)
 - Authorized by the user ("corregilo ahora").
 - RED: new test "no vuelve a hacer scroll si llega un objeto nuevo del mismo renglón de OC" failed with
@@ -118,3 +167,12 @@ Frontend only (`frontend/src/features/oc-matching/`). No backend or API contract
   `npx vitest run src/features/oc-matching` -> 26 passed; `npm test` -> 39 files / 372 passed;
   `npx oxlint src/features/oc-matching` -> exit 0; `tsc --noEmit` clean; `npm run build` OK.
 - Route: direct inline (2 files, already-understood fix).
+
+## Delivery
+
+- Strategy: `ask-on-risk` → chain strategy `feature-branch-chain` (user choice, 2026-09-27).
+- Tracker PR #66 (draft, `feat/oc-matching-pantalla` → `dev`).
+- #67 `01-candidatos` (T1, 40ba8ba + 867f4ff) → base tracker, +162/-8.
+- #68 `02-busqueda` (T2, T3, T5: 5b5d6dd, 3b39463, 762219b, c2cd3b0, 9e4fc3d) → base #67, +336/-4.
+- #69 `03-vinculo-manual` (T4: 2e9442d + this record) → base #68, +150/-6.
+- Slices were rebuilt by cherry-pick from the original linear branch; the final tree of #69 is identical to it (`git diff --quiet`). Tests and `tsc` were re-run green on #67 and #68.
