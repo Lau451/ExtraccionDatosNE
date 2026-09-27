@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
@@ -47,6 +47,15 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
   function reemplazarCache(resultado: MatchingOut) {
     queryClient.setQueryData(matchingQueryKey, resultado)
   }
+
+  // Mapa presupuesto_item_id -> RenglonPresupuesto (design.md D13): resuelve
+  // la etiqueta de cada candidato en `RenglonOcFila` sin volver a pedirle nada
+  // al servidor. Se calcula antes de los `return` tempranos de abajo para no
+  // romper el orden de hooks.
+  const presupuestoPorId = useMemo(() => {
+    const renglones = matchingQuery.data?.renglones_presupuesto ?? []
+    return new Map(renglones.map((renglon) => [renglon.presupuesto_item_id, renglon]))
+  }, [matchingQuery.data])
 
   const confirmarMutation = useMutation({
     mutationFn: ({ ocItemId, presupuestoItemId }: { ocItemId: string; presupuestoItemId: string }) =>
@@ -124,6 +133,7 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
           renglones={matching.renglones_oc}
           renglonSeleccionadoId={renglonSeleccionadoId}
           isPending={isPending}
+          presupuestoPorId={presupuestoPorId}
           onSeleccionar={setRenglonSeleccionadoId}
           onConfirmar={(ocItemId, presupuestoItemId) =>
             confirmarMutation.mutate({ ocItemId, presupuestoItemId })

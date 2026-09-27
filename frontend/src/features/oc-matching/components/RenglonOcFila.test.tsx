@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { RenglonOrdenCompra } from '@/lib/api/ocMatching'
+import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { RenglonOcFila } from './RenglonOcFila'
 
 function renglon(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenCompra {
@@ -19,6 +19,22 @@ function renglon(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenCompr
   }
 }
 
+function presupuesto(overrides: Partial<RenglonPresupuesto> = {}): RenglonPresupuesto {
+  return {
+    presupuesto_item_id: 'pi-1',
+    item_proceso_id: 'ip-1',
+    numero_renglon: 1,
+    descripcion: 'Ibuprofeno 400mg x 20',
+    cantidad_ofertada: 10,
+    precio_unitario: 1250,
+    producto_id: null,
+    renglones_oc_vinculados: 0,
+    renglones_oc_vinculados_otras_oc: 0,
+    cantidad_vinculada: 0,
+    ...overrides,
+  }
+}
+
 function renderFila(overrides: Partial<RenglonOrdenCompra> = {}, props: Partial<Parameters<typeof RenglonOcFila>[0]> = {}) {
   const onSeleccionar = vi.fn()
   const onConfirmar = vi.fn()
@@ -29,6 +45,7 @@ function renderFila(overrides: Partial<RenglonOrdenCompra> = {}, props: Partial<
       renglon={renglon(overrides)}
       seleccionado={false}
       isPending={false}
+      presupuestoPorId={new Map()}
       onSeleccionar={onSeleccionar}
       onConfirmar={onConfirmar}
       onDeshacer={onDeshacer}
@@ -71,6 +88,46 @@ describe('RenglonOcFila (design.md D4/D13, spec oc-presupuesto-vinculacion)', ()
     fireEvent.click(radios[1])
     fireEvent.click(boton)
     expect(onConfirmar).toHaveBeenCalledWith('pi-2')
+  })
+
+  it('varios candidatos: la etiqueta muestra renglón, descripción y precio del presupuesto, nunca el UUID', () => {
+    const presupuestoPorId = new Map([
+      [
+        'pi-1',
+        presupuesto({
+          presupuesto_item_id: 'pi-1',
+          numero_renglon: 3,
+          descripcion: 'Ibuprofeno 400mg x 20',
+          precio_unitario: 1200,
+        }),
+      ],
+      [
+        'pi-2',
+        presupuesto({
+          presupuesto_item_id: 'pi-2',
+          numero_renglon: 7,
+          descripcion: 'Paracetamol 500mg x 10',
+          precio_unitario: 500,
+        }),
+      ],
+    ])
+
+    renderFila(
+      {
+        candidatos: [
+          { presupuesto_item_id: 'pi-1', similitud: 91 },
+          { presupuesto_item_id: 'pi-2', similitud: null },
+        ],
+      },
+      { presupuestoPorId },
+    )
+
+    expect(
+      screen.getByText('Renglón 3 — Ibuprofeno 400mg x 20 — $1200 — 91% similitud'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Renglón 7 — Paracetamol 500mg x 10 — $500')).toBeInTheDocument()
+    expect(screen.queryByText('pi-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('pi-2')).not.toBeInTheDocument()
   })
 
   it('cero candidatos: el estado pendiente queda visible y no bloquea la fila (sigue permitiendo descartar)', () => {
