@@ -61,7 +61,17 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
   - TDD deviation (reported by the writer): the module and its tests were written together rather than strictly one RED per unit. The tests were then run against the TEST DB.
   - Writer cleaned 8 orphan test droguerias in the TEST DB left by a fixture bug during development.
   - Size: about 750 production lines and 1100 test lines (above the advisory 400; one coherent API).
-- [ ] T4 — Frontend planning screen + entry from OC matching + tests.
+- [x] T4 — Frontend planning screen + entry from OC matching + tests.
+  - `02197bf`: API client `frontend/src/lib/api/ocEntregas.ts` + pure `features/oc-entregas/sugerirPlan.ts` (port of `sugerir_plan_renglon`). RED: unresolved import. GREEN: 11/11 incl. 100/25/3 → 50/25/25 and 110/25/3 → 50/25/35.
+  - `33247d3`: `PlanificacionEntregas.tsx` + route `/ordenes-compra/:id/entregas` (`routes/_authenticated.ordenes-compra.$ordenCompraId.entregas.tsx`, `routeTree.gen.ts` regenerated).
+    - The grid starts from `plan_actual` or `plan_sugerido`, and N (1–24) recomputes the suggestion.
+    - Cells show non-blocking warnings with "usar N". Save is disabled on a row mismatch.
+    - Locked plan → read-only. Blocked → `motivo` + back link.
+    - RED: unresolved import. GREEN: 10/10.
+  - `7bb7d7f`: "Planificar entregas" button in `OcMatchingDetalle.tsx`, disabled with a hint while any line is pending. RED: 2 failing. GREEN: 5/5.
+  - `EntregasEditor.tsx` evaluated and not reused: it is keyed by position, with no dates or warnings. It stays unused, kept since tramo2 for a possible future reuse.
+  - Writer: `npm test` 405 passed, `tsc --noEmit` clean, oxlint only pre-existing warnings. `npm run build` fails at `tsc -b` on a pre-existing error in `oc-matching/components/ColumnaPresupuesto.test.tsx:147` (`scrollIntoView` mock typing, file last changed in `000b346` on `dev`, untouched here). `vite build` alone succeeds.
+  - Parent spot check: `npx vitest run src/features/oc-entregas src/features/oc-matching` → 56 passed; `npx tsc -b` reproduces only the pre-existing error.
 
 ## Acceptance criteria
 
@@ -110,9 +120,29 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
   - `3c8a57c`: test cleanup guard.
   - `pytest tests/oc_entregas -q` → 52 passed (parent spot check). Assess `c7b3736..3c8a57c`: medium, `under_budget`, pending in the slice.
 
+- RDD fixes+T4 (`c7b3736..d873e81`): medium, `slice_budget_reached` → consent granted → `review-reliability` → approved, acknowledged (lineage `review-6eda349a54886c47`). Reviewed boundary is now `d873e81`.
+  - `82a2e96` fixed the advisories. Decimal fields travel as JSON strings (verified with a router test on the real DB) and are now parsed at the `ocEntregas.ts` boundary. Row sums are rounded to cents. A delivery with every line at 0 blocks Save. The planning query is invalidated after save. Frontend `npm test` → 413 passed; `pytest tests/oc_entregas` → 52 passed. Assess `d873e81..82a2e96`: medium, `under_budget` (375 lines), pending in the slice.
+  - Residual, not fixed: in the rare race where a delivery leaves `pendiente` during a replace, the still-pending deliveries were already deleted before the 409.
+  - Follow-up out of scope: `frontend/src/lib/api/ocMatching.ts` also types Decimal fields as `number` without parsing, so `AvisoReutilizacion.tsx` compares strings.
+- Browser check (parent, TEST DB, user-authorized on OC 986 `e57f8b69-…`):
+  - With 7 pending lines, the planning screen shows the blocked message, and the matching button is disabled with a hint.
+  - After 1 discard + 6 confirms in matching, the button is enabled. The grid shows presentations x10/x1/x5/x30/x60/x30 and the discarded note.
+  - N=3 suggestion is correct (800 x10 → 270/270/260; 400 x5 → 135/135/130).
+  - 275 shows "No es múltiplo de 10. usar 270", restante −5 in red, Save disabled.
+  - After fixing the sum (275/270/255), save succeeds with the server advertencias.
+  - DB: 3 `pendiente` deliveries × 6 items, totals 9320 = sum of confirmed lines, no discarded line, `cantidad_entregas = 3`. Reload shows `plan_actual`.
+  - Original state of OC 986 (to restore): all 7 `oc_items` had NULL `producto_id`/`presupuesto_item_id`/`vinculo_origen`/`vinculo_confirmado_at`, `vinculo_descartado = false`, `cantidad_entregas = 1`, and no `entregas_oc`.
+
+## Pull requests (stacked to `dev`, user-approved 2026-09-28)
+
+- #75 `feat/oc-entregas-1-prep` (up to `579cfc8`, T1+T2) → `dev`.
+- #76 `feat/oc-entregas-2-api` (up to `4fc494d`, T3 + fixes) → #75.
+- #77 `feat/oc-entregas-planificacion` (up to HEAD, T4 + fixes) → #76.
+- All three exceed the 400-line budget, mostly because of tests. After one slicing pass, `size:exception` was recommended in each PR body.
+
 ## Next step
 
-T4 (frontend planning screen).
+Review and merge #75 → #76 → #77 in order, retargeting each child to `dev` after its parent merges. Then parts 4–6, which need a real Progress CSV sample.
 
 ## Historical note (T3 brief)
 
