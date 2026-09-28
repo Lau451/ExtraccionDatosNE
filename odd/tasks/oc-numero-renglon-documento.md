@@ -59,3 +59,10 @@ An OC can be materialized from a group of extractions whose documents repeat lin
 ## Progress
 
 - Branch `feat/oc-matching-numero-renglon` from `dev` @ c2cadef.
+
+## Parent verification
+
+- Migration 0030 applied to the TEST project (`grnamollopxdlstcpxhc`) via Supabase MCP `apply_migration`.
+- `pytest tests/oc_presupuesto tests/extraccion/test_orden_compra.py tests/extraccion/test_service.py -q` → 199 passed (the integration failures reported as pending-migration are gone).
+- Browser on OC 986: without document numbers → "Renglón 1..7", button "Vincular al renglón 5". After setting OC 986's document numbers from its extraction CSV (TEST DB, data-only) → "Renglón 7, 16, 27, 4 (fallback, extraction had none), 38, 40, 41", button "Vincular al renglón 38 de la OC".
+- RDD assess `c2cadef..HEAD`: medium, `under_budget` → no review due.
