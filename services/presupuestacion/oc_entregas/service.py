@@ -354,6 +354,11 @@ def planificar_entregas(
     _validar_renglones_y_cantidades(entregas_ordenadas, confirmados)
     _validar_sumas_por_renglon(entregas_ordenadas, confirmados)
 
+    # Fix de review: TODAS las lecturas (acá, unidades de pack por renglón)
+    # ocurren ANTES de tocar el plan existente -- si esta lectura falla, el
+    # plan viejo queda intacto porque el borrado de abajo ni se intenta.
+    unidades_por_id = _unidades_por_oc_item(client, confirmados)
+
     # Reemplazo (D4 § PUT "solo mientras esté pendiente"): se borra el plan
     # anterior (siempre 'pendiente', ya verificado arriba) ANTES de insertar
     # el nuevo. Bug de no atomicidad (idéntico al de
@@ -363,9 +368,18 @@ def planificar_entregas(
     # (compensación manual, catch de abajo) en vez de con un plan mixto
     # viejo+nuevo -- un estado más seguro para reintentar.
     if entregas_existentes:
-        repo.borrar_entregas_oc(client, orden_compra_id=orden_compra_id)
+        borradas = repo.borrar_entregas_oc(client, orden_compra_id=orden_compra_id)
+        # Fix de review: cierra la ventana check-then-act entre el chequeo de
+        # arriba y este delete -- `borrar_entregas_oc` solo borra filas que
+        # SIGUEN en 'pendiente' (filtro en el repository). Si algo pasó a otro
+        # estado entremedio, la cantidad borrada no coincide con la leída y el
+        # plan se trata como bloqueado, con el mismo 409 de arriba, sin
+        # insertar nada nuevo.
+        if len(borradas) != len(entregas_existentes):
+            raise ConflictError(
+                "El plan está bloqueado: ya hay una entrega que dejó de estar 'pendiente'."
+            )
 
-    unidades_por_id = _unidades_por_oc_item(client, confirmados)
     entregas_out: list[EntregaPlanOut] = []
     algo_insertado = False
     try:

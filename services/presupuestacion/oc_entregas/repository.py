@@ -96,15 +96,29 @@ def listar_entregas_oc_items(
     return items
 
 
-def borrar_entregas_oc(client: Client, *, orden_compra_id: str) -> None:
-    """Reemplazo de plan (D4, PUT § "solo mientras esté pendiente"): borra
-    TODAS las `entregas_oc` de esta OC -- `fk_eoci_ent ... ON DELETE CASCADE`
-    (docs/schema/extractor_final.sql) se lleva puestas sus
+def borrar_entregas_oc(client: Client, *, orden_compra_id: str) -> list[dict[str, Any]]:
+    """Reemplazo de plan (D4, PUT § "solo mientras esté pendiente"): borra las
+    `entregas_oc` de esta OC que SIGUEN en 'pendiente' -- `fk_eoci_ent ... ON
+    DELETE CASCADE` (docs/schema/extractor_final.sql) se lleva puestas sus
     `entregas_oc_items` sin necesidad de un segundo delete. El caller ya
     verificó que ninguna esté en un estado distinto de 'pendiente' antes de
     llamar acá (si no, el plan está bloqueado y ni siquiera se llega a este
-    punto)."""
-    client.table("entregas_oc").delete().eq("orden_compra_id", orden_compra_id).execute()
+    punto).
+
+    Fix de review: el filtro `estado = 'pendiente'` (en vez de borrar por
+    `orden_compra_id` solo) cierra la ventana check-then-act entre esa
+    verificación y este delete -- si una fila pasó a otro estado entremedio,
+    no se borra acá. Devuelve las filas efectivamente borradas para que el
+    caller compare la cantidad contra lo que había leído antes y aborte si no
+    coincide."""
+    return (
+        client.table("entregas_oc")
+        .delete()
+        .eq("orden_compra_id", orden_compra_id)
+        .eq("estado", "pendiente")
+        .execute()
+        .data
+    )
 
 
 def actualizar_cantidad_entregas(

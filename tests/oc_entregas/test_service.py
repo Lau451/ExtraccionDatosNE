@@ -381,9 +381,16 @@ def test_planificar_suma_no_coincide_con_cantidad_del_renglon_da_validation_erro
         )
 
 
-def _mockear_escritura(monkeypatch):
+def _mockear_escritura(monkeypatch, *, filas_borradas: list[dict] | None = None):
     """Espía de los inserts/updates (T3 § reemplazo). Devuelve los espías
-    para que cada test assert sobre lo que se llamó."""
+    para que cada test assert sobre lo que se llamó.
+
+    `filas_borradas`: lo que `repo.borrar_entregas_oc` devuelve (fix de
+    review: ahora el service compara esta cantidad contra la de
+    `entregas_existentes` leída antes). Por default, una sola fila -- alcanza
+    para los tests que reemplazan un plan de una sola entrega existente; los
+    tests que necesitan simular un borrado parcial (ventana TOCTOU) pasan su
+    propia lista."""
     entregas_creadas: list[dict] = []
     items_insertados: list[list[dict]] = []
     borrados: list[str] = []
@@ -399,6 +406,7 @@ def _mockear_escritura(monkeypatch):
 
     def _borrar(client, **kw):
         borrados.append(kw["orden_compra_id"])
+        return filas_borradas if filas_borradas is not None else [{"id": "entrega-vieja-borrada"}]
 
     def _actualizar(client, **kw):
         actualizaciones.append(kw)
@@ -409,6 +417,35 @@ def _mockear_escritura(monkeypatch):
     monkeypatch.setattr(repo, "borrar_entregas_oc", _borrar)
     monkeypatch.setattr(repo, "actualizar_cantidad_entregas", _actualizar)
     return entregas_creadas, items_insertados, borrados, actualizaciones
+
+
+def test_planificar_falla_de_lectura_antes_de_reemplazar_no_borra_el_plan_existente(monkeypatch):
+    """Fix de review: TODAS las lecturas (acá, `_unidades_por_oc_item` /
+    `listar_productos_por_ids`) deben ocurrir ANTES de borrar el plan
+    existente -- si una lectura falla, el plan viejo queda intacto (el borrado
+    ni se intenta)."""
+    _mockear_lectura_basica(
+        monkeypatch,
+        oc_items=[_oc_item("i1", cantidad="100", producto_id="prod-1")],
+        entregas_existentes=[
+            {"id": "e-vieja", "numero_entrega": 1, "fecha_entrega_planificada": None, "estado": "pendiente"}
+        ],
+    )
+
+    def _listar_productos_falla(client, **kw):
+        raise RuntimeError("lectura de productos falló")
+
+    monkeypatch.setattr(repo, "listar_productos_por_ids", _listar_productos_falla)
+    borrar_espia = MagicMock()
+    monkeypatch.setattr(repo, "borrar_entregas_oc", borrar_espia)
+
+    entregas = [_entrega_in(1, [("i1", "100")])]
+    with pytest.raises(RuntimeError, match="falló"):
+        service.planificar_entregas(
+            MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", usuario_id="u1", entregas=entregas
+        )
+
+    borrar_espia.assert_not_called()
 
 
 def test_planificar_ok_crea_entregas_e_items_y_actualiza_cantidad_entregas(monkeypatch):
@@ -447,6 +484,33 @@ def test_planificar_ok_reemplaza_plan_pendiente_existente(monkeypatch):
     )
 
     assert borrados == ["oc-1"]  # el plan viejo (pendiente) SÍ se reemplaza
+
+
+def test_planificar_borrado_parcial_del_plan_anterior_aborta_como_bloqueado(monkeypatch):
+    """Fix de review: si `borrar_entregas_oc` (filtrado por `estado =
+    'pendiente'`) borra MENOS filas de las que se habían leído como
+    existentes, algo cambió de estado entremedio (ventana check-then-act) --
+    el service aborta con el mismo 409 de "plan bloqueado" y no inserta
+    nada nuevo."""
+    _mockear_lectura_basica(
+        monkeypatch,
+        oc_items=[_oc_item("i1", cantidad="100")],
+        entregas_existentes=[
+            {"id": "e1", "numero_entrega": 1, "fecha_entrega_planificada": None, "estado": "pendiente"},
+            {"id": "e2", "numero_entrega": 2, "fecha_entrega_planificada": None, "estado": "pendiente"},
+        ],
+    )
+    entregas_creadas, _items, _borrados, _actualizaciones = _mockear_escritura(
+        monkeypatch, filas_borradas=[{"id": "e1"}]  # solo 1 de las 2 seguía 'pendiente' al borrar
+    )
+
+    entregas = [_entrega_in(1, [("i1", "100")])]
+    with pytest.raises(ConflictError, match="bloqueado"):
+        service.planificar_entregas(
+            MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", usuario_id="u1", entregas=entregas
+        )
+
+    assert entregas_creadas == []  # no se insertó nada nuevo
 
 
 def test_planificar_omite_items_en_cero_al_insertar_pero_los_valida(monkeypatch):
