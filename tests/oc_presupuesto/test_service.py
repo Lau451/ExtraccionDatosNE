@@ -1602,3 +1602,50 @@ def test_sesion_completa_no_modifica_estado_matching_ni_confianza_matching(
 
     despues = _snapshot()
     assert antes == despues
+
+
+# =============================================================================
+# Similitud tolerante a OCR sin espacios (opción A): letras y números pegados
+# ("LOSARTAN50MGCOMP") se separan antes de comparar, solo en este módulo.
+# =============================================================================
+
+
+def test_normalizar_para_similitud_separa_letras_de_numeros():
+    assert service._normalizar_para_similitud("LACOSAMIDA100MGCOMP.") == "LACOSAMIDA 100 MGCOMP"
+    assert service._normalizar_para_similitud("Isof100ui 3ml") == "ISOF 100 UI 3 ML"
+
+
+def test_rankear_puntaje_texto_tolera_descripcion_de_oc_sin_espacios():
+    """OCR sin espacios: "LOSARTAN50MGCOMP" contra "LOSARTAN POTASICO 50 MG COMP
+    X 30 GADOR" da 62 sin separar (no llega a 70) y 86 separando."""
+    ranking = service._rankear_presupuestos(
+        [_presupuesto("A")],
+        [
+            {
+                "presupuesto_id": "A",
+                "precio_unitario": Decimal("100.00"),
+                "descripcion": "LOSARTAN POTASICO 50 MG COMP X 30 GADOR",
+            }
+        ],
+        [{"precio_unitario": Decimal("100.00"), "descripcion": "LOSARTAN50MGCOMP"}],
+    )
+
+    assert [(p["id"], texto, precio) for p, texto, precio in ranking] == [("A", 1, 1)]
+
+
+def test_rankear_puntaje_texto_no_confunde_productos_distintos_con_la_misma_dosis():
+    """Control negativo: separar letras de números no debe hacer pasar el umbral
+    a otro principio activo con la misma dosis y presentación."""
+    ranking = service._rankear_presupuestos(
+        [_presupuesto("A")],
+        [
+            {
+                "presupuesto_id": "A",
+                "precio_unitario": Decimal("100.00"),
+                "descripcion": "PARACETAMOL 400 MG COMP",
+            }
+        ],
+        [{"precio_unitario": Decimal("100.00"), "descripcion": "IBUPROFENO400MGCOMP"}],
+    )
+
+    assert [(p["id"], texto, precio) for p, texto, precio in ranking] == [("A", 0, 1)]

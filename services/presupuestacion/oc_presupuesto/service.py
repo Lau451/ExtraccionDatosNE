@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -32,6 +33,12 @@ _TOPE_CANDIDATOS = 5
 # matcheado SUMA además al puntaje de texto.
 _UMBRAL_SIMILITUD_TEXTO = 70
 
+# Frontera letra↔dígito ("LOSARTAN50MGCOMP" -> "LOSARTAN 50 MGCOMP"): el OCR
+# de OCs escaneadas pega palabras y dosis. Solo para comparar en este módulo
+# -- normalizar_descripcion no cambia porque es la clave de
+# cliente_producto_alias (matching), y cambiarla invalidaría alias guardados.
+_FRONTERA_LETRA_DIGITO = re.compile(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
+
 
 def _q2(valor: Any) -> Decimal:
     """Normaliza escala de precio a 2 decimales (D3): ambas columnas son
@@ -58,6 +65,14 @@ def _epoch_ordenable(generado_at: Any) -> float:
     return dt.timestamp()
 
 
+def _normalizar_para_similitud(texto: str) -> str:
+    """`normalizar_descripcion` + separar letras de dígitos pegados, para que
+    una descripción de OC sin espacios ("LACOSAMIDA100MGCOMP.") compare contra
+    la del presupuesto ("LACOSAMIDA 100 MG COMP") con la dosis como token
+    propio. Letras pegadas a letras ("MGCOMP") no se pueden separar."""
+    return normalizar_descripcion(_FRONTERA_LETRA_DIGITO.sub(" ", texto))
+
+
 def _mejor_similitud_texto(descripcion_oc: str, descripciones_candidatas: list[str]) -> float:
     """WRatio máximo entre `descripcion_oc` y cada descripción CANDIDATA al
     mismo precio (misma maquinaria y normalización que
@@ -66,10 +81,10 @@ def _mejor_similitud_texto(descripcion_oc: str, descripciones_candidatas: list[s
     Sin descripción de OC o sin ninguna candidata no vacía, no hay nada que
     comparar: 0.0 -- nunca alcanza `_UMBRAL_SIMILITUD_TEXTO`, pero tampoco
     rompe (ni max() sobre secuencia vacía)."""
-    candidatas_no_vacias = [normalizar_descripcion(d) for d in descripciones_candidatas if d]
+    candidatas_no_vacias = [_normalizar_para_similitud(d) for d in descripciones_candidatas if d]
     if not descripcion_oc or not candidatas_no_vacias:
         return 0.0
-    normalizado_oc = normalizar_descripcion(descripcion_oc)
+    normalizado_oc = _normalizar_para_similitud(descripcion_oc)
     return max(fuzz.WRatio(normalizado_oc, candidata) for candidata in candidatas_no_vacias)
 
 
@@ -311,9 +326,9 @@ def _ordenar_por_similitud(
     if len(candidatos) <= 1:
         return [(pid, None) for pid in candidatos]
 
-    choices = {pid: normalizar_descripcion(desc) for pid, desc in candidatos.items()}
+    choices = {pid: _normalizar_para_similitud(desc) for pid, desc in candidatos.items()}
     resultados = process.extract(
-        normalizar_descripcion(descripcion_oc), choices, scorer=fuzz.WRatio, limit=None
+        _normalizar_para_similitud(descripcion_oc), choices, scorer=fuzz.WRatio, limit=None
     )
     return [(pid, Decimal(str(round(score, 2)))) for _, score, pid in resultados]
 
