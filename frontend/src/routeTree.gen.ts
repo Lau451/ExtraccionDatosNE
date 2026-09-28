@@ -31,6 +31,7 @@ import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
+import { Route as AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.entregas'
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.matching'
 import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
 import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
@@ -154,6 +155,12 @@ const AuthenticatedValidarExtraccionExtractionIdRoute =
     path: '/validar-extraccion/$extractionId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute =
+  AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport.update({
+    id: '/ordenes-compra/$ordenCompraId/entregas',
+    path: '/ordenes-compra/$ordenCompraId/entregas',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute =
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport.update({
     id: '/ordenes-compra/$ordenCompraId/matching',
@@ -195,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/productos/': typeof AuthenticatedProductosIndexRoute
   '/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
@@ -218,6 +226,7 @@ export interface FileRoutesByTo {
   '/productos': typeof AuthenticatedProductosIndexRoute
   '/terceros': typeof AuthenticatedTercerosIndexRoute
   '/validar-extraccion': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
@@ -246,6 +255,7 @@ export interface FileRoutesById {
   '/_authenticated/productos/': typeof AuthenticatedProductosIndexRoute
   '/_authenticated/terceros/': typeof AuthenticatedTercerosIndexRoute
   '/_authenticated/validar-extraccion/': typeof AuthenticatedValidarExtraccionIndexRoute
+  '/_authenticated/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/productos/'
     | '/terceros/'
     | '/validar-extraccion/'
+    | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
@@ -297,6 +308,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/terceros'
     | '/validar-extraccion'
+    | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
     | '/pcp/$pcpId/renglones/$renglonId'
@@ -324,6 +336,7 @@ export interface FileRouteTypes {
     | '/_authenticated/productos/'
     | '/_authenticated/terceros/'
     | '/_authenticated/validar-extraccion/'
+    | '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
     | '/_authenticated/ordenes-compra/$ordenCompraId/matching'
     | '/_authenticated/pcp/consultas/$consultaId'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
@@ -492,6 +505,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/ordenes-compra/$ordenCompraId/entregas': {
+      id: '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
+      path: '/ordenes-compra/$ordenCompraId/entregas'
+      fullPath: '/ordenes-compra/$ordenCompraId/entregas'
+      preLoaderRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/ordenes-compra/$ordenCompraId/matching': {
       id: '/_authenticated/ordenes-compra/$ordenCompraId/matching'
       path: '/ordenes-compra/$ordenCompraId/matching'
@@ -593,6 +613,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSuperadminEmpresasRoute: typeof AuthenticatedSuperadminEmpresasRoute
   AuthenticatedValidarExtraccionExtractionIdRoute: typeof AuthenticatedValidarExtraccionExtractionIdRoute
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
+  AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
 }
 
@@ -610,6 +631,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedValidarExtraccionExtractionIdRoute,
   AuthenticatedValidarExtraccionIndexRoute:
     AuthenticatedValidarExtraccionIndexRoute,
+  AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute:
+    AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute,
 }
