@@ -134,6 +134,7 @@ export function ColumnaPresupuesto({
                 : 'border-slate-200'
             }`}
           >
+            <p className="text-xs font-medium text-slate-500">Renglón {renglon.numero_renglon}</p>
             <p className="font-medium text-slate-900">{renglon.descripcion}</p>
             <p className="text-slate-600">
               Cant. {renglon.cantidad_ofertada ?? '—'} — ${renglon.precio_unitario}
