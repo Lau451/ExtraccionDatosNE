@@ -726,18 +726,39 @@ def _validar_orden_compra_override(
         raise ValidationError(f"Orden de compra con datos inválidos — {detalle}{extra}")
 
 
+# Hardening (revisión RDD de T1+T2, oc-entregas-planificacion): `str.isdigit()`
+# acepta dígitos Unicode que `int()` no puede parsear (p.ej. "²", un
+# superíndice) y `texto.lstrip("-")` escondía signos repetidos ("--3") del
+# chequeo mientras `int("--3")` seguía reventando -- las dos formas hacían que
+# esta función, pensada para NUNCA bloquear una confirmación de OC por un dato
+# de cabecera raro (D13.1), pudiera lanzar ValueError de todos modos. Un
+# regex ASCII estricto (solo "0".."9", sin signo) elimina ambos casos de una
+# vez: cualquier texto no numérico, o con signo, cae a 1 sin llamar a int().
+_PATRON_ENTERO_POSITIVO = re.compile(r"^[0-9]+$")
+
+# Postgres INTEGER (columna `ordenes_compra.cantidad_entregas`) es int4: un
+# valor de cabecera más grande que esto reventaría el insert con "integer out
+# of range" en vez de caer a 1 como cualquier otro valor inválido -- mismo
+# criterio de "un dato de cabecera nunca bloquea" aplicado también al rango.
+_INT4_MAX = 2_147_483_647
+
+
 def _parsear_cantidad_entregas(valor: str | None) -> int:
     """T2 (oc-entregas-planificacion) -- `cantidad_entregas` viaja como string
     sin validar (igual que el resto de la cabecera, D13.1): un entero positivo
-    trimeado se persiste tal cual; vacío, no numérico o <= 0 cae a 1 (default
-    histórico de la columna, docs/schema/extractor_final.sql) en vez de
-    bloquear la confirmación -- un valor de cabecera nunca bloquea (D13.1 §
-    Cabecera inconsistente entre archivos)."""
+    trimeado, que además entre en el rango de int4 (Postgres INTEGER), se
+    persiste tal cual; vacío, no numérico, <= 0 o por encima del tope de int4
+    cae a 1 (default histórico de la columna, docs/schema/extractor_final.sql)
+    en vez de bloquear la confirmación o reventar el insert -- un valor de
+    cabecera NUNCA bloquea (D13.1 § Cabecera inconsistente entre archivos).
+    NUNCA lanza: cualquier entrada, por rara que sea, resuelve a un entero."""
     texto = (valor or "").strip()
-    if not texto.lstrip("-").isdigit():
+    if not _PATRON_ENTERO_POSITIVO.match(texto):
         return 1
     numero = int(texto)
-    return numero if numero > 0 else 1
+    if numero == 0 or numero > _INT4_MAX:
+        return 1
+    return numero
 
 
 def _materializar_orden_compra(
