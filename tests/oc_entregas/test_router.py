@@ -64,6 +64,11 @@ def test_oc_de_otra_drogueria_da_404(
         .execute()
         .data[0]
     )
+    # Fix de review: inicializado ANTES del try -- si `crear_usuario_con_token`
+    # falla en el setup (nunca llega a asignar `usuario_id`), el finally no
+    # debe intentar borrar un usuario que no se llegó a crear (NameError que
+    # además taparía la excepción original).
+    usuario_id = None
     try:
         usuario_id, token = crear_usuario_con_token(rol="comercial", drogueria_id=otra_drogueria["id"])
         client = _cliente_de_prueba()
@@ -75,7 +80,8 @@ def test_oc_de_otra_drogueria_da_404(
 
         assert respuesta.status_code == 404
     finally:
-        service_client.table("usuarios").delete().eq("id", usuario_id).execute()
+        if usuario_id is not None:
+            service_client.table("usuarios").delete().eq("id", usuario_id).execute()
         service_client.table("droguerias").delete().eq("id", otra_drogueria["id"]).execute()
 
 
