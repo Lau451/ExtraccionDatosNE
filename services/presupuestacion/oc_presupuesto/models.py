@@ -76,6 +76,10 @@ class RenglonOrdenCompra(BaseModel):
 
     oc_item_id: str
     numero_renglon: int
+    # Número impreso en el documento del cliente (oc_items.numero_renglon_documento,
+    # 0030). None cuando la extracción no lo detectó, o en filas materializadas
+    # antes de esa migración; el frontend cae a numero_renglon en ese caso.
+    numero_renglon_documento: str | None = None
     descripcion: str
     cantidad: Decimal
     precio_unitario: Decimal

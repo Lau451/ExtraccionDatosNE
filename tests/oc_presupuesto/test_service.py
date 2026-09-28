@@ -633,6 +633,7 @@ def _stub_oc_item(**overrides) -> dict:
         "orden_compra_id": "oc-1",
         "drogueria_id": "d1",
         "numero_renglon": 1,
+        "numero_renglon_documento": None,
         "descripcion": "Renglón de test",
         "cantidad": "10",
         "precio_unitario": "100.00",
@@ -945,6 +946,29 @@ def test_obtener_matching_devuelve_candidato_unico_sin_desempate(monkeypatch):
     assert len(renglon.candidatos) == 1
     assert renglon.candidatos[0].presupuesto_item_id == "pi-1"
     assert renglon.candidatos[0].similitud is None  # un solo candidato: nada que desempatar
+
+
+def test_obtener_matching_expone_numero_renglon_documento_con_fallback_a_none(monkeypatch):
+    # oc-numero-renglon-documento T2: el número impreso en el documento del
+    # cliente viaja tal cual cuando existe, y None cuando la extracción no lo
+    # detectó (fallback posicional lo resuelve el frontend, no acá).
+    _parchear_dependencias_obtener_matching(
+        monkeypatch,
+        oc_items=[
+            _stub_oc_item(id="oci-1", numero_renglon=1, numero_renglon_documento="38"),
+            _stub_oc_item(id="oci-2", numero_renglon=2, numero_renglon_documento=None),
+        ],
+        presupuesto_activo=("pres-1", None),
+        presupuesto_items=[_stub_presupuesto_item(precio_unitario="100.00")],
+        items_proceso=[{"id": "ip-1", "descripcion": "x", "numero_renglon": 1, "producto_id": None}],
+    )
+
+    resultado = service.obtener_matching(
+        MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", presupuesto_id=None
+    )
+
+    assert resultado.renglones_oc[0].numero_renglon_documento == "38"
+    assert resultado.renglones_oc[1].numero_renglon_documento is None
 
 
 def test_obtener_matching_sin_match_de_precio_queda_pendiente_sin_candidatos(monkeypatch):

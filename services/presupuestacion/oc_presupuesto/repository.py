@@ -114,9 +114,9 @@ def listar_oc_items_completos(client: Client, *, orden_compra_id: str) -> list[d
     return (
         client.table("oc_items")
         .select(
-            "id, orden_compra_id, drogueria_id, numero_renglon, descripcion, cantidad, "
-            "precio_unitario, producto_id, presupuesto_item_id, vinculo_descartado, "
-            "vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
+            "id, orden_compra_id, drogueria_id, numero_renglon, numero_renglon_documento, "
+            "descripcion, cantidad, precio_unitario, producto_id, presupuesto_item_id, "
+            "vinculo_descartado, vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
         )
         .eq("orden_compra_id", orden_compra_id)
         .order("numero_renglon")
@@ -129,9 +129,9 @@ def buscar_oc_item(client: Client, *, oc_item_id: str) -> dict[str, Any] | None:
     resultado = (
         client.table("oc_items")
         .select(
-            "id, orden_compra_id, drogueria_id, numero_renglon, descripcion, cantidad, "
-            "precio_unitario, producto_id, presupuesto_item_id, vinculo_descartado, "
-            "vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
+            "id, orden_compra_id, drogueria_id, numero_renglon, numero_renglon_documento, "
+            "descripcion, cantidad, precio_unitario, producto_id, presupuesto_item_id, "
+            "vinculo_descartado, vinculo_origen, vinculo_confirmado_por, vinculo_confirmado_at"
         )
         .eq("id", oc_item_id)
         .limit(1)
