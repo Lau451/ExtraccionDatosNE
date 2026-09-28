@@ -88,6 +88,27 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
 - Migration 0031 applied to the TEST project (`grnamollopxdlstcpxhc`) via Supabase MCP `apply_migration`: 7037 products backfilled, 107 NULL.
 - `venv/Scripts/python -m pytest tests/productos tests/imports tests/extraccion tests/oc_presupuesto -q` → 336 passed (integration included).
 
+- RDD T1+T2 (`069bfed..4ae48b7`): medium, `slice_budget_reached` → consent granted → lens `review-reliability` → approved, acknowledged (lineage `review-525d5cd426d7b862`, authority burned). Reviewed boundary is now `4ae48b7`.
+  - Advisory (non-blocking) findings, folded into T3 as a hardening step: `_parsear_cantidad_entregas` can raise on `--3` or Unicode digits and has no int4 upper bound; `parsear_unidades_por_presentacion` and the 0031 backfill have no int4 upper bound; the 0031 `ADD CONSTRAINT` is not idempotent.
+
 ## Next step
 
-RDD assess of T1+T2, then T3.
+Paused by the user on 2026-09-27; resume T3 next session. A T3 writer was started and stopped before writing anything. The planned brief:
+
+- Step A, hardening commit:
+  - `_parsear_cantidad_entregas` never raises: ASCII `^[0-9]+$` only, capped at int4, else 1.
+  - `parsear_unidades_por_presentacion` accepts ASCII digits only, capped at int4, else None.
+  - Make 0031 idempotent (guard `ADD CONSTRAINT`) and bound the backfill to `[0-9]{1,9}`.
+- Step B, new module `services/presupuestacion/oc_entregas/`, modeled on `oc_presupuesto`:
+  - `GET /ordenes-compra/{id}/entregas/planificacion` returns:
+    - the confirmed lines with `unidades_por_presentacion`;
+    - pending and discarded counts;
+    - `puede_planificar` and `motivo`;
+    - `plan_sugerido`: whole packs split evenly with `repartir_cantidad`, the remainder goes to the last delivery. Example: 110 units, x25, N=3 → 50/25/35;
+    - `plan_actual`.
+  - `PUT` of the same path creates or replaces the plan:
+    - 409 when there are pending lines, or when the plan is locked (a delivery is no longer `pendiente`);
+    - 422 when delivery numbers are not 1..N, when a line is foreign or not confirmed, and when a line's sum ≠ its quantity;
+    - writes `ordenes_compra.cantidad_entregas = N`;
+    - returns non-blocking `advertencias` with `cantidad_sugerida` (nearest lower multiple, or u if that is 0);
+    - never touches stock.
