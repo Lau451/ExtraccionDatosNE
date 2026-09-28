@@ -120,9 +120,22 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
   - `3c8a57c`: test cleanup guard.
   - `pytest tests/oc_entregas -q` → 52 passed (parent spot check). Assess `c7b3736..3c8a57c`: medium, `under_budget`, pending in the slice.
 
+- RDD fixes+T4 (`c7b3736..d873e81`): medium, `slice_budget_reached` → consent granted → `review-reliability` → approved, acknowledged (lineage `review-6eda349a54886c47`). Reviewed boundary is now `d873e81`.
+  - `82a2e96` fixed the advisories. Decimal fields travel as JSON strings (verified with a router test on the real DB) and are now parsed at the `ocEntregas.ts` boundary. Row sums are rounded to cents. A delivery with every line at 0 blocks Save. The planning query is invalidated after save. Frontend `npm test` → 413 passed; `pytest tests/oc_entregas` → 52 passed. Assess `d873e81..82a2e96`: medium, `under_budget` (375 lines), pending in the slice.
+  - Residual, not fixed: in the rare race where a delivery leaves `pendiente` during a replace, the still-pending deliveries were already deleted before the 409.
+  - Follow-up out of scope: `frontend/src/lib/api/ocMatching.ts` also types Decimal fields as `number` without parsing, so `AvisoReutilizacion.tsx` compares strings.
+- Browser check (parent, TEST DB, user-authorized on OC 986 `e57f8b69-…`):
+  - With 7 pending lines, the planning screen shows the blocked message, and the matching button is disabled with a hint.
+  - After 1 discard + 6 confirms in matching, the button is enabled. The grid shows presentations x10/x1/x5/x30/x60/x30 and the discarded note.
+  - N=3 suggestion is correct (800 x10 → 270/270/260; 400 x5 → 135/135/130).
+  - 275 shows "No es múltiplo de 10. usar 270", restante −5 in red, Save disabled.
+  - After fixing the sum (275/270/255), save succeeds with the server advertencias.
+  - DB: 3 `pendiente` deliveries × 6 items, totals 9320 = sum of confirmed lines, no discarded line, `cantidad_entregas = 3`. Reload shows `plan_actual`.
+  - Original state of OC 986 (to restore): all 7 `oc_items` had NULL `producto_id`/`presupuesto_item_id`/`vinculo_origen`/`vinculo_confirmado_at`, `vinculo_descartado = false`, `cantidad_entregas = 1`, and no `entregas_oc`.
+
 ## Next step
 
-RDD assess of `c7b3736..HEAD` (review fixes + T4), then browser check and stacked PRs.
+Stacked PRs (user decision on push/PR).
 
 ## Historical note (T3 brief)
 
