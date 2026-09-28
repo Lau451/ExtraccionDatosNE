@@ -61,7 +61,17 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
   - TDD deviation (reported by the writer): the module and its tests were written together rather than strictly one RED per unit. The tests were then run against the TEST DB.
   - Writer cleaned 8 orphan test droguerias in the TEST DB left by a fixture bug during development.
   - Size: about 750 production lines and 1100 test lines (above the advisory 400; one coherent API).
-- [ ] T4 — Frontend planning screen + entry from OC matching + tests.
+- [x] T4 — Frontend planning screen + entry from OC matching + tests.
+  - `02197bf`: API client `frontend/src/lib/api/ocEntregas.ts` + pure `features/oc-entregas/sugerirPlan.ts` (port of `sugerir_plan_renglon`). RED: unresolved import. GREEN: 11/11 incl. 100/25/3 → 50/25/25 and 110/25/3 → 50/25/35.
+  - `33247d3`: `PlanificacionEntregas.tsx` + route `/ordenes-compra/:id/entregas` (`routes/_authenticated.ordenes-compra.$ordenCompraId.entregas.tsx`, `routeTree.gen.ts` regenerated).
+    - The grid starts from `plan_actual` or `plan_sugerido`, and N (1–24) recomputes the suggestion.
+    - Cells show non-blocking warnings with "usar N". Save is disabled on a row mismatch.
+    - Locked plan → read-only. Blocked → `motivo` + back link.
+    - RED: unresolved import. GREEN: 10/10.
+  - `7bb7d7f`: "Planificar entregas" button in `OcMatchingDetalle.tsx`, disabled with a hint while any line is pending. RED: 2 failing. GREEN: 5/5.
+  - `EntregasEditor.tsx` evaluated and not reused: it is keyed by position, with no dates or warnings. It stays unused, kept since tramo2 for a possible future reuse.
+  - Writer: `npm test` 405 passed, `tsc --noEmit` clean, oxlint only pre-existing warnings. `npm run build` fails at `tsc -b` on a pre-existing error in `oc-matching/components/ColumnaPresupuesto.test.tsx:147` (`scrollIntoView` mock typing, file last changed in `000b346` on `dev`, untouched here). `vite build` alone succeeds.
+  - Parent spot check: `npx vitest run src/features/oc-entregas src/features/oc-matching` → 56 passed; `npx tsc -b` reproduces only the pre-existing error.
 
 ## Acceptance criteria
 
@@ -112,7 +122,7 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
 
 ## Next step
 
-T4 (frontend planning screen).
+RDD assess of `c7b3736..HEAD` (review fixes + T4), then browser check and stacked PRs.
 
 ## Historical note (T3 brief)
 
