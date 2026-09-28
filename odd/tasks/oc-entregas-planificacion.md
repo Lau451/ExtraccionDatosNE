@@ -50,7 +50,17 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
 - [x] T2 — Persist `cantidad_entregas` at OC materialization + tests.
   - Commit `e0da0ad`. `OrdenCompraOverride.cantidad_entregas: str | None`; `_parsear_cantidad_entregas` (positive int, else 1) used in `_materializar_orden_compra`. Frontend computes the header value with the same most-frequent rule as other header fields (read-only, no new input) and sends it in `construirOrdenCompraOverride`.
   - RED: `KeyError: 'cantidad_entregas'` (backend) and missing-value assertions (frontend). GREEN: `tests/extraccion -m "not integration"` 150 passed; frontend `npm test` 382 passed; `tsc` clean.
-- [ ] T3 — Backend planning API (context, gate, create/replace plan, divisibility warnings) + tests.
+- [x] T3 — Backend planning API (context, gate, create/replace plan, divisibility warnings) + tests.
+  - Commit `a44987d` (hardening from review advisories): strict ASCII `^[0-9]+$` + int4 cap in `_parsear_cantidad_entregas` and `parsear_unidades_por_presentacion`; 0031 constraint guarded and backfill bounded to `[0-9]{1,9}` (same end state as applied on TEST). RED: `ValueError: invalid literal for int() ... '--3'` / `'²'` plus boundary failures. GREEN: 16/16 and 10/10.
+  - Commit `42a85b5`: new module `services/presupuestacion/oc_entregas/` with `GET`/`PUT /ordenes-compra/{orden_compra_id}/entregas/planificacion`, registered in `services/presupuestacion/main.py`.
+    - Reuses `repartir_cantidad`, `crear_entrega_oc`/`insertar_entregas_oc_items` and `oc_presupuesto._derivar_estado`.
+    - Pure `sugerir_plan_renglon` (whole packs, remainder on the last delivery).
+    - Service client with explicit `drogueria_id` checks, because RLS limits `entregas_oc` DELETE to superadmin. Roles are the same as OC matching.
+    - Replace = delete (cascade) + insert with delete-based compensation, the same pattern as `_materializar_orden_compra`.
+    - No audit event (comparable writes don't record one). A test asserts stock is never touched.
+  - TDD deviation (reported by the writer): the module and its tests were written together rather than strictly one RED per unit. The tests were then run against the TEST DB.
+  - Writer cleaned 8 orphan test droguerias in the TEST DB left by a fixture bug during development.
+  - Size: about 750 production lines and 1100 test lines (above the advisory 400; one coherent API).
 - [ ] T4 — Frontend planning screen + entry from OC matching + tests.
 
 ## Acceptance criteria
@@ -91,9 +101,15 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
 - RDD T1+T2 (`069bfed..4ae48b7`): medium, `slice_budget_reached` → consent granted → lens `review-reliability` → approved, acknowledged (lineage `review-525d5cd426d7b862`, authority burned). Reviewed boundary is now `4ae48b7`.
   - Advisory (non-blocking) findings, folded into T3 as a hardening step: `_parsear_cantidad_entregas` can raise on `--3` or Unicode digits and has no int4 upper bound; `parsear_unidades_por_presentacion` and the 0031 backfill have no int4 upper bound; the 0031 `ADD CONSTRAINT` is not idempotent.
 
+- T3 verification: writer `pytest tests/oc_entregas tests/oc_presupuesto tests/extraccion tests/productos tests/imports -q` → 393 passed. Parent spot check `pytest tests/oc_entregas -q` → 47 passed.
+
 ## Next step
 
-Paused by the user on 2026-09-27; resume T3 next session. A T3 writer was started and stopped before writing anything. The planned brief:
+RDD assess of T3 (from the reviewed boundary `4ae48b7`), then T4.
+
+## Historical note (T3 brief)
+
+Paused by the user on 2026-09-27, resumed 2026-09-28. A T3 writer was started and stopped before writing anything. The planned brief:
 
 - Step A, hardening commit:
   - `_parsear_cantidad_entregas` never raises: ASCII `^[0-9]+$` only, capped at int4, else 1.
