@@ -20,6 +20,14 @@ from services.productos.domain import parsear_unidades_por_presentacion
         (None, None),
         ("", None),
         ("Presentación x 0", None),
+        # Hardening (revisión RDD de T1+T2, oc-entregas-planificacion): N sin
+        # tope reventaría el INSERT/UPDATE con "integer out of range" contra
+        # `productos.unidades_por_presentacion INTEGER` (int4, tope 2147483647)
+        # en vez de simplemente no ofrecer el tamaño de pack -- mismo criterio
+        # que _parsear_cantidad_entregas (extraccion/service.py).
+        ("Presentación x 2147483647", 2_147_483_647),  # tope int4 exacto, sigue OK
+        ("Presentación x 2147483648", None),  # 1 por encima del tope -> None
+        ("Presentación x 99999999999999", None),  # muy por encima del tope
     ],
 )
 def test_parsear_unidades_por_presentacion(texto, esperado):

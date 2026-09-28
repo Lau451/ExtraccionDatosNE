@@ -390,6 +390,17 @@ def _preparar_mocks_materializacion_con_cabecera(monkeypatch):
         ("0", 1),
         ("-2", 1),
         ("abc", 1),
+        # Hardening (revisión RDD de T1+T2, oc-entregas-planificacion): antes de
+        # este fix, `_parsear_cantidad_entregas` podía LEVANTAR ValueError en vez
+        # de caer a 1 -- un valor de cabecera nunca debe poder tumbar la
+        # confirmación de la OC (D13.1 § Cabecera inconsistente entre archivos).
+        ("--3", 1),  # int("--3") explota con el regex viejo (lstrip("-") lo esconde)
+        ("²", 1),  # superíscript: str.isdigit() == True, pero int("²") explota
+        ("3.5", 1),  # no entero
+        ("  ", 1),  # solo espacios
+        (str(2_147_483_647), 2_147_483_647),  # tope int4 (Postgres INTEGER), sigue OK
+        (str(2_147_483_648), 1),  # 1 por encima del tope int4 -> cae a 1, no revienta el insert
+        ("99999999999999", 1),  # muy por encima del tope int4
     ],
 )
 def test_cantidad_entregas_se_persiste_desde_el_override(monkeypatch, valor_extraido, esperado):
