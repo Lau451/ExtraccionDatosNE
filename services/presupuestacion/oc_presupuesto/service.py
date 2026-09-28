@@ -510,6 +510,7 @@ def _armar_renglon_oc(
     return RenglonOrdenCompra(
         oc_item_id=item["id"],
         numero_renglon=item["numero_renglon"],
+        numero_renglon_documento=item.get("numero_renglon_documento"),
         descripcion=item["descripcion"],
         cantidad=item["cantidad"],
         precio_unitario=item["precio_unitario"],

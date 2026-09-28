@@ -48,10 +48,13 @@ class FilaOrdenCompraIn(BaseModel):
     """Un renglón de orden de compra confirmado por el usuario (D7/D13.1)."""
 
     model_config = ConfigDict(extra="forbid")
-    # Solo referencia visual (C10): el número de línea que el documento declaró,
-    # si lo declaró. NO se persiste tal cual -- oc_items.numero_renglon es un
-    # ordinal 1..N que _materializar_orden_compra() asigna por POSICIÓN en esta
-    # lista, al confirmar (D13.1).
+    # El número de línea que el documento declaró, si lo declaró (C10). Se
+    # persiste TAL CUAL (trimeado; vacío/whitespace -> NULL) en
+    # oc_items.numero_renglon_documento, solo para mostrar (0030) -- pero
+    # NUNCA determina oc_items.numero_renglon, que sigue siendo el ordinal
+    # 1..N que _materializar_orden_compra() asigna por POSICIÓN en esta lista
+    # al confirmar (D13.1). Sin unicidad: dos filas pueden repetir el mismo
+    # numero_renglon_documento sin conflicto.
     numero_renglon_documento: str | None = None
     descripcion: str
     cantidad: str

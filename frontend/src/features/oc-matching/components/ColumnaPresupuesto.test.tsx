@@ -23,6 +23,7 @@ function ordenCompra(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenC
   return {
     oc_item_id: 'item-1',
     numero_renglon: 1,
+    numero_renglon_documento: null,
     descripcion: 'Ibuprofeno 400mg x 20',
     cantidad: 10,
     precio_unitario: 1250,
@@ -48,6 +49,21 @@ function renderColumna(props: Partial<Parameters<typeof ColumnaPresupuesto>[0]> 
   )
   return { onVincularManual }
 }
+
+describe('ColumnaPresupuesto — número de renglón', () => {
+  it('muestra el número de renglón del presupuesto en cada fila', () => {
+    renderColumna({
+      renglones: [
+        presupuesto({ presupuesto_item_id: 'pi-1', numero_renglon: 38, descripcion: 'Lacosamida 100 mg' }),
+        presupuesto({ presupuesto_item_id: 'pi-2', numero_renglon: 7, descripcion: 'Cefalexina 500 mg' }),
+      ],
+    })
+
+    const filas = screen.getAllByRole('listitem')
+    expect(filas[0]).toHaveTextContent('Renglón 38')
+    expect(filas[1]).toHaveTextContent('Renglón 7')
+  })
+})
 
 describe('ColumnaPresupuesto — búsqueda y filtro (spec oc-presupuesto-vinculacion, T2)', () => {
   it('filtra por texto de la descripción, ignorando acentos y mayúsculas', () => {
@@ -246,6 +262,24 @@ describe('ColumnaPresupuesto — vínculo manual (spec oc-presupuesto-vinculacio
     fireEvent.click(boton)
 
     expect(onVincularManual).toHaveBeenCalledWith('item-9', 'pi-1')
+  })
+
+  it('el botón usa el número impreso en el documento cuando existe, no el posicional', () => {
+    const seleccionado = ordenCompra({
+      oc_item_id: 'item-9',
+      numero_renglon: 4,
+      numero_renglon_documento: '38',
+      estado: 'pendiente',
+      candidatos: [],
+    })
+
+    renderColumna({
+      renglones: [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })],
+      renglonOcSeleccionado: seleccionado,
+    })
+
+    expect(screen.getByRole('button', { name: /vincular al renglón 38 de la oc/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /vincular al renglón 4 de la oc/i })).not.toBeInTheDocument()
   })
 
   it('sin un renglón de OC pendiente seleccionado, no ofrece el botón de vínculo manual', () => {

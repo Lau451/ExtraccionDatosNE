@@ -738,10 +738,14 @@ def _materializar_orden_compra(
     reconciliadas por el usuario (filas concatenadas del grupo, editadas/
     borradas por el operador).
 
-    `numero_renglon` se asigna por POSICIÓN 1..N sobre `override.filas`,
-    descartando por completo `numero_renglon_documento` (D13.1). NUNCA llama
-    a `stock.entregar_stock_producto` -- invariante duro del spec ("confirmar
-    no descuenta stock").
+    `numero_renglon` se asigna por POSICIÓN 1..N sobre `override.filas`
+    (D13.1) -- sigue siendo la clave posicional única, sin depender de lo que
+    haya impreso el documento. `numero_renglon_documento` (0030) SÍ se
+    persiste aparte, trimeado (vacío/whitespace -> NULL), solo para mostrar
+    el número que el cliente imprimió; no tiene unicidad, así que filas de
+    documentos distintos agrupados en la misma OC pueden repetirlo sin
+    conflicto. NUNCA llama a `stock.entregar_stock_producto` -- invariante
+    duro del spec ("confirmar no descuenta stock").
 
     Ajuste post-shipping (2026-09-21): ya NO crea `entregas_oc`/
     `entregas_oc_items` -- esa división se movió a una fase futura de
@@ -809,6 +813,11 @@ def _materializar_orden_compra(
                     "orden_compra_id": orden_compra_id,
                     "drogueria_id": drogueria_id,
                     "numero_renglon": posicion,  # ordinal interno asignado ACÁ -- D13.1
+                    # Numero impreso en el documento del cliente, solo para
+                    # mostrar (0030) -- NUNCA reemplaza numero_renglon (D13.1
+                    # sigue siendo la clave posicional 1..N, sin unicidad
+                    # sobre esta columna: dos filas pueden repetir "5").
+                    "numero_renglon_documento": (fila.numero_renglon_documento or "").strip() or None,
                     "descripcion": fila.descripcion.strip(),
                     "cantidad": str(cantidad_decimal_fila),
                     "precio_unitario": str(precio_decimal_fila),

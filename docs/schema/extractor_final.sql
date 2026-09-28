@@ -1067,6 +1067,7 @@ CREATE TABLE oc_items (
     oferta_item_id      UUID            NULL,
     producto_id         UUID            NULL,
     numero_renglon      INTEGER         NOT NULL,
+    numero_renglon_documento TEXT       NULL,
     descripcion         TEXT            NOT NULL,
     cantidad            NUMERIC(12, 2)  NOT NULL,
     precio_unitario     NUMERIC(15, 2)  NOT NULL,
@@ -1101,6 +1102,7 @@ CREATE TABLE oc_items (
 );
 
 COMMENT ON COLUMN oc_items.producto_id IS 'Link al catálogo. Cierra la trazabilidad producto → oferta → OC → entrega y permite descontar stock del producto correcto.';
+COMMENT ON COLUMN oc_items.numero_renglon_documento IS 'Número de línea impreso en el documento del cliente (7, 38, 41...), solo para mostrar. Distinto de numero_renglon (ordinal interno 1..N asignado por posición, D13.1): sin unicidad -- filas de documentos agrupados pueden repetirlo sin conflicto. NULL si la extracción no lo detectó, o en filas materializadas antes de esta migración (0030); la pantalla cae a numero_renglon en ese caso.';
 COMMENT ON COLUMN oc_items.presupuesto_item_id IS
   'Renglon del presupuesto del que este renglon hereda producto_id. NULL = sin vinculo. N renglones de OC pueden apuntar al MISMO renglon de presupuesto (N:1 permitido y avisado, nunca bloqueado -- design.md D5). No hay tabla puente: 1:N y M:N no son casos de negocio de este cambio (design.md D4).';
 COMMENT ON COLUMN oc_items.vinculo_descartado IS

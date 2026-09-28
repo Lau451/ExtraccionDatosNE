@@ -75,6 +75,11 @@ export interface CandidatoVinculo {
 export interface RenglonOrdenCompra {
   oc_item_id: string
   numero_renglon: number
+  // Número impreso en el documento del cliente (oc_items.numero_renglon_documento,
+  // 0030), solo para mostrar. null cuando la extracción no lo detectó, o en
+  // renglones materializados antes de esa migración -- la pantalla cae a
+  // numero_renglon en ese caso (etiquetaRenglonOc).
+  numero_renglon_documento: string | null
   descripcion: string
   cantidad: number
   precio_unitario: number

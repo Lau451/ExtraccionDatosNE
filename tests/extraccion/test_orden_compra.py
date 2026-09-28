@@ -203,6 +203,9 @@ def test_numero_renglon_se_asigna_por_posicion_no_del_documento(monkeypatch):
     )
 
     assert [f["numero_renglon"] for f in items_insertados] == [1, 2, 3]
+    # numero_renglon_documento se persiste aparte, solo para mostrar (D13.1
+    # sigue vigente para numero_renglon).
+    assert [f["numero_renglon_documento"] for f in items_insertados] == ["7", "3", None]
 
 
 def test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto(monkeypatch):
@@ -216,6 +219,9 @@ def test_filas_con_mismo_numero_renglon_documento_no_generan_conflicto(monkeypat
     )
 
     assert [f["numero_renglon"] for f in items_insertados] == [1, 2]
+    # Ambas filas repiten "5" impreso en el documento -- se persisten igual,
+    # sin conflicto, porque no hay constraint de unicidad sobre esta columna.
+    assert [f["numero_renglon_documento"] for f in items_insertados] == ["5", "5"]
 
 
 def test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual(monkeypatch):
@@ -233,6 +239,24 @@ def test_todas_las_filas_sin_numero_documento_asignan_1_a_n_igual(monkeypatch):
     )
 
     assert [f["numero_renglon"] for f in items_insertados] == [1, 2, 3]
+    assert [f["numero_renglon_documento"] for f in items_insertados] == [None, None, None]
+
+
+def test_numero_renglon_documento_se_persiste_trimeado_y_vacio_a_none(monkeypatch):
+    items_insertados = _preparar_mocks_materializacion(monkeypatch)
+    filas = [
+        _fila(numero_doc=" 38 ", cantidad="10"),
+        _fila(numero_doc="   ", cantidad="20"),
+        _fila(numero_doc=None, cantidad="30"),
+    ]
+    override = OrdenCompraOverride(
+        numero_oc="OC-1", cliente_id="cli-1", filas=filas    )
+
+    service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    assert [f["numero_renglon_documento"] for f in items_insertados] == ["38", None, None]
 
 
 def test_materializar_licitacion_sigue_leyendo_item_sin_fallback_no_regresion():
