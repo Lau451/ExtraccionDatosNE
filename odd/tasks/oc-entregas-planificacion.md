@@ -133,9 +133,16 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
   - DB: 3 `pendiente` deliveries × 6 items, totals 9320 = sum of confirmed lines, no discarded line, `cantidad_entregas = 3`. Reload shows `plan_actual`.
   - Original state of OC 986 (to restore): all 7 `oc_items` had NULL `producto_id`/`presupuesto_item_id`/`vinculo_origen`/`vinculo_confirmado_at`, `vinculo_descartado = false`, `cantidad_entregas = 1`, and no `entregas_oc`.
 
+## Pull requests (stacked to `dev`, user-approved 2026-09-28)
+
+- #75 `feat/oc-entregas-1-prep` (up to `579cfc8`, T1+T2) → `dev`.
+- #76 `feat/oc-entregas-2-api` (up to `4fc494d`, T3 + fixes) → #75.
+- #77 `feat/oc-entregas-planificacion` (up to HEAD, T4 + fixes) → #76.
+- All three exceed the 400-line budget, mostly because of tests. After one slicing pass, `size:exception` was recommended in each PR body.
+
 ## Next step
 
-Stacked PRs (user decision on push/PR).
+Review and merge #75 → #76 → #77 in order, retargeting each child to `dev` after its parent merges. Then parts 4–6, which need a real Progress CSV sample.
 
 ## Historical note (T3 brief)
 
