@@ -66,6 +66,65 @@ def test_importar_productos_crea_nuevos(
 
 
 @pytest.mark.integration
+def test_importar_productos_calcula_unidades_por_presentacion_al_crear(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo_import
+):
+    cod = _codigo()
+    importar_productos(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        productos=[
+            ImportProductoRow(codigo_interno=cod, nombre="A", presentacion="Presentación x 25")
+        ],
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    fila = (
+        service_client.table("productos")
+        .select("unidades_por_presentacion")
+        .eq("drogueria_id", seed_drogueria["id"])
+        .eq("codigo_interno", cod)
+        .execute()
+        .data[0]
+    )
+    assert fila["unidades_por_presentacion"] == 25
+
+
+@pytest.mark.integration
+def test_importar_productos_recalcula_unidades_por_presentacion_al_actualizar(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo_import
+):
+    cod = _codigo()
+    importar_productos(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        productos=[
+            ImportProductoRow(codigo_interno=cod, nombre="A", presentacion="Presentación x 25")
+        ],
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    importar_productos(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        productos=[
+            ImportProductoRow(codigo_interno=cod, nombre="A", presentacion="Pres x 1(cajax100)")
+        ],
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    fila = (
+        service_client.table("productos")
+        .select("unidades_por_presentacion")
+        .eq("drogueria_id", seed_drogueria["id"])
+        .eq("codigo_interno", cod)
+        .execute()
+        .data[0]
+    )
+    assert fila["unidades_por_presentacion"] is None
+
+
+@pytest.mark.integration
 def test_importar_productos_actualiza_sin_pisar_created_by(
     service_client, seed_drogueria, seed_usuario_sistema, seed_usuario_sistema_2, limpiar_catalogo_import
 ):

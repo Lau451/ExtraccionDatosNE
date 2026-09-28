@@ -364,6 +364,10 @@ CREATE TABLE productos (
     forma_farmaceutica  TEXT            NULL,
     laboratorio         TEXT            NULL,
     codigo_anmat        TEXT            NULL,
+    -- 0031: tamaño de pack numérico inferido de presentacion (solo cuando
+    -- coincide EXACTAMENTE con "Presentación x N"); NULL para cualquier otro
+    -- formato -- ver COMMENT ON COLUMN más abajo.
+    unidades_por_presentacion INTEGER   NULL,
     activo              BOOLEAN         NOT NULL DEFAULT TRUE,
     datos_sistema       JSONB           NULL,
     -- auditoría + soft delete
@@ -379,11 +383,15 @@ CREATE TABLE productos (
         clasificacion IS NULL OR clasificacion IN (
             'medicamento', 'descartable', 'insumo', 'equipamiento', 'perfumeria', 'otro'
         )
+    ),
+    CONSTRAINT ck_productos_unidades_por_presentacion CHECK (
+        unidades_por_presentacion IS NULL OR unidades_por_presentacion > 0
     )
 );
 
 COMMENT ON COLUMN productos.categoria_id IS 'FK a categorias. Clasifica el producto (medicamentos, descartables…) para reglas de pricing y análisis.';
 COMMENT ON COLUMN productos.clasificacion IS 'Clasificación del sistema (enum fijo), distinta de categoria_id que es libre por droguería. Facilita reglas transversales y reportes.';
+COMMENT ON COLUMN productos.unidades_por_presentacion IS 'Tamaño de pack numérico inferido de presentacion cuando coincide EXACTAMENTE con "Presentación x N" (ej. "Presentación x 25" -> 25). NULL si presentacion usa otro formato o está vacía -- no hay forma confiable de interpretarlo (0031). Usado para advertir divisibilidad no bloqueante en la planificación de entregas de OC.';
 
 -- Historial de costos con vigencia.
 -- fecha_hasta NO es predicción: se completa automáticamente cuando entra el

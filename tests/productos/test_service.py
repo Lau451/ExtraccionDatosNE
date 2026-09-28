@@ -62,6 +62,38 @@ def test_crear_producto(service_client, seed_drogueria, seed_usuario_sistema, li
 
 
 @pytest.mark.integration
+def test_crear_producto_con_presentacion_numerica_calcula_unidades_por_presentacion(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    resultado = crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(
+            codigo_interno=_codigo(), nombre="Ibuprofeno", presentacion="Presentación x 25"
+        ),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    assert resultado["unidades_por_presentacion"] == 25
+
+
+@pytest.mark.integration
+def test_crear_producto_con_presentacion_no_numerica_deja_unidades_en_null(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    resultado = crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(
+            codigo_interno=_codigo(), nombre="Jarabe", presentacion="Pres x 1(cajax100)"
+        ),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    assert resultado["unidades_por_presentacion"] is None
+
+
+@pytest.mark.integration
 def test_listar_productos_filtra_por_activo_y_categoria(
     service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
 ):
@@ -172,6 +204,30 @@ def test_actualizar_producto_solo_pisa_campos_enviados(
 
     assert resultado["droga"] == "Droga B"
     assert resultado["nombre"] == "Original"
+
+
+@pytest.mark.integration
+def test_actualizar_producto_recalcula_unidades_por_presentacion(
+    service_client, seed_drogueria, seed_usuario_sistema, limpiar_catalogo
+):
+    producto = crear_producto(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoCreate(
+            codigo_interno=_codigo(), nombre="Original", presentacion="Presentación x 10"
+        ),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    resultado = actualizar_producto(
+        service_client,
+        producto_id=producto["id"],
+        drogueria_id=seed_drogueria["id"],
+        body=ProductoUpdate(presentacion="Presentación x 20"),
+        usuario_id=seed_usuario_sistema["id"],
+    )
+
+    assert resultado["unidades_por_presentacion"] == 20
 
 
 @pytest.mark.integration
