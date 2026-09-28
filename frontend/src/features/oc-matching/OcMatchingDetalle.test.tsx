@@ -195,4 +195,51 @@ describe('OcMatchingDetalle (design.md D12/D13)', () => {
     // El segundo renglón sigue con su candidato disponible, sin bloquearse.
     expect(screen.getAllByRole('button', { name: /^confirmar$/i })).toHaveLength(1)
   })
+
+  it('el botón Planificar entregas está deshabilitado mientras haya renglones pendientes de matching', async () => {
+    vi.mocked(obtenerMatching).mockResolvedValue(matching())
+
+    renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg x 20')
+    expect(screen.getByRole('button', { name: /planificar entregas/i })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /planificar entregas/i }))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('el botón Planificar entregas navega a la pantalla de planificación cuando no quedan renglones pendientes', async () => {
+    vi.mocked(obtenerMatching).mockResolvedValue(
+      matching({
+        renglones_oc: [
+          renglonOc({
+            estado: 'confirmado',
+            presupuesto_item_id: 'pi-1',
+            vinculo_origen: 'precio_exacto',
+            candidatos: [],
+          }),
+          renglonOc({
+            oc_item_id: 'item-2',
+            numero_renglon: 2,
+            descripcion: 'Paracetamol 500mg x 10',
+            precio_unitario: 500,
+            estado: 'sin_presupuesto',
+            candidatos: [],
+          }),
+        ],
+      }),
+    )
+
+    renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg x 20')
+    const boton = screen.getByRole('button', { name: /planificar entregas/i })
+    expect(boton).not.toBeDisabled()
+
+    fireEvent.click(boton)
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/ordenes-compra/$ordenCompraId/entregas',
+      params: { ordenCompraId: 'oc-1' },
+    })
+  })
 })

@@ -111,12 +111,38 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
   const renglonSeleccionado =
     matching.renglones_oc.find((renglon) => renglon.oc_item_id === renglonSeleccionadoId) ?? null
 
+  // Gate de planificación (T4, odd/tasks/oc-entregas-planificacion.md): el
+  // backend rechaza planificar con 409 mientras haya renglones `pendiente`
+  // (oc_entregas/service.py::planificar_entregas) -- esta pantalla ya tiene
+  // ese dato, así que el botón se deshabilita acá mismo en vez de dejar que
+  // el usuario llegue a la otra pantalla para enterarse recién ahí.
+  const hayRenglonesPendientes = matching.renglones_oc.some((renglon) => renglon.estado === 'pendiente')
+
+  function irAPlanificarEntregas() {
+    navigate({ to: '/ordenes-compra/$ordenCompraId/entregas', params: { ordenCompraId } })
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-10">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-slate-900">
-          Matching de orden de compra {matching.numero_oc}
-        </h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-xl font-semibold text-slate-900">
+            Matching de orden de compra {matching.numero_oc}
+          </h1>
+          <button
+            type="button"
+            disabled={hayRenglonesPendientes}
+            title={
+              hayRenglonesPendientes
+                ? 'Resolvé los renglones pendientes antes de planificar las entregas'
+                : undefined
+            }
+            onClick={irAPlanificarEntregas}
+            className="shrink-0 rounded-md bg-navy px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+          >
+            Planificar entregas
+          </button>
+        </div>
         {matching.advertencias.map((advertencia) => (
           <p key={advertencia} className="text-sm text-amber-600">
             {advertencia}
