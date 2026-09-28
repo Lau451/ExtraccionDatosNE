@@ -136,9 +136,9 @@ describe('RenglonOcFila (design.md D4/D13, spec oc-presupuesto-vinculacion)', ()
     )
 
     expect(
-      screen.getByText('Renglón 3 — Ibuprofeno 400mg x 20 — $1200 — 91% similitud'),
+      screen.getByText('Renglón 3 — Ibuprofeno 400mg x 20 — $1200.00 — 91% similitud'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Renglón 7 — Paracetamol 500mg x 10 — $500')).toBeInTheDocument()
+    expect(screen.getByText('Renglón 7 — Paracetamol 500mg x 10 — $500.00')).toBeInTheDocument()
     expect(screen.queryByText('pi-1')).not.toBeInTheDocument()
     expect(screen.queryByText('pi-2')).not.toBeInTheDocument()
   })
@@ -176,4 +176,13 @@ describe('RenglonOcFila (design.md D4/D13, spec oc-presupuesto-vinculacion)', ()
     fireEvent.click(screen.getByRole('button', { name: /^deshacer$/i }))
     expect(onDeshacer).toHaveBeenCalled()
   })
+})
+
+describe('RenglonOcFila — precio con dos decimales', () => {
+  it('muestra el precio unitario con dos decimales', () => {
+    renderFila({ cantidad: 50, precio_unitario: 3093.7 })
+
+    expect(screen.getByText('Cant. 50 — $3093.70')).toBeInTheDocument()
+  })
+
 })

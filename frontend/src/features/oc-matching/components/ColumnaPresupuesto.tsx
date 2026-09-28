@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { etiquetaRenglonOc } from '../etiquetaRenglonOc'
 import { AvisoReutilizacion } from './AvisoReutilizacion'
+import { formatearPrecio } from '../formatearPrecio'
 
 interface Props {
   renglones: RenglonPresupuesto[]
@@ -138,7 +139,7 @@ export function ColumnaPresupuesto({
             <p className="text-xs font-medium text-slate-500">Renglón {renglon.numero_renglon}</p>
             <p className="font-medium text-slate-900">{renglon.descripcion}</p>
             <p className="text-slate-600">
-              Cant. {renglon.cantidad_ofertada ?? '—'} — ${renglon.precio_unitario}
+              Cant. {renglon.cantidad_ofertada ?? '—'} — ${formatearPrecio(renglon.precio_unitario)}
             </p>
             <AvisoReutilizacion renglon={renglon} />
             {renglonOcSeleccionado?.estado === 'pendiente' && (
