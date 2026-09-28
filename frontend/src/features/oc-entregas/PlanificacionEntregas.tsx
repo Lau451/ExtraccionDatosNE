@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
   obtenerPlanificacionEntregas,
@@ -24,9 +24,13 @@ interface Props {
  * (T3 `GET .../entregas/planificacion`) y una mutación (`PUT` del mismo
  * path). Igual que `OcMatchingDetalle` (design.md D12/D13): "nada se escribe
  * sin un click" -- el GET nunca planifica nada, solo sugiere. */
+function queryKeyPlanificacion(ordenCompraId: string) {
+  return ['oc-entregas', ordenCompraId, 'planificacion'] as const
+}
+
 export function PlanificacionEntregas({ ordenCompraId }: Props) {
   const query = useQuery({
-    queryKey: ['oc-entregas', ordenCompraId, 'planificacion'],
+    queryKey: queryKeyPlanificacion(ordenCompraId),
     queryFn: () => obtenerPlanificacionEntregas(ordenCompraId),
   })
 
@@ -95,6 +99,7 @@ interface FormProps {
 
 function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   // D4: una entrega que dejó de estar 'pendiente' bloquea la replanificación
   // (mismo criterio que el backend, service.py::planificar_entregas) -- se
@@ -111,7 +116,16 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
 
   const mutation = useMutation({
     mutationFn: (entregas: EntregaPlanIn[]) => planificarEntregas(ordenCompraId, entregas),
-    onSuccess: (respuesta) => setResultado(respuesta),
+    onSuccess: (respuesta) => {
+      setResultado(respuesta)
+      // Fix de review: el plan que acaba de guardarse (plan_actual, estados de
+      // entrega) quedó desactualizado en la cache de la query GET -- se
+      // invalida para que la próxima vez que se monte esta pantalla (o
+      // cualquier otro observer activo) traiga el plan real. OcMatchingDetalle
+      // no muestra estado de esta planificación (solo `renglones_oc.estado`,
+      // que no cambia acá), así que no hace falta invalidar su query.
+      queryClient.invalidateQueries({ queryKey: queryKeyPlanificacion(ordenCompraId) })
+    },
   })
 
   function cambiarN(valorCrudo: number) {
@@ -155,12 +169,31 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
     const mapa = new Map<string, number>()
     data.renglones.forEach((renglon) => {
       const suma = (cantidades[renglon.oc_item_id] ?? []).reduce((acumulado, valor) => acumulado + valor, 0)
-      mapa.set(renglon.oc_item_id, renglon.cantidad - suma)
+      // Fix de review: NUMERIC(12,2) en la base -- comparar la resta cruda
+      // puede dejar residuo binario (p.ej. 0.3 - (0.1 + 0.2) !== 0 por punto
+      // flotante) y bloquear Guardar con una suma que en realidad coincide.
+      // Redondeo a centavos, mismo criterio que
+      // useFilasEditables.ts::hayDescuadre.
+      mapa.set(renglon.oc_item_id, Math.round((renglon.cantidad - suma) * 100) / 100)
     })
     return mapa
   }, [data.renglones, cantidades])
 
   const hayDiferencias = [...restantesPorRenglon.values()].some((restante) => restante !== 0)
+
+  // Fix de review: cuando N supera la cantidad de packs disponibles,
+  // sugerirPlanRenglon (T3/D8) puede dejar una entrega entera en 0 para todos
+  // los renglones -- el backend la rechaza con 422 ("no puede tener todas las
+  // cantidades en cero", oc_entregas/service.py::_validar_renglones_y_cantidades).
+  // Se detecta y bloquea acá antes de mandarla.
+  const entregasVacias = useMemo(
+    () =>
+      Array.from({ length: n }, (_, indice) =>
+        data.renglones.every((renglon) => (cantidades[renglon.oc_item_id]?.[indice] ?? 0) === 0),
+      ),
+    [data.renglones, cantidades, n],
+  )
+  const hayEntregaVacia = entregasVacias.some(Boolean)
 
   function guardar() {
     const entregas: EntregaPlanIn[] = Array.from({ length: n }, (_, indice) => ({
@@ -263,6 +296,15 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
         </table>
       </div>
 
+      {entregasVacias.map(
+        (vacia, indice) =>
+          vacia && (
+            <p key={indice} className="text-sm text-red-600">
+              La entrega {indice + 1} no tiene cantidades.
+            </p>
+          ),
+      )}
+
       {mutation.isError && (
         <p className="text-sm text-red-600">
           {mutation.error instanceof Error ? mutation.error.message : 'No se pudo guardar el plan.'}
@@ -283,7 +325,7 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
 
       <button
         type="button"
-        disabled={hayDiferencias || mutation.isPending}
+        disabled={hayDiferencias || hayEntregaVacia || mutation.isPending}
         onClick={guardar}
         className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
       >

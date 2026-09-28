@@ -103,6 +103,14 @@ def test_get_planificacion_devuelve_renglones_confirmados_y_plan_sugerido(
     assert cuerpo["descartados"] == 1
     assert cuerpo["pendientes"] == 0
     assert cuerpo["cantidad_entregas_sugerida"] == 3
+    # Fix de review (wire format): FastAPI/Pydantic v2 serializa `Decimal`
+    # como STRING en JSON, nunca como number -- confirmado independientemente
+    # con TestClient sobre un modelo mínimo. El frontend (ocEntregas.ts)
+    # asumía número y sumaba con concatenación de strings; esta aserción deja
+    # el contrato real por escrito para que un cambio de librería que lo
+    # rompiera silenciosamente falle acá primero.
+    assert isinstance(cuerpo["renglones"][0]["cantidad"], str)
+    assert isinstance(cuerpo["plan_sugerido"][0]["cantidades"][0], str)
     ids_confirmados = {r["oc_item_id"] for r in cuerpo["renglones"]}
     assert ids_confirmados == {
         seed_caso_planificacion["oc_item_con_pack"]["id"],

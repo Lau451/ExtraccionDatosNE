@@ -254,4 +254,87 @@ describe('PlanificacionEntregas (T4)', () => {
     await screen.findByText('Ibuprofeno 400mg')
     expect(screen.getByText(/2 renglón\(es\) descartado/i)).toBeInTheDocument()
   })
+
+  // Fix de review: si N supera la cantidad de packs, sugerirPlanRenglon puede
+  // dejar una entrega entera en 0 (p.ej. 100 unidades x25, N=5 -> packs=4,
+  // la 5ta entrega no tiene ningún pack para repartir). El backend rechaza
+  // esa entrega con 422 ("no puede tener todas las cantidades en cero") --
+  // esto lo bloquea antes, del lado del cliente.
+  it('N excede los packs disponibles: bloquea Guardar y avisa qué entrega quedó vacía (100 x25, N=5)', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(
+      planificacion({
+        renglones: [renglon({ cantidad: 100 })],
+        plan_sugerido: [{ oc_item_id: 'item-1', cantidades: [25, 25, 25, 25] }],
+      }),
+    )
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    fireEvent.change(screen.getByLabelText('cantidad de entregas'), { target: { value: '5' } })
+
+    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue(0))
+    expect(screen.getByText(/la entrega 5 no tiene cantidades/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar plan/i })).toBeDisabled()
+  })
+
+  it('una entrega vacía deja de bloquear en cuanto se le carga alguna cantidad', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(
+      planificacion({
+        renglones: [renglon({ cantidad: 100 })],
+        plan_sugerido: [{ oc_item_id: 'item-1', cantidades: [25, 25, 25, 25] }],
+      }),
+    )
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    fireEvent.change(screen.getByLabelText('cantidad de entregas'), { target: { value: '5' } })
+    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue(0))
+
+    fireEvent.change(screen.getByLabelText('entrega 4 renglón 1'), { target: { value: '15' } })
+    fireEvent.change(screen.getByLabelText('entrega 5 renglón 1'), { target: { value: '10' } })
+
+    await waitFor(() =>
+      expect(screen.queryByText(/la entrega 5 no tiene cantidades/i)).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: /guardar plan/i })).not.toBeDisabled()
+  })
+
+  // Fix de review: la resta de floats para "restante" puede dejar residuo
+  // binario (p.ej. 100 - 33.33 - 33.33 - 33.34 !== 0 por punto flotante) y
+  // bloquear Guardar aunque la suma sea correcta -- se compara redondeado a
+  // centavos (NUMERIC(12,2)).
+  it('no bloquea Guardar por residuo binario cuando la suma coincide a centavos', async () => {
+    // 0.1 + 0.2 === 0.30000000000000004 en punto flotante -- sin redondear,
+    // `renglon.cantidad - suma` da un residuo != 0 y bloquearía Guardar
+    // aunque la suma sea correcta a centavos (NUMERIC(12,2)).
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(
+      planificacion({
+        cantidad_entregas_sugerida: 2,
+        renglones: [renglon({ cantidad: 0.3, unidades_por_presentacion: null })],
+        plan_sugerido: [{ oc_item_id: 'item-1', cantidades: [0.1, 0.2] }],
+      }),
+    )
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    expect(screen.getByRole('button', { name: /guardar plan/i })).not.toBeDisabled()
+  })
+
+  it('al guardar con éxito invalida la query de planificación (refetch)', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+    vi.mocked(planificarEntregas).mockResolvedValue({ orden_compra_id: 'oc-1', entregas: [], advertencias: [] })
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    expect(obtenerPlanificacionEntregas).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /guardar plan/i }))
+
+    await waitFor(() => expect(screen.getByText(/plan guardado/i)).toBeInTheDocument())
+    await waitFor(() => expect(obtenerPlanificacionEntregas).toHaveBeenCalledTimes(2))
+  })
 })
