@@ -300,3 +300,13 @@ describe('ColumnaPresupuesto — vínculo manual (spec oc-presupuesto-vinculacio
     expect(screen.queryByRole('button', { name: /vincular al renglón/i })).not.toBeInTheDocument()
   })
 })
+
+describe('ColumnaPresupuesto — precio con dos decimales', () => {
+  it('muestra el precio unitario con dos decimales', () => {
+    renderColumna({
+      renglones: [presupuesto({ cantidad_ofertada: 2800, precio_unitario: 381 })],
+    })
+
+    expect(screen.getByText('Cant. 2800 — $381.00')).toBeInTheDocument()
+  })
+})

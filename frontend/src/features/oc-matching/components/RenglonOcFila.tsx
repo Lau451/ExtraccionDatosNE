@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CandidatoVinculo, RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
 import { etiquetaRenglonOc } from '../etiquetaRenglonOc'
+import { formatearPrecio } from '../formatearPrecio'
 
 interface Props {
   renglon: RenglonOrdenCompra
@@ -32,7 +33,7 @@ function etiquetaCandidato(
 ): string {
   const renglonPresupuesto = presupuestoPorId.get(candidato.presupuesto_item_id)
   const base = renglonPresupuesto
-    ? `Renglón ${renglonPresupuesto.numero_renglon} — ${renglonPresupuesto.descripcion} — $${renglonPresupuesto.precio_unitario}`
+    ? `Renglón ${renglonPresupuesto.numero_renglon} — ${renglonPresupuesto.descripcion} — $${formatearPrecio(renglonPresupuesto.precio_unitario)}`
     : 'Renglón del presupuesto no disponible'
   return candidato.similitud !== null ? `${base} — ${candidato.similitud}% similitud` : base
 }
@@ -70,7 +71,7 @@ export function RenglonOcFila({
         <span className="text-xs font-medium text-slate-500">{ETIQUETA_ESTADO[renglon.estado]}</span>
       </div>
       <p className="text-slate-600">
-        Cant. {renglon.cantidad} — ${renglon.precio_unitario}
+        Cant. {renglon.cantidad} — ${formatearPrecio(renglon.precio_unitario)}
       </p>
 
       {renglon.estado === 'confirmado' && (

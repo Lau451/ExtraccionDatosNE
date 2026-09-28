@@ -98,11 +98,7 @@ export interface PlanificarEntregasOut {
 // el componente concatena strings ("50" + "25" -> "5025") en vez de sumar, y
 // el botón Guardar nunca se habilita.
 //
-// A diferencia de `ocMatching.ts` (que declara los mismos campos `Decimal`
-// como `number` sin parsear -- haciendo que la resta de `AvisoReutilizacion`
-// arrastre el mismo riesgo, fuera de alcance acá), esta convención SÍ parsea
-// en el borde: es la que corresponde cuando el consumidor hace aritmética,
-// como esta pantalla.
+// `ocMatching.ts` sigue la misma convención (parsea en el borde).
 
 interface RenglonPlanificacionCrudo extends Omit<RenglonPlanificacion, 'cantidad'> {
   cantidad: string

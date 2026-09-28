@@ -105,6 +105,60 @@ export interface MatchingOut {
   advertencias: string[]
 }
 
+// FastAPI/Pydantic v2 serializa `Decimal` como STRING en JSON, nunca como
+// number. `cantidad_ofertada`, `precio_unitario`, `cantidad_vinculada`,
+// `similitud` y `cantidad` son `Decimal` en `oc_presupuesto/models.py`. Los
+// tipos de arriba son la forma ya PARSEADA; estos `*Crudo` son la forma real
+// de la respuesta y se convierten en el borde del API client. Sin esto,
+// `AvisoReutilizacion` compara strings ("80.00" > "100.00" es true).
+interface RenglonPresupuestoCrudo
+  extends Omit<RenglonPresupuesto, 'cantidad_ofertada' | 'precio_unitario' | 'cantidad_vinculada'> {
+  cantidad_ofertada: string | null
+  precio_unitario: string
+  cantidad_vinculada: string
+}
+
+interface CandidatoVinculoCrudo extends Omit<CandidatoVinculo, 'similitud'> {
+  similitud: string | null
+}
+
+interface RenglonOrdenCompraCrudo
+  extends Omit<RenglonOrdenCompra, 'cantidad' | 'precio_unitario' | 'candidatos'> {
+  cantidad: string
+  precio_unitario: string
+  candidatos: CandidatoVinculoCrudo[]
+}
+
+interface MatchingOutCrudo extends Omit<MatchingOut, 'renglones_presupuesto' | 'renglones_oc'> {
+  renglones_presupuesto: RenglonPresupuestoCrudo[]
+  renglones_oc: RenglonOrdenCompraCrudo[]
+}
+
+function decimalONull(valor: string | null): number | null {
+  return valor === null ? null : Number(valor)
+}
+
+function parsearMatching(crudo: MatchingOutCrudo): MatchingOut {
+  return {
+    ...crudo,
+    renglones_presupuesto: crudo.renglones_presupuesto.map((renglon) => ({
+      ...renglon,
+      cantidad_ofertada: decimalONull(renglon.cantidad_ofertada),
+      precio_unitario: Number(renglon.precio_unitario),
+      cantidad_vinculada: Number(renglon.cantidad_vinculada),
+    })),
+    renglones_oc: crudo.renglones_oc.map((renglon) => ({
+      ...renglon,
+      cantidad: Number(renglon.cantidad),
+      precio_unitario: Number(renglon.precio_unitario),
+      candidatos: renglon.candidatos.map((candidato) => ({
+        ...candidato,
+        similitud: decimalONull(candidato.similitud),
+      })),
+    })),
+  }
+}
+
 /** GET /ordenes-compra/{id}/presupuestos-candidatos (design.md D2, D13). */
 export function obtenerPresupuestosCandidatos(
   ordenCompraId: string,
@@ -117,26 +171,27 @@ export function obtenerPresupuestosCandidatos(
 /** GET /ordenes-compra/{id}/matching?presupuesto_id= -- `presupuestoId` es
  * opcional (D13): si falta, el servidor lo resuelve (D8) y lo devuelve en la
  * respuesta. */
-export function obtenerMatching(
+export async function obtenerMatching(
   ordenCompraId: string,
   presupuestoId?: string,
 ): Promise<MatchingOut> {
   const query = new URLSearchParams()
   if (presupuestoId !== undefined) query.set('presupuesto_id', presupuestoId)
   const qs = query.toString()
-  return presupuestacionFetch<MatchingOut>(
+  const crudo = await presupuestacionFetch<MatchingOutCrudo>(
     `/ordenes-compra/${ordenCompraId}/matching${qs ? `?${qs}` : ''}`,
   )
+  return parsearMatching(crudo)
 }
 
 /** POST /ordenes-compra/{id}/items/{ocItemId}/vinculo (design.md D13). Confirmar
  * sobre un renglón ya confirmado reemplaza el vínculo, sin error (idempotencia). */
-export function confirmarVinculo(
+export async function confirmarVinculo(
   ordenCompraId: string,
   ocItemId: string,
   presupuestoItemId: string,
 ): Promise<MatchingOut> {
-  return presupuestacionFetch<MatchingOut>(
+  const crudo = await presupuestacionFetch<MatchingOutCrudo>(
     `/ordenes-compra/${ordenCompraId}/items/${ocItemId}/vinculo`,
     {
       method: 'POST',
@@ -144,24 +199,27 @@ export function confirmarVinculo(
       body: JSON.stringify({ presupuesto_item_id: presupuestoItemId }),
     },
   )
+  return parsearMatching(crudo)
 }
 
 /** DELETE /ordenes-compra/{id}/items/{ocItemId}/vinculo (design.md D9). Vuelve
  * el renglón a `pendiente`, sirva para deshacer un `confirmado` o un
  * `sin_presupuesto`. */
-export function deshacerVinculo(ordenCompraId: string, ocItemId: string): Promise<MatchingOut> {
-  return presupuestacionFetch<MatchingOut>(
+export async function deshacerVinculo(ordenCompraId: string, ocItemId: string): Promise<MatchingOut> {
+  const crudo = await presupuestacionFetch<MatchingOutCrudo>(
     `/ordenes-compra/${ordenCompraId}/items/${ocItemId}/vinculo`,
     { method: 'DELETE' },
   )
+  return parsearMatching(crudo)
 }
 
 /** POST /ordenes-compra/{id}/items/{ocItemId}/descartar (design.md D4). Marca
  * `vinculo_descartado=true`: el humano afirma que este renglón no está en el
  * presupuesto elegido -- distinto de `pendiente` ("todavía no lo miré"). */
-export function descartarRenglon(ordenCompraId: string, ocItemId: string): Promise<MatchingOut> {
-  return presupuestacionFetch<MatchingOut>(
+export async function descartarRenglon(ordenCompraId: string, ocItemId: string): Promise<MatchingOut> {
+  const crudo = await presupuestacionFetch<MatchingOutCrudo>(
     `/ordenes-compra/${ordenCompraId}/items/${ocItemId}/descartar`,
     { method: 'POST' },
   )
+  return parsearMatching(crudo)
 }
