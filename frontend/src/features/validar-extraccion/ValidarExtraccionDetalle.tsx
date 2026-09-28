@@ -181,6 +181,7 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
       fecha_emision: fechaCsvAIso(cabecera?.fecha_emision ?? ''),
       direccion_entrega: cabecera?.direccion_entrega || null,
       notas: (cabecera?.observaciones ?? '').trim() || null, // T2
+      cantidad_entregas: (cabecera?.cantidad_entregas ?? '').trim() || null, // oc-entregas-planificacion T2
       filas: hook.filas
         .filter((fila) => !fila._borrada)
         .map((fila) => ({

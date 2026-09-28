@@ -10,6 +10,7 @@ import { CabeceraOrdenCompra } from './CabeceraOrdenCompra'
 function ArnesConBotonConfirmar({ filas }: { filas: Record<string, string>[] }) {
   const [bloqueado, setBloqueado] = useState(true)
   const [observacionesReportadas, setObservacionesReportadas] = useState('')
+  const [cantidadEntregasReportada, setCantidadEntregasReportada] = useState('')
   return (
     <div>
       <CabeceraOrdenCompra
@@ -17,12 +18,14 @@ function ArnesConBotonConfirmar({ filas }: { filas: Record<string, string>[] }) 
         onCambio={(cabecera, bloqueadoActual) => {
           setBloqueado(bloqueadoActual)
           setObservacionesReportadas(cabecera.observaciones)
+          setCantidadEntregasReportada(cabecera.cantidad_entregas)
         }}
       />
       <button type="button" disabled={bloqueado}>
         Confirmar OC
       </button>
       <p data-testid="observaciones-reportadas">{observacionesReportadas}</p>
+      <p data-testid="cantidad-entregas-reportada">{cantidadEntregasReportada}</p>
     </div>
   )
 }
@@ -131,6 +134,33 @@ describe('CabeceraOrdenCompra — observaciones (T2)', () => {
     render(<ArnesConBotonConfirmar filas={[MIEMBRO_A, { ...MIEMBRO_A, _extraction_id: 'ext-b' }]} />)
 
     expect(screen.getByLabelText(/observaciones/i)).toHaveValue('')
+  })
+})
+
+// T2 (oc-entregas-planificacion) -- cantidad_entregas no tiene un campo
+// editable propio (a diferencia de numero_oc/fecha/dirección/observaciones):
+// se reporta vía onCambio con el mismo criterio "valor más frecuente entre
+// miembros, empate -> primer miembro" que el resto de la cabecera (D13.1),
+// para que ValidarExtraccionDetalle.tsx la mande en OrdenCompraOverride.
+describe('CabeceraOrdenCompra — cantidad_entregas (T2 oc-entregas-planificacion)', () => {
+  it('reporta vía onCambio el valor de cantidad_entregas declarado por el documento', () => {
+    render(
+      <ArnesConBotonConfirmar
+        filas={[MIEMBRO_A, { ...MIEMBRO_A, _extraction_id: 'ext-b' }]}
+      />,
+    )
+
+    expect(screen.getByTestId('cantidad-entregas-reportada')).toHaveTextContent('2')
+  })
+
+  it('desacuerdo entre miembros reporta el valor más frecuente y lo muestra en el aviso', () => {
+    const miembroB = { ...MIEMBRO_A, _extraction_id: 'ext-b', cantidad_entregas: '3' }
+    render(<ArnesConBotonConfirmar filas={[MIEMBRO_A, miembroB]} />)
+
+    expect(screen.getByTestId('cantidad-entregas-reportada')).toHaveTextContent('2')
+    expect(screen.getByText(/desacuerdo entre archivos del grupo/i)).toHaveTextContent(
+      /cantidad de entregas/i,
+    )
   })
 })
 

@@ -726,6 +726,20 @@ def _validar_orden_compra_override(
         raise ValidationError(f"Orden de compra con datos inválidos — {detalle}{extra}")
 
 
+def _parsear_cantidad_entregas(valor: str | None) -> int:
+    """T2 (oc-entregas-planificacion) -- `cantidad_entregas` viaja como string
+    sin validar (igual que el resto de la cabecera, D13.1): un entero positivo
+    trimeado se persiste tal cual; vacío, no numérico o <= 0 cae a 1 (default
+    histórico de la columna, docs/schema/extractor_final.sql) en vez de
+    bloquear la confirmación -- un valor de cabecera nunca bloquea (D13.1 §
+    Cabecera inconsistente entre archivos)."""
+    texto = (valor or "").strip()
+    if not texto.lstrip("-").isdigit():
+        return 1
+    numero = int(texto)
+    return numero if numero > 0 else 1
+
+
 def _materializar_orden_compra(
     client: Client,
     *,
@@ -749,9 +763,12 @@ def _materializar_orden_compra(
 
     Ajuste post-shipping (2026-09-21): ya NO crea `entregas_oc`/
     `entregas_oc_items` -- esa división se movió a una fase futura de
-    matching contra presupuesto, todavía sin diseñar. `cantidad_entregas` no
-    se setea explícito: la columna tiene `DEFAULT 1` (docs/schema/
-    extractor_final.sql).
+    matching contra presupuesto, todavía sin diseñar. `cantidad_entregas` SÍ
+    se persiste (T2, oc-entregas-planificacion): se toma del header extraído
+    del documento (`override.cantidad_entregas`), parseado por
+    `_parsear_cantidad_entregas` (entero positivo, o 1 si viene vacío/
+    inválido -- la columna conserva `DEFAULT 1` como red de seguridad para
+    filas materializadas antes de este fix).
 
     Devuelve (orden_compra_id, filas_creadas, entregas_creadas,
     renglones_sin_producto) -- `entregas_creadas` siempre 0, se conserva en
@@ -768,6 +785,7 @@ def _materializar_orden_compra(
         "fecha_emision": override.fecha_emision.isoformat() if override.fecha_emision else None,
         "direccion_entrega": override.direccion_entrega,
         "notas": override.notas,
+        "cantidad_entregas": _parsear_cantidad_entregas(override.cantidad_entregas),  # T2
     }
     try:
         orden_compra = repo.crear_orden_compra(client, fila_oc)

@@ -10,6 +10,12 @@ export interface CabeceraOrdenCompraValores {
    * la cabecera. Viaja como `OrdenCompraOverride.notas` en
    * `construirOrdenCompraOverride()` (`ValidarExtraccionDetalle.tsx`). */
   observaciones: string
+  /** T2 (oc-entregas-planificacion): cantidad de entregas declarada por el
+   * documento. A diferencia del resto de estos campos, NO es editable acá
+   * (sin input propio) -- se recalcula en cada render con el mismo criterio
+   * "valor más frecuente entre miembros" (D13.1) y viaja como
+   * `OrdenCompraOverride.cantidad_entregas`. */
+  cantidad_entregas: string
 }
 
 interface Props {
@@ -120,6 +126,12 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   const [observaciones, setObservaciones] = useState(() =>
     valorMasFrecuente(representativas.map((fila) => fila.observaciones ?? '')),
   )
+  // T2 (oc-entregas-planificacion): sin input propio -- se recalcula en cada
+  // render a partir de `representativas`, igual criterio que los campos de
+  // arriba pero sin useState (no es editable en esta pantalla).
+  const cantidadEntregas = valorMasFrecuente(
+    representativas.map((fila) => fila.cantidad_entregas ?? ''),
+  )
 
   // "Editarlo a un valor único lo habilita": cualquier edición explícita del
   // campo deja un único valor cargado, que es justamente lo que se necesita
@@ -139,11 +151,12 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
         fecha_emision: fechaEmision,
         direccion_entrega: direccionEntrega,
         observaciones,
+        cantidad_entregas: cantidadEntregas,
       },
       bloqueado,
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numeroOc, fechaEmision, direccionEntrega, observaciones, bloqueado])
+  }, [numeroOc, fechaEmision, direccionEntrega, observaciones, cantidadEntregas, bloqueado])
 
   const advertencias = CAMPOS_ADVERTENCIA.filter(
     ({ campo }) => new Set(representativas.map((fila) => fila[campo] ?? '')).size > 1,
