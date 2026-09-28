@@ -39,6 +39,14 @@ from services.presupuestacion.oc_entregas.models import (
 )
 from services.presupuestacion.oc_presupuesto.service import _derivar_estado
 
+# Fix de review: `ordenes_compra.cantidad_entregas` (T2) viene tal cual del
+# documento de la OC y no tiene ningún tope -- sin este cap, un valor
+# absurdo generaría un `plan_sugerido` (GET) con esa misma cantidad de
+# entradas por renglón, y el PUT aceptaría un plan con esa misma cantidad de
+# entregas. Mismo límite para sugerir y para aceptar (una entrega sugerida de
+# más nunca podría enviarse de vuelta).
+MAX_ENTREGAS_SUGERIDAS = 24
+
 
 def sugerir_plan_renglon(
     cantidad: Decimal, unidades_por_presentacion: int | None, entregas: int
@@ -183,7 +191,9 @@ def obtener_planificacion(
         puede_planificar = True
         motivo = None
 
-    cantidad_entregas_sugerida = oc.get("cantidad_entregas") or 1
+    cantidad_entregas_sugerida = min(
+        max(oc.get("cantidad_entregas") or 1, 1), MAX_ENTREGAS_SUGERIDAS
+    )
     plan_sugerido = (
         [
             PlanSugeridoRenglon(
@@ -228,12 +238,25 @@ def _validar_renglones_y_cantidades(
     entregas: list[EntregaPlanIn], confirmados: dict[str, dict[str, Any]]
 ) -> None:
     for entrega in entregas:
+        vistos: set[str] = set()
         for item in entrega.items:
             if item.oc_item_id not in confirmados:
                 raise ValidationError(
                     f"El renglón {item.oc_item_id} de la entrega {entrega.numero_entrega} no está "
                     "confirmado por matching o no pertenece a esta orden de compra"
                 )
+            if item.oc_item_id in vistos:
+                # Fix de review: un mismo renglón repetido dos veces en la
+                # misma entrega pisaría su propia cantidad en el insert (una
+                # sola fila por `(entrega_oc_id, oc_item_id)`) sin que la suma
+                # por renglón lo detecte -- 422 acá en vez de silenciarlo.
+                renglon = confirmados[item.oc_item_id]
+                etiqueta = renglon.get("numero_renglon_documento") or str(renglon["numero_renglon"])
+                raise ValidationError(
+                    f"La entrega {entrega.numero_entrega} repite el renglón {etiqueta} "
+                    f"(oc_item_id {item.oc_item_id}) -- cada renglón puede aparecer una sola vez por entrega"
+                )
+            vistos.add(item.oc_item_id)
             if item.cantidad < 0:
                 raise ValidationError(
                     f"La cantidad del renglón {item.oc_item_id} en la entrega "
@@ -331,6 +354,11 @@ def planificar_entregas(
 
     if not entregas:
         raise ValidationError("El plan debe tener al menos una entrega")
+    if len(entregas) > MAX_ENTREGAS_SUGERIDAS:
+        raise ValidationError(
+            f"El plan no puede tener más de {MAX_ENTREGAS_SUGERIDAS} entregas "
+            f"(recibido: {len(entregas)})"
+        )
 
     oc_items = repo.listar_oc_items(client, orden_compra_id=orden_compra_id)
     confirmados_lista, pendientes, _descartados = _clasificar_renglones(oc_items)

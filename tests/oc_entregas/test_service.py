@@ -217,6 +217,23 @@ def test_obtener_planificacion_ok_arma_renglones_producto_y_plan_sugerido(monkey
     assert resultado.plan_sugerido[0].cantidades == [Decimal("50"), Decimal("25"), Decimal("35")]
 
 
+def test_obtener_planificacion_cantidad_entregas_sugerida_se_limita_al_maximo(monkeypatch):
+    """Fix de review: `ordenes_compra.cantidad_entregas` (T2) viene del
+    documento y no tiene tope propio -- sin un cap acá, un valor absurdo
+    generaría un `plan_sugerido` con esa misma cantidad de entradas por
+    renglón."""
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc(cantidad_entregas=30))
+    monkeypatch.setattr(repo, "listar_oc_items", lambda client, **kw: [_oc_item("i1", cantidad="100")])
+    monkeypatch.setattr(repo, "listar_productos_por_ids", lambda client, **kw: [])
+    monkeypatch.setattr(repo, "listar_entregas_oc", lambda client, **kw: [])
+    monkeypatch.setattr(repo, "listar_entregas_oc_items", lambda client, **kw: [])
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.cantidad_entregas_sugerida == service.MAX_ENTREGAS_SUGERIDAS
+    assert len(resultado.plan_sugerido[0].cantidades) == service.MAX_ENTREGAS_SUGERIDAS
+
+
 def test_obtener_planificacion_arma_plan_actual_desde_entregas_existentes(monkeypatch):
     monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc())
     monkeypatch.setattr(repo, "listar_oc_items", lambda client, **kw: [_oc_item("i1")])
@@ -352,6 +369,20 @@ def test_planificar_item_descartado_no_puede_recibir_cantidad_da_validation_erro
         )
 
 
+def test_planificar_oc_item_id_repetido_en_la_misma_entrega_da_validation_error(monkeypatch):
+    _mockear_lectura_basica(
+        monkeypatch, oc_items=[_oc_item("i1", cantidad="100", numero_renglon_documento="7")]
+    )
+    entregas = [_entrega_in(1, [("i1", "60"), ("i1", "40")])]
+    with pytest.raises(ValidationError) as exc_info:
+        service.planificar_entregas(
+            MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", usuario_id="u1", entregas=entregas
+        )
+    mensaje = str(exc_info.value)
+    assert "entrega 1" in mensaje
+    assert "7" in mensaje  # nombra el renglón (numero_renglon_documento)
+
+
 def test_planificar_cantidad_negativa_da_validation_error(monkeypatch):
     _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
     entregas = [_entrega_in(1, [("i1", "-1")])]
@@ -365,6 +396,17 @@ def test_planificar_entrega_con_todas_las_cantidades_en_cero_da_validation_error
     _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
     entregas = [_entrega_in(1, [("i1", "0")])]
     with pytest.raises(ValidationError, match="cero"):
+        service.planificar_entregas(
+            MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", usuario_id="u1", entregas=entregas
+        )
+
+
+def test_planificar_mas_de_max_entregas_sugeridas_da_validation_error(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    entregas = [
+        _entrega_in(n, [("i1", "1")]) for n in range(1, service.MAX_ENTREGAS_SUGERIDAS + 2)
+    ]
+    with pytest.raises(ValidationError, match=str(service.MAX_ENTREGAS_SUGERIDAS)):
         service.planificar_entregas(
             MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", usuario_id="u1", entregas=entregas
         )

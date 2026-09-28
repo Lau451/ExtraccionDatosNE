@@ -71,7 +71,9 @@ class PlanificacionEntregasOut(BaseModel):
     orden_compra_id: str
     numero_oc: str
     # ordenes_compra.cantidad_entregas (T2) -- lo que declaró el documento
-    # (o 1 por default). El usuario puede plantear un N distinto en el PUT.
+    # (o 1 por default), acotado a service.MAX_ENTREGAS_SUGERIDAS (fix de
+    # review). El usuario puede plantear un N distinto en el PUT, con el
+    # mismo tope.
     cantidad_entregas_sugerida: int
     renglones: list[RenglonPlanificacion]
     pendientes: int
