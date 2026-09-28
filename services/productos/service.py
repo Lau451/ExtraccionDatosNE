@@ -7,6 +7,7 @@ from supabase import Client
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import NotFoundError
 from services.productos import repository as repo
+from services.productos.domain import parsear_unidades_por_presentacion
 from services.productos.models import (
     CaracteristicaCreate,
     CaracteristicaUpdate,
@@ -38,6 +39,9 @@ def crear_producto(
             "clasificacion": body.clasificacion,
             "droga": body.droga,
             "presentacion": body.presentacion,
+            # 0031: tamaño de pack numérico inferido de presentacion (NULL si
+            # no matchea "Presentación x N").
+            "unidades_por_presentacion": parsear_unidades_por_presentacion(body.presentacion),
             "forma_farmaceutica": body.forma_farmaceutica,
             "marca_id": body.marca_id,
             "envase_id": body.envase_id,
@@ -107,6 +111,10 @@ def actualizar_producto(
     campos = body.model_dump(exclude_unset=True)
     if "alicuota_iva" in campos and campos["alicuota_iva"] is not None:
         campos["alicuota_iva"] = str(campos["alicuota_iva"])
+    # 0031: presentacion editada -> recalcular unidades_por_presentacion, no
+    # dejar la columna vieja desactualizada.
+    if "presentacion" in campos:
+        campos["unidades_por_presentacion"] = parsear_unidades_por_presentacion(campos["presentacion"])
     campos["updated_by"] = usuario_id
     return repo.actualizar_producto(client, producto_id=producto_id, campos=campos)
 

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "chunks": [
     {
       "id": "37897140",
@@ -72,6 +72,14 @@
       "sessions": 0,
       "memories": 78,
       "prompts": 0
+    },
+    {
+      "id": "4846e8e7",
+      "created_by": "LAUREANO",
+      "created_at": "2026-09-28T02:29:25.8492469Z",
+      "sessions": 52,
+      "memories": 241,
+      "prompts": 62
     }
   ]
 }

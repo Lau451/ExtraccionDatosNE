@@ -346,6 +346,66 @@ def test_falla_en_insertar_oc_items_borra_la_orden_compra_huerfana(monkeypatch):
 
 
 # =============================================================================
+# T2 (oc-entregas-planificacion) -- persistir cantidad_entregas extraída en
+# ordenes_compra.cantidad_entregas. Antes de este fix la columna quedaba
+# siempre en su DEFAULT 1 (comentario stale en _materializar_orden_compra,
+# corregido acá): el robot la extrae (robot_orden_compra.py:86) pero nunca
+# viajaba en OrdenCompraOverride. Regla: string trimeado que representa un
+# entero positivo -> ese entero; vacío/inválido/<=0 -> 1.
+# =============================================================================
+
+
+def _preparar_mocks_materializacion_con_cabecera(monkeypatch):
+    """Igual que _preparar_mocks_materializacion, pero también captura la fila
+    de cabecera que arma _materializar_orden_compra (`repo.crear_orden_compra`),
+    para poder inspeccionar cantidad_entregas."""
+    ordenes_creadas: list[dict] = []
+
+    def _fake_crear_orden_compra(client, fila):
+        ordenes_creadas.append(fila)
+        return {"id": "oc-1"}
+
+    def _fake_insertar_oc_items(client, filas):
+        return [
+            {"id": f"item-{i}", "numero_renglon": fila["numero_renglon"]}
+            for i, fila in enumerate(filas, start=1)
+        ]
+
+    monkeypatch.setattr(repo, "crear_orden_compra", _fake_crear_orden_compra)
+    monkeypatch.setattr(repo, "insertar_oc_items", _fake_insertar_oc_items)
+    monkeypatch.setattr(service, "registrar_evento_ciclo_vida", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "registrar_cambio", lambda *a, **kw: None)
+    return ordenes_creadas
+
+
+@pytest.mark.parametrize(
+    "valor_extraido, esperado",
+    [
+        ("3", 3),
+        (" 5 ", 5),
+        ("1", 1),
+        (None, 1),
+        ("", 1),
+        ("   ", 1),
+        ("0", 1),
+        ("-2", 1),
+        ("abc", 1),
+    ],
+)
+def test_cantidad_entregas_se_persiste_desde_el_override(monkeypatch, valor_extraido, esperado):
+    ordenes_creadas = _preparar_mocks_materializacion_con_cabecera(monkeypatch)
+    override = OrdenCompraOverride(
+        numero_oc="OC-1", cliente_id="cli-1", cantidad_entregas=valor_extraido, filas=[_fila()]
+    )
+
+    service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    assert ordenes_creadas[0]["cantidad_entregas"] == esperado
+
+
+# =============================================================================
 # GET .../filas para orden_compra agrupada (wiring de _TIPOS_CON_LECTURA_DE_FILAS
 # con _leer_filas_grupo, requerido por 5.10 para que el endpoint muestre el
 # grupo concatenado en vez de solo el archivo ancla -- ver design.md Data Flow

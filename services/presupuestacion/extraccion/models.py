@@ -97,6 +97,12 @@ class OrdenCompraOverride(BaseModel):
     fecha_emision: date | None = None
     direccion_entrega: str | None = None
     notas: str | None = None
+    # T2 (oc-entregas-planificacion) -- cantidad de entregas declarada por el
+    # documento (robot_orden_compra.py:86), tal cual llega de la cabecera
+    # conciliada del grupo (D13.1): string sin validar acá, igual que el
+    # resto de los campos de cabecera. `_materializar_orden_compra` la
+    # convierte a un entero positivo (default 1 si viene vacía/inválida).
+    cantidad_entregas: str | None = None
     filas: list[FilaOrdenCompraIn]
 
 

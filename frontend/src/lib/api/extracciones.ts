@@ -134,6 +134,11 @@ export interface OrdenCompraOverride {
   fecha_emision: string | null
   direccion_entrega: string | null
   notas: string | null
+  // T2 (oc-entregas-planificacion): cantidad de entregas declarada por el
+  // documento -- string sin validar, igual que el resto de la cabecera. El
+  // backend la convierte a un entero positivo (default 1 si viene vacía o
+  // inválida, ver OrdenCompraOverride en services/presupuestacion/extraccion/models.py).
+  cantidad_entregas: string | null
   filas: FilaOrdenCompraIn[]
 }
 

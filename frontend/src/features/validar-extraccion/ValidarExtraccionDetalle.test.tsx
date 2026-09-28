@@ -51,6 +51,7 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
         fecha_emision: string
         direccion_entrega: string
         observaciones: string
+        cantidad_entregas: string
       },
       bloqueado: boolean,
     ) => void
@@ -65,6 +66,7 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
           fecha_emision: '12/09/2026',
           direccion_entrega: 'Av. Siempreviva 742',
           observaciones: '',
+          cantidad_entregas: '1',
         },
         false,
       )
@@ -76,7 +78,16 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
         <button
           type="button"
           onClick={() =>
-            onCambio({ numero_oc: '', fecha_emision: '', direccion_entrega: '', observaciones: '' }, true)
+            onCambio(
+              {
+                numero_oc: '',
+                fecha_emision: '',
+                direccion_entrega: '',
+                observaciones: '',
+                cantidad_entregas: '',
+              },
+              true,
+            )
           }
         >
           stub-cabecera-bloqueada
@@ -90,12 +101,30 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
                 fecha_emision: '12/09/2026',
                 direccion_entrega: 'Av. Siempreviva 742',
                 observaciones: '  Entrega parcial  ',
+                cantidad_entregas: '1',
               },
               false,
             )
           }
         >
           stub-observaciones
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onCambio(
+              {
+                numero_oc: 'OC-4471',
+                fecha_emision: '12/09/2026',
+                direccion_entrega: 'Av. Siempreviva 742',
+                observaciones: '',
+                cantidad_entregas: '3',
+              },
+              false,
+            )
+          }
+        >
+          stub-cantidad-entregas
         </button>
       </div>
     )
@@ -282,6 +311,7 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
       fecha_emision: '2026-09-12', // D6: DD/MM/AAAA en el documento -> ISO para el backend
       direccion_entrega: 'Av. Siempreviva 742',
       notas: null, // T2: sin observaciones cargadas (stub default '') -> null, no ''
+      cantidad_entregas: '1', // oc-entregas-planificacion T2: default del stub al montar
     })
     expect(payload.orden_compra).not.toHaveProperty('entregas')
     expect(payload.orden_compra?.filas).toEqual([
@@ -314,6 +344,24 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
     await waitFor(() => expect(validarExtraccion).toHaveBeenCalledTimes(1))
     const [, payload] = vi.mocked(validarExtraccion).mock.calls[0]
     expect(payload.orden_compra?.notas).toBe('Entrega parcial')
+  })
+
+  it('cantidad_entregas viaja con el valor reportado por la cabecera (oc-entregas-planificacion T2)', async () => {
+    mockFilasOrdenCompra([FILA_OC()])
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    await screen.findByText('cabecera-orden-compra-stub')
+    fireEvent.click(screen.getByText('stub-cantidad-entregas'))
+    await confirmarCliente()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^confirmar validación$/i })).not.toBeDisabled(),
+    )
+
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(validarExtraccion).toHaveBeenCalledTimes(1))
+    const [, payload] = vi.mocked(validarExtraccion).mock.calls[0]
+    expect(payload.orden_compra?.cantidad_entregas).toBe('3')
   })
 })
 

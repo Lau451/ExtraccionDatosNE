@@ -14,6 +14,7 @@ from services.presupuestacion.imports.models import (
     ImportProveedorRow,
     ImportStockRow,
 )
+from services.productos.domain import parsear_unidades_por_presentacion
 
 DEPOSITO_SENTINEL = "unico"
 
@@ -44,6 +45,11 @@ def importar_productos(
             "clasificacion": p.clasificacion,
             "droga": p.droga,
             "presentacion": p.presentacion,
+            # 0031: tamaño de pack numérico inferido de presentacion (NULL si
+            # no matchea "Presentación x N") -- se recalcula en cada import,
+            # tanto para altas como para actualizaciones (`base` alimenta
+            # ambas listas más abajo).
+            "unidades_por_presentacion": parsear_unidades_por_presentacion(p.presentacion),
             "forma_farmaceutica": p.forma_farmaceutica,
             "marca_id": p.marca_id,
             "envase_id": p.envase_id,
