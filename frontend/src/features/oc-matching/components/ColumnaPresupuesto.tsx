@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
+import { etiquetaRenglonOc } from '../etiquetaRenglonOc'
 import { AvisoReutilizacion } from './AvisoReutilizacion'
 
 interface Props {
@@ -149,7 +150,7 @@ export function ColumnaPresupuesto({
                 }
                 className="mt-2 rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40"
               >
-                Vincular al renglón {renglonOcSeleccionado.numero_renglon} de la OC
+                Vincular al renglón {etiquetaRenglonOc(renglonOcSeleccionado)} de la OC
               </button>
             )}
           </div>

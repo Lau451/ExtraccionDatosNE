@@ -29,9 +29,17 @@ An OC can be materialized from a group of extractions whose documents repeat lin
 ## Tasks
 
 - [x] T0 — Budget column shows "Renglón N" (commit 8a1f923, direct inline).
-- [ ] T1 — Migration + persist `numero_renglon_documento` at materialization + tests.
-- [ ] T2 — OC matching API returns the field + tests.
-- [ ] T3 — Frontend label with fallback in OC column and manual-link button + tests.
+- [x] T1 — Migration + persist `numero_renglon_documento` at materialization + tests.
+  - Commit `baa7638`. Migration `supabase/migrations/0030_oc_items_numero_renglon_documento.sql` (+`.down.sql`), `docs/schema/extractor_final.sql` mirrored. `_materializar_orden_compra` persists `(fila.numero_renglon_documento or "").strip() or None`. Comments in `models.py`/`service.py` updated (no longer "NO se persiste").
+  - RED: 4 failures (`KeyError: 'numero_renglon_documento'`) in `tests/extraccion/test_orden_compra.py` before the service.py change. GREEN after: `venv/Scripts/python -m pytest tests/extraccion/test_orden_compra.py -q` → 57 passed.
+  - Pending-migration note: `tests/extraccion/test_service.py` has 5 integration tests (`test_validar_orden_compra_*`) that hit the real TEST Supabase project and fail with `PGRST204: Could not find the 'numero_renglon_documento' column of 'oc_items' in the schema cache` until the parent applies 0030 there. Confirmed this is the ONLY failure cause (not a regression).
+- [x] T2 — OC matching API returns the field + tests.
+  - Commit `4248468`. `oc_presupuesto/repository.py` (`listar_oc_items_completos`, `buscar_oc_item`) select `numero_renglon_documento`; `models.py::RenglonOrdenCompra.numero_renglon_documento: str | None = None`; `service.py::_armar_renglon_oc` passes `item.get("numero_renglon_documento")`.
+  - RED: `AttributeError: 'RenglonOrdenCompra' object has no attribute 'numero_renglon_documento'` in the new test before the models.py/service.py change. GREEN after: `venv/Scripts/python -m pytest tests/oc_presupuesto/test_service.py -q` → 69 passed, 2 failed.
+  - Same pending-migration cause for the 2 failures: `test_matching_integracion_samco_rafaela_...` / `test_sesion_completa_...` hit the real TEST DB with `column oc_items.numero_renglon_documento does not exist` (42703) — expected until 0030 is applied there.
+- [x] T3 — Frontend label with fallback in OC column and manual-link button + tests.
+  - `frontend/src/lib/api/ocMatching.ts::RenglonOrdenCompra.numero_renglon_documento: string | null`. New shared helper `frontend/src/features/oc-matching/etiquetaRenglonOc.ts` (+ `.test.ts`). `RenglonOcFila.tsx` shows "Renglón {etiqueta}" above the description. `ColumnaPresupuesto.tsx` manual-link button uses the same helper instead of the positional `numero_renglon`. Updated the three `RenglonOrdenCompra` test fixtures (`RenglonOcFila.test.tsx`, `ColumnaPresupuesto.test.tsx`, `OcMatchingDetalle.test.tsx`) with `numero_renglon_documento: null` so `tsc` passes.
+  - RED: `etiquetaRenglonOc.test.ts` failed to resolve the not-yet-created module; `RenglonOcFila.test.tsx`/`ColumnaPresupuesto.test.tsx` new tests failed (`getByText('Renglón 4')` not found / wrong button label) before the component changes. GREEN after: `npx vitest run src/features/oc-matching` → 6 files, 33 passed.
 
 ## Acceptance criteria
 

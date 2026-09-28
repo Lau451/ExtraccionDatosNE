@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CandidatoVinculo, RenglonOrdenCompra, RenglonPresupuesto } from '@/lib/api/ocMatching'
+import { etiquetaRenglonOc } from '../etiquetaRenglonOc'
 
 interface Props {
   renglon: RenglonOrdenCompra
@@ -63,6 +64,7 @@ export function RenglonOcFila({
         seleccionado ? 'border-navy bg-navy/5' : 'border-slate-200'
       }`}
     >
+      <p className="text-xs font-medium text-slate-500">Renglón {etiquetaRenglonOc(renglon)}</p>
       <div className="flex items-center justify-between">
         <p className="font-medium text-slate-900">{renglon.descripcion}</p>
         <span className="text-xs font-medium text-slate-500">{ETIQUETA_ESTADO[renglon.estado]}</span>

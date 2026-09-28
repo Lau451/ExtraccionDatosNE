@@ -49,6 +49,7 @@ function renglonOc(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenCom
   return {
     oc_item_id: 'item-1',
     numero_renglon: 1,
+    numero_renglon_documento: null,
     descripcion: 'Ibuprofeno 400mg x 20',
     cantidad: 10,
     precio_unitario: 1250,

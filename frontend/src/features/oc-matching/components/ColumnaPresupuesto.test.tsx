@@ -23,6 +23,7 @@ function ordenCompra(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenC
   return {
     oc_item_id: 'item-1',
     numero_renglon: 1,
+    numero_renglon_documento: null,
     descripcion: 'Ibuprofeno 400mg x 20',
     cantidad: 10,
     precio_unitario: 1250,
@@ -261,6 +262,24 @@ describe('ColumnaPresupuesto — vínculo manual (spec oc-presupuesto-vinculacio
     fireEvent.click(boton)
 
     expect(onVincularManual).toHaveBeenCalledWith('item-9', 'pi-1')
+  })
+
+  it('el botón usa el número impreso en el documento cuando existe, no el posicional', () => {
+    const seleccionado = ordenCompra({
+      oc_item_id: 'item-9',
+      numero_renglon: 4,
+      numero_renglon_documento: '38',
+      estado: 'pendiente',
+      candidatos: [],
+    })
+
+    renderColumna({
+      renglones: [presupuesto({ presupuesto_item_id: 'pi-1', descripcion: 'Ibuprofeno' })],
+      renglonOcSeleccionado: seleccionado,
+    })
+
+    expect(screen.getByRole('button', { name: /vincular al renglón 38 de la oc/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /vincular al renglón 4 de la oc/i })).not.toBeInTheDocument()
   })
 
   it('sin un renglón de OC pendiente seleccionado, no ofrece el botón de vínculo manual', () => {

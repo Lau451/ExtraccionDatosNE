@@ -7,6 +7,7 @@ function renglon(overrides: Partial<RenglonOrdenCompra> = {}): RenglonOrdenCompr
   return {
     oc_item_id: 'item-1',
     numero_renglon: 1,
+    numero_renglon_documento: null,
     descripcion: 'Ibuprofeno 400mg x 20',
     cantidad: 10,
     precio_unitario: 1250,
@@ -55,6 +56,18 @@ function renderFila(overrides: Partial<RenglonOrdenCompra> = {}, props: Partial<
   )
   return { onSeleccionar, onConfirmar, onDeshacer, onDescartar }
 }
+
+describe('RenglonOcFila — número de renglón (spec oc-numero-renglon-documento)', () => {
+  it('muestra el número impreso en el documento cuando existe', () => {
+    renderFila({ numero_renglon: 4, numero_renglon_documento: '38' })
+    expect(screen.getByText('Renglón 38')).toBeInTheDocument()
+  })
+
+  it('cae al número posicional (D13.1) cuando el documento no lo tiene', () => {
+    renderFila({ numero_renglon: 4, numero_renglon_documento: null })
+    expect(screen.getByText('Renglón 4')).toBeInTheDocument()
+  })
+})
 
 describe('RenglonOcFila (design.md D4/D13, spec oc-presupuesto-vinculacion)', () => {
   it('un único candidato: "Confirmar" está habilitado y nada viene preseleccionado', () => {
