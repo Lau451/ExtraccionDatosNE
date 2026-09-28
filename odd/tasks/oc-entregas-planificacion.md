@@ -103,9 +103,16 @@ Out of scope: NP CSV export, Progress return/devolución import, renuncia PDF an
 
 - T3 verification: writer `pytest tests/oc_entregas tests/oc_presupuesto tests/extraccion tests/productos tests/imports -q` → 393 passed. Parent spot check `pytest tests/oc_entregas -q` → 47 passed.
 
+- RDD T3 (`4ae48b7..c7b3736`): medium, `slice_budget_reached` → consent granted → `review-reliability` → approved, acknowledged (lineage `review-caea8523d706122e`). Reviewed boundary is now `c7b3736`.
+- Review advisories fixed right away (they were real defects), strict TDD with RED first:
+  - `a731f30`: all reads happen before the delete, and the delete filters `estado = 'pendiente'`. When the deleted count ≠ the count read earlier, it raises 409 and skips inserts. Residual: in that race the still-pending deliveries were already deleted, so the plan is partially gone and the user must re-plan.
+  - `fb12e4b`: a duplicate `oc_item_id` in one delivery → 422. `MAX_ENTREGAS_SUGERIDAS = 24` caps the GET suggestion, and a PUT with more than 24 deliveries → 422. The cap of 24 was chosen by the parent; the user was told and can change it.
+  - `3c8a57c`: test cleanup guard.
+  - `pytest tests/oc_entregas -q` → 52 passed (parent spot check). Assess `c7b3736..3c8a57c`: medium, `under_budget`, pending in the slice.
+
 ## Next step
 
-RDD assess of T3 (from the reviewed boundary `4ae48b7`), then T4.
+T4 (frontend planning screen).
 
 ## Historical note (T3 brief)
 
