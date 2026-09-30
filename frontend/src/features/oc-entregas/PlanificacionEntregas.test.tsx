@@ -422,5 +422,34 @@ describe('PlanificacionEntregas — escribir los números directamente', () => {
 
     expect(n).toHaveValue('3')
   })
-})
 
+  it('fuera de rango: al salir del campo muestra el valor que realmente se aplicó', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const n = screen.getByLabelText('cantidad de entregas')
+    fireEvent.change(n, { target: { value: '30' } })
+    await waitFor(() => expect(n).toHaveValue('24'))
+
+    // Ya en el máximo: 99 se recorta a 24, el valor no cambia.
+    fireEvent.change(n, { target: { value: '99' } })
+    fireEvent.blur(n)
+
+    expect(n).toHaveValue('24')
+  })
+
+  it('cero cuando ya está en 1: al salir del campo vuelve a 1', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion({ cantidad_entregas_sugerida: 1 }))
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const n = screen.getByLabelText('cantidad de entregas')
+    fireEvent.change(n, { target: { value: '0' } })
+    fireEvent.blur(n)
+
+    expect(n).toHaveValue('1')
+  })
+})

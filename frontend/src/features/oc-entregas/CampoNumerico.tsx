@@ -68,7 +68,12 @@ export function CampoNumerico({
         else if (vacioEsCero) onCambiar(0)
       }}
       onBlur={() => {
-        if (aNumero(texto) === null && !vacioEsCero) setTexto(String(valor))
+        // Al salir, el campo muestra el valor que realmente quedó aplicado:
+        // vacío no aplicado, o un número que el padre recortó a un rango
+        // (p. ej. 99 con un máximo de 24 cuando ya estaba en 24, que no
+        // cambia `valor` y por eso no dispara la sincronización de arriba).
+        const actual = aNumero(texto)
+        if (actual === null ? !vacioEsCero : actual !== valor) setTexto(String(valor))
       }}
       className={className}
     />
