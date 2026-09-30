@@ -36,7 +36,7 @@ from google.genai import types
 from services.extraccion.config import get_next_client, get_output_dir, get_processed_dir, generate_with_fallback
 from services.extraccion.robot import obtener_cliente, nombre_unico
 from services.extraccion.gemini_errors import handle_gemini_errors, GeminiTruncationError
-from services.extraccion.parsers import parse_document_orden_compra
+from services.extraccion.parsers import is_scanned_pdf, parse_document_orden_compra
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +179,83 @@ class OrdenCompraSinRenglonesError(ValueError):
 # ======================
 
 
+# Tope para mandar el PDF inline a Gemini (el request completo admite ~20 MB).
+_MAX_BYTES_DOCUMENTO_VISION = 15 * 1024 * 1024
+
+_MIME_IMAGENES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+_EXT_TIFF = (".tif", ".tiff")
+
+
+def _es_pdf_escaneado(ruta: Path) -> bool:
+    """True si `ruta` es un PDF sin capa de texto utilizable (solo imagen).
+
+    Reusa `parsers.is_scanned_pdf` (PyMuPDF: menos del 50% de las primeras 3
+    páginas con más de 50 caracteres). Cualquier falla al abrirlo se trata como
+    "no escaneado" para conservar el camino actual por Markdown.
+    """
+    if ruta.suffix.lower() != ".pdf":
+        return False
+    try:
+        return is_scanned_pdf(ruta)
+    except Exception as exc:
+        logger.warning("No se pudo evaluar si %s es escaneado (%s) — camino Markdown", ruta.name, exc)
+        return False
+
+
+def _paginas_tiff_a_png(ruta: Path) -> list[tuple[bytes, str]]:
+    """Gemini no acepta TIFF: cada página se renderiza a PNG en memoria (PyMuPDF,
+    que ya usa el repo), en orden."""
+    import fitz  # noqa: PLC0415 — PyMuPDF, opcional como en parsers.py
+
+    doc = fitz.open(str(ruta))
+    try:
+        return [(pagina.get_pixmap().tobytes("png"), "image/png") for pagina in doc]
+    finally:
+        doc.close()
+
+
+def _documento_para_vision(ruta: Path) -> Optional[list[tuple[bytes, str]]]:
+    """Partes (bytes, mime_type) a enviar a Gemini en una sola llamada, o None si
+    el archivo debe seguir el camino actual por Markdown.
+
+    Aplica a PDF escaneados (sin capa de texto) e imágenes (jpg/jpeg/png/tif/tiff).
+    Cualquier falla al leerlo o superar el tope de tamaño devuelve None.
+    """
+    ext = ruta.suffix.lower()
+    try:
+        if ext == ".pdf":
+            if not _es_pdf_escaneado(ruta):
+                return None
+            partes = [(ruta.read_bytes(), "application/pdf")]
+        elif ext in _MIME_IMAGENES:
+            partes = [(ruta.read_bytes(), _MIME_IMAGENES[ext])]
+        elif ext in _EXT_TIFF:
+            partes = _paginas_tiff_a_png(ruta)
+        else:
+            return None
+    except Exception as exc:
+        logger.warning("No se pudo preparar %s para Vision (%s) — camino Markdown", ruta.name, exc)
+        return None
+
+    total = sum(len(datos) for datos, _ in partes)
+    if not partes or total > _MAX_BYTES_DOCUMENTO_VISION:
+        logger.warning("%s (%d bytes) no apto para Vision directo — camino Markdown", ruta.name, total)
+        return None
+    return partes
+
+
 @handle_gemini_errors(max_retries=4, backoff_factor=40.0)
-def _llamar_gemini_orden_compra(markdown: str, *, prompt: str = _PROMPT) -> dict[str, Any]:
+def _llamar_gemini_orden_compra(
+    markdown: str,
+    *,
+    prompt: str = _PROMPT,
+    documento: Optional[list[tuple[bytes, str]]] = None,
+) -> dict[str, Any]:
     """Call Gemini with response_mime_type='application/json' for guaranteed valid JSON.
+
+    Si `documento` viene (lista de (bytes, mime_type): PDF escaneado o imagen), se
+    envían esas partes junto con el prompt en vez del Markdown: Gemini lee el
+    documento directamente sin pasar por OCR.
 
     Mirrors robot_comparativas._llamar_gemini_json: checks finish_reason BEFORE
     parsing to detect truncation early, raises GeminiTruncationError (not a JSON
@@ -192,7 +266,14 @@ def _llamar_gemini_orden_compra(markdown: str, *, prompt: str = _PROMPT) -> dict
         GeminiQuotaExceededError / GeminiRateLimitError: propagated by the decorator.
     """
     client = get_next_client()
-    response = generate_with_fallback(client, f"{prompt}\n\n{markdown}", config=_JSON_CONFIG)
+    if documento is not None:
+        contenido: Any = [
+            *(types.Part.from_bytes(data=datos, mime_type=mime) for datos, mime in documento),
+            prompt,
+        ]
+    else:
+        contenido = f"{prompt}\n\n{markdown}"
+    response = generate_with_fallback(client, contenido, config=_JSON_CONFIG)
 
     finish_reason = None
     if response.candidates:
@@ -357,6 +438,9 @@ def procesar_orden_compra(
     """Process a client purchase-order document into a flat D6 CSV.
 
     Pipeline:
+      0. PDF escaneado (sin capa de texto) o imagen: se omite el paso 1 y el archivo va
+         directo a Gemini Vision (documento) con el mismo prompt/esquema. El resto de los
+         formatos y los PDF con texto siguen el camino de abajo.
       1. Parse document to Markdown via parse_document_orden_compra() — usa el
          path de extracción de PDF dedicado a orden_compra (nunca descarta el
          texto libre de una página por tener una tabla; ver docstring de
@@ -401,8 +485,17 @@ def procesar_orden_compra(
         cliente,
     )
 
-    markdown = parse_document_orden_compra(ruta_archivo)
-    logger.info("Document parsed to Markdown (%d chars)", len(markdown))
+    documento = _documento_para_vision(ruta_archivo)
+
+    if documento is not None:
+        markdown = ""
+        logger.info(
+            "pipeline=gemini_vision_orden_compra file=%s partes=%d bytes=%d",
+            ruta_archivo.name, len(documento), sum(len(d) for d, _ in documento),
+        )
+    else:
+        markdown = parse_document_orden_compra(ruta_archivo)
+        logger.info("Document parsed to Markdown (%d chars)", len(markdown))
 
     prompt_efectivo = (
         f"{_PROMPT}\n\nINSTRUCCIONES ESPECIFICAS DE ESTE CLIENTE:\n{instrucciones_extra}\n"
@@ -410,7 +503,12 @@ def procesar_orden_compra(
         else _PROMPT
     )
 
-    datos = _llamar_gemini_orden_compra(markdown, prompt=prompt_efectivo)
+    if documento is not None:
+        datos = _llamar_gemini_orden_compra(
+            markdown, prompt=prompt_efectivo, documento=documento
+        )
+    else:
+        datos = _llamar_gemini_orden_compra(markdown, prompt=prompt_efectivo)
 
     if not datos.get("renglones"):
         raise OrdenCompraSinRenglonesError(
