@@ -70,9 +70,9 @@ describe('PlanificacionEntregas (T4)', () => {
     renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
 
     await screen.findByText('Ibuprofeno 400mg')
-    expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue(50)
-    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue(25)
-    expect(screen.getByLabelText('entrega 3 renglón 1')).toHaveValue(25)
+    expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue('50')
+    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue('25')
+    expect(screen.getByLabelText('entrega 3 renglón 1')).toHaveValue('25')
   })
 
   it('precarga la grilla con plan_actual cuando ya existe un plan', async () => {
@@ -98,9 +98,9 @@ describe('PlanificacionEntregas (T4)', () => {
     renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
 
     await screen.findByText('Ibuprofeno 400mg')
-    expect(screen.getByLabelText('cantidad de entregas')).toHaveValue(2)
-    expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue(40)
-    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue(60)
+    expect(screen.getByLabelText('cantidad de entregas')).toHaveValue('2')
+    expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue('40')
+    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue('60')
   })
 
   it('cambiar N recalcula la sugerencia en el cliente, sin volver a pedirle nada al servidor', async () => {
@@ -111,8 +111,8 @@ describe('PlanificacionEntregas (T4)', () => {
     await screen.findByText('Ibuprofeno 400mg')
     fireEvent.change(screen.getByLabelText('cantidad de entregas'), { target: { value: '2' } })
 
-    await waitFor(() => expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue(50))
-    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue(50)
+    await waitFor(() => expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue('50'))
+    expect(screen.getByLabelText('entrega 2 renglón 1')).toHaveValue('50')
     expect(screen.queryByLabelText('entrega 3 renglón 1')).not.toBeInTheDocument()
     expect(obtenerPlanificacionEntregas).toHaveBeenCalledTimes(1)
   })
@@ -143,7 +143,7 @@ describe('PlanificacionEntregas (T4)', () => {
     expect(screen.getByText(/no es múltiplo de 25/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /usar 25/i }))
 
-    await waitFor(() => expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue(25))
+    await waitFor(() => expect(screen.getByLabelText('entrega 1 renglón 1')).toHaveValue('25'))
   })
 
   it('deshabilita guardar mientras la suma de una fila no coincide con la cantidad del renglón', async () => {
@@ -273,7 +273,7 @@ describe('PlanificacionEntregas (T4)', () => {
     await screen.findByText('Ibuprofeno 400mg')
     fireEvent.change(screen.getByLabelText('cantidad de entregas'), { target: { value: '5' } })
 
-    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue(0))
+    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue('0'))
     expect(screen.getByText(/la entrega 5 no tiene cantidades/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar plan/i })).toBeDisabled()
   })
@@ -290,7 +290,7 @@ describe('PlanificacionEntregas (T4)', () => {
 
     await screen.findByText('Ibuprofeno 400mg')
     fireEvent.change(screen.getByLabelText('cantidad de entregas'), { target: { value: '5' } })
-    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue(0))
+    await waitFor(() => expect(screen.getByLabelText('entrega 5 renglón 1')).toHaveValue('0'))
 
     fireEvent.change(screen.getByLabelText('entrega 4 renglón 1'), { target: { value: '15' } })
     fireEvent.change(screen.getByLabelText('entrega 5 renglón 1'), { target: { value: '10' } })
@@ -338,3 +338,89 @@ describe('PlanificacionEntregas (T4)', () => {
     await waitFor(() => expect(obtenerPlanificacionEntregas).toHaveBeenCalledTimes(2))
   })
 })
+
+describe('PlanificacionEntregas — escribir los números directamente', () => {
+  it('los campos son de texto con teclado numérico, sin flechitas de sumar o restar', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const cantidad = screen.getByLabelText('entrega 1 renglón 1')
+    expect(cantidad).toHaveAttribute('type', 'text')
+    expect(cantidad).toHaveAttribute('inputmode', 'decimal')
+    const n = screen.getByLabelText('cantidad de entregas')
+    expect(n).toHaveAttribute('type', 'text')
+    expect(n).toHaveAttribute('inputmode', 'numeric')
+  })
+
+  it('una cantidad se puede borrar: el campo queda vacío y cuenta como 0', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const campo = screen.getByLabelText('entrega 1 renglón 1')
+    fireEvent.change(campo, { target: { value: '' } })
+
+    expect(campo).toHaveValue('')
+    // 100 - (0 + 25 + 25)
+    expect(screen.getByText('50')).toBeInTheDocument()
+  })
+
+  it('al hacer foco se selecciona todo el contenido para escribir encima', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const campo = screen.getByLabelText('entrega 1 renglón 1') as HTMLInputElement
+    fireEvent.focus(campo)
+
+    expect(campo.selectionStart).toBe(0)
+    expect(campo.selectionEnd).toBe(campo.value.length)
+  })
+
+  it('ignora lo que no es un número', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const campo = screen.getByLabelText('entrega 1 renglón 1')
+    fireEvent.change(campo, { target: { value: '5a' } })
+
+    expect(campo).toHaveValue('50')
+  })
+
+  it('la cantidad de entregas se puede borrar y reescribir sin volver a 1', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const n = screen.getByLabelText('cantidad de entregas')
+    fireEvent.change(n, { target: { value: '' } })
+
+    expect(n).toHaveValue('')
+    // Mientras está vacío no se tocan las columnas.
+    expect(screen.getByLabelText('entrega 3 renglón 1')).toBeInTheDocument()
+
+    fireEvent.change(n, { target: { value: '4' } })
+    await waitFor(() => expect(screen.getByLabelText('entrega 4 renglón 1')).toBeInTheDocument())
+  })
+
+  it('si la cantidad de entregas queda vacía al salir del campo, vuelve al valor anterior', async () => {
+    vi.mocked(obtenerPlanificacionEntregas).mockResolvedValue(planificacion())
+
+    renderConQueryClient(<PlanificacionEntregas ordenCompraId="oc-1" />)
+
+    await screen.findByText('Ibuprofeno 400mg')
+    const n = screen.getByLabelText('cantidad de entregas')
+    fireEvent.change(n, { target: { value: '' } })
+    fireEvent.blur(n)
+
+    expect(n).toHaveValue('3')
+  })
+})
+
