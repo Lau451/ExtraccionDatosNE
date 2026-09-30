@@ -215,6 +215,11 @@ class TestConstruirFilas:
             ("464,88", "464,88"),           # ya viene sin miles
             ("800", "800"),
             ("3.5", "3.5"),                 # un punto que no agrupa de a 3 -> no se toca
+            ("0.500", "0.500"),             # cero a la izquierda: es 0,5, no 500
+            ("1.234,5", "1234,5"),
+            ("3,093.77", "3093.77"),        # formato US: el ultimo separador es el decimal
+            ("1,234,567.89", "1234567.89"),
+            ("12.500", "12500"),
             ("", ""),
         ],
     )
