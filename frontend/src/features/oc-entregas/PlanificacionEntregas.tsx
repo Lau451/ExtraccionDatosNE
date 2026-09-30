@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/ocEntregas'
 import { etiquetaRenglonOc } from '../oc-matching/etiquetaRenglonOc'
 import { sugerirCantidadDivisible, sugerirPlanRenglon } from './sugerirPlan'
+import { CampoNumerico } from './CampoNumerico'
 
 const MAX_ENTREGAS = 24
 
@@ -248,14 +249,11 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
         <label htmlFor="cantidad-entregas" className="mb-1 block text-sm text-slate-600">
           Cantidad de entregas
         </label>
-        <input
+        <CampoNumerico
           id="cantidad-entregas"
-          aria-label="cantidad de entregas"
-          type="number"
-          min={1}
-          max={MAX_ENTREGAS}
-          value={n}
-          onChange={(evento) => cambiarN(Number(evento.target.value))}
+          ariaLabel="cantidad de entregas"
+          valor={n}
+          onCambiar={cambiarN}
           className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
@@ -376,12 +374,12 @@ function FilaPlanificacion({ renglon, n, valores, restante, onCambiar, onUsarSug
         const noDivisible = !!u && valor % u !== 0
         return (
           <td key={indice} className="p-2">
-            <input
-              type="number"
-              min={0}
-              aria-label={`entrega ${indice + 1} renglón ${etiqueta}`}
-              value={valor}
-              onChange={(evento) => onCambiar(indice, Number(evento.target.value))}
+            <CampoNumerico
+              ariaLabel={`entrega ${indice + 1} renglón ${etiqueta}`}
+              valor={valor}
+              onCambiar={(nuevo) => onCambiar(indice, nuevo)}
+              decimales
+              vacioEsCero
               className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm"
             />
             {noDivisible && u && (
