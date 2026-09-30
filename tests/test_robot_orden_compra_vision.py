@@ -236,3 +236,36 @@ class TestImagenes:
 
         parser.assert_called_once()
         assert gemini.call_args.kwargs.get("documento") is None
+
+
+class TestLimitesVision:
+    def test_tope_es_10_mib_por_el_overhead_base64(self):
+        assert robot._MAX_BYTES_DOCUMENTO_VISION == 10 * 1024 * 1024
+
+    @pytest.mark.parametrize("delta,usa_vision", [(0, True), (-1, False)])
+    def test_borde_del_tope(self, entorno, mocker, delta, usa_vision):
+        origen = entorno / "borde.png"
+        contenido = _imagen_png_bytes()
+        origen.write_bytes(contenido)
+        # tope == tamaño -> entra; tope == tamaño-1 -> se pasa por 1 byte
+        mocker.patch.object(robot, "_MAX_BYTES_DOCUMENTO_VISION", len(contenido) + delta)
+        mocker.patch.object(robot, "parse_document_orden_compra", return_value="md")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        assert (gemini.call_args.kwargs.get("documento") is not None) is usa_vision
+
+    def test_tiff_conserva_resolucion_nativa(self, entorno, mocker):
+        Image = pytest.importorskip("PIL.Image")
+        origen = entorno / "scan300.tif"
+        Image.new("RGB", (600, 400), (200, 200, 200)).save(str(origen), format="TIFF", dpi=(300, 300))
+        mocker.patch.object(robot, "parse_document_orden_compra")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        png, mime = gemini.call_args.kwargs["documento"][0]
+        pix = fitz.Pixmap(png)
+        assert mime == "image/png"
+        assert (pix.width, pix.height) == (600, 400)  # sin downsample a 72 DPI

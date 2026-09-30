@@ -26,6 +26,7 @@ Custom Exceptions:
 import csv
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -179,8 +180,10 @@ class OrdenCompraSinRenglonesError(ValueError):
 # ======================
 
 
-# Tope para mandar el PDF inline a Gemini (el request completo admite ~20 MB).
-_MAX_BYTES_DOCUMENTO_VISION = 15 * 1024 * 1024
+# Tope de bytes crudos para mandar el documento inline a Gemini. El SDK lo envía
+# en base64 (~+33%): 10 MiB crudos son ~13,4 MiB en el request, bajo el límite
+# de ~20 MB (15 MiB crudos pasarían de 20 MB).
+_MAX_BYTES_DOCUMENTO_VISION = 10 * 1024 * 1024
 
 _MIME_IMAGENES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 _EXT_TIFF = (".tif", ".tiff")
@@ -202,16 +205,41 @@ def _es_pdf_escaneado(ruta: Path) -> bool:
         return False
 
 
+# Lado máximo en píxeles de la página TIFF enviada (evita PNG gigantes).
+_MAX_LADO_PX_TIFF = 5000
+
+
 def _paginas_tiff_a_png(ruta: Path) -> list[tuple[bytes, str]]:
     """Gemini no acepta TIFF: cada página se renderiza a PNG en memoria (PyMuPDF,
-    que ya usa el repo), en orden."""
+    que ya usa el repo), en orden.
+
+    Un TIFF abierto como documento tiene páginas de tamaño en puntos (72 DPI), y
+    `get_pixmap()` a escala 1 bajaría un escaneo de 300 DPI a ~25% de sus píxeles.
+    Se convierte a PDF, donde se conoce el ancho en píxeles de la imagen embebida,
+    y se renderiza con el zoom que devuelve la resolución nativa (con tope de
+    `_MAX_LADO_PX_TIFF` por lado)."""
     import fitz  # noqa: PLC0415 — PyMuPDF, opcional como en parsers.py
 
-    doc = fitz.open(str(ruta))
+    origen = fitz.open(str(ruta))
     try:
-        return [(pagina.get_pixmap().tobytes("png"), "image/png") for pagina in doc]
+        pdf = fitz.open("pdf", origen.convert_to_pdf())
     finally:
-        doc.close()
+        origen.close()
+    try:
+        paginas: list[tuple[bytes, str]] = []
+        for pagina in pdf:
+            zoom = 1.0
+            imagenes = pagina.get_images(full=True)
+            if imagenes and pagina.rect.width:
+                zoom = imagenes[0][2] / pagina.rect.width  # ancho nativo en px
+            lado = max(pagina.rect.width, pagina.rect.height) * zoom
+            if lado > _MAX_LADO_PX_TIFF:
+                zoom *= _MAX_LADO_PX_TIFF / lado
+            pix = pagina.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            paginas.append((pix.tobytes("png"), "image/png"))
+        return paginas
+    finally:
+        pdf.close()
 
 
 def _documento_para_vision(ruta: Path) -> Optional[list[tuple[bytes, str]]]:
@@ -309,6 +337,30 @@ def _llamar_gemini_orden_compra(
 # ======================
 
 
+# Solo puntos en grupos de 3, sin cero a la izquierda: "12.500" -> miles, pero
+# "0.500" es 0,5 y no se toca.
+_PATRON_SOLO_MILES = re.compile(r"^[1-9]\d{0,2}(\.\d{3})+$")
+
+
+def _normalizar_numero(valor: str) -> str:
+    """Saca el separador de miles de un número. El prompt los pide sin miles,
+    pero leyendo un documento como imagen (PDF escaneado o foto) Gemini a veces
+    los transcribe tal como están impresos y la validación los rechaza.
+
+    - Con "." y "," a la vez, el ÚLTIMO es el decimal y el otro es de miles:
+      "3.093,77" -> "3093,77"; "3,093.77" -> "3093.77"; "1,234,567.89" -> "1234567.89".
+      El separador decimal se conserva tal cual (el backend acepta "." o ",").
+    - Solo puntos en grupos de 3 sin cero a la izquierda ("4.500", "12.500") ->
+      miles ("4500", "12500"). "0.500" queda igual: es 0,5.
+    - Cualquier otro caso ("464,88", "3.5") queda igual."""
+    if "." in valor and "," in valor:
+        miles = "," if valor.rfind(".") > valor.rfind(",") else "."
+        return valor.replace(miles, "")
+    if _PATRON_SOLO_MILES.match(valor):
+        return valor.replace(".", "")
+    return valor
+
+
 def _normalizar_direccion_entrega(valor: str) -> str:
     """T4: direccion_entrega es de línea única por contrato (D6, CabeceraOrdenCompra.tsx
     la edita en un textarea de una sola línea lógica). El prompt le pide a Gemini una
@@ -361,9 +413,9 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         fila = dict(cabecera)
         fila["numero_renglon"] = str(renglon.get("numero_renglon") or "").strip()
         fila["descripcion"] = str(renglon.get("descripcion") or "").strip()
-        fila["cantidad"] = str(renglon.get("cantidad") or "").strip()
-        fila["precio_unitario"] = str(renglon.get("precio_unitario") or "").strip()
-        fila["importe_total"] = str(renglon.get("importe_total") or "").strip()
+        fila["cantidad"] = _normalizar_numero(str(renglon.get("cantidad") or "").strip())
+        fila["precio_unitario"] = _normalizar_numero(str(renglon.get("precio_unitario") or "").strip())
+        fila["importe_total"] = _normalizar_numero(str(renglon.get("importe_total") or "").strip())
         fila["entregas"] = str(renglon.get("entregas") or "").strip()
         filas.append(fila)
 
