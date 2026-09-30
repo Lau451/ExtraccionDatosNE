@@ -89,7 +89,8 @@ class TestProcesarRutas:
 
         parser.assert_not_called()
         kwargs = gemini.call_args.kwargs
-        assert kwargs["documento_pdf"].startswith(b"%PDF")
+        assert kwargs["documento"][0][0].startswith(b"%PDF")
+        assert kwargs["documento"][0][1] == "application/pdf"
         assert "Renglon = columna 1" in kwargs["prompt"]
         with open(csv_path, encoding="utf-8", newline="") as f:
             fila = next(csv.DictReader(f, delimiter=";"))
@@ -106,7 +107,7 @@ class TestProcesarRutas:
 
         parser.assert_called_once()
         assert gemini.call_args.args == ("# markdown",)
-        assert gemini.call_args.kwargs.get("documento_pdf") is None
+        assert gemini.call_args.kwargs.get("documento") is None
 
     def test_excel_no_evalua_vision(self, entorno, mocker):
         origen = entorno / "CLIENTE_orden.xlsx"
@@ -116,7 +117,7 @@ class TestProcesarRutas:
 
         procesar(origen)
 
-        assert gemini.call_args.kwargs.get("documento_pdf") is None
+        assert gemini.call_args.kwargs.get("documento") is None
 
 
 def procesar(origen, **kwargs):
@@ -133,7 +134,7 @@ class TestLlamadaGeminiVision:
 
     def test_envia_pdf_y_prompt_como_partes(self, mocker):
         gen, datos = self._llamar(
-            mocker, _respuesta(json.dumps(_DATOS)), prompt="PROMPT X", documento_pdf=b"%PDF-bytes"
+            mocker, _respuesta(json.dumps(_DATOS)), prompt="PROMPT X", documento=[(b"%PDF-bytes", "application/pdf")]
         )
         contents = gen.call_args.args[1]
         assert isinstance(contents, list)
@@ -158,11 +159,80 @@ class TestLlamadaGeminiVision:
         )
         mocker.patch("time.sleep")
         with pytest.raises(GeminiTruncationError):
-            robot._llamar_gemini_orden_compra("", documento_pdf=b"%PDF")
+            robot._llamar_gemini_orden_compra("", documento=[(b"%PDF", "application/pdf")])
 
     def test_json_invalido_lanza_error_tambien_en_vision(self, mocker):
         mocker.patch.object(robot, "get_next_client", return_value=object())
         mocker.patch.object(robot, "generate_with_fallback", return_value=_respuesta("no json"))
         mocker.patch("time.sleep")
         with pytest.raises(GeminiTruncationError):
-            robot._llamar_gemini_orden_compra("", documento_pdf=b"%PDF")
+            robot._llamar_gemini_orden_compra("", documento=[(b"%PDF", "application/pdf")])
+
+
+def _imagen_png_bytes(color=255):
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 20), False)
+    pix.clear_with(color)
+    return pix.tobytes("png")
+
+
+def _tiff_paginas(path, n):
+    """TIFF multipágina armado con PyMuPDF."""
+    import io
+
+    Image = pytest.importorskip("PIL.Image")
+
+    imgs = [Image.open(io.BytesIO(_imagen_png_bytes(c * 40))).convert("RGB") for c in range(n)]
+    imgs[0].save(str(path), save_all=True, append_images=imgs[1:], format="TIFF")
+    return path
+
+
+class TestImagenes:
+    @pytest.mark.parametrize(
+        "nombre,mime", [("a.png", "image/png"), ("a.jpg", "image/jpeg"), ("a.JPEG", "image/jpeg")]
+    )
+    def test_imagen_usa_vision_con_su_mime_y_no_el_parser(self, entorno, mocker, nombre, mime):
+        origen = entorno / nombre
+        contenido = _imagen_png_bytes()
+        origen.write_bytes(contenido)
+        parser = mocker.patch.object(robot, "parse_document_orden_compra")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        parser.assert_not_called()
+        assert gemini.call_args.kwargs["documento"] == [(contenido, mime)]
+
+    def test_tiff_multipagina_se_envia_como_png_por_pagina(self, entorno, mocker):
+        origen = _tiff_paginas(entorno / "scan.tif", 2)
+        parser = mocker.patch.object(robot, "parse_document_orden_compra")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        parser.assert_not_called()
+        partes = gemini.call_args.kwargs["documento"]
+        assert len(partes) == 2
+        assert all(m == "image/png" and b.startswith(b"\x89PNG") for b, m in partes)
+
+    def test_imagen_sobre_el_tope_cae_al_camino_actual(self, entorno, mocker):
+        origen = entorno / "grande.png"
+        origen.write_bytes(_imagen_png_bytes())
+        mocker.patch.object(robot, "_MAX_BYTES_DOCUMENTO_VISION", 10)
+        parser = mocker.patch.object(robot, "parse_document_orden_compra", return_value="md")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        parser.assert_called_once()
+        assert gemini.call_args.kwargs.get("documento") is None
+
+    def test_imagen_ilegible_cae_al_camino_actual(self, entorno, mocker):
+        origen = entorno / "rota.tif"
+        origen.write_bytes(b"no es un tiff")
+        parser = mocker.patch.object(robot, "parse_document_orden_compra", return_value="md")
+        gemini = mocker.patch.object(robot, "_llamar_gemini_orden_compra", return_value=_DATOS)
+
+        procesar(origen)
+
+        parser.assert_called_once()
+        assert gemini.call_args.kwargs.get("documento") is None
