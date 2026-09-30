@@ -26,6 +26,7 @@ Custom Exceptions:
 import csv
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -309,6 +310,23 @@ def _llamar_gemini_orden_compra(
 # ======================
 
 
+_PATRON_SOLO_MILES = re.compile(r"^\d{1,3}(\.\d{3})+$")
+
+
+def _normalizar_numero(valor: str) -> str:
+    """Saca el separador de miles de un número en formato argentino. El prompt
+    pide los números sin miles, pero leyendo un documento como imagen (PDF
+    escaneado o foto) Gemini a veces los transcribe tal como están impresos
+    ("3.093,77") y la validación los rechaza. Punto + coma -> el punto es de
+    miles; solo puntos en grupos de 3 ("4.500") -> también. Cualquier otro caso
+    ("464,88", "3.5") queda igual."""
+    if "." in valor and "," in valor:
+        return valor.replace(".", "")
+    if _PATRON_SOLO_MILES.match(valor):
+        return valor.replace(".", "")
+    return valor
+
+
 def _normalizar_direccion_entrega(valor: str) -> str:
     """T4: direccion_entrega es de línea única por contrato (D6, CabeceraOrdenCompra.tsx
     la edita en un textarea de una sola línea lógica). El prompt le pide a Gemini una
@@ -361,9 +379,9 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         fila = dict(cabecera)
         fila["numero_renglon"] = str(renglon.get("numero_renglon") or "").strip()
         fila["descripcion"] = str(renglon.get("descripcion") or "").strip()
-        fila["cantidad"] = str(renglon.get("cantidad") or "").strip()
-        fila["precio_unitario"] = str(renglon.get("precio_unitario") or "").strip()
-        fila["importe_total"] = str(renglon.get("importe_total") or "").strip()
+        fila["cantidad"] = _normalizar_numero(str(renglon.get("cantidad") or "").strip())
+        fila["precio_unitario"] = _normalizar_numero(str(renglon.get("precio_unitario") or "").strip())
+        fila["importe_total"] = _normalizar_numero(str(renglon.get("importe_total") or "").strip())
         fila["entregas"] = str(renglon.get("entregas") or "").strip()
         filas.append(fila)
 

@@ -206,6 +206,34 @@ class TestConstruirFilas:
 
         assert filas[0]["direccion_entrega"] == "Av. Siempreviva 742"
 
+    @pytest.mark.parametrize(
+        ("crudo", "esperado"),
+        [
+            ("3.093,77", "3093,77"),        # punto de miles + coma decimal
+            ("2.091.960,00", "2091960,00"),  # varios puntos de miles
+            ("4.500", "4500"),              # solo puntos en grupos de 3 -> miles
+            ("464,88", "464,88"),           # ya viene sin miles
+            ("800", "800"),
+            ("3.5", "3.5"),                 # un punto que no agrupa de a 3 -> no se toca
+            ("", ""),
+        ],
+    )
+    def test_numeros_se_normalizan_sin_separador_de_miles(self, crudo, esperado):
+        """El prompt pide los números sin separador de miles, pero leyendo el
+        documento como imagen (PDF escaneado / foto) Gemini a veces los transcribe
+        como están impresos ("3.093,77"), y la validación los rechaza. Se
+        normaliza acá de forma determinística, en cantidad, precio e importe."""
+        datos = _datos_oc4471()
+        datos["renglones"][0]["cantidad"] = crudo
+        datos["renglones"][0]["precio_unitario"] = crudo
+        datos["renglones"][0]["importe_total"] = crudo
+
+        fila = _construir_filas(datos)[0]
+
+        assert fila["cantidad"] == esperado
+        assert fila["precio_unitario"] == esperado
+        assert fila["importe_total"] == esperado
+
 
 # ---------------------------------------------------------------------------
 # _PROMPT — contrato de texto (T4: reglas de formato OCR/dirección/observaciones)
