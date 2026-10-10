@@ -14,8 +14,8 @@
 --      puede quedar una exportación a medias.
 -- 2. idx_oc_exportadas: parcial (la mayoría de las OC no se exporta) para el
 --    filtro del calendario de compromisos.
--- 3. v_compromisos_entregas: una fila por ítem de entrega pendiente de una OC
---    exportada, vigente y no cancelada. "Hoy" se calcula en hora argentina:
+-- 3. v_compromisos_entregas: una fila por ítem de entrega abierta (no entregada ni
+--    rechazada) de una OC exportada, vigente y no cancelada. "Hoy" se calcula en hora argentina:
 --    con CURRENT_DATE (UTC en Supabase), entre las 21:00 y las 24:00 una
 --    entrega de mañana figuraría como de hoy. El día de hoy cuenta como
 --    'futura'. WITH (security_invoker = true) para que aplique la RLS de quien
@@ -39,6 +39,7 @@ ALTER TABLE ordenes_compra ADD COLUMN IF NOT EXISTS archivo_exportado TEXT NULL;
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'fk_oc_exportadopor'
+                   AND conrelid = 'public.ordenes_compra'::regclass
   ) THEN
     ALTER TABLE ordenes_compra ADD CONSTRAINT fk_oc_exportadopor
       FOREIGN KEY (exportado_por) REFERENCES usuarios (id);
@@ -48,6 +49,7 @@ END $$;
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'ck_oc_exportacion'
+                   AND conrelid = 'public.ordenes_compra'::regclass
   ) THEN
     ALTER TABLE ordenes_compra ADD CONSTRAINT ck_oc_exportacion
       CHECK (
@@ -98,9 +100,9 @@ WHERE oc.exportado_at IS NOT NULL
   AND oc.deleted_at IS NULL
   AND oc.es_vigente
   AND oc.estado <> 'cancelada'
-  AND e.estado = 'pendiente';
+  AND e.estado NOT IN ('entregada', 'rechazada');
 
 COMMENT ON VIEW v_compromisos_entregas IS
-  'Compromisos de entrega: una fila por ítem de entrega pendiente de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
+  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
 
 NOTIFY pgrst, 'reload schema';

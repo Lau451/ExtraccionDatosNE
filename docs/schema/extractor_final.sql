@@ -2212,10 +2212,10 @@ WHERE oc.exportado_at IS NOT NULL
   AND oc.deleted_at IS NULL
   AND oc.es_vigente
   AND oc.estado <> 'cancelada'
-  AND e.estado = 'pendiente';
+  AND e.estado NOT IN ('entregada', 'rechazada');
 
 COMMENT ON VIEW v_compromisos_entregas IS
-  'Compromisos de entrega: una fila por ítem de entrega pendiente de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
+  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
 
 -- Proveedores sin matchear
 CREATE VIEW v_ofertas_sin_matchear AS
