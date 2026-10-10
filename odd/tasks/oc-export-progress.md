@@ -17,7 +17,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 
 ## Tasks
 
-- [ ] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST. (code done + reviewed; pending: user re-runs final 0032 in SQL Editor + registers it in schema_migrations, parent verifies)
+- [x] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST.
 - [ ] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
 - [ ] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [ ] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
@@ -34,4 +34,5 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - Branch `feat/oc-export-progress-01-esquema`; commits `c52bee3` (migration 0032 + down + snapshot), `d04679e` (view keeps `en_transito`/`parcial` deliveries, same criterion as `v_entregas_pendientes`; constraint guards scoped by `conrelid`).
 - Supabase MCP is read-only (no `apply_migration`, writes fail with 25006), so the user ran the first version of 0032 in the SQL Editor. Verified by read: 3 columns, `ck_oc_exportacion`, `fk_oc_exportadopor`, `idx_oc_exportadas`, view with `security_invoker=true` and 15 columns, `SELECT` returns 0 rows.
 - RDD review `review-8901da1eced74219` on `1e36bc4..d04679e`: approved and acknowledged. Advisory, non-blocking: no SQL tests for date boundary / estado filter / all-or-none CHECK (covered by T3/T4 integration tests); single-export invariant enforced in app layer (T3 CAS).
+- User re-ran the final 0032 in the SQL Editor (idempotent second run succeeded) and registered it (`20261010120000`). Verified by read: view excludes only `entregada`/`rechazada`, 2 constraints scoped to `ordenes_compra`, 3 columns, index present, view returns 0 rows, migration registered.
 - Not run: down + reapply cycle in TEST.
