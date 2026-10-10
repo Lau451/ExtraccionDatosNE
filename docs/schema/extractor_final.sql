@@ -1047,6 +1047,10 @@ CREATE TABLE ordenes_compra (
     es_vigente              BOOLEAN         NOT NULL DEFAULT TRUE,
     reemplaza_id            UUID            NULL,
     motivo_version          TEXT            NULL,
+    -- 0032: marca de exportación a Progress (estado NO cambia al exportar).
+    exportado_at            TIMESTAMPTZ     NULL,
+    exportado_por           UUID            NULL,
+    archivo_exportado       TEXT            NULL,
     created_by              UUID            NULL,
     updated_by              UUID            NULL,
     deleted_at              TIMESTAMPTZ     NULL,
@@ -1062,11 +1066,23 @@ CREATE TABLE ordenes_compra (
     -- 0025: una OC extraída de un documento de cliente se ancla por cliente_id
     -- en vez de proceso_comercial_id (no tiene proceso comercial). Al menos uno
     -- de los dos anclajes siempre está presente.
-    CONSTRAINT ck_oc_anclaje CHECK (proceso_comercial_id IS NOT NULL OR cliente_id IS NOT NULL)
+    CONSTRAINT ck_oc_anclaje CHECK (proceso_comercial_id IS NOT NULL OR cliente_id IS NOT NULL),
+    -- 0032: marca de exportación a Progress; las tres columnas van juntas.
+    CONSTRAINT ck_oc_exportacion CHECK (
+        (exportado_at IS NULL AND exportado_por IS NULL AND archivo_exportado IS NULL)
+        OR (exportado_at IS NOT NULL AND exportado_por IS NOT NULL AND archivo_exportado IS NOT NULL)
+    )
 );
 
 COMMENT ON COLUMN ordenes_compra.proceso_comercial_id IS
   'NULL cuando la OC se origina en una extracción de documento de cliente; en ese caso el anclaje es cliente_id. Garantizado por ck_oc_anclaje (0025).';
+
+COMMENT ON COLUMN ordenes_compra.exportado_at IS
+  'Momento en que la OC se exportó a Progress. NULL = no exportada. Es la marca de exportación: el estado de la OC NO cambia al exportar (oc-export-progress, design C1). Las tres columnas exportado_* van juntas (ck_oc_exportacion). Agregada en 0032.';
+COMMENT ON COLUMN ordenes_compra.exportado_por IS
+  'Usuario que ejecutó la exportación a Progress. NULL si la OC no se exportó (ck_oc_exportacion). Agregada en 0032.';
+COMMENT ON COLUMN ordenes_compra.archivo_exportado IS
+  'Nombre del CSV generado en la carpeta de integración con Progress (OC_{cliente}_{numero_oc}_v{version}_{timestamp}.csv). NULL si la OC no se exportó (ck_oc_exportacion). Agregada en 0032.';
 
 CREATE TABLE oc_items (
     id                  UUID            NOT NULL DEFAULT gen_random_uuid(),
@@ -1634,6 +1650,7 @@ ALTER TABLE ordenes_compra              ADD CONSTRAINT fk_oc_cli      FOREIGN KE
 ALTER TABLE ordenes_compra              ADD CONSTRAINT fk_oc_drog     FOREIGN KEY (drogueria_id)         REFERENCES droguerias (id);
 ALTER TABLE ordenes_compra              ADD CONSTRAINT fk_oc_extr     FOREIGN KEY (extraction_id)        REFERENCES extraction_results (id);
 ALTER TABLE ordenes_compra              ADD CONSTRAINT fk_oc_reempl   FOREIGN KEY (reemplaza_id)         REFERENCES ordenes_compra (id);
+ALTER TABLE ordenes_compra              ADD CONSTRAINT fk_oc_exportadopor FOREIGN KEY (exportado_por)    REFERENCES usuarios (id);  -- 0032
 ALTER TABLE oc_items                    ADD CONSTRAINT fk_oci_oc      FOREIGN KEY (orden_compra_id, drogueria_id) REFERENCES ordenes_compra (id, drogueria_id) ON DELETE CASCADE;
 ALTER TABLE oc_items                    ADD CONSTRAINT fk_oci_oferta  FOREIGN KEY (oferta_item_id)       REFERENCES ofertas_items (id);
 ALTER TABLE oc_items                    ADD CONSTRAINT fk_oci_prod    FOREIGN KEY (producto_id)          REFERENCES productos (id);
@@ -1900,6 +1917,8 @@ CREATE INDEX idx_proc_activos ON procesos_comerciales (drogueria_id, estado) WHE
 CREATE INDEX idx_pre_activos  ON presupuestos (drogueria_id, estado) WHERE deleted_at IS NULL;
 CREATE INDEX idx_comp_activos ON comparativas (drogueria_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_oc_activos   ON ordenes_compra (drogueria_id, estado) WHERE deleted_at IS NULL;
+-- 0032: parcial, soporta el filtro de v_compromisos_entregas.
+CREATE INDEX idx_oc_exportadas ON ordenes_compra (drogueria_id) WHERE exportado_at IS NOT NULL;
 
 -- FKs de auditoría (*_by / *_por) en entidades de negocio
 CREATE INDEX idx_cli_createdby   ON clientes (created_by) WHERE created_by IS NOT NULL;
@@ -2161,6 +2180,42 @@ JOIN ordenes_compra oc  ON oc.id = e.orden_compra_id
 LEFT JOIN clientes cl   ON cl.id = oc.cliente_id
 LEFT JOIN terceros t_cli ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE e.estado NOT IN ('entregada', 'rechazada');
+
+-- 0032: compromisos de entrega de OC exportadas a Progress
+CREATE VIEW v_compromisos_entregas WITH (security_invoker = true) AS
+SELECT
+    oc.drogueria_id,
+    oc.id AS orden_compra_id,
+    oc.numero_oc,
+    oc.version_numero,
+    oc.exportado_at,
+    t.razon_social AS cliente,
+    e.id AS entrega_oc_id,
+    e.numero_entrega,
+    e.fecha_entrega_planificada,
+    oi.numero_renglon,
+    p.codigo_interno AS codigo_articulo,
+    oi.descripcion,
+    ei.cantidad_planificada,
+    CASE WHEN e.fecha_entrega_planificada
+              < (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
+         THEN 'vencida' ELSE 'futura' END AS situacion,
+    GREATEST((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
+             - e.fecha_entrega_planificada, 0) AS dias_atraso
+FROM entregas_oc e
+JOIN ordenes_compra oc    ON oc.id = e.orden_compra_id AND oc.drogueria_id = e.drogueria_id
+JOIN entregas_oc_items ei ON ei.entrega_oc_id = e.id AND ei.drogueria_id = e.drogueria_id
+JOIN oc_items oi          ON oi.id = ei.oc_item_id AND oi.drogueria_id = ei.drogueria_id
+LEFT JOIN productos p     ON p.id = oi.producto_id AND p.drogueria_id = oi.drogueria_id
+LEFT JOIN terceros t      ON t.id = oc.cliente_id AND t.drogueria_id = oc.drogueria_id
+WHERE oc.exportado_at IS NOT NULL
+  AND oc.deleted_at IS NULL
+  AND oc.es_vigente
+  AND oc.estado <> 'cancelada'
+  AND e.estado = 'pendiente';
+
+COMMENT ON VIEW v_compromisos_entregas IS
+  'Compromisos de entrega: una fila por ítem de entrega pendiente de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
 
 -- Proveedores sin matchear
 CREATE VIEW v_ofertas_sin_matchear AS
