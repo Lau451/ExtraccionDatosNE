@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth, type Rol } from '@/features/auth/AuthContext'
+import { COMPROMISOS_READ_ROLES } from '@/features/compromisos/roles'
 import { PCP_READ_ROLES, PCP_WRITE_ROLES, puedeRol } from '@/features/pcp/roles'
 
 interface NavItem {
@@ -46,6 +47,9 @@ export function Sidebar() {
     // Decisions: "Importar presupuestos" visible solo a roles de escritura.
     ...(puedeRol(perfil?.rol, PCP_WRITE_ROLES)
       ? [{ label: 'Importar presupuestos', to: '/presupuestos/importar' }]
+      : []),
+    ...(puedeRol(perfil?.rol, COMPROMISOS_READ_ROLES)
+      ? [{ label: 'Compromisos de entrega', to: '/compromisos' }]
       : []),
     ...(muestraNavegacionPcp(perfil?.rol) ? [{ label: 'PCP', to: '/pcp' }] : []),
     ...(perfil?.rol === 'admin' || perfil?.rol === 'superadmin'

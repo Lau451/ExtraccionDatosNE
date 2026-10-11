@@ -14,6 +14,7 @@ import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
+import { Route as AuthenticatedCompromisosRouteImport } from './routes/_authenticated.compromisos'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
@@ -60,6 +61,12 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCompromisosRoute =
+  AuthenticatedCompromisosRouteImport.update({
+    id: '/compromisos',
+    path: '/compromisos',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
@@ -185,6 +192,7 @@ export interface FileRoutesByFullPath {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/compromisos': typeof AuthenticatedCompromisosRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -211,6 +219,7 @@ export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/compromisos': typeof AuthenticatedCompromisosRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
@@ -237,6 +246,7 @@ export interface FileRoutesById {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/compromisos': typeof AuthenticatedCompromisosRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/reset-password'
+    | '/compromisos'
     | '/mi-cuenta'
     | '/pcp'
     | '/productos'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/reset-password'
+    | '/compromisos'
     | '/mi-cuenta'
     | '/'
     | '/admin/usuarios'
@@ -318,6 +330,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/reset-password'
+    | '/_authenticated/compromisos'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/pcp'
     | '/_authenticated/productos'
@@ -384,6 +397,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/compromisos': {
+      id: '/_authenticated/compromisos'
+      path: '/compromisos'
+      fullPath: '/compromisos'
+      preLoaderRoute: typeof AuthenticatedCompromisosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/mi-cuenta': {
@@ -603,6 +623,7 @@ const AuthenticatedTercerosRouteWithChildren =
   )
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedCompromisosRoute: typeof AuthenticatedCompromisosRoute
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
   AuthenticatedPcpRoute: typeof AuthenticatedPcpRouteWithChildren
   AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
@@ -618,6 +639,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedCompromisosRoute: AuthenticatedCompromisosRoute,
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
   AuthenticatedPcpRoute: AuthenticatedPcpRouteWithChildren,
   AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,
