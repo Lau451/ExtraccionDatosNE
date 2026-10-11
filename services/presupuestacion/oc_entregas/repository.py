@@ -33,7 +33,10 @@ def buscar_orden_compra(client: Client, *, orden_compra_id: str) -> dict[str, An
         client.table("ordenes_compra")
         .select(
             "id, drogueria_id, cliente_id, numero_oc, cantidad_entregas, "
-            "exportado_at, exportado_por, archivo_exportado"
+            "exportado_at, exportado_por, archivo_exportado, "
+            # Hint obligatorio: ordenes_compra tiene otras FK hacia `usuarios` y sin él
+            # PostgREST rechaza el embed por ambiguo (PGRST201). La clave sigue siendo `usuarios`.
+            "usuarios!fk_oc_exportadopor(nombre, apellido)"
         )
         .eq("id", orden_compra_id)
         .limit(1)

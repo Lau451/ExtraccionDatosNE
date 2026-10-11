@@ -140,12 +140,21 @@ def _armar_plan_actual(
     ]
 
 
+def _nombre_exportador(oc: dict[str, Any]) -> str | None:
+    """"nombre apellido" desde el embed `usuarios(nombre, apellido)`; apellido es nullable."""
+    embed = oc.get("usuarios") or {}
+    nombre = (embed.get("nombre") or "").strip()
+    apellido = (embed.get("apellido") or "").strip()
+    return f"{nombre} {apellido}".strip() or None
+
+
 def _armar_exportacion(oc: dict[str, Any]) -> ExportacionOut | None:
     if not oc.get("exportado_at"):
         return None
     return ExportacionOut(
         exportado_at=oc["exportado_at"],
         exportado_por=oc["exportado_por"],
+        exportado_por_nombre=_nombre_exportador(oc),
         archivo_exportado=oc["archivo_exportado"],
     )
 

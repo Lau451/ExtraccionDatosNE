@@ -74,6 +74,8 @@ class ExportacionOut(BaseModel):
 
     exportado_at: datetime
     exportado_por: UUID
+    # "nombre apellido" del exportador; None si no se pudo resolver.
+    exportado_por_nombre: str | None = None
     archivo_exportado: str
 
 
