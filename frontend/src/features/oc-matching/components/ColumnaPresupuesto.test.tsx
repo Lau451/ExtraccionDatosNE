@@ -144,7 +144,8 @@ describe('ColumnaPresupuesto — scroll al candidato (spec oc-presupuesto-vincul
     scrollToMock = vi.fn()
     scrollIntoViewMock = vi.fn()
     Element.prototype.scrollTo = scrollToMock as unknown as typeof Element.prototype.scrollTo
-    Element.prototype.scrollIntoView = scrollIntoViewMock
+    Element.prototype.scrollIntoView =
+      scrollIntoViewMock as unknown as typeof Element.prototype.scrollIntoView
     Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
       configurable: true,
       get(this: HTMLElement) {
