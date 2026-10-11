@@ -183,9 +183,14 @@ def limpiar(client: Client, oc_id: str) -> None:
     client.table("terceros_legacy_map").delete().eq("tercero_id", oc["cliente_id"]).execute()
     client.table("clientes").delete().eq("id", oc["cliente_id"]).execute()
     client.table("terceros").delete().eq("id", oc["cliente_id"]).execute()
-    if oc.get("exportado_por"):
-        client.table("usuarios").delete().eq("id", oc["exportado_por"]).execute()
-        client.auth.admin.delete_user(oc["exportado_por"])
+    # Todos los usuarios de la droguería sintética, no solo el exportador: si la exportación
+    # falló, la OC no tiene `exportado_por` pero el usuario ya se había creado.
+    usuario_ids = [
+        u["id"] for u in client.table("usuarios").select("id").eq("drogueria_id", did).execute().data
+    ]
+    for uid in usuario_ids:
+        client.table("usuarios").delete().eq("id", uid).execute()
+        client.auth.admin.delete_user(uid)
     client.table("droguerias").delete().eq("id", did).execute()
     print(f"OC {oc_id} y sus datos de muestra eliminados")
 
@@ -206,6 +211,8 @@ def main() -> None:
         return
 
     caso = crear_oc_muestra(client)
+    # Antes de exportar: si la exportación falla, este id es el que necesita `--limpiar`.
+    print(f"OC creada:    {caso['oc_id']} (si algo falla: --limpiar {caso['oc_id']})")
     resultado = exportar_orden_compra(
         client,
         orden_compra_id=caso["oc_id"],
