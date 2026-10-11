@@ -55,12 +55,20 @@ services:
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
 
+      # Exportación de OC a Progress (oc-export-progress D8): los CSV se escriben en
+      # <PROGRESS_DOCS_DIR>/oc, es decir C:\SACPro\documentos_ia\oc en el host.
+      - PROGRESS_DOCS_DIR=C:/app/documentos_ia
+      - OC_EXPORT_ENCODING=cp1252
+
       # Opcional
       - PYTHONDONTWRITEBYTECODE=1
 
     volumes:
       # Read-only: presupuestacion NUNCA escribe en el output del extractor (D2).
       - extraccion-output:C:/app/output:ro
+      # Escritura: carpeta de intercambio con Progress. C:\SACPro\documentos_ia debe existir
+      # en el host antes de `docker compose up` (los contenedores Windows no la crean).
+      - C:/SACPro/documentos_ia:C:/app/documentos_ia
 
     restart: always
 
