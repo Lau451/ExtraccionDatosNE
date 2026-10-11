@@ -20,7 +20,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST.
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
 - [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
-- [ ] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
+- [~] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [ ] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
 - [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
@@ -71,3 +71,14 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
   - Checks (`gentle-ai-verify`): `-m integration` on `tests/oc_export tests/oc_entregas` 18 passed, 0 skipped (6 new `test_cas_plan.py` + 12 existing); `-m "not integration"` incl. `tests/core/test_database.py` 102 passed. Full suite without `tests/extraccion`: 539 passed (worker run).
   - 0033 down + reapply cycle in TEST (user ran both in the SQL Editor; 0 exported OCs). After down: 0 functions, 0 triggers, migration still registered. After reapply: 3 functions, 2 triggers, trigger function `SECURITY DEFINER`, `authenticated` cannot execute `marcar_oc_exportada`/`hash_plan_oc`, `service_role` can. Integration re-run: 18 passed, 0 skipped.
   - Native review `review-a8aa56e116bf04bd` on `d73c15f..130246e` (reliability lens): approved and acknowledged (authority burned). Advisory, non-blocking: planning's `OC409` path is not compensated (by design: the plan is frozen, and a partial plan cannot pass D2 and be exported without a hash mismatch); the trigger's plan/non-plan heuristic and `now()` vs Python timestamp in `marcar_oc_exportada`; integration tests cover INSERT/DELETE/UPDATE rejection but not the allowed real-delivery path; hash format and RPC error mapping suggestions.
+
+### T4
+
+- Branch `feat/oc-export-progress-04-compromisos` (from `dev` at `847b210`, after PR #84). Implemented by `gentle-ai-worker`, reviewed by the parent.
+- `06816d8`: new module `services/presupuestacion/compromisos/` with `GET /compromisos-entregas?desde&hasta` (`_ROLES_LECTURA`). Default range: all overdue + today..today+6 months (Buenos Aires time); with only `desde`, `hasta` = `desde` + 6 months; `hasta < desde` or a range over 24 months → 422. Ordered vencida first, then date, OC, delivery, line item. Uses the per-user RLS client (view is `security_invoker`); the service-client allowlist was not extended.
+- `7e27eb5`: migration 0034 recreates `v_compromisos_entregas` with `AND ei.cantidad_planificada > 0`, because real deliveries registered by `compras.crear_entrega` (`cantidad_planificada = 0`) showed up as commitments (found by the worker, confirmed by a test). A user without a droguería (superadmin) now gets 422 instead of a query with `drogueria_id = None` (no precedent in other list endpoints).
+- RED: 11/13 service tests failed against a stub; the superadmin test failed before the fix; the real-delivery test failed against the 0032 view (`assert 4 not in {1, 2, 4}`).
+- RLS verified in integration: admin, gerencia, lider_comercial, comercial and compras read their own droguería only; `sistema` gets 403.
+- User applied 0034 in the TEST SQL Editor and registered `20261011130000`. Verified by read: filter present, `security_invoker=true`, 15 columns, `authenticated` can select.
+- Checks (`gentle-ai-verify`): `-m integration` on `tests/compromisos tests/oc_export tests/oc_entregas` 31 passed, 0 skipped; `tests -m "not integration" --ignore=tests/extraccion` 553 passed.
+- Not run: 0034 down + reapply cycle in TEST.
