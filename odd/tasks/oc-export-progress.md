@@ -6,8 +6,8 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 
 ## Source of truth
 
-- `openspec/changes/oc-export-progress/proposal.md` (approved 2026-10-10, commit `4c25a22`)
-- `openspec/changes/oc-export-progress/design.md` and `tasks.md` (approved, commit `028d0ae`)
+- `openspec/changes/archive/2026-10-11-oc-export-progress/proposal.md` (approved 2026-10-10, commit `4c25a22`)
+- `openspec/changes/archive/2026-10-11-oc-export-progress/design.md` and `tasks.md` (approved, commit `028d0ae`)
 
 ## Constraints
 
