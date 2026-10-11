@@ -21,7 +21,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
 - [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [x] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
-- [~] T5 Phase 5 — Frontend: export button.
+- [x] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
 - [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
 
@@ -93,3 +93,5 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - RED: the new test suites failed to import (`./ocExport` missing); 5 backend tests (name cases + select string) and 3 frontend tests (409 re-seed, null-name banner, banner fixture) failed before their fixes.
 - Checks (`gentle-ai-verify`): `tests -m "not integration" --ignore=tests/extraccion` 558 passed; `-m integration` on `tests/oc_entregas tests/oc_export tests/compromisos` 31 passed; full frontend vitest 45 files / 449 tests passed; `tsc -b` only the known error at `oc-matching/components/ColumnaPresupuesto.test.tsx:147`, confirmed present on `dev` at `7664569` (not caused by T5).
 - Embed checked read-only against TEST: `buscar_orden_compra` resolves the hint (no PGRST200/201). The nested `nombre`/`apellido` payload was not observed: TEST has no exported OC.
+- Commits: `19e3a96` (backend: exporter name), `8c67546` (frontend button + docs).
+- Native review `review-ecc7b3131dc74a43` on `dev..8c67546` (reliability lens, 13 files): approved and acknowledged (authority burned). Advisory, non-blocking: 1 warning at `PlanificacionEntregas.tsx:385` (export button enablement); suggestions at `PlanificacionEntregas.tsx:145-150` and `:234`, `ExportarProgress.tsx:36-52`, `oc_entregas/repository.py:36-39`.
