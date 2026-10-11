@@ -21,7 +21,10 @@ _TAMANO_LOTE = 200
 def buscar_orden_compra(client: Client, *, orden_compra_id: str) -> dict[str, Any] | None:
     resultado = (
         client.table("ordenes_compra")
-        .select("id, drogueria_id, cliente_id, numero_oc, cantidad_entregas")
+        .select(
+            "id, drogueria_id, cliente_id, numero_oc, cantidad_entregas, "
+            "exportado_at, exportado_por, archivo_exportado"
+        )
         .eq("id", orden_compra_id)
         .limit(1)
         .execute()

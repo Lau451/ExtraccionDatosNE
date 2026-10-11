@@ -32,6 +32,7 @@ from services.presupuestacion.oc_entregas.models import (
     EntregaItemPlanOut,
     EntregaPlanIn,
     EntregaPlanOut,
+    ExportacionOut,
     PlanificacionEntregasOut,
     PlanificarEntregasOut,
     PlanSugeridoRenglon,
@@ -139,6 +140,16 @@ def _armar_plan_actual(
     ]
 
 
+def _armar_exportacion(oc: dict[str, Any]) -> ExportacionOut | None:
+    if not oc.get("exportado_at"):
+        return None
+    return ExportacionOut(
+        exportado_at=oc["exportado_at"],
+        exportado_por=oc["exportado_por"],
+        archivo_exportado=oc["archivo_exportado"],
+    )
+
+
 def obtener_planificacion(
     client: Client, *, orden_compra_id: str, drogueria_id: str
 ) -> PlanificacionEntregasOut:
@@ -172,7 +183,12 @@ def obtener_planificacion(
     entregas_existentes = repo.listar_entregas_oc(client, orden_compra_id=orden_compra_id)
     plan_bloqueado = any(entrega["estado"] != "pendiente" for entrega in entregas_existentes)
 
-    if pendientes > 0:
+    exportacion = _armar_exportacion(oc)
+
+    if exportacion is not None:
+        puede_planificar = False
+        motivo = "La orden de compra ya fue exportada a Progress -- no se puede replanificar."
+    elif pendientes > 0:
         puede_planificar = False
         motivo = (
             f"Hay {pendientes} renglón(es) pendiente(s) de matching -- resolvelos antes de "
@@ -221,6 +237,7 @@ def obtener_planificacion(
         motivo=motivo,
         plan_sugerido=plan_sugerido,
         plan_actual=_armar_plan_actual(client, entregas_existentes),
+        exportacion=exportacion,
     )
 
 
@@ -351,6 +368,12 @@ def planificar_entregas(
     oc = repo.buscar_orden_compra(client, orden_compra_id=orden_compra_id)
     if oc is None or oc["drogueria_id"] != drogueria_id:
         raise NotFoundError("No se encontró la orden de compra")
+    # D7 (oc-export-progress): ya exportada a Progress, el plan de ambos sistemas
+    # divergiría sin aviso si se replanificara.
+    if oc.get("exportado_at"):
+        raise ConflictError(
+            "La orden de compra ya fue exportada a Progress -- no se puede replanificar."
+        )
 
     if not entregas:
         raise ValidationError("El plan debe tener al menos una entrega")

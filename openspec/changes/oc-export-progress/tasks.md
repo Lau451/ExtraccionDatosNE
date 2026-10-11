@@ -50,17 +50,17 @@
 
 ## Phase 3: Backend — exportación (D2, D3, D6, D7, D10)
 
-- [ ] 3.1 `oc_export/models.py`, `repository.py`: lectura de la OC, renglones, entregas, código de
+- [x] 3.1 `oc_export/models.py`, `repository.py`: lectura de la OC, renglones, entregas, código de
       cliente y CUIT con service client y filtro por `drogueria_id`; `UPDATE` CAS.
-- [ ] 3.2 RED → GREEN: `service.exportar_orden_compra`:
+- [x] 3.2 RED → GREEN: `service.exportar_orden_compra`:
   - precondiciones D2 acumuladas; D3 con 0, 1 y 2 códigos;
   - compensación D6 con borrado de archivo; auditoría `registrar_cambio`;
   - 503 sin configuración.
-- [ ] 3.3 `router.py`: `POST /ordenes-compra/{id}/exportar-progress` con `_ROLES_OC`; registrar en
+- [x] 3.3 `router.py`: `POST /ordenes-compra/{id}/exportar-progress` con `_ROLES_OC`; registrar en
       `main.py`.
-- [ ] 3.4 D7: bloqueo del `PUT` de planificación si ya fue exportada; bloque `exportacion` en el
+- [x] 3.4 D7: bloqueo del `PUT` de planificación si ya fue exportada; bloque `exportacion` en el
       `GET`. Tests en `tests/oc_entregas/`.
-- [ ] 3.5 Integración: `comercial` exporta a `tmp_path`, `compras` recibe 403, doble exportación →
+- [x] 3.5 Integración: `comercial` exporta a `tmp_path`, `compras` recibe 403, doble exportación →
       409, `PUT` post-exportación → 409.
 
 ## Phase 4: Backend — compromisos (D9, D10)

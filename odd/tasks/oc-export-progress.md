@@ -19,7 +19,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 
 - [x] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST.
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
-- [ ] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
+- [~] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [ ] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [ ] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
@@ -46,4 +46,17 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - RED: both test files failed at collection (modules missing). GREEN: `pytest tests/oc_export -q` 20 passed (re-run by the parent); `pytest tests/oc_entregas tests/shared -m "not integration"` 55 passed.
 - Note for T7: with `QUOTE_MINIMAL` only amounts are quoted (`"1520,50"`); integer identifiers are unquoted (`3`). Design D4 accepts this; the proposal wording says "every number quoted". Confirm with Sistemas using the sample CSV.
 - Open for T3: `RenglonExport.codigo_articulo` is optional; D2 preconditions should reject a missing article code before building rows.
-- Commit `06fbf58`. Native review `review-a4229674dfbc4262` on `a4972ff..06fbf58` (reliability lens): approved and acknowledged (authority burned). Advisory, non-blocking, for T3: deliveries whose `oc_item_id` matches no line item are dropped silently (`filas.py:65-68`; D2 should reject or count them); no test pins `ROUND_HALF_UP` (`test_filas.py:67-69`); no-overwrite TOCTOU window (accepted, D6 CAS); naive `ahora`, unvalidated encoding name, embedded newlines in text (suggestions).
+- Merged into `dev` as PR #83 (`444ebf1`); branch deleted. Commit `06fbf58`. Native review `review-a4229674dfbc4262` on `a4972ff..06fbf58` (reliability lens): approved and acknowledged (authority burned). Advisory, non-blocking, for T3: deliveries whose `oc_item_id` matches no line item are dropped silently (`filas.py:65-68`; D2 should reject or count them); no test pins `ROUND_HALF_UP` (`test_filas.py:67-69`); no-overwrite TOCTOU window (accepted, D6 CAS); naive `ahora`, unvalidated encoding name, embedded newlines in text (suggestions).
+
+### T3
+
+- Branch `feat/oc-export-progress-03-export-service` (from `dev` at `444ebf1`). Implemented by `gentle-ai-worker`, reviewed by the parent.
+- 3.1 `oc_export/repository.py` (service client + explicit `drogueria_id` filter, CAS update); `ResultadoExportacion` in `models.py`.
+- 3.2 `oc_export/service.py` `exportar_orden_compra`: D2 preconditions accumulated in one 422; D3 with 0/1/2 client codes; D6 compensation deletes the written file when the CAS update fails or hits 0 rows; audit via `registrar_cambio` (an audit failure after the CAS is logged and swallowed, because the file is already handed to Progress); 503 when `progress_docs_dir` is unset.
+- 3.3 `oc_export/router.py` `POST /ordenes-compra/{id}/exportar-progress` (`_ROLES_OC`), registered in `main.py`.
+- 3.4 D7: planning `PUT` returns 409 once exported; planning `GET` adds the `exportacion` block (and `puede_planificar=False` with a reason).
+- 3.5 Integration: `comercial` exports, `compras` 403, second export 409, planning `PUT` after export 409.
+- Phase 2 advisories closed: orphan delivery items rejected in D2; line items without `producto_id` or `codigo_interno` rejected in D2 with their `numero_renglon`; `ROUND_HALF_UP` pinned (`0.125` → `0,13`, `2.675` → `2,68`).
+- Bug caught in parent review: D2 required every line item to be fully planned, but planning only accepts confirmed line items, so an OC with a discarded line item could never be exported (the integration fixture had masked it by planning the discarded one). Fixed: the export reuses `_clasificar_renglones`/`_derivar_estado`; discarded items are excluded from D2 and the CSV, pending items fail D2, no confirmed items fails D2.
+- RED: 21/21 service tests failed against a `NotImplementedError` stub; 3/3 D7 tests failed before the change; 3/3 discarded/pending tests failed before the fix. GREEN: `pytest tests/oc_export tests/oc_entregas -m "not integration"` 93 passed (re-run by the parent); `-m integration` 12 passed against TEST (worker run).
+- Known red on `dev`, not caused by T3 alone: `tests/core/test_database.py::test_service_client_no_se_importa_en_ningun_router` fails since `oc_entregas/router.py` (`42a85b5`) and now also lists `oc_export/router.py`. Pending user decision (allowlist vs RLS user client).

@@ -657,3 +657,56 @@ def test_planificar_nunca_llama_funciones_de_stock(monkeypatch):
     )
 
     espia.assert_not_called()
+
+
+# =============================================================================
+# D7 (oc-export-progress): una OC exportada a Progress no se replanifica y el GET
+# informa el estado de la exportación.
+# =============================================================================
+
+_EXPORTACION = {
+    "exportado_at": "2026-10-10T15:00:00+00:00",
+    "exportado_por": "6f0d4f0e-0000-4000-8000-000000000001",
+    "archivo_exportado": "OC_C01_OC-1_v1_20261010120000.csv",
+}
+
+
+def test_planificar_oc_exportada_da_conflict_409(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc(**_EXPORTACION))
+    escrituras = _mockear_escritura(monkeypatch)
+
+    with pytest.raises(ConflictError, match="exportada"):
+        service.planificar_entregas(
+            MagicMock(),
+            orden_compra_id="oc-1",
+            drogueria_id="d1",
+            usuario_id="u1",
+            entregas=[_entrega_in(1, [("i1", "100")])],
+        )
+
+    assert not any(escrituras)  # (entregas creadas, items, borrados, actualizaciones)
+
+
+def test_obtener_planificacion_incluye_bloque_exportacion_y_bloquea(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc(**_EXPORTACION))
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion is not None
+    assert resultado.exportacion.archivo_exportado == _EXPORTACION["archivo_exportado"]
+    assert str(resultado.exportacion.exportado_por) == _EXPORTACION["exportado_por"]
+    assert resultado.exportacion.exportado_at.year == 2026
+    assert resultado.puede_planificar is False
+    assert "exportada" in resultado.motivo
+    assert resultado.plan_sugerido == []
+
+
+def test_obtener_planificacion_sin_exportar_tiene_exportacion_null(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion is None
+    assert resultado.puede_planificar is True
