@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     pcp_mensajeria_adapter: str = "log"
     pcp_repricing_automatico: bool = False
 
+    # oc-export-progress (design.md D8): carpeta donde se deposita el CSV de la OC
+    # para Progress. None => la exportación responde 503 (IntegracionNoConfigurada).
+    progress_docs_dir: str | None = None
+    oc_export_encoding: str = "cp1252"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origen.strip() for origen in self.cors_origins.split(",") if origen.strip()]

@@ -39,6 +39,10 @@ class ExtraccionNoDisponibleError(DomainError):
     """El CSV crudo de la extracción no es accesible desde este servicio."""
 
 
+class IntegracionNoConfigurada(DomainError):
+    """Una integración externa (p.ej. carpeta de Progress) no está configurada."""
+
+
 STATUS_MAP: dict[type[DomainError], int] = {
     AuthenticationError: 401,
     ForbiddenError: 403,
@@ -46,6 +50,7 @@ STATUS_MAP: dict[type[DomainError], int] = {
     ConflictError: 409,
     ValidationError: 422,
     ExtraccionNoDisponibleError: 503,
+    IntegracionNoConfigurada: 503,
 }
 
 
