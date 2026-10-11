@@ -17,6 +17,16 @@ from supabase import Client
 
 _TAMANO_LOTE = 200
 
+# SQLSTATE que levantan los triggers de la migración 0033 cuando se intenta cambiar el
+# plan de entregas de una OC ya exportada a Progress.
+SQLSTATE_OC_EXPORTADA = "OC409"
+
+
+def es_error_oc_exportada(exc: BaseException) -> bool:
+    """True si `exc` es el rechazo del trigger de 0033 (PostgREST lo expone como
+    `APIError` con el SQLSTATE en `code`)."""
+    return getattr(exc, "code", None) == SQLSTATE_OC_EXPORTADA
+
 
 def buscar_orden_compra(client: Client, *, orden_compra_id: str) -> dict[str, Any] | None:
     resultado = (

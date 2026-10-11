@@ -114,5 +114,10 @@ def caso_exportable(service_client, seed_drogueria, crear_usuario_con_token):
         service_client.table("historial_cambios").delete().eq(
             "orden_compra_id", caso["orden_compra_id"]
         ).execute()
+        # 0033: el trigger congela el plan de una OC exportada, así que limpiar() no podría
+        # borrar sus entregas. Se desmarca primero (las tres columnas van juntas).
+        service_client.table("ordenes_compra").update(
+            {"exportado_at": None, "exportado_por": None, "archivo_exportado": None}
+        ).eq("id", caso["orden_compra_id"]).execute()
         caso_planificacion.limpiar(service_client, caso)
         service_client.table("productos").delete().eq("id", producto_extra["id"]).execute()

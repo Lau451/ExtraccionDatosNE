@@ -350,6 +350,14 @@ def _advertencias_divisibilidad(
     return advertencias
 
 
+# Mismo mensaje en el chequeo temprano (D7) y en la traducción del trigger de 0033, que
+# cierra la carrera entre una exportación y un replanificado.
+def _conflicto_exportada() -> ConflictError:
+    return ConflictError(
+        "La orden de compra ya fue exportada a Progress -- no se puede replanificar."
+    )
+
+
 def _fecha_iso(fecha: date | None) -> str | None:
     return fecha.isoformat() if fecha else None
 
@@ -371,9 +379,7 @@ def planificar_entregas(
     # D7 (oc-export-progress): ya exportada a Progress, el plan de ambos sistemas
     # divergiría sin aviso si se replanificara.
     if oc.get("exportado_at"):
-        raise ConflictError(
-            "La orden de compra ya fue exportada a Progress -- no se puede replanificar."
-        )
+        raise _conflicto_exportada()
 
     if not entregas:
         raise ValidationError("El plan debe tener al menos una entrega")
@@ -419,7 +425,12 @@ def planificar_entregas(
     # (compensación manual, catch de abajo) en vez de con un plan mixto
     # viejo+nuevo -- un estado más seguro para reintentar.
     if entregas_existentes:
-        borradas = repo.borrar_entregas_oc(client, orden_compra_id=orden_compra_id)
+        try:
+            borradas = repo.borrar_entregas_oc(client, orden_compra_id=orden_compra_id)
+        except Exception as exc:
+            if repo.es_error_oc_exportada(exc):
+                raise _conflicto_exportada() from exc
+            raise
         # Fix de review: cierra la ventana check-then-act entre el chequeo de
         # arriba y este delete -- `borrar_entregas_oc` solo borra filas que
         # SIGUEN en 'pendiente' (filtro en el repository). Si algo pasó a otro
@@ -478,7 +489,11 @@ def planificar_entregas(
         repo.actualizar_cantidad_entregas(
             client, orden_compra_id=orden_compra_id, cantidad_entregas=len(entregas_ordenadas)
         )
-    except Exception:
+    except Exception as exc:
+        # La OC se exportó a mitad del reemplazo (trigger de 0033): el plan queda congelado
+        # por la exportación, así que no se compensa (el borrado también sería rechazado).
+        if repo.es_error_oc_exportada(exc):
+            raise _conflicto_exportada() from exc
         # Compensación manual: el DELETE de entregas_oc se lleva sus
         # entregas_oc_items por CASCADE (fk_eoci_ent), un solo delete alcanza.
         if algo_insertado:

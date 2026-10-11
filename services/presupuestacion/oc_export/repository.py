@@ -2,7 +2,6 @@
 # Todas las funciones esperan el SERVICE client (igual que oc_entregas/repository.py)
 # y filtran explícitamente por `drogueria_id`: el aislamiento por droguería que la RLS
 # daría gratis se reemplaza acá por ese filtro en cada query.
-from datetime import datetime
 from typing import Any
 
 from supabase import Client
@@ -131,29 +130,36 @@ def buscar_nombre_usuario(client: Client, *, usuario_id: str) -> str | None:
     return filas[0].get("nombre") if filas else None
 
 
+def hash_plan(client: Client, *, orden_compra_id: str) -> str:
+    """Hash del plan de entregas vigente (RPC `hash_plan_oc`, migración 0033): la única
+    definición de "el plan" vive en SQL, la misma que usa `marcar_oc_exportada`."""
+    return client.rpc("hash_plan_oc", {"p_orden_compra_id": orden_compra_id}).execute().data
+
+
 def marcar_exportada(
     client: Client,
     *,
     orden_compra_id: str,
     drogueria_id: str,
-    exportado_at: datetime,
-    exportado_por: str,
+    usuario_id: str,
     archivo_exportado: str,
-) -> list[dict[str, Any]]:
-    """CAS (D6): solo actualiza si `exportado_at IS NULL`. Devuelve las filas
-    afectadas; lista vacía == otro usuario ganó la carrera."""
+    plan_hash: str,
+) -> str:
+    """CAS (D6) en una sola transacción (RPC `marcar_oc_exportada`, migración 0033):
+    bloquea la OC, verifica `exportado_at IS NULL` y que el plan siga siendo el de
+    `plan_hash`, y recién entonces marca. Devuelve `ok`, `ya_exportada`,
+    `plan_cambiado` o `no_encontrada`."""
     return (
-        client.table("ordenes_compra")
-        .update(
+        client.rpc(
+            "marcar_oc_exportada",
             {
-                "exportado_at": exportado_at.isoformat(),
-                "exportado_por": exportado_por,
-                "archivo_exportado": archivo_exportado,
-            }
+                "p_orden_compra_id": orden_compra_id,
+                "p_drogueria_id": drogueria_id,
+                "p_usuario_id": usuario_id,
+                "p_archivo": archivo_exportado,
+                "p_plan_hash": plan_hash,
+            },
         )
-        .eq("id", orden_compra_id)
-        .eq("drogueria_id", drogueria_id)
-        .is_("exportado_at", "null")
         .execute()
         .data
     )

@@ -72,7 +72,9 @@ class Escenario:
             dict(entrega_oc_id="e2", oc_item_id="i1", cantidad_planificada="6"),
         ]
         self.codigos_cliente = ["C01"]
-        self.marcar = lambda **kw: [{"id": OC_ID}]
+        self.marcar = lambda **kw: "ok"
+        self.plan_hash = "hash-plan-1"
+        self.hash_llamadas: list[dict] = []
         self.auditoria = MagicMock()
         self.marcar_llamadas: list[dict] = []
         self.settings = SimpleNamespace(progress_docs_dir=str(tmp_path), oc_export_encoding="cp1252")
@@ -87,7 +89,12 @@ class Escenario:
         monkeypatch.setattr(repo, "buscar_cuit_tercero", lambda c, **kw: "30-11111111-1")
         monkeypatch.setattr(repo, "buscar_nombre_usuario", lambda c, **kw: "Ana")
         monkeypatch.setattr(repo, "marcar_exportada", self._marcar)
+        monkeypatch.setattr(repo, "hash_plan", self._hash_plan)
         monkeypatch.setattr(service, "registrar_cambio", self.auditoria)
+
+    def _hash_plan(self, client, **kw):
+        self.hash_llamadas.append(kw)
+        return self.plan_hash
 
     def _marcar(self, client, **kw):
         self.marcar_llamadas.append(kw)
@@ -136,6 +143,8 @@ def test_exporta_escribe_archivo_marca_y_audita(esc):
     (llamada,) = esc.marcar_llamadas
     assert llamada["archivo_exportado"] == archivo.name
     assert llamada["drogueria_id"] == DROG
+    assert llamada["usuario_id"] == USUARIO
+    assert llamada["plan_hash"] == "hash-plan-1"
     esc.auditoria.assert_called_once()
     kw = esc.auditoria.call_args.kwargs
     assert kw["entidad"] == "orden_compra" and kw["entidad_id"] == OC_ID
@@ -256,15 +265,34 @@ def test_un_codigo_de_cliente_se_usa_en_el_nombre(esc):
 # --- D6 ---------------------------------------------------------------------
 
 
-def test_cas_con_cero_filas_borra_el_archivo_y_da_conflict(esc):
-    esc.marcar = lambda **kw: []
-    with pytest.raises(ConflictError):
+def test_ya_exportada_en_el_cas_borra_el_archivo_y_da_conflict(esc):
+    esc.marcar = lambda **kw: "ya_exportada"
+    with pytest.raises(ConflictError, match="ya fue exportada"):
         esc.exportar()
     assert esc.archivos() == []
     esc.auditoria.assert_not_called()
 
 
-def test_update_que_falla_borra_el_archivo_y_relanza(esc):
+def test_plan_cambiado_borra_el_archivo_y_da_conflict(esc):
+    esc.marcar = lambda **kw: "plan_cambiado"
+    with pytest.raises(ConflictError, match="plan cambió mientras se exportaba"):
+        esc.exportar()
+    assert esc.archivos() == []
+    esc.auditoria.assert_not_called()
+
+
+def test_el_hash_del_plan_se_lee_antes_que_las_entregas(esc, monkeypatch):
+    orden: list[str] = []
+    monkeypatch.setattr(repo, "hash_plan", lambda c, **kw: orden.append("hash") or "h")
+    original = repo.listar_entregas
+    monkeypatch.setattr(
+        repo, "listar_entregas", lambda c, **kw: orden.append("entregas") or original(c, **kw)
+    )
+    esc.exportar()
+    assert orden[0] == "hash" and "entregas" in orden
+
+
+def test_update_que_falla_y_no_quedo_marcada_borra_el_archivo_y_relanza(esc):
     def _falla(**kw):
         raise RuntimeError("db caída")
 
@@ -273,6 +301,62 @@ def test_update_que_falla_borra_el_archivo_y_relanza(esc):
         esc.exportar()
     assert esc.archivos() == []
     esc.auditoria.assert_not_called()
+
+
+def test_update_ambiguo_que_si_se_aplico_conserva_el_archivo_y_da_exito(esc, monkeypatch):
+    """La respuesta del UPDATE se perdió pero la OC quedó marcada con ESTE archivo."""
+
+    def _falla(**kw):
+        nombre = kw["archivo_exportado"]
+        monkeypatch.setattr(
+            repo,
+            "buscar_orden_compra",
+            lambda c, **k: _oc(
+                exportado_at="2026-10-05T12:00:00+00:00", exportado_por=USUARIO, archivo_exportado=nombre
+            ),
+        )
+        raise RuntimeError("respuesta perdida")
+
+    esc.marcar = _falla
+    resultado = esc.exportar()
+    (archivo,) = esc.archivos()
+    assert resultado.archivo == archivo.name
+    esc.auditoria.assert_called_once()
+
+
+def test_update_ambiguo_con_otro_archivo_marcado_borra_el_nuestro_y_relanza(esc, monkeypatch):
+    def _falla(**kw):
+        monkeypatch.setattr(
+            repo,
+            "buscar_orden_compra",
+            lambda c, **k: _oc(
+                exportado_at="2026-10-05T12:00:00+00:00",
+                exportado_por=USUARIO,
+                archivo_exportado="OC_otro.csv",
+            ),
+        )
+        raise RuntimeError("respuesta perdida")
+
+    esc.marcar = _falla
+    with pytest.raises(RuntimeError, match="respuesta perdida"):
+        esc.exportar()
+    assert esc.archivos() == []
+
+
+def test_update_ambiguo_y_la_relectura_tambien_falla_borra_el_archivo_y_relanza_el_original(
+    esc, monkeypatch
+):
+    def _falla(**kw):
+        def _relectura_falla(c, **k):
+            raise ConnectionError("sigue caída")
+
+        monkeypatch.setattr(repo, "buscar_orden_compra", _relectura_falla)
+        raise RuntimeError("db caída")
+
+    esc.marcar = _falla
+    with pytest.raises(RuntimeError, match="db caída"):
+        esc.exportar()
+    assert esc.archivos() == []
 
 
 def test_falla_de_auditoria_no_deshace_la_exportacion(esc):

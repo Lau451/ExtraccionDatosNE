@@ -59,6 +59,31 @@ def _conflicto_ya_exportada(client: Client, oc: dict[str, Any]) -> ConflictError
     )
 
 
+def _quedo_marcada_con(
+    client: Client, orden_compra_id: str, drogueria_id: str, archivo: str
+) -> bool:
+    try:
+        oc = repo.buscar_orden_compra(
+            client, orden_compra_id=orden_compra_id, drogueria_id=drogueria_id
+        )
+    except Exception:
+        logger.exception("No se pudo releer la OC %s tras el fallo de la marca", orden_compra_id)
+        return False
+    return bool(oc and oc.get("exportado_at") and oc.get("archivo_exportado") == archivo)
+
+
+def _error_de_marca(estado: str) -> Exception:
+    if estado == "ya_exportada":
+        return ConflictError("La orden de compra ya fue exportada por otro usuario")
+    if estado == "plan_cambiado":
+        return ConflictError(
+            "El plan cambió mientras se exportaba, volvé a intentar"
+        )
+    if estado == "no_encontrada":
+        return NotFoundError("No se encontró la orden de compra")
+    return RuntimeError(f"Respuesta inesperada de marcar_oc_exportada: {estado!r}")
+
+
 def _errores_cabecera(oc: dict[str, Any]) -> list[str]:
     errores: list[str] = []
     if oc["estado"] == "cancelada":
@@ -214,6 +239,10 @@ def exportar_orden_compra(
         raise NotFoundError("No se encontró la orden de compra")
     if oc.get("exportado_at"):
         raise _conflicto_ya_exportada(client, oc)
+    # El hash se lee ANTES que las filas del plan: si el plan cambia entre esta lectura y la
+    # de las filas, el hash queda desactualizado y el RPC responde `plan_cambiado` (falso
+    # positivo seguro). Al revés, un cambio quedaría tapado.
+    plan_hash = repo.hash_plan(client, orden_compra_id=orden_compra_id)
 
     # D2: se validan TODAS las precondiciones y se reportan juntas.
     errores = _errores_cabecera(oc)
@@ -260,21 +289,30 @@ def exportar_orden_compra(
 
     exportado_at = datetime.now(timezone.utc)
     try:
-        actualizadas = repo.marcar_exportada(
+        estado = repo.marcar_exportada(
             client,
             orden_compra_id=orden_compra_id,
             drogueria_id=drogueria_id,
-            exportado_at=exportado_at,
-            exportado_por=usuario_id,
+            usuario_id=usuario_id,
             archivo_exportado=nombre,
+            plan_hash=plan_hash,
         )
     except Exception:
-        # Compensación manual (D6, mismo criterio que oc_entregas.planificar_entregas).
-        ruta.unlink(missing_ok=True)
-        raise
-    if not actualizadas:
-        ruta.unlink(missing_ok=True)
-        raise ConflictError("La orden de compra ya fue exportada por otro usuario")
+        # Fallo ambiguo: el RPC pudo haberse aplicado y haberse perdido solo la respuesta.
+        # Se relee la OC: si quedó marcada con ESTE archivo, el archivo se conserva.
+        if _quedo_marcada_con(client, orden_compra_id, drogueria_id, nombre):
+            logger.warning(
+                "La marca de exportación de la OC %s se aplicó aunque la llamada falló",
+                orden_compra_id,
+            )
+        else:
+            # Compensación manual (D6, mismo criterio que oc_entregas.planificar_entregas).
+            ruta.unlink(missing_ok=True)
+            raise
+    else:
+        if estado != "ok":
+            ruta.unlink(missing_ok=True)
+            raise _error_de_marca(estado)
 
     try:
         registrar_cambio(
