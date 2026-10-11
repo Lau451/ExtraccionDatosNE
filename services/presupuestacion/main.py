@@ -9,6 +9,7 @@ from services.presupuestacion.automatizaciones.router import router as automatiz
 from services.presupuestacion.clientes.router import router as clientes_router
 from services.presupuestacion.comparativas.router import router as comparativas_router
 from services.presupuestacion.compras.router import router as compras_router
+from services.presupuestacion.compromisos.router import router as compromisos_router
 from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.exceptions import register_exception_handlers
 from services.presupuestacion.droguerias.router import router as droguerias_router
@@ -68,3 +69,4 @@ app.include_router(pcp_router, tags=["pcp"])
 app.include_router(oc_presupuesto_router, tags=["oc_presupuesto"])
 app.include_router(oc_entregas_router, tags=["oc_entregas"])
 app.include_router(oc_export_router, tags=["oc_export"])
+app.include_router(compromisos_router, tags=["compromisos"])
