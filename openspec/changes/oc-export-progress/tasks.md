@@ -37,13 +37,13 @@
 
 ## Phase 2: Backend — construcción de filas, escritor y configuración (D4, D5, D8)
 
-- [ ] 2.1 `progress_docs_dir` y `oc_export_encoding` en `services/shared/config.py`, con defaults;
+- [x] 2.1 `progress_docs_dir` y `oc_export_encoding` en `services/shared/config.py`, con defaults;
       `IntegracionNoConfigurada` (503) en `services/shared/exceptions.py`.
-- [ ] 2.2 RED → GREEN: `tests/oc_export/test_filas.py` y `oc_export/filas.py`:
+- [x] 2.2 RED → GREEN: `tests/oc_export/test_filas.py` y `oc_export/filas.py`:
   - formato decimal, fechas y enteros;
   - orden renglón → entrega; cantidad 0 omitida;
   - NULL opcionales; cabecera repetida.
-- [ ] 2.3 RED → GREEN: `tests/oc_export/test_escritor.py` y `oc_export/escritor.py`:
+- [x] 2.3 RED → GREEN: `tests/oc_export/test_escritor.py` y `oc_export/escritor.py`:
   - `cp1252` con ñ/acentos; coma y comillas en descripciones; emoji → `?`; CRLF;
   - temporal + `os.replace`, sin restos ante falla;
   - no pisa un archivo existente; saneo del nombre.
