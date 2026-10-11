@@ -168,15 +168,11 @@ def test_rango_invalido_da_422(seed_drogueria, crear_usuario_con_token):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="hallazgo Fase 4: v_compromisos_entregas no excluye las entregas reales de "
-    "compras.crear_entrega (cantidad_planificada = 0); ver el reporte de la fase",
-)
 def test_entrega_real_de_compras_no_figura_como_compromiso(
     service_client, seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token
 ):
-    """Una entrega física registrada por compras.crear_entrega (estado parcial/pendiente,
+    """Requiere 0034 aplicada (sin ella la vista lista la entrega real y este test falla).
+    Una entrega física registrada por compras.crear_entrega (estado parcial/pendiente,
     cantidad_planificada = 0, fecha_entrega_real) no es un compromiso a cumplir."""
     usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
     caso = sembrar_oc_con_plan(drogueria_id=seed_drogueria["id"], plan=_plan_vencida_futura_lejana())
@@ -211,3 +207,12 @@ def test_entrega_real_de_compras_no_figura_como_compromiso(
 
     assert respuesta.status_code == 200, respuesta.text
     assert 4 not in {f["numero_entrega"] for f in _de_la_oc(respuesta.json(), caso)}
+
+
+@pytest.mark.integration
+def test_superadmin_sin_drogueria_da_422(crear_usuario_con_token):
+    _, token = crear_usuario_con_token(rol="superadmin", drogueria_id=None)
+
+    respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
+
+    assert respuesta.status_code == 422

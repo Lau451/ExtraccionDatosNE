@@ -39,7 +39,7 @@ def _clave_orden(fila: dict[str, Any]) -> tuple:
 def listar_compromisos(
     client: Client,
     *,
-    drogueria_id: str,
+    drogueria_id: str | None,
     desde: date | None = None,
     hasta: date | None = None,
     hoy: date | None = None,
@@ -47,6 +47,9 @@ def listar_compromisos(
     """Sin `desde`: todo lo vencido más lo futuro hasta `hasta` (por defecto hoy + 6 meses).
     Con `desde`: solo las filas dentro de [desde, hasta], con `hasta` por defecto desde + 6
     meses. El rango no puede superar 24 meses."""
+    if drogueria_id is None:
+        # superadmin: sin droguería, `.eq("drogueria_id", None)` revienta como uuid inválido.
+        raise ValidationError("La agenda de compromisos es por droguería: el usuario no tiene una asignada")
     hoy = hoy or _hoy_buenos_aires()
     base = desde or hoy
     if hasta is None:

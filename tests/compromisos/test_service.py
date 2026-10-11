@@ -155,3 +155,10 @@ def test_hoy_por_defecto_es_la_fecha_de_buenos_aires(listar, monkeypatch):
     service.listar_compromisos(MagicMock(), drogueria_id=DROGUERIA)
 
     assert listar.call_args.kwargs["hasta"] == date(2026, 7, 31)
+
+
+def test_usuario_sin_drogueria_es_validation_error(listar):
+    # superadmin: no tiene droguería, la agenda es por droguería
+    with pytest.raises(ValidationError, match="droguería"):
+        service.listar_compromisos(MagicMock(), drogueria_id=None, hoy=HOY)
+    listar.assert_not_called()
