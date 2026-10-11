@@ -96,3 +96,13 @@ def test_sin_entregas_no_hay_filas():
     assert construir_filas(
         _oc(), [_renglon(1)], [], codigo_cliente="C01", cuit_cliente=None
     ) == []
+
+
+def test_redondeo_half_up_no_bancario():
+    # 0.125 y 0.135 son exactos en Decimal: HALF_UP da 0,13 / 0,14; el redondeo
+    # bancario (HALF_EVEN) daría 0,12 / 0,14, así que 0.125 distingue ambos modos.
+    (fila,) = _filas(
+        renglones=[_renglon(1, cantidad=Decimal("0.125"), precio_unitario=Decimal("2.675"))]
+    )
+    assert fila[10] == "0,13"
+    assert fila[11] == "2,68"

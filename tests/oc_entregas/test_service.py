@@ -643,6 +643,91 @@ def test_planificar_falla_a_mitad_de_camino_compensa_borrando_lo_insertado(monke
     assert borrados == ["oc-1"]  # compensación: no queda un plan a medio insertar
 
 
+def _error_oc_exportada():
+    from postgrest.exceptions import APIError
+
+    return APIError(
+        {
+            "message": "La orden de compra ya fue exportada a Progress",
+            "code": "OC409",
+            "details": None,
+            "hint": None,
+        }
+    )
+
+
+def test_planificar_trigger_de_exportada_en_el_insert_da_conflict_409_sin_compensar(monkeypatch):
+    """0033: la OC se exportó entre el chequeo D7 y el insert -> el trigger la rechaza y el
+    service lo traduce al mismo 409 que el chequeo temprano. No se intenta compensar: el
+    borrado también lo bloquearía el trigger y el plan queda congelado por la exportación."""
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    _entregas_creadas, _items, borrados, _actualizaciones = _mockear_escritura(monkeypatch)
+
+    def _crear_falla(client, fila):
+        raise _error_oc_exportada()
+
+    monkeypatch.setattr(extraccion_repo, "crear_entrega_oc", _crear_falla)
+
+    with pytest.raises(ConflictError, match="ya fue exportada a Progress"):
+        service.planificar_entregas(
+            MagicMock(),
+            orden_compra_id="oc-1",
+            drogueria_id="d1",
+            usuario_id="u1",
+            entregas=[_entrega_in(1, [("i1", "100")])],
+        )
+
+    assert borrados == []
+
+
+def test_planificar_trigger_de_exportada_en_el_borrado_da_conflict_409(monkeypatch):
+    _mockear_lectura_basica(
+        monkeypatch,
+        oc_items=[_oc_item("i1", cantidad="100")],
+        entregas_existentes=[
+            {"id": "e-vieja", "numero_entrega": 1, "fecha_entrega_planificada": None, "estado": "pendiente"}
+        ],
+    )
+    creadas, _items, _borrados, _actualizaciones = _mockear_escritura(monkeypatch)
+
+    def _borrar_falla(client, **kw):
+        raise _error_oc_exportada()
+
+    monkeypatch.setattr(repo, "borrar_entregas_oc", _borrar_falla)
+
+    with pytest.raises(ConflictError, match="ya fue exportada a Progress"):
+        service.planificar_entregas(
+            MagicMock(),
+            orden_compra_id="oc-1",
+            drogueria_id="d1",
+            usuario_id="u1",
+            entregas=[_entrega_in(1, [("i1", "100")])],
+        )
+
+    assert creadas == []
+
+
+def test_planificar_otro_error_de_base_no_se_traduce_a_conflict(monkeypatch):
+    from postgrest.exceptions import APIError
+
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    _mockear_escritura(monkeypatch)
+
+    def _crear_falla(client, fila):
+        raise APIError({"message": "otra cosa", "code": "23505", "details": None, "hint": None})
+
+    monkeypatch.setattr(extraccion_repo, "crear_entrega_oc", _crear_falla)
+
+    with pytest.raises(APIError):
+        service.planificar_entregas(
+            MagicMock(),
+            orden_compra_id="oc-1",
+            drogueria_id="d1",
+            usuario_id="u1",
+            entregas=[_entrega_in(1, [("i1", "100")])],
+        )
+
+
 def test_planificar_nunca_llama_funciones_de_stock(monkeypatch):
     from services.presupuestacion.core import stock
 
@@ -657,3 +742,56 @@ def test_planificar_nunca_llama_funciones_de_stock(monkeypatch):
     )
 
     espia.assert_not_called()
+
+
+# =============================================================================
+# D7 (oc-export-progress): una OC exportada a Progress no se replanifica y el GET
+# informa el estado de la exportación.
+# =============================================================================
+
+_EXPORTACION = {
+    "exportado_at": "2026-10-10T15:00:00+00:00",
+    "exportado_por": "6f0d4f0e-0000-4000-8000-000000000001",
+    "archivo_exportado": "OC_C01_OC-1_v1_20261010120000.csv",
+}
+
+
+def test_planificar_oc_exportada_da_conflict_409(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc(**_EXPORTACION))
+    escrituras = _mockear_escritura(monkeypatch)
+
+    with pytest.raises(ConflictError, match="exportada"):
+        service.planificar_entregas(
+            MagicMock(),
+            orden_compra_id="oc-1",
+            drogueria_id="d1",
+            usuario_id="u1",
+            entregas=[_entrega_in(1, [("i1", "100")])],
+        )
+
+    assert not any(escrituras)  # (entregas creadas, items, borrados, actualizaciones)
+
+
+def test_obtener_planificacion_incluye_bloque_exportacion_y_bloquea(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: _oc(**_EXPORTACION))
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion is not None
+    assert resultado.exportacion.archivo_exportado == _EXPORTACION["archivo_exportado"]
+    assert str(resultado.exportacion.exportado_por) == _EXPORTACION["exportado_por"]
+    assert resultado.exportacion.exportado_at.year == 2026
+    assert resultado.puede_planificar is False
+    assert "exportada" in resultado.motivo
+    assert resultado.plan_sugerido == []
+
+
+def test_obtener_planificacion_sin_exportar_tiene_exportacion_null(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion is None
+    assert resultado.puede_planificar is True

@@ -1,8 +1,9 @@
 # Modelos del módulo oc_entregas (odd/tasks/oc-entregas-planificacion.md, T3).
 # Mismo criterio que oc_presupuesto/models.py: todos los BaseModel en un único
 # archivo, sin un models.py por endpoint.
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -67,6 +68,15 @@ class PlanSugeridoRenglon(BaseModel):
     cantidades: list[Decimal]
 
 
+class ExportacionOut(BaseModel):
+    """Marca de exportación a Progress (oc-export-progress, D7): con ella la OC ya no
+    se puede replanificar."""
+
+    exportado_at: datetime
+    exportado_por: UUID
+    archivo_exportado: str
+
+
 class PlanificacionEntregasOut(BaseModel):
     orden_compra_id: str
     numero_oc: str
@@ -82,6 +92,7 @@ class PlanificacionEntregasOut(BaseModel):
     motivo: str | None
     plan_sugerido: list[PlanSugeridoRenglon]
     plan_actual: list[EntregaPlanOut]
+    exportacion: ExportacionOut | None = None
 
 
 class AdvertenciaDivisibilidad(BaseModel):
