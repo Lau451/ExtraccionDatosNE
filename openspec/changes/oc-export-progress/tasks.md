@@ -65,9 +65,9 @@
 
 ## Phase 4: Backend — compromisos (D9, D10)
 
-- [ ] 4.1 RED → GREEN: `GET /compromisos-entregas?desde&hasta` con `_ROLES_LECTURA`, rango por
+- [x] 4.1 RED → GREEN: `GET /compromisos-entregas?desde&hasta` con `_ROLES_LECTURA`, rango por
       defecto y máximo de 24 meses.
-- [ ] 4.2 Integración: solo OC exportadas; clasificación `vencida` / `futura`; aislamiento por
+- [x] 4.2 Integración: solo OC exportadas; clasificación `vencida` / `futura`; aislamiento por
       droguería.
 
 ## Phase 5: Frontend — exportar (D11)

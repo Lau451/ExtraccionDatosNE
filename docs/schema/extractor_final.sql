@@ -2329,7 +2329,7 @@ LEFT JOIN clientes cl   ON cl.id = oc.cliente_id
 LEFT JOIN terceros t_cli ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE e.estado NOT IN ('entregada', 'rechazada');
 
--- 0032: compromisos de entrega de OC exportadas a Progress
+-- 0032/0034: compromisos de entrega de OC exportadas a Progress
 CREATE VIEW v_compromisos_entregas WITH (security_invoker = true) AS
 SELECT
     oc.drogueria_id,
@@ -2360,10 +2360,11 @@ WHERE oc.exportado_at IS NOT NULL
   AND oc.deleted_at IS NULL
   AND oc.es_vigente
   AND oc.estado <> 'cancelada'
-  AND e.estado NOT IN ('entregada', 'rechazada');
+  AND e.estado NOT IN ('entregada', 'rechazada')
+  AND ei.cantidad_planificada > 0;
 
 COMMENT ON VIEW v_compromisos_entregas IS
-  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Agregada en 0032.';
+  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Solo ítems con cantidad_planificada > 0: las entregas reales de compras (cantidad_planificada = 0) no son compromisos. Agregada en 0032, ajustada en 0034.';
 
 -- Proveedores sin matchear
 CREATE VIEW v_ofertas_sin_matchear AS
