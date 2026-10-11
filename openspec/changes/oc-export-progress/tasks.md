@@ -72,13 +72,13 @@
 
 ## Phase 5: Frontend — exportar (D11)
 
-- [ ] 5.1 `lib/api/ocExport.ts` y tipos del bloque `exportacion` en `lib/api/ocEntregas.ts`.
-- [ ] 5.2 Botón "Exportar a Progress" en `PlanificacionEntregas.tsx`:
+- [x] 5.1 `lib/api/ocExport.ts` y tipos del bloque `exportacion` en `lib/api/ocEntregas.ts`.
+- [x] 5.2 Botón "Exportar a Progress" en `PlanificacionEntregas.tsx`:
   - confirmación;
   - errores de precondición;
   - resultado con nombre de archivo;
   - banner y solo lectura si ya fue exportada.
-- [ ] 5.3 Tests vitest de los estados del botón.
+- [x] 5.3 Tests vitest de los estados del botón.
 
 ## Phase 6: Frontend — compromisos (D11)
 

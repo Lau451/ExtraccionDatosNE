@@ -10,9 +10,12 @@ import {
   type PlanificarEntregasOut,
   type RenglonPlanificacion,
 } from '@/lib/api/ocEntregas'
+import { exportarAProgress } from '@/lib/api/ocExport'
+import { ApiError } from '@/lib/api/presupuestacion'
 import { etiquetaRenglonOc } from '../oc-matching/etiquetaRenglonOc'
 import { sugerirCantidadDivisible, sugerirPlanRenglon } from './sugerirPlan'
 import { CampoNumerico } from './CampoNumerico'
+import { BannerExportada, ExportarProgress } from './ExportarProgress'
 
 const MAX_ENTREGAS = 24
 
@@ -114,11 +117,15 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
   )
   const [fechas, setFechas] = useState<(string | null)[]>(() => fechasIniciales(data, nInicial(data)))
   const [resultado, setResultado] = useState<PlanificarEntregasOut | null>(null)
+  // Cambios en la grilla que todavía no se guardaron: bloquean la exportación
+  // (se exporta lo que está en la base, no lo que se ve en pantalla).
+  const [sinGuardar, setSinGuardar] = useState(false)
 
   const mutation = useMutation({
     mutationFn: (entregas: EntregaPlanIn[]) => planificarEntregas(ordenCompraId, entregas),
     onSuccess: (respuesta) => {
       setResultado(respuesta)
+      setSinGuardar(false)
       // Fix de review: el plan que acaba de guardarse (plan_actual, estados de
       // entrega) quedó desactualizado en la cache de la query GET -- se
       // invalida para que la próxima vez que se monte esta pantalla (o
@@ -128,6 +135,31 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
       queryClient.invalidateQueries({ queryKey: queryKeyPlanificacion(ordenCompraId) })
     },
   })
+
+  const exportacionMutation = useMutation({
+    mutationFn: () => exportarAProgress(ordenCompraId),
+    // Éxito, o 409 (ya exportada / plan cambiado): se vuelve a leer el estado
+    // real; si la OC quedó exportada, `data.exportacion` pasa a la vista de
+    // solo lectura.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeyPlanificacion(ordenCompraId) }),
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: queryKeyPlanificacion(ordenCompraId) })
+        // Plan cambiado y OC sin exportar: la grilla local quedó obsoleta.
+        const fresco = queryClient.getQueryData<PlanificacionEntregasOut>(queryKeyPlanificacion(ordenCompraId))
+        if (fresco && !fresco.exportacion) resembrar(fresco)
+      }
+    },
+  })
+
+  function resembrar(fresco: PlanificacionEntregasOut) {
+    const nuevoN = nInicial(fresco)
+    setN(nuevoN)
+    setCantidades(cantidadesIniciales(fresco, nuevoN))
+    setFechas(fechasIniciales(fresco, nuevoN))
+    setResultado(null)
+    setSinGuardar(false)
+  }
 
   function cambiarN(valorCrudo: number) {
     const nuevoN = clamp(valorCrudo)
@@ -142,6 +174,7 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
     )
     setFechas((previo) => Array.from({ length: nuevoN }, (_, indice) => previo[indice] ?? null))
     setResultado(null)
+    setSinGuardar(true)
   }
 
   function cambiarCantidad(ocItemId: string, indice: number, valor: number) {
@@ -151,6 +184,7 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
       return { ...previo, [ocItemId]: fila }
     })
     setResultado(null)
+    setSinGuardar(true)
   }
 
   function usarSugerida(ocItemId: string, indice: number, u: number) {
@@ -164,6 +198,7 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
       copia[indice] = valor || null
       return copia
     })
+    setSinGuardar(true)
   }
 
   const restantesPorRenglon = useMemo(() => {
@@ -196,6 +231,8 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
   )
   const hayEntregaVacia = entregasVacias.some(Boolean)
 
+  const planGuardado = data.plan_actual.length > 0
+
   function guardar() {
     const entregas: EntregaPlanIn[] = Array.from({ length: n }, (_, indice) => ({
       numero_entrega: indice + 1,
@@ -208,11 +245,15 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
     mutation.mutate(entregas)
   }
 
-  if (bloqueadoPorEstado) {
+  if (bloqueadoPorEstado || data.exportacion) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 px-6 py-10">
         <Encabezado numeroOc={data.numero_oc} descartados={data.descartados} />
-        <p className="text-sm text-amber-700">{data.motivo}</p>
+        {data.exportacion ? (
+          <BannerExportada exportacion={data.exportacion} />
+        ) : (
+          <p className="text-sm text-amber-700">{data.motivo}</p>
+        )}
         <PlanBloqueadoTabla renglones={data.renglones} planActual={data.plan_actual} />
         <button
           type="button"
@@ -329,6 +370,21 @@ function PlanificacionEntregasForm({ ordenCompraId, data }: FormProps) {
       >
         {mutation.isPending ? 'Guardando…' : 'Guardar plan'}
       </button>
+
+      <ExportarProgress
+        habilitado={planGuardado && !sinGuardar}
+        motivoDeshabilitado={
+          !planGuardado
+            ? 'Guardá el plan antes de exportar.'
+            : sinGuardar
+              ? 'Guardá el plan antes de exportar: hay cambios sin guardar.'
+              : null
+        }
+        isPending={exportacionMutation.isPending}
+        error={exportacionMutation.error}
+        resultado={exportacionMutation.data ?? null}
+        onExportar={() => exportacionMutation.mutate()}
+      />
     </div>
   )
 }

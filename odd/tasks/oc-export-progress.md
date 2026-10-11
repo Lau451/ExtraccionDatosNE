@@ -21,7 +21,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
 - [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [x] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
-- [ ] T5 Phase 5 — Frontend: export button.
+- [x] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
 - [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
 
@@ -83,3 +83,15 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - Checks (`gentle-ai-verify`): `-m integration` on `tests/compromisos tests/oc_export tests/oc_entregas` 31 passed, 0 skipped; `tests -m "not integration" --ignore=tests/extraccion` 553 passed.
 - 0034 down + reapply cycle in TEST (user ran both in the SQL Editor; 0 exported OCs, 0 view rows, so no data at risk). After down, verified by read: `cantidad_planificada > 0` filter gone, `security_invoker=true`, 15 columns, `authenticated` can select, migration `20261011130000` still registered. After reapply: filter `(ei.cantidad_planificada > (0)::numeric)` present, same options, columns and grant, migration still registered. Integration re-run on `tests/compromisos tests/oc_export tests/oc_entregas`: 31 passed, 0 skipped.
 - Native review `review-8121aeac7d3c5d18` on `dev..74fc801` (reliability lens, 16 files): approved and acknowledged (authority burned). Advisory, non-blocking follow-ups: `repository.py:12-20` reads the view unbounded and unordered (PostgREST `max_rows` could truncate silently before Python sorts); `repository.py:16` drops rows with a null `fecha_entrega_planificada` through the `lte` filter; `service.py:33` orders OC numbers lexically; `test_router.py:74-75` can split across midnight (suggestions).
+
+### T5
+
+- Branch `feat/oc-export-progress-05-boton-export` (from `dev` at `7664569`, after PR #85). Implemented by `gentle-ai-worker`, reviewed by the parent.
+- Frontend: `lib/api/ocExport.ts` (`exportarAProgress`), `ExportacionOut` in `lib/api/ocEntregas.ts`, `features/oc-entregas/ExportarProgress.tsx` (button, `ConfirmDialog`, error list, success with file name and row count, exported banner). `PlanificacionEntregas.tsx`: export mutation, `sinGuardar` flag (button disabled with unsaved edits), read-only view when `exportacion` is present.
+- Error mapping: 422 `detail` "prefix: err1; err2" shown as a list; 503 "Exportación no disponible"; 409 refetches planning and re-seeds the grid from fresh data (or switches to the exported view); 403 shows the backend message. The button is not hidden by role: the planning screen's roles equal the export roles.
+- Backend (user decision: show the exporter's name, not the UUID): `oc_entregas` returns `exportacion.exportado_por_nombre`, resolved with the embed `usuarios!fk_oc_exportadopor(nombre, apellido)` (FK from 0032; hint required by PGRST201). The banner omits "por …" when the name is null; the UUID is never shown.
+- RED: the new test suites failed to import (`./ocExport` missing); 5 backend tests (name cases + select string) and 3 frontend tests (409 re-seed, null-name banner, banner fixture) failed before their fixes.
+- Checks (`gentle-ai-verify`): `tests -m "not integration" --ignore=tests/extraccion` 558 passed; `-m integration` on `tests/oc_entregas tests/oc_export tests/compromisos` 31 passed; full frontend vitest 45 files / 449 tests passed; `tsc -b` only the known error at `oc-matching/components/ColumnaPresupuesto.test.tsx:147`, confirmed present on `dev` at `7664569` (not caused by T5).
+- Embed checked read-only against TEST: `buscar_orden_compra` resolves the hint (no PGRST200/201). The nested `nombre`/`apellido` payload was not observed: TEST has no exported OC.
+- Commits: `19e3a96` (backend: exporter name), `8c67546` (frontend button + docs).
+- Native review `review-ecc7b3131dc74a43` on `dev..8c67546` (reliability lens, 13 files): approved and acknowledged (authority burned). Advisory, non-blocking: 1 warning at `PlanificacionEntregas.tsx:385` (export button enablement); suggestions at `PlanificacionEntregas.tsx:145-150` and `:234`, `ExportarProgress.tsx:36-52`, `oc_entregas/repository.py:36-39`.

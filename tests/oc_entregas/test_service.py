@@ -795,3 +795,45 @@ def test_obtener_planificacion_sin_exportar_tiene_exportacion_null(monkeypatch):
 
     assert resultado.exportacion is None
     assert resultado.puede_planificar is True
+
+
+def test_exportacion_resuelve_nombre_completo_del_exportador(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    oc = _oc(**_EXPORTACION, usuarios={"nombre": "Ana", "apellido": "Pérez"})
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: oc)
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion.exportado_por_nombre == "Ana Pérez"
+
+
+def test_exportacion_nombre_sin_apellido_no_deja_espacio_colgando(monkeypatch):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    oc = _oc(**_EXPORTACION, usuarios={"nombre": "Ana", "apellido": None})
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: oc)
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion.exportado_por_nombre == "Ana"
+
+
+@pytest.mark.parametrize("embed", [None, {"nombre": "", "apellido": None}])
+def test_exportacion_nombre_es_null_si_no_hay_usuario_resoluble(monkeypatch, embed):
+    _mockear_lectura_basica(monkeypatch, oc_items=[_oc_item("i1", cantidad="100")])
+    oc = _oc(**_EXPORTACION, usuarios=embed)
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: oc)
+
+    resultado = service.obtener_planificacion(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1")
+
+    assert resultado.exportacion.exportado_por_nombre is None
+
+
+def test_buscar_orden_compra_embebe_usuarios_con_hint_de_fk():
+    client = MagicMock()
+    chain = client.table.return_value.select.return_value.eq.return_value.limit.return_value
+    chain.execute.return_value.data = []
+
+    repo.buscar_orden_compra(client, orden_compra_id="oc-1")
+
+    select = client.table.return_value.select.call_args.args[0]
+    assert "usuarios!fk_oc_exportadopor(nombre, apellido)" in select
