@@ -82,11 +82,11 @@
 
 ## Phase 6: Frontend — compromisos (D11)
 
-- [ ] 6.1 `lib/api/compromisos.ts`.
-- [ ] 6.2 `features/compromisos/`: agenda con "Vencidas sin confirmar" + grupos por mes y fecha.
-- [ ] 6.3 Ruta `_authenticated.compromisos.tsx` + ítem "Compromisos de entrega" en `Sidebar.tsx`
+- [x] 6.1 `lib/api/compromisos.ts`.
+- [x] 6.2 `features/compromisos/`: agenda con "Vencidas sin confirmar" + grupos por mes y fecha.
+- [x] 6.3 Ruta `_authenticated.compromisos.tsx` + ítem "Compromisos de entrega" en `Sidebar.tsx`
       (visible para roles de lectura).
-- [ ] 6.4 Tests vitest de agrupación y render.
+- [x] 6.4 Tests vitest de agrupación y render.
 
 ## Phase 7: Despliegue y verificación integral
 

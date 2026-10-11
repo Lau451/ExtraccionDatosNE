@@ -3,18 +3,33 @@ from typing import Any
 
 from supabase import Client
 
+# Debe ser <= `max_rows` de PostgREST: con una página más grande, el tope del servidor
+# devolvería una página "corta" y se cortaría la lectura antes de tiempo.
+_TAMANO_PAGINA = 500
+_ORDEN = ("fecha_entrega_planificada", "orden_compra_id", "numero_entrega", "numero_renglon")
+
 
 def listar_compromisos(
     client: Client, *, drogueria_id: str, desde: date | None, hasta: date
 ) -> list[dict[str, Any]]:
     """Lee `v_compromisos_entregas` (security_invoker: aplica la RLS de quien consulta);
     el filtro por `drogueria_id` es explícito igual, como en el resto de los módulos."""
-    consulta = (
-        client.table("v_compromisos_entregas")
-        .select("*")
-        .eq("drogueria_id", drogueria_id)
-        .lte("fecha_entrega_planificada", hasta.isoformat())
-    )
-    if desde is not None:
-        consulta = consulta.gte("fecha_entrega_planificada", desde.isoformat())
-    return consulta.execute().data
+    filas: list[dict[str, Any]] = []
+    inicio = 0
+    while True:
+        # Query nueva por página; orden estable para que las ventanas no se solapen ni salteen.
+        consulta = (
+            client.table("v_compromisos_entregas")
+            .select("*")
+            .eq("drogueria_id", drogueria_id)
+            .lte("fecha_entrega_planificada", hasta.isoformat())
+        )
+        if desde is not None:
+            consulta = consulta.gte("fecha_entrega_planificada", desde.isoformat())
+        for columna in _ORDEN:
+            consulta = consulta.order(columna)
+        pagina = consulta.range(inicio, inicio + _TAMANO_PAGINA - 1).execute().data
+        filas.extend(pagina)
+        if len(pagina) < _TAMANO_PAGINA:
+            return filas
+        inicio += _TAMANO_PAGINA

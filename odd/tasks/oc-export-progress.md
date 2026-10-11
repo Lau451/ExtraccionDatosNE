@@ -22,7 +22,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [x] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [x] T5 Phase 5 — Frontend: export button.
-- [ ] T6 Phase 6 — Frontend: commitments agenda.
+- [x] T6 Phase 6 — Frontend: commitments agenda (+ T4 follow-up: paginate the unbounded commitments read).
 - [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
 
 ## Evidence
@@ -95,3 +95,15 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - Embed checked read-only against TEST: `buscar_orden_compra` resolves the hint (no PGRST200/201). The nested `nombre`/`apellido` payload was not observed: TEST has no exported OC.
 - Commits: `19e3a96` (backend: exporter name), `8c67546` (frontend button + docs).
 - Native review `review-ecc7b3131dc74a43` on `dev..8c67546` (reliability lens, 13 files): approved and acknowledged (authority burned). Advisory, non-blocking: 1 warning at `PlanificacionEntregas.tsx:385` (export button enablement); suggestions at `PlanificacionEntregas.tsx:145-150` and `:234`, `ExportarProgress.tsx:36-52`, `oc_entregas/repository.py:36-39`.
+
+### T6
+
+- Branch `feat/oc-export-progress-06-agenda` (from `dev` at `c04bcb3`, after PR #86). Implemented by `gentle-ai-worker`, reviewed by the parent.
+- T4 follow-up (backend): `compromisos/repository.py` reads `v_compromisos_entregas` ordered by `fecha_entrega_planificada, orden_compra_id, numero_entrega, numero_renglon` in `.range()` pages of 500 (below PostgREST's usual `max_rows` of 1000) until a short page, building a fresh query per page. The service-level sort is unchanged.
+- Frontend: `lib/api/compromisos.ts`; `features/compromisos/` with the pure `agruparCompromisos` (overdue list with `dias_atraso`, then month and date groups, line items grouped per `entrega_oc_id`, undated deliveries in a final "Sin fecha" group), `Compromisos.tsx` (loading, empty, error, data; OC number links to `/ordenes-compra/$ordenCompraId/entregas`), and `roles.ts`; route `_authenticated.compromisos.tsx` (`routeTree.gen.ts` regenerated, +22 lines); Sidebar item "Compromisos de entrega" for admin, gerencia, lider_comercial, comercial and compras (hidden for superadmin and `sistema`). Dates parsed from `YYYY-MM-DD` without timezone shift. No range control in v1 (backend default range). The disabled "Calendario" placeholder is untouched.
+- RED: backend 5 failed / 12 passed (order and pagination tests); frontend new suites failed to import, Sidebar 5 failed ("Compromisos de entrega" link not found).
+- Checks (`gentle-ai-verify`): `tests -m "not integration" --ignore=tests/extraccion` 561 passed; `-m integration` on `tests/compromisos tests/oc_export tests/oc_entregas` 31 passed (ordered + paginated read through real PostgREST); full frontend vitest 49 files / 467 tests passed; `tsc -b` only the known error at `ColumnaPresupuesto.test.tsx:147`.
+- Commits: `b7518bc` (backend pagination), `2a08fcd` (agenda + docs).
+- Native review `review-333296482c972b9a` on `dev..2a08fcd` (reliability lens, 15 files): approved and acknowledged (authority burned). Advisory, non-blocking:
+  - Warning `repository.py:9`, the pagination sort key may not be unique. Checked against the TEST schema and not reproducible: `entregas_oc` has `UNIQUE (orden_compra_id, numero_entrega)`, `entregas_oc_items` has `UNIQUE (entrega_oc_id, oc_item_id)`, and `oc_items` has `UNIQUE (orden_compra_id, numero_renglon)` with `numero_renglon NOT NULL`, so `(orden_compra_id, numero_entrega, numero_renglon)` identifies one view row.
+  - Suggestions: the generic error fallback is untested (`Compromisos.tsx:65`); the pagination test does not assert filters on every page (`test_repository.py:92-102`).
