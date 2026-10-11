@@ -61,6 +61,24 @@ const planificarOutCrudo = {
   ],
 }
 
+describe('cliente HTTP oc_entregas -- bloque exportacion', () => {
+  beforeEach(() => vi.mocked(presupuestacionFetch).mockReset())
+
+  it('obtenerPlanificacionEntregas conserva exportado_por_nombre del bloque exportacion', async () => {
+    const exportacion = {
+      exportado_at: '2026-10-10T15:00:00Z',
+      exportado_por: 'u-1',
+      exportado_por_nombre: 'Ana Pérez',
+      archivo_exportado: 'a.csv',
+    }
+    vi.mocked(presupuestacionFetch).mockResolvedValue({ ...planificacionCruda, exportacion })
+
+    const resultado = await obtenerPlanificacionEntregas('oc-1')
+
+    expect(resultado.exportacion?.exportado_por_nombre).toBe('Ana Pérez')
+  })
+})
+
 describe('cliente HTTP oc_entregas -- parseo de Decimal (fix de review)', () => {
   beforeEach(() => vi.mocked(presupuestacionFetch).mockReset())
 

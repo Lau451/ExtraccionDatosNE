@@ -53,6 +53,17 @@ export interface PlanSugeridoRenglon {
   cantidades: number[]
 }
 
+/** Espejo literal de `oc_entregas/models.py::ExportacionOut`: marca de
+ * exportación a Progress (oc-export-progress D7). Con ella la OC ya no se
+ * puede replanificar. */
+export interface ExportacionOut {
+  exportado_at: string
+  exportado_por: string
+  // "nombre apellido" del exportador; null si no se pudo resolver.
+  exportado_por_nombre: string | null
+  archivo_exportado: string
+}
+
 /** Espejo literal de `oc_entregas/models.py::PlanificacionEntregasOut` (T3). */
 export interface PlanificacionEntregasOut {
   orden_compra_id: string
@@ -65,6 +76,8 @@ export interface PlanificacionEntregasOut {
   motivo: string | null
   plan_sugerido: PlanSugeridoRenglon[]
   plan_actual: EntregaPlanOut[]
+  // null (o ausente) cuando la OC todavía no se exportó a Progress.
+  exportacion?: ExportacionOut | null
 }
 
 /** Espejo literal de `oc_entregas/models.py::AdvertenciaDivisibilidad` (T3).
