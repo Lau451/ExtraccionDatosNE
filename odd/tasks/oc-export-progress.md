@@ -23,7 +23,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [x] T5 Phase 5 — Frontend: export button.
 - [x] T6 Phase 6 — Frontend: commitments agenda (+ T4 follow-up: paginate the unbounded commitments read).
-- [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
+- [x] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
 
 ## Evidence
 
@@ -107,3 +107,13 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - Native review `review-333296482c972b9a` on `dev..2a08fcd` (reliability lens, 15 files): approved and acknowledged (authority burned). Advisory, non-blocking:
   - Warning `repository.py:9`, the pagination sort key may not be unique. Checked against the TEST schema and not reproducible: `entregas_oc` has `UNIQUE (orden_compra_id, numero_entrega)`, `entregas_oc_items` has `UNIQUE (entrega_oc_id, oc_item_id)`, and `oc_items` has `UNIQUE (orden_compra_id, numero_renglon)` with `numero_renglon NOT NULL`, so `(orden_compra_id, numero_entrega, numero_renglon)` identifies one view row.
   - Suggestions: the generic error fallback is untested (`Compromisos.tsx:65`); the pagination test does not assert filters on every page (`test_repository.py:92-102`).
+
+### T7
+
+- Branch `feat/oc-export-progress-07-despliegue` (from `dev` at `07aa090`, after PR #87).
+- 7.1 (parent, inline): `docker-compose.yml`, service `presupuestacion-api`, adds `PROGRESS_DOCS_DIR=C:/app/documentos_ia`, `OC_EXPORT_ENCODING=cp1252` and a writable bind mount `C:/SACPro/documentos_ia:C:/app/documentos_ia`, separate from the read-only output volume (D8). CSVs land in `C:\SACPro\documentos_ia\oc`, and the host folder must exist before `docker compose up`. `docker compose config --quiet` is valid; the `version` obsolete warning was already there. The rollback section in `tasks.md` now lists the downs in reverse order: 0034, 0033, 0032.
+- 7.2 (`gentle-ai-verify`): `tests -m "not integration" --ignore=tests/extraccion` 561 passed; `-m integration` on `tests/oc_export tests/oc_entregas tests/compromisos` 31 passed.
+- 7.3 (`gentle-ai-verify`): `tsc -b` only the known error at `oc-matching/components/ColumnaPresupuesto.test.tsx:147`; vitest 49 files / 467 tests passed; `npx vite build` succeeded (largest chunk `index` 301.96 kB, 94.98 kB gzip). `npm run build` (`tsc -b && vite build`) fails on that known error, which is on `dev` since `000b346`, not caused by this change. The build rewrote `routeTree.gen.ts` with line-ending changes only (no diff ignoring CR), so it was restored.
+- 7.4 (`gentle-ai-worker`, user chose a disposable OC): `scripts/oc_export/generar_muestra.py` creates a synthetic droguería, client, products and OC in TEST (it aborts if `SUPABASE_URL` is not TEST), exports it with the real service, and has a `--limpiar <oc_id>` mode that only removes `MUESTRA-PROGRESS-*` data (it clears the export mark first because of the 0033 trigger). No TDD: throwaway tooling over a real database; verified with a real run plus a create/clean round trip on a second OC (nothing left).
+  - Kept sample: OC `2815a5d2-4aeb-4e81-bb25-9353e10cb03c` (`MUESTRA-PROGRESS-008d7865`), droguería `90c8a361-80b3-4d93-8acc-6f0629a60998`, `exportado_at` set in TEST. Clean it with `--limpiar` once Sistemas validates.
+  - CSV (outside the repo, synthetic data): `C:\Users\LAUREANO\OneDrive\Escritorio\muestra-progress\oc\OC_MUE008D7_MUESTRA-PROGRESS-008d7865_v1_20261011195648.csv`. 1116 bytes, header + 5 rows, CRLF, no BOM, decodes as cp1252, contains `ñ`, `ú` and an en dash (0x96, cp1252-only). Dates `dd/mm/yyyy`, decimals with comma. `fecha_emision` and `direccion_entrega` are empty in the synthetic OC.

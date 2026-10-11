@@ -90,12 +90,13 @@
 
 ## Phase 7: Despliegue y verificación integral
 
-- [ ] 7.1 `docker-compose.yml`: bind mount de escritura `C:/SACPro/documentos_ia` y variables (D8).
-- [ ] 7.2 Suite backend no-integración + `tests/oc_export` + `tests/oc_entregas` de integración.
-- [ ] 7.3 Frontend: `tsc`, `vitest`, `vite build`.
-- [ ] 7.4 Generar un CSV de prueba con una OC real de test para pasarle a Sistemas.
+- [x] 7.1 `docker-compose.yml`: bind mount de escritura `C:/SACPro/documentos_ia` y variables (D8).
+- [x] 7.2 Suite backend no-integración + `tests/oc_export` + `tests/oc_entregas` de integración.
+- [x] 7.3 Frontend: `tsc`, `vitest`, `vite build`.
+- [x] 7.4 Generar un CSV de prueba con una OC real de test para pasarle a Sistemas.
 
 ## Rollback
 
-Revert de los PRs en orden inverso. Esquema: `0032_*.down.sql`. Los archivos ya escritos en
+Revert de los PRs en orden inverso. Esquema, también en orden inverso: `0034_*.down.sql`,
+`0033_*.down.sql` y `0032_*.down.sql`. Los archivos ya escritos en
 `C:\SACPro\documentos_ia\oc` no se tocan.
