@@ -19,7 +19,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 
 - [x] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST.
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
-- [~] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
+- [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
 - [ ] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [ ] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
@@ -70,3 +70,4 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
   - User applied 0033 in the TEST SQL Editor and registered `20261011120000`. Verified by read: 3 functions, both triggers, trigger function `SECURITY DEFINER`, `authenticated` cannot execute `marcar_oc_exportada`, `service_role` can.
   - Checks (`gentle-ai-verify`): `-m integration` on `tests/oc_export tests/oc_entregas` 18 passed, 0 skipped (6 new `test_cas_plan.py` + 12 existing); `-m "not integration"` incl. `tests/core/test_database.py` 102 passed. Full suite without `tests/extraccion`: 539 passed (worker run).
   - Not run: 0033 down + reapply cycle in TEST.
+  - Native review `review-a8aa56e116bf04bd` on `d73c15f..130246e` (reliability lens): approved and acknowledged (authority burned). Advisory, non-blocking: planning's `OC409` path is not compensated (by design: the plan is frozen, and a partial plan cannot pass D2 and be exported without a hash mismatch); the trigger's plan/non-plan heuristic and `now()` vs Python timestamp in `marcar_oc_exportada`; integration tests cover INSERT/DELETE/UPDATE rejection but not the allowed real-delivery path; hash format and RPC error mapping suggestions.
