@@ -20,7 +20,7 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - [x] T1 Phase 1 — Schema: migration 0032 (export columns, partial index, `v_compromisos_entregas`) + down + snapshot; applied and verified in TEST.
 - [x] T2 Phase 2 — Backend: config + `filas.py` + `escritor.py` (unit tests).
 - [x] T3 Phase 3 — Backend: export service/router + plan lock (D7) + integration tests.
-- [~] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
+- [x] T4 Phase 4 — Backend: `GET /compromisos-entregas`.
 - [ ] T5 Phase 5 — Frontend: export button.
 - [ ] T6 Phase 6 — Frontend: commitments agenda.
 - [ ] T7 Phase 7 — docker-compose + full verification + sample CSV for Sistemas.
@@ -81,4 +81,4 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
 - RLS verified in integration: admin, gerencia, lider_comercial, comercial and compras read their own droguería only; `sistema` gets 403.
 - User applied 0034 in the TEST SQL Editor and registered `20261011130000`. Verified by read: filter present, `security_invoker=true`, 15 columns, `authenticated` can select.
 - Checks (`gentle-ai-verify`): `-m integration` on `tests/compromisos tests/oc_export tests/oc_entregas` 31 passed, 0 skipped; `tests -m "not integration" --ignore=tests/extraccion` 553 passed.
-- Not run: 0034 down + reapply cycle in TEST.
+- 0034 down + reapply cycle in TEST (user ran both in the SQL Editor; 0 exported OCs, 0 view rows, so no data at risk). After down, verified by read: `cantidad_planificada > 0` filter gone, `security_invoker=true`, 15 columns, `authenticated` can select, migration `20261011130000` still registered. After reapply: filter `(ei.cantidad_planificada > (0)::numeric)` present, same options, columns and grant, migration still registered. Integration re-run on `tests/compromisos tests/oc_export tests/oc_entregas`: 31 passed, 0 skipped.
