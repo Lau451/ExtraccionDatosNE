@@ -29,7 +29,7 @@ function TarjetaEntrega({ entrega }: { entrega: EntregaCompromiso }) {
       <div className="flex flex-wrap items-baseline gap-x-3 text-sm">
         <span className="font-medium text-slate-900">{entrega.cliente ?? 'Sin cliente'}</span>
         <Link
-          to="/ordenes-compra/$ordenCompraId/entregas"
+          to="/ordenes-compra/$ordenCompraId"
           params={{ ordenCompraId: entrega.orden_compra_id }}
           className="text-accent hover:underline"
         >
