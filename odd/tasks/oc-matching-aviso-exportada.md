@@ -21,9 +21,20 @@ Progress. User decision 2026-10-12: keep matching editable, but warn.
 
 ## Tasks
 
-- [ ] T1 Backend: `exportacion` block in `MatchingOut` (oc_presupuesto) + tests.
-- [ ] T2 Frontend: banner + confirmation before mutations when exported + tests.
+- [x] T1 Backend: `exportacion` block in `MatchingOut` (oc_presupuesto) + tests.
+- [x] T2 Frontend: banner + confirmation before mutations when exported + tests.
 
 ## Evidence
 
 (per task: commit, checks observed)
+
+- T1 — commit `2cffeda`. RED: 4 new tests in tests/oc_presupuesto/test_service.py failed with
+  `AttributeError: 'MatchingOut' object has no attribute 'exportacion'`. GREEN: tests/oc_presupuesto 84
+  passed, tests/oc_entregas 63 passed, tests/oc_export 61 passed (run per directory). `armar_exportacion`
+  moved to `oc_entregas/models.py` (oc_entregas.service already imports oc_presupuesto.service).
+  FK hint checked against TEST: OC 986 -> exportado_por_nombre 'Laureano Maidana'.
+- T2 — commit `585b787`. RED: 3 of 4 new tests in OcMatchingDetalle.test.tsx failed (banner, dialog
+  gates the API call, cancel does not call it); the null-exportacion test passed as expected (current
+  behaviour). GREEN (verifier): vitest src/features/oc-matching src/lib/api 13 files / 91 tests passed;
+  tsc -b --noEmit clean; oxlint clean. Parent fix: reset stale mutation errors before reopening the dialog.
+  routeTree.gen.ts rewritten by tooling with EOL-only changes; restored.
