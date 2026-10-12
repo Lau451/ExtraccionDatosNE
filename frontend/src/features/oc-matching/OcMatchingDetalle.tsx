@@ -10,14 +10,10 @@ import {
   obtenerPresupuestosCandidatos,
   type MatchingOut,
 } from '@/lib/api/ocMatching'
+import { fechaLegible } from '@/lib/fechas'
 import { ColumnaOrdenCompra } from './components/ColumnaOrdenCompra'
 import { ColumnaPresupuesto } from './components/ColumnaPresupuesto'
 import { SelectorPresupuesto } from './components/SelectorPresupuesto'
-
-function fechaLegible(iso: string): string {
-  const fecha = new Date(iso)
-  return Number.isNaN(fecha.getTime()) ? iso : fecha.toLocaleString('es-AR')
-}
 
 /** Mutación diferida hasta que el usuario confirme el aviso de OC exportada. */
 type AccionPendiente =

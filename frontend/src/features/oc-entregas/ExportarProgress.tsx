@@ -3,16 +3,12 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { ExportacionOut } from '@/lib/api/ocEntregas'
 import type { ResultadoExportacion } from '@/lib/api/ocExport'
 import { ApiError } from '@/lib/api/presupuestacion'
+import { fechaLegible } from '@/lib/fechas'
 
 // El 422 del backend junta todas las precondiciones en un solo `detail`:
 // "<prefijo>: <error 1>; <error 2>" (oc_export/service.py::exportar_orden_compra).
 const SEPARADOR_PREFIJO = ': '
 const SEPARADOR_ERRORES = '; '
-
-function fechaLegible(iso: string): string {
-  const fecha = new Date(iso)
-  return Number.isNaN(fecha.getTime()) ? iso : fecha.toLocaleString('es-AR')
-}
 
 interface BannerProps {
   exportacion: ExportacionOut

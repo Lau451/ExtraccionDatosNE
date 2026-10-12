@@ -257,6 +257,104 @@ describe('OcMatchingDetalle (design.md D12/D13)', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       expect(descartarRenglon).not.toHaveBeenCalled()
     })
+
+    function matchingConfirmadoExportado() {
+      return matching({
+        exportacion: EXPORTACION,
+        renglones_oc: [
+          renglonOc({
+            estado: 'confirmado',
+            presupuesto_item_id: 'pi-1',
+            vinculo_origen: 'precio_exacto',
+            candidatos: [],
+          }),
+        ],
+      })
+    }
+
+    it('deshacer abre el diálogo y no llama a la API hasta confirmar', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matchingConfirmadoExportado())
+      vi.mocked(deshacerVinculo).mockResolvedValue(matching())
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(deshacerVinculo).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+      await waitFor(() => expect(deshacerVinculo).toHaveBeenCalledTimes(1))
+      expect(deshacerVinculo).toHaveBeenCalledWith('oc-1', 'item-1')
+    })
+
+    it('descartar abre el diálogo y no llama a la API hasta confirmar', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+      vi.mocked(descartarRenglon).mockResolvedValue(matching())
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /no está en el presupuesto/i })[0])
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(descartarRenglon).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+      await waitFor(() => expect(descartarRenglon).toHaveBeenCalledTimes(1))
+      expect(descartarRenglon).toHaveBeenCalledWith('oc-1', 'item-1')
+    })
+
+    it('al confirmar con éxito el diálogo se cierra', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+      vi.mocked(confirmarVinculo).mockResolvedValue(matching())
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+      await screen.findByRole('dialog')
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('si la API falla tras confirmar, el diálogo sigue abierto y muestra el error', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+      vi.mocked(confirmarVinculo).mockRejectedValue(new Error('Fallo del servidor'))
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+      await screen.findByRole('dialog')
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Fallo del servidor')
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('un error de un intento anterior no reaparece al abrir el diálogo de nuevo', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+      vi.mocked(confirmarVinculo).mockRejectedValue(new Error('Fallo del servidor'))
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+      await screen.findByRole('dialog')
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+      await screen.findByRole('alert')
+
+      fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+      // Misma acción (misma mutación): con otra, el error viejo no aparecería igual
+      // y el test no probaría el reset.
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 
   it('el botón Planificar entregas está deshabilitado mientras haya renglones pendientes de matching', async () => {
