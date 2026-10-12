@@ -104,8 +104,10 @@ class MatchingOut(BaseModel):
     renglones_presupuesto: list[RenglonPresupuesto]
     renglones_oc: list[RenglonOrdenCompra]
     advertencias: list[str]
-    # Marca de exportación a Progress: la UI avisa, editar sigue permitido.
-    exportacion: ExportacionOut | None = None
+    # Marca de exportación a Progress: la UI avisa, editar sigue permitido. Sin
+    # default a propósito: un `MatchingOut(...)` que la olvide falla en vez de
+    # decir "no exportada" y esconder la advertencia.
+    exportacion: ExportacionOut | None
 
 
 class ConfirmarVinculoRequest(BaseModel):
