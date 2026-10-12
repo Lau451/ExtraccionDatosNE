@@ -32,6 +32,7 @@ import { Route as AuthenticatedTercerosIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedTercerosTerceroIdRouteImport } from './routes/_authenticated.terceros.$terceroId'
 import { Route as AuthenticatedValidarExtraccionIndexRouteImport } from './routes/_authenticated.validar-extraccion.index'
 import { Route as AuthenticatedValidarExtraccionExtractionIdRouteImport } from './routes/_authenticated.validar-extraccion.$extractionId'
+import { Route as AuthenticatedOrdenesCompraOrdenCompraIdIndexRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.index'
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.entregas'
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.matching'
 import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
@@ -162,6 +163,12 @@ const AuthenticatedValidarExtraccionExtractionIdRoute =
     path: '/validar-extraccion/$extractionId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute =
+  AuthenticatedOrdenesCompraOrdenCompraIdIndexRouteImport.update({
+    id: '/ordenes-compra/$ordenCompraId/',
+    path: '/ordenes-compra/$ordenCompraId/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute =
   AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport.update({
     id: '/ordenes-compra/$ordenCompraId/entregas',
@@ -213,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesByTo {
@@ -238,6 +246,7 @@ export interface FileRoutesByTo {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/ordenes-compra/$ordenCompraId': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesById {
@@ -268,6 +277,7 @@ export interface FileRoutesById {
   '/_authenticated/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/_authenticated/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRouteTypes {
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/ordenes-compra/$ordenCompraId/'
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/ordenes-compra/$ordenCompraId'
     | '/pcp/$pcpId/renglones/$renglonId'
   id:
     | '__root__'
@@ -352,6 +364,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
     | '/_authenticated/ordenes-compra/$ordenCompraId/matching'
     | '/_authenticated/pcp/consultas/$consultaId'
+    | '/_authenticated/ordenes-compra/$ordenCompraId/'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
 }
@@ -525,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedValidarExtraccionExtractionIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/ordenes-compra/$ordenCompraId/': {
+      id: '/_authenticated/ordenes-compra/$ordenCompraId/'
+      path: '/ordenes-compra/$ordenCompraId'
+      fullPath: '/ordenes-compra/$ordenCompraId/'
+      preLoaderRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/ordenes-compra/$ordenCompraId/entregas': {
       id: '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
       path: '/ordenes-compra/$ordenCompraId/entregas'
@@ -636,6 +656,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
   AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
+  AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -657,6 +678,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute,
+  AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute:
+    AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

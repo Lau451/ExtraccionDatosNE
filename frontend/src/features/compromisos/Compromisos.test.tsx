@@ -83,6 +83,6 @@ describe('Compromisos', () => {
     expect(screen.getByText('Paracetamol')).toBeTruthy()
     expect(screen.getAllByText('Hospital Norte').length).toBeGreaterThan(0)
     const link = screen.getByRole('link', { name: 'OC-100' })
-    expect(link.getAttribute('href')).toBe('/ordenes-compra/oc-1/entregas')
+    expect(link.getAttribute('href')).toBe('/ordenes-compra/oc-1')
   })
 })
