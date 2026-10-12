@@ -9,6 +9,7 @@ from supabase import Client
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import NotFoundError, ValidationError
 from services.presupuestacion.core.texto import normalizar_descripcion
+from services.presupuestacion.oc_entregas.models import armar_exportacion
 from services.presupuestacion.oc_presupuesto import repository as repo
 from services.presupuestacion.oc_presupuesto.models import (
     CandidatoPresupuesto,
@@ -560,6 +561,7 @@ def obtener_matching(
                 _armar_renglon_oc(item, [], {}) for item in oc_items
             ],
             advertencias=[advertencia] if advertencia else [],
+            exportacion=armar_exportacion(oc),
         )
 
     presupuesto_items = presupuestos_repo.listar_items_presupuesto(
@@ -609,6 +611,7 @@ def obtener_matching(
         renglones_presupuesto=renglones_presupuesto,
         renglones_oc=renglones_oc,
         advertencias=[advertencia] if advertencia else [],
+        exportacion=armar_exportacion(oc),
     )
 
 

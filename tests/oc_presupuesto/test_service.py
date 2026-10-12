@@ -971,6 +971,92 @@ def test_obtener_matching_expone_numero_renglon_documento_con_fallback_a_none(mo
     assert resultado.renglones_oc[1].numero_renglon_documento is None
 
 
+_OC_EXPORTADA = {
+    "exportado_at": "2026-05-01T12:00:00+00:00",
+    "exportado_por": "11111111-1111-1111-1111-111111111111",
+    "archivo_exportado": "OC-1.txt",
+    "usuarios": {"nombre": "Ana", "apellido": "Pérez"},
+}
+
+
+def _parchear_matching_basico(monkeypatch, oc: dict):
+    _parchear_dependencias_obtener_matching(
+        monkeypatch,
+        oc_items=[_stub_oc_item(precio_unitario="100.00")],
+        presupuesto_activo=("pres-1", None),
+        presupuesto_items=[_stub_presupuesto_item(precio_unitario="100.00")],
+        items_proceso=[{"id": "ip-1", "descripcion": "x", "numero_renglon": 1, "producto_id": None}],
+    )
+    monkeypatch.setattr(repo, "buscar_orden_compra", lambda client, **kw: oc)
+
+
+def test_obtener_matching_exportacion_es_none_si_la_oc_no_fue_exportada(monkeypatch):
+    _parchear_matching_basico(monkeypatch, _stub_oc())
+
+    resultado = service.obtener_matching(
+        MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", presupuesto_id=None
+    )
+
+    assert resultado.exportacion is None
+
+
+def test_obtener_matching_expone_exportacion_con_nombre_del_exportador(monkeypatch):
+    _parchear_matching_basico(monkeypatch, {**_stub_oc(), **_OC_EXPORTADA})
+
+    resultado = service.obtener_matching(
+        MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", presupuesto_id=None
+    )
+
+    assert resultado.exportacion is not None
+    assert resultado.exportacion.exportado_por_nombre == "Ana Pérez"
+    assert resultado.exportacion.archivo_exportado == "OC-1.txt"
+
+
+def test_obtener_matching_expone_exportacion_sin_presupuesto_activo(monkeypatch):
+    _parchear_matching_basico(monkeypatch, {**_stub_oc(), **_OC_EXPORTADA})
+    monkeypatch.setattr(service, "_resolver_presupuesto_activo", lambda client, **kw: (None, None))
+
+    resultado = service.obtener_matching(
+        MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", presupuesto_id=None
+    )
+
+    assert resultado.presupuesto_id is None
+    assert resultado.exportacion is not None
+    assert resultado.exportacion.exportado_por_nombre == "Ana Pérez"
+
+
+def test_confirmar_vinculo_devuelve_matching_con_exportacion(monkeypatch):
+    obtener_matching_real = service.obtener_matching
+    monkeypatch.setattr(repo, "actualizar_oc_item", lambda client, *, oc_item_id, campos: {"id": oc_item_id})
+    oc_exportada = {**_stub_oc(), **_OC_EXPORTADA}
+    _parchear_dependencias_confirmar(
+        monkeypatch,
+        oc=oc_exportada,
+        oc_item=_stub_oc_item(),
+        presupuesto_item=_stub_presupuesto_item(),
+        presupuesto={"id": "pres-1", "proceso_comercial_id": "proc-1"},
+        procesos_del_cliente=[{"id": "proc-1", "nombre": "Proceso"}],
+    )
+    monkeypatch.setattr(service, "obtener_matching", obtener_matching_real)
+    monkeypatch.setattr(service, "_resolver_presupuesto_activo", lambda client, **kw: ("pres-1", None))
+    monkeypatch.setattr(
+        service.presupuestos_repo, "listar_items_presupuesto", lambda client, **kw: [_stub_presupuesto_item()]
+    )
+    monkeypatch.setattr(repo, "listar_oc_items_por_presupuesto_item_ids", lambda client, **kw: [])
+
+    resultado = service.confirmar_vinculo(
+        MagicMock(),
+        orden_compra_id="oc-1",
+        oc_item_id="oci-1",
+        presupuesto_item_id="pi-1",
+        drogueria_id="d1",
+        usuario_id="user-1",
+    )
+
+    assert resultado.exportacion is not None
+    assert resultado.exportacion.exportado_por_nombre == "Ana Pérez"
+
+
 def test_obtener_matching_sin_match_de_precio_queda_pendiente_sin_candidatos(monkeypatch):
     _parchear_dependencias_obtener_matching(
         monkeypatch,

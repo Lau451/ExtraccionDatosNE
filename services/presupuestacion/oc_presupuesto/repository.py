@@ -21,7 +21,11 @@ def _en_lotes(items: list[_T], tamano: int = _TAMANO_LOTE) -> Iterable[list[_T]]
 def buscar_orden_compra(client: Client, *, orden_compra_id: str) -> dict[str, Any] | None:
     resultado = (
         client.table("ordenes_compra")
-        .select("id, drogueria_id, cliente_id, numero_oc")
+        .select(
+            "id, drogueria_id, cliente_id, numero_oc, "
+            "exportado_at, exportado_por, archivo_exportado, "
+            "usuarios!fk_oc_exportadopor(nombre, apellido)"
+        )
         .eq("id", orden_compra_id)
         .limit(1)
         .execute()
