@@ -3,6 +3,7 @@
 # archivo, sin un models.py por endpoint.
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -77,6 +78,27 @@ class ExportacionOut(BaseModel):
     # "nombre apellido" del exportador; None si no se pudo resolver.
     exportado_por_nombre: str | None = None
     archivo_exportado: str
+
+
+def nombre_exportador(oc: dict[str, Any]) -> str | None:
+    """"nombre apellido" desde el embed `usuarios(nombre, apellido)`; apellido es nullable."""
+    embed = oc.get("usuarios") or {}
+    nombre = (embed.get("nombre") or "").strip()
+    apellido = (embed.get("apellido") or "").strip()
+    return f"{nombre} {apellido}".strip() or None
+
+
+def armar_exportacion(oc: dict[str, Any]) -> ExportacionOut | None:
+    """Marca de exportación desde una fila de `ordenes_compra` con el embed del exportador;
+    None si la OC no fue exportada. Compartido por oc_entregas y oc_presupuesto."""
+    if not oc.get("exportado_at"):
+        return None
+    return ExportacionOut(
+        exportado_at=oc["exportado_at"],
+        exportado_por=oc["exportado_por"],
+        exportado_por_nombre=nombre_exportador(oc),
+        archivo_exportado=oc["archivo_exportado"],
+    )
 
 
 class PlanificacionEntregasOut(BaseModel):

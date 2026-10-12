@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from services.presupuestacion.oc_entregas.models import ExportacionOut
+
 EstadoVinculo = Literal["pendiente", "confirmado", "sin_presupuesto"]
 OrigenVinculo = Literal["precio_exacto", "manual"]
 
@@ -102,6 +104,8 @@ class MatchingOut(BaseModel):
     renglones_presupuesto: list[RenglonPresupuesto]
     renglones_oc: list[RenglonOrdenCompra]
     advertencias: list[str]
+    # Marca de exportación a Progress: la UI avisa, editar sigue permitido.
+    exportacion: ExportacionOut | None = None
 
 
 class ConfirmarVinculoRequest(BaseModel):

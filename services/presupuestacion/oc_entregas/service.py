@@ -32,11 +32,11 @@ from services.presupuestacion.oc_entregas.models import (
     EntregaItemPlanOut,
     EntregaPlanIn,
     EntregaPlanOut,
-    ExportacionOut,
     PlanificacionEntregasOut,
     PlanificarEntregasOut,
     PlanSugeridoRenglon,
     RenglonPlanificacion,
+    armar_exportacion,
 )
 from services.presupuestacion.oc_presupuesto.service import _derivar_estado
 
@@ -140,25 +140,6 @@ def _armar_plan_actual(
     ]
 
 
-def _nombre_exportador(oc: dict[str, Any]) -> str | None:
-    """"nombre apellido" desde el embed `usuarios(nombre, apellido)`; apellido es nullable."""
-    embed = oc.get("usuarios") or {}
-    nombre = (embed.get("nombre") or "").strip()
-    apellido = (embed.get("apellido") or "").strip()
-    return f"{nombre} {apellido}".strip() or None
-
-
-def _armar_exportacion(oc: dict[str, Any]) -> ExportacionOut | None:
-    if not oc.get("exportado_at"):
-        return None
-    return ExportacionOut(
-        exportado_at=oc["exportado_at"],
-        exportado_por=oc["exportado_por"],
-        exportado_por_nombre=_nombre_exportador(oc),
-        archivo_exportado=oc["archivo_exportado"],
-    )
-
-
 def obtener_planificacion(
     client: Client, *, orden_compra_id: str, drogueria_id: str
 ) -> PlanificacionEntregasOut:
@@ -192,7 +173,7 @@ def obtener_planificacion(
     entregas_existentes = repo.listar_entregas_oc(client, orden_compra_id=orden_compra_id)
     plan_bloqueado = any(entrega["estado"] != "pendiente" for entrega in entregas_existentes)
 
-    exportacion = _armar_exportacion(oc)
+    exportacion = armar_exportacion(oc)
 
     if exportacion is not None:
         puede_planificar = False

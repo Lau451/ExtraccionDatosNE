@@ -1,3 +1,4 @@
+import type { ExportacionOut } from './ocEntregas'
 import { presupuestacionFetch } from './presupuestacion'
 
 /** Espejo literal de `services/presupuestacion/oc_presupuesto/models.py::EstadoVinculo`
@@ -103,6 +104,9 @@ export interface MatchingOut {
   renglones_presupuesto: RenglonPresupuesto[]
   renglones_oc: RenglonOrdenCompra[]
   advertencias: string[]
+  // Marca de exportación a Progress; null si la OC todavía no se exportó.
+  // Editar el matching sigue permitido, pero el cambio no llega a Progress.
+  exportacion?: ExportacionOut | null
 }
 
 // FastAPI/Pydantic v2 serializa `Decimal` como STRING en JSON, nunca como

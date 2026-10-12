@@ -196,6 +196,69 @@ describe('OcMatchingDetalle (design.md D12/D13)', () => {
     expect(screen.getAllByRole('button', { name: /^confirmar$/i })).toHaveLength(1)
   })
 
+  describe('OC ya exportada a Progress', () => {
+    const EXPORTACION = {
+      exportado_at: '2026-03-04T15:30:00Z',
+      exportado_por: 'user-1',
+      exportado_por_nombre: 'Ana Pérez',
+      archivo_exportado: 'oc-100.xlsx',
+    }
+
+    it('sin exportación no muestra banner y confirmar muta directo, sin diálogo', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: null }))
+      vi.mocked(confirmarVinculo).mockResolvedValue(matching())
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      expect(screen.queryByText(/ya fue exportada a progress/i)).not.toBeInTheDocument()
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+
+      await waitFor(() => expect(confirmarVinculo).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('muestra el banner con el nombre de quien exportó', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      const banner = await screen.findByText(/ya fue exportada a progress/i)
+      expect(banner).toHaveTextContent('por Ana Pérez')
+      expect(banner).toHaveTextContent(/no se envían a progress/i)
+    })
+
+    it('confirmar abre el diálogo y no llama a la API hasta confirmar', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+      vi.mocked(confirmarVinculo).mockResolvedValue(matching())
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /^confirmar$/i })[0])
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(confirmarVinculo).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: /modificar igual/i }))
+      await waitFor(() => expect(confirmarVinculo).toHaveBeenCalledWith('oc-1', 'item-1', 'pi-1'))
+    })
+
+    it('cancelar el diálogo no llama a la API', async () => {
+      vi.mocked(obtenerMatching).mockResolvedValue(matching({ exportacion: EXPORTACION }))
+
+      renderConQueryClient(<OcMatchingDetalle ordenCompraId="oc-1" />)
+
+      await screen.findByText('Ibuprofeno 400mg x 20')
+      fireEvent.click(screen.getAllByRole('button', { name: /no está en el presupuesto/i })[0])
+      await screen.findByRole('dialog')
+      fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(descartarRenglon).not.toHaveBeenCalled()
+    })
+  })
+
   it('el botón Planificar entregas está deshabilitado mientras haya renglones pendientes de matching', async () => {
     vi.mocked(obtenerMatching).mockResolvedValue(matching())
 
