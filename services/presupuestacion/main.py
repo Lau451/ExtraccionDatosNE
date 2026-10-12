@@ -21,6 +21,7 @@ from services.presupuestacion.notificaciones.router import router as notificacio
 from services.presupuestacion.oc_entregas.router import router as oc_entregas_router
 from services.presupuestacion.oc_export.router import router as oc_export_router
 from services.presupuestacion.oc_presupuesto.router import router as oc_presupuesto_router
+from services.presupuestacion.oc_resumen.router import router as oc_resumen_router
 from services.presupuestacion.planes.router import router as planes_router
 from services.presupuestacion.presupuestos.router import router as presupuestos_router
 from services.presupuestacion.pricing.router import router as pricing_router
@@ -69,4 +70,5 @@ app.include_router(pcp_router, tags=["pcp"])
 app.include_router(oc_presupuesto_router, tags=["oc_presupuesto"])
 app.include_router(oc_entregas_router, tags=["oc_entregas"])
 app.include_router(oc_export_router, tags=["oc_export"])
+app.include_router(oc_resumen_router, tags=["oc_resumen"])
 app.include_router(compromisos_router, tags=["compromisos"])

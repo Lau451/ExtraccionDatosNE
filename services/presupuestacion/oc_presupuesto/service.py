@@ -366,6 +366,11 @@ def _derivar_estado(presupuesto_item_id: str | None, vinculo_descartado: bool) -
     return "pendiente"
 
 
+# Alias público para módulos de solo lectura (oc_resumen); los callers existentes
+# siguen importando `_derivar_estado`.
+derivar_estado_vinculo = _derivar_estado
+
+
 def _agregar_aviso_n1(
     oc_items_vinculados: list[dict[str, Any]], *, orden_compra_id: str
 ) -> dict[str, dict[str, Any]]:
