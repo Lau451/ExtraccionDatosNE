@@ -27,6 +27,9 @@ oc-export-progress T6 because no OC overview existed).
 
 - [x] T1 Backend: `oc_resumen` module (models, repository, service, router) + tests.
 - [x] T2 Frontend: API client, route, overview component, compromisos link + tests.
+- [x] T3 Polish (user feedback 2026-10-12): "← Volver a compromisos" link; "Planificar entregas" only when
+  the OC is not exported (deliveries are already listed below); amounts with es-AR thousands separators;
+  total fallback without silently counting rows with no total as 0; non-UUID id -> 404 instead of 500.
 
 ## Evidence
 
@@ -40,3 +43,8 @@ oc-export-progress T6 because no OC overview existed).
   OcResumen.test.tsx failed to load (component missing). GREEN: vitest oc-resumen + compromisos + lib
   11 files / 72 tests passed; tsc -b and oxlint clean. routeTree.gen.ts: only the new route (+23, checked
   ignoring EOL). Presupuestación restarted: /resumen present in openapi.
+- T3 — commit `dcb52dd`. RED: 4 backend failures (invalid ids reached the repository), formatoMoneda
+  import missing, 7 OcResumen failures (e.g. `'$1234567.89'` vs `'$ 1.234.567,89'`, no back link, planner
+  link shown when exported, no incomplete-total note). GREEN: tests/oc_resumen 13 passed; vitest
+  oc-resumen + compromisos + lib 12 files / 81 tests passed; tsc and oxlint clean. Invalid-id 404 covered
+  by a service unit test only (no router test).
