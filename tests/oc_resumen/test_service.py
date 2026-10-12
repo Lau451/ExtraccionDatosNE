@@ -11,6 +11,9 @@ from services.presupuestacion.oc_resumen import repository as repo
 from services.presupuestacion.oc_resumen import service
 
 
+OC_ID = "11111111-1111-1111-1111-111111111111"
+
+
 def _oc(**overrides) -> dict:
     base = {
         "id": "oc-1",
@@ -60,7 +63,7 @@ def _parchar(monkeypatch, *, oc, items=(), productos=(), entregas=(), entregas_i
 
 
 def _resumen(**kw):
-    return service.obtener_resumen(MagicMock(), orden_compra_id="oc-1", drogueria_id="d1", **kw)
+    return service.obtener_resumen(MagicMock(), orden_compra_id=OC_ID, drogueria_id="d1", **kw)
 
 
 def test_camino_feliz_arma_cabecera_cliente_renglones_entregas_y_exportacion(monkeypatch):
@@ -146,3 +149,15 @@ def test_oc_de_otra_drogueria_da_not_found(monkeypatch):
     _parchar(monkeypatch, oc=_oc(drogueria_id="otra"))
     with pytest.raises(NotFoundError):
         _resumen()
+
+
+@pytest.mark.parametrize("id_invalido", ["oc-1", "", "123", "no-es-uuid"])
+def test_id_no_uuid_da_not_found_sin_consultar_la_base(monkeypatch, id_invalido):
+    # Postgres rechaza el cast a uuid con un 500: se corta antes de tocar el repository.
+    buscar = MagicMock()
+    monkeypatch.setattr(repo, "buscar_orden_compra", buscar)
+
+    with pytest.raises(NotFoundError, match="No se encontró la orden de compra"):
+        service.obtener_resumen(MagicMock(), orden_compra_id=id_invalido, drogueria_id="d1")
+
+    buscar.assert_not_called()

@@ -7,8 +7,20 @@ import { ApiError } from '@/lib/api/presupuestacion'
 const rolActual = vi.hoisted(() => ({ valor: 'comercial' as string }))
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, params }: { children?: React.ReactNode; to: string; params?: Record<string, string> }) => (
-    <a href={to.replace('$ordenCompraId', params?.ordenCompraId ?? '')}>{children}</a>
+  Link: ({
+    children,
+    to,
+    params,
+    className,
+  }: {
+    children?: React.ReactNode
+    to: string
+    params?: Record<string, string>
+    className?: string
+  }) => (
+    <a href={to.replace('$ordenCompraId', params?.ordenCompraId ?? '')} className={className}>
+      {children}
+    </a>
   ),
 }))
 vi.mock('@/features/auth/AuthContext', () => ({
@@ -138,15 +150,44 @@ describe('OcResumen', () => {
     expect(within(filaGasas).getByText('—')).toBeTruthy()
   })
 
-  it('usa el monto_total del encabezado y, si es null, la suma de los renglones', async () => {
-    vi.mocked(obtenerOcResumen).mockResolvedValue(resumen())
-    const { unmount } = renderVista()
-    expect((await screen.findByTestId('total-oc')).textContent).toContain('5000.00')
-    unmount()
+  it('usa el monto_total del encabezado con formato argentino', async () => {
+    vi.mocked(obtenerOcResumen).mockResolvedValue(resumen({ monto_total: 1234567.89 }))
+    renderVista()
+    expect((await screen.findByTestId('total-oc')).textContent).toBe('$ 1.234.567,89')
+    expect(screen.queryByText(/está incompleto/)).toBeNull()
+  })
 
+  it('formatea precio unitario y total de cada renglón', async () => {
+    vi.mocked(obtenerOcResumen).mockResolvedValue(resumen())
+    renderVista()
+    const tabla = await screen.findByRole('table', { name: 'Renglones' })
+    expect(within(tabla).getByText('$ 12,50')).toBeTruthy()
+    expect(within(tabla).getByText('$ 1.250,00')).toBeTruthy()
+  })
+
+  it('sin monto_total en el encabezado suma los renglones', async () => {
     vi.mocked(obtenerOcResumen).mockResolvedValue(resumen({ monto_total: null }))
     renderVista()
-    expect((await screen.findByTestId('total-oc')).textContent).toContain('1750.00')
+    expect((await screen.findByTestId('total-oc')).textContent).toBe('$ 1.750,00')
+    expect(screen.queryByText(/está incompleto/)).toBeNull()
+  })
+
+  it('avisa que el total está incompleto si algún renglón no tiene precio', async () => {
+    const base = resumen({ monto_total: null })
+    base.renglones[1] = { ...base.renglones[1], precio_unitario: null, monto_total: null }
+    vi.mocked(obtenerOcResumen).mockResolvedValue(base)
+    renderVista()
+    expect((await screen.findByTestId('total-oc')).textContent).toBe('$ 1.250,00')
+    expect(screen.getByText('Sin precio en 1 renglón: el total está incompleto.')).toBeTruthy()
+  })
+
+  it('si ningún renglón tiene precio muestra "—" y el aviso en plural', async () => {
+    const base = resumen({ monto_total: null })
+    base.renglones = base.renglones.map((r) => ({ ...r, precio_unitario: null, monto_total: null }))
+    vi.mocked(obtenerOcResumen).mockResolvedValue(base)
+    renderVista()
+    expect((await screen.findByTestId('total-oc')).textContent).toBe('—')
+    expect(screen.getByText('Sin precio en 2 renglones: el total está incompleto.')).toBeTruthy()
   })
 
   it('muestra "Sin entregas planificadas" sin entregas', async () => {
@@ -193,6 +234,30 @@ describe('OcResumen', () => {
     expect(matching.getAttribute('href')).toBe('/ordenes-compra/oc-1/matching')
     const planificar = screen.getByRole('link', { name: 'Planificar entregas' })
     expect(planificar.getAttribute('href')).toBe('/ordenes-compra/oc-1/entregas')
+  })
+
+  it('muestra el link para volver a compromisos', async () => {
+    vi.mocked(obtenerOcResumen).mockResolvedValue(resumen())
+    renderVista()
+    const volver = await screen.findByRole('link', { name: '← Volver a compromisos' })
+    expect(volver.getAttribute('href')).toBe('/compromisos')
+    expect(volver.className).toContain('mb-4 inline-block text-sm text-accent hover:underline')
+  })
+
+  it('oculta "Planificar entregas" si la OC ya fue exportada, pero deja "Ver matching"', async () => {
+    vi.mocked(obtenerOcResumen).mockResolvedValue(
+      resumen({
+        exportacion: {
+          exportado_at: '2026-10-02T10:00:00Z',
+          exportado_por: 'u1',
+          exportado_por_nombre: null,
+          archivo_exportado: 'oc-100.txt',
+        },
+      }),
+    )
+    renderVista()
+    expect(await screen.findByRole('link', { name: 'Ver matching' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Planificar entregas' })).toBeNull()
   })
 
   it('oculta los links para compras', async () => {

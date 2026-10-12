@@ -1,6 +1,7 @@
 # Servicio del módulo oc_resumen (odd/tasks/oc-resumen.md, T1): resumen de solo
 # lectura de una OC. No escribe nada.
 from typing import Any
+from uuid import UUID
 
 from supabase import Client
 
@@ -50,6 +51,12 @@ def _armar_entregas(client: Client, *, orden_compra_id: str) -> list[EntregaPlan
 
 
 def obtener_resumen(client: Client, *, orden_compra_id: str, drogueria_id: str) -> OcResumenOut:
+    # Postgres rechaza un id que no es uuid con un 500: se responde 404 sin consultar.
+    try:
+        UUID(orden_compra_id)
+    except ValueError:
+        raise NotFoundError("No se encontró la orden de compra") from None
+
     oc = repo.buscar_orden_compra(client, orden_compra_id=orden_compra_id)
     # Misma respuesta para "no existe" y "es de otra droguería": no confirma existencia.
     if oc is None or oc["drogueria_id"] != drogueria_id:
