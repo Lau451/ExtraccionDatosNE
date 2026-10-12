@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   confirmarVinculo,
   deshacerVinculo,
@@ -12,6 +13,17 @@ import {
 import { ColumnaOrdenCompra } from './components/ColumnaOrdenCompra'
 import { ColumnaPresupuesto } from './components/ColumnaPresupuesto'
 import { SelectorPresupuesto } from './components/SelectorPresupuesto'
+
+function fechaLegible(iso: string): string {
+  const fecha = new Date(iso)
+  return Number.isNaN(fecha.getTime()) ? iso : fecha.toLocaleString('es-AR')
+}
+
+/** Mutación diferida hasta que el usuario confirme el aviso de OC exportada. */
+type AccionPendiente =
+  | { tipo: 'confirmar'; ocItemId: string; presupuestoItemId: string }
+  | { tipo: 'deshacer'; ocItemId: string }
+  | { tipo: 'descartar'; ocItemId: string }
 
 interface Props {
   ordenCompraId: string
@@ -32,6 +44,7 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [renglonSeleccionadoId, setRenglonSeleccionadoId] = useState<string | null>(null)
+  const [accionPendiente, setAccionPendiente] = useState<AccionPendiente | null>(null)
 
   const candidatosQuery = useQuery({
     queryKey: ['oc-matching', ordenCompraId, 'presupuestos-candidatos'],
@@ -81,8 +94,40 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
   // terminan en el mismo POST /vinculo -- el backend decide `vinculo_origen`
   // según si el precio coincide o no.
   function confirmarVinculoDe(ocItemId: string, presupuestoItemId: string) {
-    confirmarMutation.mutate({ ocItemId, presupuestoItemId })
+    solicitar({ tipo: 'confirmar', ocItemId, presupuestoItemId })
   }
+
+  function ejecutar(accion: AccionPendiente, opciones?: { onSuccess: () => void }) {
+    if (accion.tipo === 'confirmar') {
+      confirmarMutation.mutate(
+        { ocItemId: accion.ocItemId, presupuestoItemId: accion.presupuestoItemId },
+        opciones,
+      )
+    } else if (accion.tipo === 'deshacer') {
+      deshacerMutation.mutate(accion.ocItemId, opciones)
+    } else {
+      descartarMutation.mutate(accion.ocItemId, opciones)
+    }
+  }
+
+  // Si la OC ya se exportó a Progress se edita igual, pero antes se avisa que
+  // el cambio no llega a Progress: la acción espera en `accionPendiente`.
+  function solicitar(accion: AccionPendiente) {
+    if (matchingQuery.data?.exportacion) {
+      // Sin esto el diálogo mostraría el error de un intento anterior fallido.
+      confirmarMutation.reset()
+      deshacerMutation.reset()
+      descartarMutation.reset()
+      setAccionPendiente(accion)
+    } else ejecutar(accion)
+  }
+
+  const mutacionPendiente =
+    accionPendiente?.tipo === 'confirmar'
+      ? confirmarMutation
+      : accionPendiente?.tipo === 'deshacer'
+        ? deshacerMutation
+        : descartarMutation
 
   function elegirPresupuesto(id: string) {
     navigate({
@@ -143,6 +188,13 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
             Planificar entregas
           </button>
         </div>
+        {matching.exportacion && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Esta orden de compra ya fue exportada a Progress el {fechaLegible(matching.exportacion.exportado_at)}
+            {matching.exportacion.exportado_por_nombre ? ` por ${matching.exportacion.exportado_por_nombre}` : ''}.
+            Los cambios de matching que hagas no se envían a Progress.
+          </p>
+        )}
         {matching.advertencias.map((advertencia) => (
           <p key={advertencia} className="text-sm text-amber-600">
             {advertencia}
@@ -174,10 +226,27 @@ export function OcMatchingDetalle({ ordenCompraId, presupuestoId }: Props) {
           onConfirmar={(ocItemId, presupuestoItemId) =>
             confirmarVinculoDe(ocItemId, presupuestoItemId)
           }
-          onDeshacer={(ocItemId) => deshacerMutation.mutate(ocItemId)}
-          onDescartar={(ocItemId) => descartarMutation.mutate(ocItemId)}
+          onDeshacer={(ocItemId) => solicitar({ tipo: 'deshacer', ocItemId })}
+          onDescartar={(ocItemId) => solicitar({ tipo: 'descartar', ocItemId })}
         />
       </div>
+
+      <ConfirmDialog
+        open={accionPendiente !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setAccionPendiente(null)
+        }}
+        title="Orden de compra ya exportada"
+        description="Esta orden de compra ya fue exportada a Progress. El cambio de matching se guardará acá, pero no se enviará a Progress."
+        confirmLabel="Modificar igual"
+        pendingLabel="Modificando…"
+        isPending={mutacionPendiente.isPending}
+        error={mutacionPendiente.error instanceof Error ? mutacionPendiente.error.message : null}
+        onConfirm={() => {
+          // Se cierra recién al terminar bien: si falla, el error se ve en el diálogo.
+          if (accionPendiente) ejecutar(accionPendiente, { onSuccess: () => setAccionPendiente(null) })
+        }}
+      />
     </div>
   )
 }
