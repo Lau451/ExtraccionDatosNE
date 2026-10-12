@@ -25,9 +25,18 @@ oc-export-progress T6 because no OC overview existed).
 
 ## Tasks
 
-- [ ] T1 Backend: `oc_resumen` module (models, repository, service, router) + tests.
-- [ ] T2 Frontend: API client, route, overview component, compromisos link + tests.
+- [x] T1 Backend: `oc_resumen` module (models, repository, service, router) + tests.
+- [x] T2 Frontend: API client, route, overview component, compromisos link + tests.
 
 ## Evidence
 
 (per task: commit, checks observed)
+
+- T1 — commit `5aa32db`. RED: tests/oc_resumen collection ImportError (module missing). GREEN:
+  tests/oc_resumen 9 passed, tests/oc_presupuesto 84 passed. Live smoke TEST (OC 986): cliente HOSPITAL
+  PROVINCIAL SAYAGO / 33678351429, 7 rows, 3 deliveries, exportacion with exporter name; header monto_total
+  null in TEST (frontend should fall back to the sum of rows). 403 test uses a `sistema` profile override.
+- T2 — commit `41919b8`. RED: Compromisos.test.tsx:86 got `/ordenes-compra/oc-1/entregas`;
+  OcResumen.test.tsx failed to load (component missing). GREEN: vitest oc-resumen + compromisos + lib
+  11 files / 72 tests passed; tsc -b and oxlint clean. routeTree.gen.ts: only the new route (+23, checked
+  ignoring EOL). Presupuestación restarted: /resumen present in openapi.
