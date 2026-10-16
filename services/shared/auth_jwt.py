@@ -3,8 +3,10 @@ services/presupuestacion/ -- sin lógica de negocio de ningún dominio: solo val
 firma/vigencia del token contra el JWKS de Supabase y devuelve las claims crudas. Cada
 servicio decide qué hacer con ellas (resolver rol, droguería, exigir un usuario_id para
 atribución, etc.) del lado de su propio módulo de auth."""
+import ssl
 from functools import lru_cache
 
+import certifi
 import jwt
 from jwt import PyJWKClient
 
@@ -16,7 +18,12 @@ class TokenInvalidoError(Exception):
 @lru_cache
 def _jwk_client(supabase_url: str) -> PyJWKClient:
     jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
-    return PyJWKClient(jwks_url)
+    # PyJWKClient usa urllib, que en Windows confia en el almacen de certificados del
+    # sistema. En la imagen windowsservercore ese almacen no trae la CA de Supabase y
+    # el JWKS falla con CERTIFICATE_VERIFY_FAILED, rechazando todo login. Se usa el
+    # bundle de certifi, igual que httpx/supabase-py.
+    contexto_tls = ssl.create_default_context(cafile=certifi.where())
+    return PyJWKClient(jwks_url, ssl_context=contexto_tls)
 
 
 def verificar_token(token: str, *, supabase_url: str) -> dict:
