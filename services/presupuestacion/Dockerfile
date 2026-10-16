@@ -9,6 +9,9 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY services/presupuestacion ./services/presupuestacion
 COPY services/shared ./services/shared
+COPY services/terceros ./services/terceros
+COPY services/productos ./services/productos
+COPY services/pcp ./services/pcp
 
 # Exponemos el puerto
 EXPOSE 8001

@@ -54,6 +54,8 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      # Required by services/shared/config.py; without it the app fails at import.
+      - USUARIO_SISTEMA_ID=${USUARIO_SISTEMA_ID}
 
       # Exportación de OC a Progress (oc-export-progress D8): los CSV se escriben en
       # <PROGRESS_DOCS_DIR>/oc, es decir C:\SACPro\documentos_ia\oc en el host.
