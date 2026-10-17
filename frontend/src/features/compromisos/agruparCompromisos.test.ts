@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompromisoEntrega } from '@/lib/api/compromisos'
-import { agruparCompromisos } from './agruparCompromisos'
+import { agruparCompromisos, agruparEntregas, entregasPorFecha, filtrarEntregas } from './agruparCompromisos'
 
 function fila(o: Partial<CompromisoEntrega> = {}): CompromisoEntrega {
   return {
@@ -75,5 +75,44 @@ describe('agruparCompromisos', () => {
     ])
     expect(r.vencidas.map((e) => e.entrega_oc_id)).toEqual(['v1', 'v2'])
     expect(r.meses.at(-1)?.clave).toBe('sin-fecha')
+  })
+})
+
+describe('agruparEntregas', () => {
+  it('junta renglones por entrega y conserva la posición dentro del plan', () => {
+    const entregas = agruparEntregas([
+      fila({ entrega_oc_id: 'e-2', numero_entrega: 3, fecha_entrega_planificada: '2026-10-23', posicion_en_plan: 2, entregas_en_plan: 3, numero_renglon: 2, cantidad_planificada: 5 }),
+      fila({ entrega_oc_id: 'e-2', numero_entrega: 3, fecha_entrega_planificada: '2026-10-23', posicion_en_plan: 2, entregas_en_plan: 3, numero_renglon: 1, cantidad_planificada: 7 }),
+      fila({ entrega_oc_id: 'e-1', numero_entrega: 1, fecha_entrega_planificada: '2026-10-20', posicion_en_plan: 1, entregas_en_plan: 3 }),
+    ])
+
+    expect(entregas.map((e) => e.entrega_oc_id)).toEqual(['e-1', 'e-2'])
+    expect(entregas[1]).toMatchObject({ posicion_en_plan: 2, entregas_en_plan: 3 })
+    expect(entregas[1].renglones.map((r) => r.numero_renglon)).toEqual([1, 2])
+  })
+
+  it('indexa las entregas por fecha', () => {
+    const porFecha = entregasPorFecha(
+      agruparEntregas([
+        fila({ entrega_oc_id: 'a', fecha_entrega_planificada: '2026-10-23' }),
+        fila({ entrega_oc_id: 'b', fecha_entrega_planificada: '2026-10-23', numero_oc: 'OC-2' }),
+        fila({ entrega_oc_id: 'c', fecha_entrega_planificada: null }),
+      ]),
+    )
+
+    expect(porFecha.get('2026-10-23')?.map((e) => e.entrega_oc_id)).toEqual(['a', 'b'])
+    expect(porFecha.size).toBe(1)
+  })
+
+  it('filtra por cliente u OC sin distinguir mayúsculas ni acentos', () => {
+    const entregas = agruparEntregas([
+      fila({ entrega_oc_id: 'a', cliente: 'Clínica Olivos', numero_oc: '4471' }),
+      fila({ entrega_oc_id: 'b', cliente: 'Htal. Alemán', numero_oc: '4520' }),
+      fila({ entrega_oc_id: 'c', cliente: null, numero_oc: '4530' }),
+    ])
+
+    expect(filtrarEntregas(entregas, 'clinica').map((e) => e.entrega_oc_id)).toEqual(['a'])
+    expect(filtrarEntregas(entregas, ' 452 ').map((e) => e.entrega_oc_id)).toEqual(['b'])
+    expect(filtrarEntregas(entregas, '')).toHaveLength(3)
   })
 })

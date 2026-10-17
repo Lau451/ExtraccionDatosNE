@@ -55,7 +55,7 @@ function TarjetaEntrega({ entrega }: { entrega: EntregaCompromiso }) {
 }
 
 export function Compromisos() {
-  const query = useQuery({ queryKey: ['compromisos-entregas'], queryFn: listarCompromisos })
+  const query = useQuery({ queryKey: ['compromisos-entregas'], queryFn: () => listarCompromisos() })
 
   if (query.isPending) {
     return <p className="p-6 text-sm text-slate-500">Cargando compromisos…</p>

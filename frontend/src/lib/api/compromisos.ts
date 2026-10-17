@@ -30,10 +30,27 @@ interface CompromisoEntregaCrudo extends Omit<CompromisoEntrega, 'cantidad_plani
   cantidad_planificada: string
 }
 
-/** GET /compromisos-entregas sin parámetros: todo lo vencido más los próximos
- * 6 meses (default del backend). Errores (`ApiError`): 403 rol sin permiso;
- * 422 usuario sin droguería (superadmin). */
-export async function listarCompromisos(): Promise<CompromisoEntrega[]> {
-  const crudas = await presupuestacionFetch<CompromisoEntregaCrudo[]>('/compromisos-entregas')
+/** GET /compromisos-entregas. Sin parámetros: todo lo vencido más los próximos
+ * 6 meses (default del backend). Con `desde`: solo [desde, hasta]; con solo
+ * `hasta`: todo lo anterior o igual a `hasta` (p. ej. las vencidas con
+ * hasta = ayer). Fechas 'YYYY-MM-DD'. Errores (`ApiError`): 403 rol sin permiso;
+ * 422 usuario sin droguería (superadmin) o rango inválido. */
+export async function listarCompromisos(rango: { desde?: string; hasta?: string } = {}): Promise<CompromisoEntrega[]> {
+  const parametros = new URLSearchParams()
+  if (rango.desde) parametros.set('desde', rango.desde)
+  if (rango.hasta) parametros.set('hasta', rango.hasta)
+  const query = parametros.toString()
+  const crudas = await presupuestacionFetch<CompromisoEntregaCrudo[]>(
+    query ? `/compromisos-entregas?${query}` : '/compromisos-entregas',
+  )
   return crudas.map((fila) => ({ ...fila, cantidad_planificada: Number(fila.cantidad_planificada) }))
+}
+
+/** GET /compromisos-entregas/proxima-fecha: primera fecha con compromisos
+ * estrictamente posterior a `despuesDe` ('YYYY-MM-DD'), o null si no hay. */
+export async function obtenerProximaFecha(despuesDe: string): Promise<string | null> {
+  const { fecha } = await presupuestacionFetch<{ fecha: string | null }>(
+    `/compromisos-entregas/proxima-fecha?despues_de=${despuesDe}`,
+  )
+  return fecha
 }
