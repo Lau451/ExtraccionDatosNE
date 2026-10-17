@@ -16,6 +16,7 @@ Backend data the calendar design for `/compromisos` needs (Pencil mockup, frames
 - [x] T1 S1, S2, S5 — migration 0035 (`posicion_en_plan`, `entregas_en_plan`) + down + snapshot + model + TS mirror + tests. Inline. Needs the user to apply 0035 in TEST. Commit `c82a940`.
 - [x] T2 S3, S4 — `GET /compromisos-entregas/proxima-fecha` (repository, service, router) + unit and integration tests. Inline. Commit `55d68c9`.
 - [x] T3 all — independent `gentle-ai-verify` (migration = high risk, item 1). Verdict at `3396906`: S1–S5 PASS (L7).
+- [x] T4 S2, S3 — verify follow-ups: integration test for a rejected plan delivery (S2 names "rejected"); strict assertion in the `proxima-fecha` integration test. Inline.
 
 ## Log
 
@@ -26,3 +27,5 @@ Backend data the calendar design for `/compromisos` needs (Pencil mockup, frames
 - L5 T2 RED: 4 unit tests failed with `AttributeError` (no `proxima_fecha`). GREEN: `tests/compromisos -m "not integration"` 21 passed; `-m integration -k proxima` 3 passed against TEST. Frontend: vitest `src/features/compromisos` 9 passed, `tsc -b` 0 errors.
 - L6 User applied 0035 in TEST ("ya la apliqué"). T1 GREEN: `-m integration tests/compromisos` 18 passed (2 new + all existing list tests).
 - L7 T3 verify (task mvcnc2ge-1-ugoi) at `3396906`: S1–S5 PASS, no candidate-caused blockers (snapshot blocker fixed by `3396906`). Unit suite 579 passed, 1 failed (`test_service_client_no_se_importa_en_ningun_router`, pre-existing on `dev` at `f6c39b5`, `oc_resumen/router.py`); integration `tests/compromisos` 18 passed; vitest 501 passed; `tsc -b` 0. Follow-ups: window over all `entregas_oc` (EXPLAIN later); weak `!=` assertion in a `proxima` test; "rechazada counts in plan" proven by reading only; deploy order 0035 before code.
+- L8 (user): "bien, realizamos los pendientes primero". Scope: the verify follow-ups that are tests (T4). The `EXPLAIN` of the plan window and the deploy order stay as notes.
+- L9 T4: `-m integration tests/compromisos/test_router.py -k "rechazada_sigue or estrictamente_posterior"` 2 passed against TEST. Test-only change; no RED applicable (behavior already implemented, verify proved it by reading).

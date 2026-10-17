@@ -286,6 +286,36 @@ def test_el_plan_ignora_entregas_reales_y_cuenta_las_cerradas(
 
 
 @pytest.mark.integration
+def test_una_entrega_rechazada_sigue_contando_en_el_plan(
+    service_client, seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token
+):
+    """Requiere 0035 aplicada. La entrega 2 rechazada sale de la vista pero no corre la
+    posición de la 3 ni achica el plan."""
+    usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    caso = sembrar_oc_con_plan(
+        drogueria_id=seed_drogueria["id"],
+        plan=[
+            (1, dias(5), [("oc_item_con_pack", "10")]),
+            (2, dias(10), [("oc_item_con_pack", "20")]),
+            (3, dias(15), [("oc_item_sin_pack", "5")]),
+        ],
+    )
+    service_client.table("entregas_oc").update({"estado": "rechazada"}).eq(
+        "id", caso["entregas"][2]["id"]
+    ).execute()
+    marcar_exportada(caso, usuario_id=usuario_id)
+
+    respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
+
+    assert respuesta.status_code == 200, respuesta.text
+    filas = _de_la_oc(respuesta.json(), caso)
+    assert [(f["numero_entrega"], f["posicion_en_plan"], f["entregas_en_plan"]) for f in filas] == [
+        (1, 1, 3),
+        (3, 3, 3),
+    ]
+
+
+@pytest.mark.integration
 def test_superadmin_sin_drogueria_da_422(crear_usuario_con_token):
     _, token = crear_usuario_con_token(rol="superadmin", drogueria_id=None)
 
@@ -313,7 +343,8 @@ def test_proxima_fecha_es_la_primera_estrictamente_posterior(
 
     # la base de TEST puede tener otras OC exportadas: se acota a fechas que solo siembra este caso
     assert proxima(dias(399)) == {"fecha": dias(400).isoformat()}
-    assert proxima(dias(400)) != {"fecha": dias(400).isoformat()}
+    siguiente = proxima(dias(400))["fecha"]
+    assert siguiente is None or siguiente > dias(400).isoformat()
     assert proxima(dias(800)) == {"fecha": None}
 
 
