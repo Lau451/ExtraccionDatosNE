@@ -210,6 +210,82 @@ def test_entrega_real_de_compras_no_figura_como_compromiso(
 
 
 @pytest.mark.integration
+def test_cada_fila_trae_posicion_y_tamano_del_plan(
+    seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token
+):
+    """Requiere 0035 aplicada."""
+    usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    caso = sembrar_oc_con_plan(drogueria_id=seed_drogueria["id"], plan=_plan_vencida_futura_lejana())
+    marcar_exportada(caso, usuario_id=usuario_id)
+
+    respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
+
+    assert respuesta.status_code == 200, respuesta.text
+    filas = _de_la_oc(respuesta.json(), caso)
+    # la entrega 3 queda fuera del rango por defecto, pero cuenta en el plan
+    assert [(f["numero_entrega"], f["posicion_en_plan"], f["entregas_en_plan"]) for f in filas] == [
+        (1, 1, 3),
+        (1, 1, 3),
+        (2, 2, 3),
+    ]
+
+
+@pytest.mark.integration
+def test_el_plan_ignora_entregas_reales_y_cuenta_las_cerradas(
+    service_client, seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token
+):
+    """Requiere 0035 aplicada. Plan numerado 1, 3 y 4 con una entrega real de compras en el
+    medio (numero_entrega 2, cantidad_planificada = 0): no cuenta ni corre la posición. La
+    entrega 1, ya entregada, sale de la vista pero sigue siendo parte del plan."""
+    usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    caso = sembrar_oc_con_plan(
+        drogueria_id=seed_drogueria["id"],
+        plan=[
+            (1, dias(-10), [("oc_item_con_pack", "10")]),
+            (3, dias(5), [("oc_item_con_pack", "20")]),
+            (4, dias(20), [("oc_item_sin_pack", "5")]),
+        ],
+    )
+    real = (
+        service_client.table("entregas_oc")
+        .insert(
+            {
+                "orden_compra_id": caso["orden_compra_id"],
+                "drogueria_id": seed_drogueria["id"],
+                "numero_entrega": 2,
+                "fecha_entrega_planificada": dias(7).isoformat(),
+                "fecha_entrega_real": dias(0).isoformat(),
+                "cantidad_items": 1,
+                "estado": "parcial",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    service_client.table("entregas_oc_items").insert(
+        {
+            "entrega_oc_id": real["id"],
+            "drogueria_id": seed_drogueria["id"],
+            "oc_item_id": caso["oc_item_con_pack"]["id"],
+            "cantidad_entregada": "5",
+        }
+    ).execute()
+    service_client.table("entregas_oc").update({"estado": "entregada"}).eq(
+        "id", caso["entregas"][1]["id"]
+    ).execute()
+    marcar_exportada(caso, usuario_id=usuario_id)
+
+    respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
+
+    assert respuesta.status_code == 200, respuesta.text
+    filas = _de_la_oc(respuesta.json(), caso)
+    assert [(f["numero_entrega"], f["posicion_en_plan"], f["entregas_en_plan"]) for f in filas] == [
+        (3, 2, 3),
+        (4, 3, 3),
+    ]
+
+
+@pytest.mark.integration
 def test_superadmin_sin_drogueria_da_422(crear_usuario_con_token):
     _, token = crear_usuario_con_token(rol="superadmin", drogueria_id=None)
 

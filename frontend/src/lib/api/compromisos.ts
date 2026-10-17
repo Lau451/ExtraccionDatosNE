@@ -21,6 +21,9 @@ export interface CompromisoEntrega {
   cantidad_planificada: number
   situacion: 'vencida' | 'futura'
   dias_atraso: number
+  // Lugar de la entrega entre las entregas del plan de la OC y cuántas son ("Entrega 2 de 3").
+  posicion_en_plan: number
+  entregas_en_plan: number
 }
 
 interface CompromisoEntregaCrudo extends Omit<CompromisoEntrega, 'cantidad_planificada'> {

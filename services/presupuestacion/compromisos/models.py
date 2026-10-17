@@ -24,6 +24,9 @@ class CompromisoEntrega(BaseModel):
     cantidad_planificada: Decimal
     situacion: Literal["vencida", "futura"]
     dias_atraso: int
+    # 0035: lugar de la entrega dentro del plan de la OC y cuántas entregas tiene ("2 de 3").
+    posicion_en_plan: int
+    entregas_en_plan: int
 
 
 class ProximaFecha(BaseModel):

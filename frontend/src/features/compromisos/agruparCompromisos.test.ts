@@ -19,6 +19,8 @@ function fila(o: Partial<CompromisoEntrega> = {}): CompromisoEntrega {
     cantidad_planificada: 10,
     situacion: 'futura',
     dias_atraso: 0,
+    posicion_en_plan: 1,
+    entregas_en_plan: 1,
     ...o,
   }
 }
