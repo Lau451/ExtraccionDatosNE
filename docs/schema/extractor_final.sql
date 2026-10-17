@@ -2330,12 +2330,7 @@ LEFT JOIN terceros t_cli ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.droguer
 WHERE e.estado NOT IN ('entregada', 'rechazada');
 
 -- 0032/0034/0035: compromisos de entrega de OC exportadas a Progress
-CREATE VIEW solo permite agregar al
--- final): posicion_en_plan, entregas_en_plan. Mismo security_invoker = true;
--- la subconsulta también lee con la RLS de quien consulta.
--- =============================================================================
-
-CREATE OR REPLACE VIEW v_compromisos_entregas WITH (security_invoker = true) AS
+CREATE VIEW v_compromisos_entregas WITH (security_invoker = true) AS
 SELECT
     oc.drogueria_id,
     oc.id AS orden_compra_id,
