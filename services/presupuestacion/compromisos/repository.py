@@ -33,3 +33,18 @@ def listar_compromisos(
         if len(pagina) < _TAMANO_PAGINA:
             return filas
         inicio += _TAMANO_PAGINA
+
+
+def proxima_fecha(client: Client, *, drogueria_id: str, despues_de: date) -> date | None:
+    """Primera `fecha_entrega_planificada` estrictamente posterior a `despues_de`, o None."""
+    filas = (
+        client.table("v_compromisos_entregas")
+        .select("fecha_entrega_planificada")
+        .eq("drogueria_id", drogueria_id)
+        .gt("fecha_entrega_planificada", despues_de.isoformat())
+        .order("fecha_entrega_planificada")
+        .limit(1)
+        .execute()
+        .data
+    )
+    return date.fromisoformat(filas[0]["fecha_entrega_planificada"]) if filas else None

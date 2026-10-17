@@ -162,3 +162,23 @@ def test_usuario_sin_drogueria_es_validation_error(listar):
     with pytest.raises(ValidationError, match="droguería"):
         service.listar_compromisos(MagicMock(), drogueria_id=None, hoy=HOY)
     listar.assert_not_called()
+
+
+def test_proxima_fecha_delega_en_el_repository(monkeypatch):
+    mock = MagicMock(return_value=date(2026, 11, 2))
+    monkeypatch.setattr(repo, "proxima_fecha", mock)
+    cliente = MagicMock()
+
+    fecha = service.proxima_fecha(cliente, drogueria_id=DROGUERIA, despues_de=date(2026, 10, 31))
+
+    assert fecha == date(2026, 11, 2)
+    mock.assert_called_once_with(cliente, drogueria_id=DROGUERIA, despues_de=date(2026, 10, 31))
+
+
+def test_proxima_fecha_usuario_sin_drogueria_es_validation_error(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr(repo, "proxima_fecha", mock)
+
+    with pytest.raises(ValidationError, match="droguería"):
+        service.proxima_fecha(MagicMock(), drogueria_id=None, despues_de=date(2026, 10, 31))
+    mock.assert_not_called()

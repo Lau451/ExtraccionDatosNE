@@ -216,3 +216,65 @@ def test_superadmin_sin_drogueria_da_422(crear_usuario_con_token):
     respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
 
     assert respuesta.status_code == 422
+
+
+_PROXIMA = "/compromisos-entregas/proxima-fecha"
+
+
+@pytest.mark.integration
+def test_proxima_fecha_es_la_primera_estrictamente_posterior(
+    seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token
+):
+    usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    caso = sembrar_oc_con_plan(drogueria_id=seed_drogueria["id"], plan=_plan_vencida_futura_lejana())
+    marcar_exportada(caso, usuario_id=usuario_id)
+    client = _cliente_de_prueba()
+
+    def proxima(despues_de):
+        respuesta = client.get(_PROXIMA, params={"despues_de": despues_de.isoformat()}, headers=_auth(token))
+        assert respuesta.status_code == 200, respuesta.text
+        return respuesta.json()
+
+    # la base de TEST puede tener otras OC exportadas: se acota a fechas que solo siembra este caso
+    assert proxima(dias(399)) == {"fecha": dias(400).isoformat()}
+    assert proxima(dias(400)) != {"fecha": dias(400).isoformat()}
+    assert proxima(dias(800)) == {"fecha": None}
+
+
+@pytest.mark.integration
+def test_proxima_fecha_no_ve_compromisos_de_otra_drogueria(
+    seed_drogueria,
+    otra_drogueria,
+    sembrar_oc_con_plan,
+    marcar_exportada,
+    crear_usuario_con_token,
+):
+    _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    otro_usuario_id, otro_token = crear_usuario_con_token(rol="compras", drogueria_id=otra_drogueria["id"])
+    ajena = sembrar_oc_con_plan(
+        drogueria_id=otra_drogueria["id"], plan=[(1, dias(700), [("oc_item_con_pack", "1")])]
+    )
+    marcar_exportada(ajena, usuario_id=otro_usuario_id)
+    client = _cliente_de_prueba()
+    params = {"despues_de": dias(699).isoformat()}
+
+    mia = client.get(_PROXIMA, params=params, headers=_auth(token))
+    suya = client.get(_PROXIMA, params=params, headers=_auth(otro_token))
+
+    assert mia.status_code == 200, mia.text
+    assert mia.json() == {"fecha": None}
+    assert suya.json() == {"fecha": dias(700).isoformat()}
+
+
+@pytest.mark.integration
+def test_proxima_fecha_valida_parametro_rol_y_drogueria(seed_drogueria, crear_usuario_con_token):
+    _, token = crear_usuario_con_token(rol="comercial", drogueria_id=seed_drogueria["id"])
+    _, token_sistema = crear_usuario_con_token(rol="sistema", drogueria_id=None)
+    _, token_superadmin = crear_usuario_con_token(rol="superadmin", drogueria_id=None)
+    client = _cliente_de_prueba()
+    params = {"despues_de": dias(0).isoformat()}
+
+    assert client.get(_PROXIMA, headers=_auth(token)).status_code == 422
+    assert client.get(_PROXIMA, params={"despues_de": "31/10/2026"}, headers=_auth(token)).status_code == 422
+    assert client.get(_PROXIMA, params=params, headers=_auth(token_sistema)).status_code == 403
+    assert client.get(_PROXIMA, params=params, headers=_auth(token_superadmin)).status_code == 422

@@ -24,3 +24,9 @@ class CompromisoEntrega(BaseModel):
     cantidad_planificada: Decimal
     situacion: Literal["vencida", "futura"]
     dias_atraso: int
+
+
+class ProximaFecha(BaseModel):
+    """Respuesta de GET /compromisos-entregas/proxima-fecha; `fecha` es None si no hay más."""
+
+    fecha: date | None

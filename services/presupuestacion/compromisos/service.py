@@ -36,6 +36,12 @@ def _clave_orden(fila: dict[str, Any]) -> tuple:
     )
 
 
+def _exigir_drogueria(drogueria_id: str | None) -> None:
+    if drogueria_id is None:
+        # superadmin: sin droguería, `.eq("drogueria_id", None)` revienta como uuid inválido.
+        raise ValidationError("La agenda de compromisos es por droguería: el usuario no tiene una asignada")
+
+
 def listar_compromisos(
     client: Client,
     *,
@@ -47,9 +53,7 @@ def listar_compromisos(
     """Sin `desde`: todo lo vencido más lo futuro hasta `hasta` (por defecto hoy + 6 meses).
     Con `desde`: solo las filas dentro de [desde, hasta], con `hasta` por defecto desde + 6
     meses. El rango no puede superar 24 meses."""
-    if drogueria_id is None:
-        # superadmin: sin droguería, `.eq("drogueria_id", None)` revienta como uuid inválido.
-        raise ValidationError("La agenda de compromisos es por droguería: el usuario no tiene una asignada")
+    _exigir_drogueria(drogueria_id)
     hoy = hoy or _hoy_buenos_aires()
     base = desde or hoy
     if hasta is None:
@@ -61,3 +65,10 @@ def listar_compromisos(
 
     filas = repo.listar_compromisos(client, drogueria_id=drogueria_id, desde=desde, hasta=hasta)
     return sorted(filas, key=_clave_orden)
+
+
+def proxima_fecha(client: Client, *, drogueria_id: str | None, despues_de: date) -> date | None:
+    """Próxima fecha con compromisos después de `despues_de` (el CTA del mes vacío en la
+    agenda). Sin límite de rango: busca en todo lo que tenga la droguería."""
+    _exigir_drogueria(drogueria_id)
+    return repo.proxima_fecha(client, drogueria_id=drogueria_id, despues_de=despues_de)
