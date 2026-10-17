@@ -13,6 +13,8 @@ export interface EntregaCompromiso {
   numero_oc: string
   numero_entrega: number
   cliente: string | null
+  cliente_codigo: string | null
+  cliente_codigos_legacy: string[]
   fecha_entrega_planificada: string | null
   situacion: CompromisoEntrega['situacion']
   dias_atraso: number
@@ -60,6 +62,8 @@ export function agruparEntregas(filas: CompromisoEntrega[]): EntregaCompromiso[]
         numero_oc: fila.numero_oc,
         numero_entrega: fila.numero_entrega,
         cliente: fila.cliente,
+        cliente_codigo: fila.cliente_codigo,
+        cliente_codigos_legacy: fila.cliente_codigos_legacy,
         fecha_entrega_planificada: fila.fecha_entrega_planificada,
         situacion: fila.situacion,
         dias_atraso: fila.dias_atraso,
@@ -98,12 +102,15 @@ function normalizar(texto: string): string {
   return texto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
 }
 
-/** Búsqueda "cliente u OC": sin distinguir mayúsculas ni acentos. */
+/** Búsqueda "cliente, código u OC": razón social, código interno o de Progress
+ * del cliente, o número de OC; sin distinguir mayúsculas ni acentos. */
 export function filtrarEntregas(entregas: EntregaCompromiso[], texto: string): EntregaCompromiso[] {
   const buscado = normalizar(texto)
   if (!buscado) return entregas
-  return entregas.filter(
-    (e) => normalizar(e.cliente ?? '').includes(buscado) || normalizar(e.numero_oc).includes(buscado),
+  return entregas.filter((e) =>
+    [e.cliente, e.cliente_codigo, e.numero_oc, ...e.cliente_codigos_legacy].some((campo) =>
+      normalizar(campo ?? '').includes(buscado),
+    ),
   )
 }
 

@@ -31,6 +31,8 @@ function fila(o: Partial<CompromisoEntrega> = {}): CompromisoEntrega {
     version_numero: 1,
     exportado_at: '2026-10-01T10:00:00Z',
     cliente: 'Hospital Norte',
+    cliente_codigo: null,
+    cliente_codigos_legacy: [],
     entrega_oc_id: 'e-1',
     numero_entrega: 1,
     fecha_entrega_planificada: '2026-11-05',

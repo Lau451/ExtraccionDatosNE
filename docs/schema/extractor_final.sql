@@ -2329,7 +2329,7 @@ LEFT JOIN clientes cl   ON cl.id = oc.cliente_id
 LEFT JOIN terceros t_cli ON t_cli.id = cl.id AND t_cli.drogueria_id = cl.drogueria_id
 WHERE e.estado NOT IN ('entregada', 'rechazada');
 
--- 0032/0034/0035: compromisos de entrega de OC exportadas a Progress
+-- 0032/0034/0035/0036: compromisos de entrega de OC exportadas a Progress
 CREATE VIEW v_compromisos_entregas WITH (security_invoker = true) AS
 SELECT
     oc.drogueria_id,
@@ -2351,7 +2351,16 @@ SELECT
     GREATEST((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
              - e.fecha_entrega_planificada, 0) AS dias_atraso,
     plan.posicion_en_plan,
-    plan.entregas_en_plan
+    plan.entregas_en_plan,
+    t.codigo_interno AS cliente_codigo,
+    COALESCE(
+        (SELECT array_agg(tlm.codigo_legacy ORDER BY tlm.codigo_legacy)
+         FROM terceros_legacy_map tlm
+         WHERE tlm.tercero_id = t.id
+           AND tlm.drogueria_id = t.drogueria_id
+           AND tlm.entidad_legacy = 'cliente'),
+        '{}'::text[]
+    ) AS cliente_codigos_legacy
 FROM entregas_oc e
 JOIN ordenes_compra oc    ON oc.id = e.orden_compra_id AND oc.drogueria_id = e.drogueria_id
 JOIN entregas_oc_items ei ON ei.entrega_oc_id = e.id AND ei.drogueria_id = e.drogueria_id
@@ -2380,7 +2389,7 @@ WHERE oc.exportado_at IS NOT NULL
   AND ei.cantidad_planificada > 0;
 
 COMMENT ON VIEW v_compromisos_entregas IS
-  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Solo ítems con cantidad_planificada > 0: las entregas reales de compras (cantidad_planificada = 0) no son compromisos. posicion_en_plan / entregas_en_plan: lugar de la entrega entre las entregas del plan de la OC (con algún ítem cantidad_planificada > 0, cualquier estado, por numero_entrega) y cuántas son. Agregada en 0032, ajustada en 0034 y 0035.';
+  'Compromisos de entrega: una fila por ítem de entrega abierta (estado distinto de entregada/rechazada, mismo criterio que v_entregas_pendientes) de una OC exportada a Progress (exportado_at), vigente y no cancelada. situacion = vencida si la fecha planificada es anterior a hoy (hora Argentina), futura en otro caso (hoy cuenta como futura); dias_atraso >= 0. Solo ítems con cantidad_planificada > 0: las entregas reales de compras (cantidad_planificada = 0) no son compromisos. posicion_en_plan / entregas_en_plan: lugar de la entrega entre las entregas del plan de la OC (con algún ítem cantidad_planificada > 0, cualquier estado, por numero_entrega) y cuántas son. cliente_codigo: terceros.codigo_interno del cliente; cliente_codigos_legacy: sus códigos de Progress (terceros_legacy_map, entidad cliente, ordenados; vacío si no tiene). Agregada en 0032, ajustada en 0034, 0035 y 0036.';
 
 -- Proveedores sin matchear
 CREATE VIEW v_ofertas_sin_matchear AS

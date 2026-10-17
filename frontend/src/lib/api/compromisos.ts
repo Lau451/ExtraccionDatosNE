@@ -24,6 +24,9 @@ export interface CompromisoEntrega {
   // Lugar de la entrega entre las entregas del plan de la OC y cuántas son ("Entrega 2 de 3").
   posicion_en_plan: number
   entregas_en_plan: number
+  // Códigos del cliente para la búsqueda: el interno y los de Progress (puede tener varios).
+  cliente_codigo: string | null
+  cliente_codigos_legacy: string[]
 }
 
 interface CompromisoEntregaCrudo extends Omit<CompromisoEntrega, 'cantidad_planificada'> {

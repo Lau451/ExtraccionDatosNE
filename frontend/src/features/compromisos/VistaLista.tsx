@@ -55,7 +55,7 @@ function TarjetaEntrega({ entrega }: { entrega: EntregaCompromiso }) {
 }
 
 /** Vista "Lista": la agenda original (vencidas primero, después por mes y fecha)
- * sobre el rango por defecto del backend. `filtro` es la búsqueda "cliente u OC". */
+ * sobre el rango por defecto del backend. `filtro` es la búsqueda "cliente, código u OC". */
 export function VistaLista({ filtro }: { filtro: string }) {
   const query = useQuery({ queryKey: ['compromisos-entregas'], queryFn: () => listarCompromisos() })
 

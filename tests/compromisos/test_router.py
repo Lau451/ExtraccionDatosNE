@@ -385,3 +385,37 @@ def test_proxima_fecha_valida_parametro_rol_y_drogueria(seed_drogueria, crear_us
     assert client.get(_PROXIMA, params={"despues_de": "31/10/2026"}, headers=_auth(token)).status_code == 422
     assert client.get(_PROXIMA, params=params, headers=_auth(token_sistema)).status_code == 403
     assert client.get(_PROXIMA, params=params, headers=_auth(token_superadmin)).status_code == 422
+
+
+@pytest.mark.integration
+def test_cada_fila_trae_los_codigos_del_cliente(
+    seed_drogueria, sembrar_oc_con_plan, marcar_exportada, crear_usuario_con_token, service_client
+):
+    """Requiere 0036 aplicada. Códigos de Progress: solo los de entidad 'cliente', ordenados."""
+    usuario_id, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    caso = sembrar_oc_con_plan(drogueria_id=seed_drogueria["id"], plan=_plan_vencida_futura_lejana())
+    marcar_exportada(caso, usuario_id=usuario_id)
+    sufijo = caso["tercero_id"][:8]
+    service_client.table("terceros").update({"codigo_interno": f"CLI-{sufijo}"}).eq(
+        "id", caso["tercero_id"]
+    ).execute()
+    # El tercero se borra en el teardown del caso y terceros_legacy_map cae en cascada.
+    service_client.table("terceros_legacy_map").insert(
+        [
+            {
+                "tercero_id": caso["tercero_id"],
+                "drogueria_id": seed_drogueria["id"],
+                "entidad_legacy": entidad,
+                "codigo_legacy": f"{prefijo}{sufijo}",
+            }
+            for entidad, prefijo in (("cliente", "PB"), ("cliente", "PA"), ("proveedor", "PV"))
+        ]
+    ).execute()
+
+    respuesta = _cliente_de_prueba().get("/compromisos-entregas", headers=_auth(token))
+
+    assert respuesta.status_code == 200, respuesta.text
+    filas = _de_la_oc(respuesta.json(), caso)
+    assert len(filas) == 3
+    assert {f["cliente_codigo"] for f in filas} == {f"CLI-{sufijo}"}
+    assert [f["cliente_codigos_legacy"] for f in filas] == [[f"PA{sufijo}", f"PB{sufijo}"]] * 3

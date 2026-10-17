@@ -10,6 +10,8 @@ function fila(o: Partial<CompromisoEntrega> = {}): CompromisoEntrega {
     version_numero: 1,
     exportado_at: '2026-10-01T10:00:00Z',
     cliente: 'Hospital Norte',
+    cliente_codigo: null,
+    cliente_codigos_legacy: [],
     entrega_oc_id: 'e-1',
     numero_entrega: 1,
     fecha_entrega_planificada: '2026-11-05',
@@ -114,5 +116,17 @@ describe('agruparEntregas', () => {
     expect(filtrarEntregas(entregas, 'clinica').map((e) => e.entrega_oc_id)).toEqual(['a'])
     expect(filtrarEntregas(entregas, ' 452 ').map((e) => e.entrega_oc_id)).toEqual(['b'])
     expect(filtrarEntregas(entregas, '')).toHaveLength(3)
+  })
+
+  it('filtra por código interno o código de Progress del cliente', () => {
+    const entregas = agruparEntregas([
+      fila({ entrega_oc_id: 'a', cliente_codigo: 'CLI-0071', cliente_codigos_legacy: ['P1203'] }),
+      fila({ entrega_oc_id: 'b', cliente_codigo: null, cliente_codigos_legacy: ['P5510', 'P5511'] }),
+      fila({ entrega_oc_id: 'c', cliente: null, cliente_codigo: null, cliente_codigos_legacy: [] }),
+    ])
+
+    expect(filtrarEntregas(entregas, 'cli-0071').map((e) => e.entrega_oc_id)).toEqual(['a'])
+    expect(filtrarEntregas(entregas, ' p5511 ').map((e) => e.entrega_oc_id)).toEqual(['b'])
+    expect(filtrarEntregas(entregas, 'P12').map((e) => e.entrega_oc_id)).toEqual(['a'])
   })
 })

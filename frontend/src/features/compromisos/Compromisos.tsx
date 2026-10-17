@@ -181,8 +181,8 @@ export function Compromisos() {
             type="search"
             value={busqueda}
             onChange={(evento) => setBusqueda(evento.target.value)}
-            placeholder="Buscar cliente u OC"
-            aria-label="Buscar cliente u OC"
+            placeholder="Buscar cliente, código u OC"
+            aria-label="Buscar cliente, código u OC"
             className="w-60 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-accent focus:outline-none"
           />
         </div>

@@ -25,6 +25,8 @@ function fila(o: Partial<CompromisoEntrega> = {}): CompromisoEntrega {
     version_numero: 1,
     exportado_at: '2026-10-01T10:00:00Z',
     cliente: 'Htal. Garrahan',
+    cliente_codigo: null,
+    cliente_codigos_legacy: [],
     entrega_oc_id: 'e-1',
     numero_entrega: 1,
     fecha_entrega_planificada: '2026-10-20',
@@ -54,6 +56,8 @@ const OCTUBRE = [
       entrega_oc_id: `d23-${i}`,
       numero_oc: oc,
       cliente: i === 0 ? 'Clínica Olivos' : `Cliente ${oc}`,
+      cliente_codigo: i === 0 ? 'CLI-0071' : null,
+      cliente_codigos_legacy: i === 0 ? ['P1203'] : [],
       fecha_entrega_planificada: '2026-10-23',
     }),
   ),
@@ -155,7 +159,18 @@ describe('Compromisos (calendario)', () => {
     renderPagina()
     await waitFor(() => dia(/viernes 23 de octubre, 5 entregas/))
 
-    fireEvent.change(screen.getByPlaceholderText('Buscar cliente u OC'), { target: { value: 'olivos' } })
+    fireEvent.change(screen.getByPlaceholderText('Buscar cliente, código u OC'), { target: { value: 'olivos' } })
+
+    const viernes = dia(/viernes 23 de octubre, 1 entrega/)
+    expect(within(viernes).getAllByTestId('chip-entrega')).toHaveLength(1)
+    expect(dia(/martes 20 de octubre, 0 entregas/)).toBeTruthy()
+  })
+
+  it.each(['CLI-0071', 'P1203'])('filtra los chips por código del cliente (%s)', async (codigo) => {
+    renderPagina()
+    await waitFor(() => dia(/viernes 23 de octubre, 5 entregas/))
+
+    fireEvent.change(screen.getByPlaceholderText('Buscar cliente, código u OC'), { target: { value: codigo } })
 
     const viernes = dia(/viernes 23 de octubre, 1 entrega/)
     expect(within(viernes).getAllByTestId('chip-entrega')).toHaveLength(1)
@@ -286,7 +301,7 @@ describe('Compromisos (calendario)', () => {
       renderPagina()
       await screen.findByText('7 entregas en octubre')
 
-      fireEvent.change(screen.getByPlaceholderText('Buscar cliente u OC'), { target: { value: 'zzz' } })
+      fireEvent.change(screen.getByPlaceholderText('Buscar cliente, código u OC'), { target: { value: 'zzz' } })
 
       expect(screen.getByText('Ninguna entrega coincide con la búsqueda')).toBeTruthy()
       expect(obtenerProximaFecha).not.toHaveBeenCalled()
