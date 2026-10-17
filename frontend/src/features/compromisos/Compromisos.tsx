@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useMemo, useState } from 'react'
-import { listarCompromisos } from '@/lib/api/compromisos'
+import { listarCompromisos, obtenerProximaFecha } from '@/lib/api/compromisos'
+import { ApiError } from '@/lib/api/presupuestacion'
 import { agruparEntregas, entregasPorFecha, filtrarEntregas } from './agruparCompromisos'
-import { etiquetaMes, hoyBuenosAires, mesDe, nombreMes, semanasDelMes, sumarDias, sumarMeses } from './fechas'
+import { etiquetaMes, fechaDiaMes, hoyBuenosAires, mesDe, nombreMes, semanasDelMes, sumarDias, sumarMeses } from './fechas'
+import { DetalleDia, PanelVencidas } from './PanelLateral'
+import { Superposicion } from './Superposicion'
 import { VistaLista } from './VistaLista'
 import { contarEntregas } from './textos'
 import { VistaMes } from './VistaMes'
@@ -66,10 +69,23 @@ export function Compromisos() {
     queryFn: () => listarCompromisos({ hasta: ayer }),
   })
 
-  const entregas = filtrarEntregas(agruparEntregas(periodo.data ?? []), busqueda)
+  const todas = agruparEntregas(periodo.data ?? [])
+  const entregas = filtrarEntregas(todas, busqueda)
   const porFecha = entregasPorFecha(entregas)
-  const delMes = entregas.filter((e) => e.fecha_entrega_planificada && mesDe(e.fecha_entrega_planificada) === mes)
-  const cantidadVencidas = filtrarEntregas(agruparEntregas(vencidas.data ?? []), busqueda).length
+  const esDelMes = (e: { fecha_entrega_planificada: string | null }) =>
+    e.fecha_entrega_planificada !== null && mesDe(e.fecha_entrega_planificada) === mes
+  const delMes = entregas.filter(esDelMes)
+  const mesVacio = periodo.isSuccess && !todas.some(esDelMes)
+  const sinCoincidencias = periodo.isSuccess && !mesVacio && delMes.length === 0
+  const listaVencidas = filtrarEntregas(agruparEntregas(vencidas.data ?? []), busqueda)
+  const cantidadVencidas = listaVencidas.length
+
+  const ultimoDiaDelMes = sumarDias(`${sumarMeses(mes, 1)}-01`, -1)
+  const proxima = useQuery({
+    queryKey: ['compromisos-entregas', 'proxima', ultimoDiaDelMes],
+    queryFn: () => obtenerProximaFecha(ultimoDiaDelMes),
+    enabled: vista === 'mes' && mesVacio,
+  })
 
   function irAMes(destino: string, fecha: string) {
     setMes(destino)
@@ -158,7 +174,56 @@ export function Compromisos() {
         <VistaLista filtro={busqueda} />
       ) : (
         <div className="flex flex-1 gap-5">
-          <VistaMes mes={mes} hoy={hoy} seleccion={seleccion} porFecha={porFecha} onSeleccionar={setSeleccion} />
+          <div className="relative flex min-w-0 flex-1">
+            <VistaMes
+              mes={mes}
+              hoy={hoy}
+              seleccion={seleccion}
+              porFecha={porFecha}
+              cargando={periodo.isPending}
+              onSeleccionar={setSeleccion}
+            />
+            {periodo.isError ? (
+              <Superposicion
+                tono="error"
+                titulo="No se pudieron cargar los compromisos"
+                descripcion={
+                  periodo.error instanceof ApiError
+                    ? periodo.error.message
+                    : 'Revisá tu conexión e intentá de nuevo. Si sigue fallando, avisá a Sistemas.'
+                }
+                accion={{ etiqueta: 'Reintentar', onClick: () => void periodo.refetch() }}
+              />
+            ) : mesVacio ? (
+              <Superposicion
+                tono="info"
+                titulo={`No hay entregas en ${nombreMes(mes)}`}
+                descripcion={`Las entregas aparecen cuando una OC se exporta a Progress.${
+                  proxima.data ? ` La próxima está el ${fechaDiaMes(proxima.data)}.` : ''
+                }`}
+                accion={
+                  proxima.data
+                    ? {
+                        etiqueta: `Ir a ${nombreMes(mesDe(proxima.data))}`,
+                        onClick: () => proxima.data && irAMes(mesDe(proxima.data), proxima.data),
+                      }
+                    : undefined
+                }
+              />
+            ) : sinCoincidencias ? (
+              <Superposicion
+                tono="info"
+                titulo="Ninguna entrega coincide con la búsqueda"
+                descripcion={`No hay entregas de "${busqueda.trim()}" en ${nombreMes(mes)}.`}
+              />
+            ) : null}
+          </div>
+          <aside className="flex w-[340px] shrink-0 flex-col gap-4">
+            {listaVencidas.length > 0 ? (
+              <PanelVencidas vencidas={listaVencidas} onVerTodas={() => setVista('lista')} />
+            ) : null}
+            <DetalleDia fecha={seleccion} entregas={porFecha.get(seleccion) ?? []} />
+          </aside>
         </div>
       )}
     </div>

@@ -30,13 +30,32 @@ interface VistaMesProps {
   hoy: string
   seleccion: string
   porFecha: Map<string, EntregaCompromiso[]>
+  cargando?: boolean
   onSeleccionar: (fecha: string) => void
 }
 
-/** Grilla lunes a domingo con todas las semanas del mes: hasta 3 chips por día y "+N más". */
-export function VistaMes({ mes, hoy, seleccion, porFecha, onSeleccionar }: VistaMesProps) {
+/** Barras grises en posiciones fijas mientras llega el período. */
+function Esqueleto({ indice }: { indice: number }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <span aria-hidden="true" className="flex flex-col gap-1">
+      {indice % 3 === 1 ? <span className="h-3.5 animate-pulse rounded bg-slate-100" /> : null}
+      {indice % 5 === 2 ? <span className="h-3.5 animate-pulse rounded bg-slate-100" /> : null}
+    </span>
+  )
+}
+
+/** Grilla lunes a domingo con todas las semanas del mes: hasta 3 chips por día y "+N más". */
+export function VistaMes({ mes, hoy, seleccion, porFecha, cargando = false, onSeleccionar }: VistaMesProps) {
+  return (
+    <div
+      aria-busy={cargando}
+      className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"
+    >
+      {cargando ? (
+        <p role="status" className="sr-only">
+          Cargando compromisos…
+        </p>
+      ) : null}
       <div className="grid grid-cols-7 border-b border-slate-200">
         {DIAS_CORTOS.map((nombre) => (
           <div key={nombre} className="px-2.5 py-2 text-[11px] font-semibold tracking-wide text-slate-400">
@@ -44,7 +63,7 @@ export function VistaMes({ mes, hoy, seleccion, porFecha, onSeleccionar }: Vista
           </div>
         ))}
       </div>
-      {semanasDelMes(mes).map((semana) => (
+      {semanasDelMes(mes).map((semana, numeroSemana) => (
         <div key={semana[0]} className="grid flex-1 grid-cols-7 border-b border-slate-200 last:border-b-0">
           {semana.map((fecha, indice) => {
             const entregas = porFecha.get(fecha) ?? []
@@ -78,6 +97,7 @@ export function VistaMes({ mes, hoy, seleccion, porFecha, onSeleccionar }: Vista
                   </span>
                   {esHoy ? <span className="text-[10px] font-semibold text-accent">Hoy</span> : null}
                 </span>
+                {cargando ? <Esqueleto indice={numeroSemana * 7 + indice} /> : null}
                 <span className={clsx('flex min-w-0 flex-col gap-1', fueraDeMes && 'opacity-60')}>
                   {entregas.slice(0, CHIPS_POR_DIA).map((entrega) => (
                     <ChipEntrega key={entrega.entrega_oc_id} entrega={entrega} />
