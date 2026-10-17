@@ -16,7 +16,7 @@ Backend data the calendar design for `/compromisos` needs (Pencil mockup, frames
 - [x] T1 S1, S2, S5 — migration 0035 (`posicion_en_plan`, `entregas_en_plan`) + down + snapshot + model + TS mirror + tests. Inline. Needs the user to apply 0035 in TEST. Commit `c82a940`.
 - [x] T2 S3, S4 — `GET /compromisos-entregas/proxima-fecha` (repository, service, router) + unit and integration tests. Inline. Commit `55d68c9`.
 - [x] T3 all — independent `gentle-ai-verify` (migration = high risk, item 1). Verdict at `3396906`: S1–S5 PASS (L7).
-- [x] T4 S2, S3 — verify follow-ups: integration test for a rejected plan delivery (S2 names "rejected"); strict assertion in the `proxima-fecha` integration test. Inline.
+- [x] T4 S2, S3 — verify follow-ups: integration test for a rejected plan delivery (S2 names "rejected"); strict assertion in the `proxima-fecha` integration test. Inline. Commit `0dee891`.
 
 ## Log
 
