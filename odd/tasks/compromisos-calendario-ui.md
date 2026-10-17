@@ -16,9 +16,9 @@ Backend data from `odd/tasks/compromisos-calendario-datos.md` (same branch `feat
 ## Tasks
 
 - [x] T1 S3, S6, S7 — data layer: `listarCompromisos({desde, hasta})`, `obtenerProximaFecha`, date helpers (`fechas.ts`), `agruparEntregas` with `posicion_en_plan`/`entregas_en_plan`. Inline. Commit `b8645c6`.
-- [x] T2 S1, S2, S3 — page shell (header, view toggle, toolbar, stats, search), Lista moved to `VistaLista` unchanged, month grid. Inline.
-- [x] T3 S4, S6 — side panel (overdue + selected day) and calendar states (loading, empty with next date, error). Inline.
-- [x] T4 S5 — week view. Inline.
+- [x] T2 S1, S2, S3 — page shell (header, view toggle, toolbar, stats, search), Lista moved to `VistaLista` unchanged, month grid. Inline. Commit `cbc90bb`.
+- [x] T3 S4, S6 — side panel (overdue + selected day) and calendar states (loading, empty with next date, error). Inline. Commit `fff0208`.
+- [x] T4 S5 — week view. Inline. Commit `0f9cb1a`.
 
 ## Log
 
