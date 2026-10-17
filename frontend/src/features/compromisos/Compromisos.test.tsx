@@ -62,7 +62,10 @@ const OCTUBRE = [
 function responderPorRango() {
   vi.mocked(listarCompromisos).mockImplementation(async (rango = {}) => {
     if (!rango.desde && rango.hasta) return VENCIDAS
-    if (rango.desde === '2026-09-28') return OCTUBRE
+    if (rango.desde && rango.hasta) {
+      const { desde, hasta } = rango
+      return OCTUBRE.filter((f) => f.fecha_entrega_planificada! >= desde && f.fecha_entrega_planificada! <= hasta)
+    }
     return []
   })
 }
@@ -304,6 +307,75 @@ describe('Compromisos (calendario)', () => {
       await waitFor(() =>
         expect(vi.mocked(listarCompromisos).mock.calls.filter(([r]) => r?.desde).length).toBe(llamadas + 1),
       )
+    })
+  })
+
+  describe('vista Semana', () => {
+    async function irASemana() {
+      renderPagina()
+      await screen.findByText('7 entregas en octubre')
+      fireEvent.click(screen.getByRole('button', { name: 'Semana' }))
+    }
+
+    it('muestra la semana del día elegido y navega de a 7 días', async () => {
+      renderPagina()
+      fireEvent.click(await waitFor(() => dia(/viernes 23 de octubre, 5 entregas/)))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Semana' }))
+
+      expect(screen.getByRole('button', { name: 'Semana' }).getAttribute('aria-pressed')).toBe('true')
+      expect(screen.getByText('19 – 25 de octubre 2026')).toBeTruthy()
+      await waitFor(() => expect(listarCompromisos).toHaveBeenCalledWith({ desde: '2026-10-19', hasta: '2026-10-25' }))
+      expect(await screen.findByText('6 entregas esta semana')).toBeTruthy()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+      expect(screen.getByText('12 – 18 de octubre 2026')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+      expect(screen.getByText('26 oct – 1 nov 2026')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Hoy' }))
+      expect(screen.getByText('12 – 18 de octubre 2026')).toBeTruthy()
+    })
+
+    it('una columna por día con sus entregas como tarjetas', async () => {
+      await irASemana()
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+
+      const viernes = await screen.findByRole('region', { name: 'viernes 23 de octubre' })
+      expect(await within(viernes).findByText('5 entregas')).toBeTruthy()
+      const tarjetas = within(viernes).getAllByRole('article')
+      expect(tarjetas).toHaveLength(5)
+      expect(within(tarjetas[0]).getByText('Clínica Olivos')).toBeTruthy()
+      expect(within(tarjetas[0]).getByRole('link', { name: 'OC 4471' }).getAttribute('href')).toBe('/ordenes-compra/oc-1')
+      expect(within(tarjetas[0]).getByText('Entrega 1 de 2')).toBeTruthy()
+      expect(within(tarjetas[0]).getByText('1 renglón · 100 u.')).toBeTruthy()
+      expect(within(screen.getByRole('region', { name: 'jueves 22 de octubre' })).getByText('Sin entregas')).toBeTruthy()
+    })
+
+    it('al elegir una tarjeta despliega sus renglones', async () => {
+      await irASemana()
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+      const viernes = await screen.findByRole('region', { name: 'viernes 23 de octubre' })
+      const tarjeta = (await within(viernes).findAllByRole('article'))[0]
+      expect(within(tarjeta).queryByText('Amoxicilina 500 mg')).toBeNull()
+
+      fireEvent.click(within(tarjeta).getByRole('button', { name: /Clínica Olivos/ }))
+
+      expect(within(tarjeta).getByText('Amoxicilina 500 mg')).toBeTruthy()
+    })
+
+    it('semana vacía: ofrece ir a la semana de la próxima entrega', async () => {
+      vi.mocked(obtenerProximaFecha).mockResolvedValue('2026-11-04')
+      await irASemana()
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+
+      expect(await screen.findByText('No hay entregas esta semana')).toBeTruthy()
+      expect(await screen.findByText(/La próxima está el 4 de noviembre/)).toBeTruthy()
+      expect(obtenerProximaFecha).toHaveBeenCalledWith('2026-11-01')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ir a esa semana' }))
+      expect(screen.getByText('2 – 8 de noviembre 2026')).toBeTruthy()
     })
   })
 })

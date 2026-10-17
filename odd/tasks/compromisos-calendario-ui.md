@@ -18,7 +18,7 @@ Backend data from `odd/tasks/compromisos-calendario-datos.md` (same branch `feat
 - [x] T1 S3, S6, S7 — data layer: `listarCompromisos({desde, hasta})`, `obtenerProximaFecha`, date helpers (`fechas.ts`), `agruparEntregas` with `posicion_en_plan`/`entregas_en_plan`. Inline. Commit `b8645c6`.
 - [x] T2 S1, S2, S3 — page shell (header, view toggle, toolbar, stats, search), Lista moved to `VistaLista` unchanged, month grid. Inline.
 - [x] T3 S4, S6 — side panel (overdue + selected day) and calendar states (loading, empty with next date, error). Inline.
-- [ ] T4 S5 — week view. Inline.
+- [x] T4 S5 — week view. Inline.
 
 ## Log
 
@@ -30,3 +30,6 @@ Backend data from `odd/tasks/compromisos-calendario-datos.md` (same branch `feat
 - L6 Task split changed: the grid and the shell are coupled, so T2 takes the month grid and T3 takes the side panel and the states.
 - L7 T2: the old agenda moved to `VistaLista` (`git mv`) with its 4 tests unchanged, plus a search test written after the filter (no RED observed for that one). Page RED: `Compromisos.test.tsx` failed to import (`./Compromisos` absent). GREEN: vitest `src/features/compromisos` 26 passed; `tsc -b` 0; oxlint clean. The toggle shows Mes and Lista only; Semana is added in T4.
 - L8 T3 RED: 8 new page tests failed (no side panel, no states); "no overdue block when there are none" passed vacuously. GREEN: vitest `src/features/compromisos` 35 passed; `tsc -b` 0; oxlint clean. The empty month means no unfiltered delivery dated in the month; `proxima-fecha` is asked after the month's last day. An active search with no matches shows "Ninguna entrega coincide con la búsqueda" and does not call `proxima-fecha`.
+- L9 T4 RED: 4 week-view tests failed (no Semana toggle). A test expectation was wrong and fixed before GREEN: 19-25 October holds 6 deliveries, not 7. Two tests looked for cards before the period loaded (the columns render during loading); they now wait. GREEN: vitest `src/features/compromisos` 39 passed; `tsc -b` 0; oxlint clean.
+- L10 Design change in T4: the selected day is the single source of truth for the visible period (month and week derive from it). Consequence: clicking a day of a neighbouring month in the grid moves the calendar to that month. The week view has no side panel; overdue deliveries keep their counter in the toolbar.
+- L11 Full frontend vitest before the T4 commit: 55 files, 533 tests passed.

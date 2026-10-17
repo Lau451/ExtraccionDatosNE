@@ -4,19 +4,36 @@ import { useMemo, useState } from 'react'
 import { listarCompromisos, obtenerProximaFecha } from '@/lib/api/compromisos'
 import { ApiError } from '@/lib/api/presupuestacion'
 import { agruparEntregas, entregasPorFecha, filtrarEntregas } from './agruparCompromisos'
-import { etiquetaMes, fechaDiaMes, hoyBuenosAires, mesDe, nombreMes, semanasDelMes, sumarDias, sumarMeses } from './fechas'
+import {
+  diasDeSemana,
+  etiquetaMes,
+  etiquetaSemana,
+  fechaDiaMes,
+  hoyBuenosAires,
+  inicioSemana,
+  mesDe,
+  nombreMes,
+  semanasDelMes,
+  sumarDias,
+  sumarMeses,
+} from './fechas'
 import { DetalleDia, PanelVencidas } from './PanelLateral'
 import { Superposicion } from './Superposicion'
-import { VistaLista } from './VistaLista'
 import { contarEntregas } from './textos'
+import { VistaLista } from './VistaLista'
 import { VistaMes } from './VistaMes'
+import { VistaSemana } from './VistaSemana'
 
-type Vista = 'mes' | 'lista'
+type Vista = 'mes' | 'semana' | 'lista'
 
 const VISTAS: { valor: Vista; etiqueta: string }[] = [
   { valor: 'mes', etiqueta: 'Mes' },
+  { valor: 'semana', etiqueta: 'Semana' },
   { valor: 'lista', etiqueta: 'Lista' },
 ]
+
+const BOTON_ICONO =
+  'flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
 
 function Chevron({ direccion }: { direccion: 'izquierda' | 'derecha' }) {
   return (
@@ -47,16 +64,23 @@ function Contador({ tono, children }: { tono: 'vencida' | 'periodo'; children: R
   )
 }
 
-/** /compromisos: agenda de entregas comprometidas en calendario (Mes) o como lista. */
+/** /compromisos: entregas comprometidas en calendario (Mes, Semana) o como lista.
+ * El día elegido es la única fuente de verdad del período: el mes y la semana
+ * visibles son los que lo contienen. */
 export function Compromisos() {
   const hoy = useMemo(() => hoyBuenosAires(), [])
   const [vista, setVista] = useState<Vista>('mes')
-  const [mes, setMes] = useState(() => mesDe(hoy))
   const [seleccion, setSeleccion] = useState(hoy)
   const [busqueda, setBusqueda] = useState('')
 
+  const mes = mesDe(seleccion)
+  const inicio = inicioSemana(seleccion)
   const semanas = semanasDelMes(mes)
-  const rango = { desde: semanas[0][0], hasta: semanas[semanas.length - 1][6] }
+  const rango =
+    vista === 'semana'
+      ? { desde: inicio, hasta: sumarDias(inicio, 6) }
+      : { desde: semanas[0][0], hasta: semanas[semanas.length - 1][6] }
+  const finDelPeriodo = vista === 'semana' ? rango.hasta : sumarDias(`${sumarMeses(mes, 1)}-01`, -1)
   const ayer = sumarDias(hoy, -1)
 
   const periodo = useQuery({
@@ -69,27 +93,29 @@ export function Compromisos() {
     queryFn: () => listarCompromisos({ hasta: ayer }),
   })
 
+  // En Mes la grilla incluye días de los meses vecinos: los contadores y el
+  // estado vacío miran solo el mes.
+  const enPeriodo = (e: { fecha_entrega_planificada: string | null }) =>
+    e.fecha_entrega_planificada !== null && (vista === 'semana' || mesDe(e.fecha_entrega_planificada) === mes)
   const todas = agruparEntregas(periodo.data ?? [])
   const entregas = filtrarEntregas(todas, busqueda)
   const porFecha = entregasPorFecha(entregas)
-  const esDelMes = (e: { fecha_entrega_planificada: string | null }) =>
-    e.fecha_entrega_planificada !== null && mesDe(e.fecha_entrega_planificada) === mes
-  const delMes = entregas.filter(esDelMes)
-  const mesVacio = periodo.isSuccess && !todas.some(esDelMes)
-  const sinCoincidencias = periodo.isSuccess && !mesVacio && delMes.length === 0
+  const delPeriodo = entregas.filter(enPeriodo)
+  const periodoVacio = periodo.isSuccess && !todas.some(enPeriodo)
+  const sinCoincidencias = periodo.isSuccess && !periodoVacio && delPeriodo.length === 0
   const listaVencidas = filtrarEntregas(agruparEntregas(vencidas.data ?? []), busqueda)
-  const cantidadVencidas = listaVencidas.length
 
-  const ultimoDiaDelMes = sumarDias(`${sumarMeses(mes, 1)}-01`, -1)
   const proxima = useQuery({
-    queryKey: ['compromisos-entregas', 'proxima', ultimoDiaDelMes],
-    queryFn: () => obtenerProximaFecha(ultimoDiaDelMes),
-    enabled: vista === 'mes' && mesVacio,
+    queryKey: ['compromisos-entregas', 'proxima', finDelPeriodo],
+    queryFn: () => obtenerProximaFecha(finDelPeriodo),
+    enabled: vista !== 'lista' && periodoVacio,
   })
 
-  function irAMes(destino: string, fecha: string) {
-    setMes(destino)
-    setSeleccion(fecha)
+  const nombrePeriodo = vista === 'semana' ? 'esta semana' : `en ${nombreMes(mes)}`
+  const paso = vista === 'semana' ? 'Semana' : 'Mes'
+
+  function moverPeriodo(sentido: 1 | -1) {
+    setSeleccion(vista === 'semana' ? sumarDias(seleccion, 7 * sentido) : `${sumarMeses(mes, sentido)}-01`)
   }
 
   return (
@@ -118,28 +144,20 @@ export function Compromisos() {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {vista === 'mes' ? (
+        {vista !== 'lista' ? (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Mes anterior"
-              onClick={() => irAMes(sumarMeses(mes, -1), `${sumarMeses(mes, -1)}-01`)}
-              className="flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            >
+            <button type="button" aria-label={`${paso} anterior`} onClick={() => moverPeriodo(-1)} className={BOTON_ICONO}>
               <Chevron direccion="izquierda" />
             </button>
-            <button
-              type="button"
-              aria-label="Mes siguiente"
-              onClick={() => irAMes(sumarMeses(mes, 1), `${sumarMeses(mes, 1)}-01`)}
-              className="flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            >
+            <button type="button" aria-label={`${paso} siguiente`} onClick={() => moverPeriodo(1)} className={BOTON_ICONO}>
               <Chevron direccion="derecha" />
             </button>
-            <h2 className="min-w-36 text-lg font-semibold text-slate-900">{etiquetaMes(mes)}</h2>
+            <h2 className="min-w-36 text-lg font-semibold text-slate-900">
+              {vista === 'semana' ? etiquetaSemana(inicio) : etiquetaMes(mes)}
+            </h2>
             <button
               type="button"
-              onClick={() => irAMes(mesDe(hoy), hoy)}
+              onClick={() => setSeleccion(hoy)}
               className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-900 hover:bg-slate-50"
             >
               Hoy
@@ -149,14 +167,14 @@ export function Compromisos() {
           <span />
         )}
         <div className="flex flex-wrap items-center gap-3">
-          {cantidadVencidas > 0 ? (
+          {listaVencidas.length > 0 ? (
             <Contador tono="vencida">
-              {cantidadVencidas} {cantidadVencidas === 1 ? 'vencida' : 'vencidas'} sin confirmar
+              {listaVencidas.length} {listaVencidas.length === 1 ? 'vencida' : 'vencidas'} sin confirmar
             </Contador>
           ) : null}
-          {vista === 'mes' && periodo.isSuccess ? (
+          {vista !== 'lista' && periodo.isSuccess ? (
             <Contador tono="periodo">
-              {contarEntregas(delMes.length)} en {nombreMes(mes)}
+              {contarEntregas(delPeriodo.length)} {nombrePeriodo}
             </Contador>
           ) : null}
           <input
@@ -175,14 +193,18 @@ export function Compromisos() {
       ) : (
         <div className="flex flex-1 gap-5">
           <div className="relative flex min-w-0 flex-1">
-            <VistaMes
-              mes={mes}
-              hoy={hoy}
-              seleccion={seleccion}
-              porFecha={porFecha}
-              cargando={periodo.isPending}
-              onSeleccionar={setSeleccion}
-            />
+            {vista === 'semana' ? (
+              <VistaSemana dias={diasDeSemana(inicio)} hoy={hoy} porFecha={porFecha} cargando={periodo.isPending} />
+            ) : (
+              <VistaMes
+                mes={mes}
+                hoy={hoy}
+                seleccion={seleccion}
+                porFecha={porFecha}
+                cargando={periodo.isPending}
+                onSeleccionar={setSeleccion}
+              />
+            )}
             {periodo.isError ? (
               <Superposicion
                 tono="error"
@@ -194,18 +216,18 @@ export function Compromisos() {
                 }
                 accion={{ etiqueta: 'Reintentar', onClick: () => void periodo.refetch() }}
               />
-            ) : mesVacio ? (
+            ) : periodoVacio ? (
               <Superposicion
                 tono="info"
-                titulo={`No hay entregas en ${nombreMes(mes)}`}
+                titulo={`No hay entregas ${nombrePeriodo}`}
                 descripcion={`Las entregas aparecen cuando una OC se exporta a Progress.${
                   proxima.data ? ` La próxima está el ${fechaDiaMes(proxima.data)}.` : ''
                 }`}
                 accion={
                   proxima.data
                     ? {
-                        etiqueta: `Ir a ${nombreMes(mesDe(proxima.data))}`,
-                        onClick: () => proxima.data && irAMes(mesDe(proxima.data), proxima.data),
+                        etiqueta: vista === 'semana' ? 'Ir a esa semana' : `Ir a ${nombreMes(mesDe(proxima.data))}`,
+                        onClick: () => proxima.data && setSeleccion(proxima.data),
                       }
                     : undefined
                 }
@@ -214,16 +236,18 @@ export function Compromisos() {
               <Superposicion
                 tono="info"
                 titulo="Ninguna entrega coincide con la búsqueda"
-                descripcion={`No hay entregas de "${busqueda.trim()}" en ${nombreMes(mes)}.`}
+                descripcion={`No hay entregas de "${busqueda.trim()}" ${nombrePeriodo}.`}
               />
             ) : null}
           </div>
-          <aside className="flex w-[340px] shrink-0 flex-col gap-4">
-            {listaVencidas.length > 0 ? (
-              <PanelVencidas vencidas={listaVencidas} onVerTodas={() => setVista('lista')} />
-            ) : null}
-            <DetalleDia fecha={seleccion} entregas={porFecha.get(seleccion) ?? []} />
-          </aside>
+          {vista === 'mes' ? (
+            <aside className="flex w-[340px] shrink-0 flex-col gap-4">
+              {listaVencidas.length > 0 ? (
+                <PanelVencidas vencidas={listaVencidas} onVerTodas={() => setVista('lista')} />
+              ) : null}
+              <DetalleDia fecha={seleccion} entregas={porFecha.get(seleccion) ?? []} />
+            </aside>
+          ) : null}
         </div>
       )}
     </div>
