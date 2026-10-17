@@ -1,112 +1,166 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import clsx from 'clsx'
+import { useMemo, useState } from 'react'
 import { listarCompromisos } from '@/lib/api/compromisos'
-import { ApiError } from '@/lib/api/presupuestacion'
-import { agruparCompromisos, type EntregaCompromiso } from './agruparCompromisos'
+import { agruparEntregas, entregasPorFecha, filtrarEntregas } from './agruparCompromisos'
+import { etiquetaMes, hoyBuenosAires, mesDe, nombreMes, semanasDelMes, sumarDias, sumarMeses } from './fechas'
+import { VistaLista } from './VistaLista'
+import { contarEntregas } from './textos'
+import { VistaMes } from './VistaMes'
 
-// 'YYYY-MM-DD' se parte a mano: new Date('YYYY-MM-DD') parsea como UTC y en
-// Argentina (UTC-3) mostraría el día anterior.
-function formatearFecha(iso: string | null): string {
-  if (!iso) return 'Sin fecha'
-  const [anio, mes, dia] = iso.split('-')
-  return `${dia}/${mes}/${anio}`
-}
+type Vista = 'mes' | 'lista'
 
-function formatearMes(clave: string): string {
-  if (clave === 'sin-fecha') return 'Sin fecha'
-  const [anio, mes] = clave.split('-').map(Number)
-  return new Date(Date.UTC(anio, mes - 1, 1)).toLocaleDateString('es-AR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
-}
+const VISTAS: { valor: Vista; etiqueta: string }[] = [
+  { valor: 'mes', etiqueta: 'Mes' },
+  { valor: 'lista', etiqueta: 'Lista' },
+]
 
-function TarjetaEntrega({ entrega }: { entrega: EntregaCompromiso }) {
-  const atraso = `${entrega.dias_atraso} ${entrega.dias_atraso === 1 ? 'día' : 'días'} de atraso`
+function Chevron({ direccion }: { direccion: 'izquierda' | 'derecha' }) {
   return (
-    <li className="rounded-md border border-slate-200 bg-white p-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 text-sm">
-        <span className="font-medium text-slate-900">{entrega.cliente ?? 'Sin cliente'}</span>
-        <Link
-          to="/ordenes-compra/$ordenCompraId"
-          params={{ ordenCompraId: entrega.orden_compra_id }}
-          className="text-accent hover:underline"
-        >
-          {entrega.numero_oc}
-        </Link>
-        <span className="text-slate-500">Entrega {entrega.numero_entrega}</span>
-        {entrega.situacion === 'vencida' ? (
-          <span className="text-red-700">
-            {formatearFecha(entrega.fecha_entrega_planificada)} · {atraso}
-          </span>
-        ) : null}
-      </div>
-      <ul className="mt-2 space-y-1 text-sm text-slate-700">
-        {entrega.renglones.map((renglon, indice) => (
-          <li key={`${renglon.numero_renglon ?? 'x'}-${indice}`} className="flex justify-between gap-4">
-            <span>{renglon.descripcion ?? renglon.codigo_articulo ?? 'Sin descripción'}</span>
-            <span className="tabular-nums">{renglon.cantidad_planificada.toLocaleString('es-AR')}</span>
-          </li>
-        ))}
-      </ul>
-    </li>
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4">
+      <path
+        d={direccion === 'izquierda' ? 'M10 3.5 5.5 8l4.5 4.5' : 'M6 3.5 10.5 8 6 12.5'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
+function Contador({ tono, children }: { tono: 'vencida' | 'periodo'; children: React.ReactNode }) {
+  return (
+    <span
+      className={clsx(
+        'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-medium',
+        tono === 'vencida' ? 'bg-red-50 text-red-800' : 'bg-sky-50 text-sky-800',
+      )}
+    >
+      <span aria-hidden="true" className={clsx('size-2 rounded-full', tono === 'vencida' ? 'bg-red-700' : 'bg-accent')} />
+      {children}
+    </span>
+  )
+}
+
+/** /compromisos: agenda de entregas comprometidas en calendario (Mes) o como lista. */
 export function Compromisos() {
-  const query = useQuery({ queryKey: ['compromisos-entregas'], queryFn: () => listarCompromisos() })
+  const hoy = useMemo(() => hoyBuenosAires(), [])
+  const [vista, setVista] = useState<Vista>('mes')
+  const [mes, setMes] = useState(() => mesDe(hoy))
+  const [seleccion, setSeleccion] = useState(hoy)
+  const [busqueda, setBusqueda] = useState('')
 
-  if (query.isPending) {
-    return <p className="p-6 text-sm text-slate-500">Cargando compromisos…</p>
+  const semanas = semanasDelMes(mes)
+  const rango = { desde: semanas[0][0], hasta: semanas[semanas.length - 1][6] }
+  const ayer = sumarDias(hoy, -1)
+
+  const periodo = useQuery({
+    queryKey: ['compromisos-entregas', rango.desde, rango.hasta],
+    queryFn: () => listarCompromisos(rango),
+    enabled: vista !== 'lista',
+  })
+  const vencidas = useQuery({
+    queryKey: ['compromisos-entregas', 'vencidas', ayer],
+    queryFn: () => listarCompromisos({ hasta: ayer }),
+  })
+
+  const entregas = filtrarEntregas(agruparEntregas(periodo.data ?? []), busqueda)
+  const porFecha = entregasPorFecha(entregas)
+  const delMes = entregas.filter((e) => e.fecha_entrega_planificada && mesDe(e.fecha_entrega_planificada) === mes)
+  const cantidadVencidas = filtrarEntregas(agruparEntregas(vencidas.data ?? []), busqueda).length
+
+  function irAMes(destino: string, fecha: string) {
+    setMes(destino)
+    setSeleccion(fecha)
   }
-
-  if (query.isError) {
-    const mensaje = query.error instanceof ApiError ? query.error.message : 'No se pudieron cargar los compromisos.'
-    return (
-      <p role="alert" className="p-6 text-sm text-red-700">
-        {mensaje}
-      </p>
-    )
-  }
-
-  const agenda = agruparCompromisos(query.data)
-  const vacia = agenda.vencidas.length === 0 && agenda.meses.length === 0
 
   return (
-    <div className="space-y-8 p-6">
-      <h1 className="text-xl font-semibold text-slate-900">Compromisos de entrega</h1>
+    <div className="flex min-h-full flex-col gap-5 p-6">
+      <header className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Compromisos de entrega</h1>
+          <p className="mt-1 text-sm text-slate-600">Entregas planificadas de OC exportadas a Progress</p>
+        </div>
+        <div className="flex gap-0.5 rounded-lg border border-slate-200 bg-slate-100 p-[3px]">
+          {VISTAS.map(({ valor, etiqueta }) => (
+            <button
+              key={valor}
+              type="button"
+              aria-pressed={vista === valor}
+              onClick={() => setVista(valor)}
+              className={clsx(
+                'rounded-md px-3 py-1.5 text-[13px]',
+                vista === valor ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              {etiqueta}
+            </button>
+          ))}
+        </div>
+      </header>
 
-      {vacia ? <p className="text-sm text-slate-500">No hay entregas comprometidas en el período.</p> : null}
-
-      {agenda.vencidas.length > 0 ? (
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-red-700">Vencidas sin confirmar</h2>
-          <ul className="space-y-2">
-            {agenda.vencidas.map((entrega) => (
-              <TarjetaEntrega key={entrega.entrega_oc_id} entrega={entrega} />
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {agenda.meses.map((mes) => (
-        <section key={mes.clave}>
-          <h2 className="mb-3 text-lg font-semibold capitalize text-slate-900">{formatearMes(mes.clave)}</h2>
-          <div className="space-y-4">
-            {mes.fechas.map((grupo) => (
-              <div key={grupo.fecha ?? 'sin-fecha'}>
-                <h3 className="mb-2 text-sm font-medium text-slate-600">{formatearFecha(grupo.fecha)}</h3>
-                <ul className="space-y-2">
-                  {grupo.entregas.map((entrega) => (
-                    <TarjetaEntrega key={entrega.entrega_oc_id} entrega={entrega} />
-                  ))}
-                </ul>
-              </div>
-            ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {vista === 'mes' ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="Mes anterior"
+              onClick={() => irAMes(sumarMeses(mes, -1), `${sumarMeses(mes, -1)}-01`)}
+              className="flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            >
+              <Chevron direccion="izquierda" />
+            </button>
+            <button
+              type="button"
+              aria-label="Mes siguiente"
+              onClick={() => irAMes(sumarMeses(mes, 1), `${sumarMeses(mes, 1)}-01`)}
+              className="flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            >
+              <Chevron direccion="derecha" />
+            </button>
+            <h2 className="min-w-36 text-lg font-semibold text-slate-900">{etiquetaMes(mes)}</h2>
+            <button
+              type="button"
+              onClick={() => irAMes(mesDe(hoy), hoy)}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-900 hover:bg-slate-50"
+            >
+              Hoy
+            </button>
           </div>
-        </section>
-      ))}
+        ) : (
+          <span />
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {cantidadVencidas > 0 ? (
+            <Contador tono="vencida">
+              {cantidadVencidas} {cantidadVencidas === 1 ? 'vencida' : 'vencidas'} sin confirmar
+            </Contador>
+          ) : null}
+          {vista === 'mes' && periodo.isSuccess ? (
+            <Contador tono="periodo">
+              {contarEntregas(delMes.length)} en {nombreMes(mes)}
+            </Contador>
+          ) : null}
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(evento) => setBusqueda(evento.target.value)}
+            placeholder="Buscar cliente u OC"
+            aria-label="Buscar cliente u OC"
+            className="w-60 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {vista === 'lista' ? (
+        <VistaLista filtro={busqueda} />
+      ) : (
+        <div className="flex flex-1 gap-5">
+          <VistaMes mes={mes} hoy={hoy} seleccion={seleccion} porFecha={porFecha} onSeleccionar={setSeleccion} />
+        </div>
+      )}
     </div>
   )
 }

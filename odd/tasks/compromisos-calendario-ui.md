@@ -15,9 +15,9 @@ Backend data from `odd/tasks/compromisos-calendario-datos.md` (same branch `feat
 
 ## Tasks
 
-- [ ] T1 S3, S6, S7 — data layer: `listarCompromisos({desde, hasta})`, `obtenerProximaFecha`, date helpers (`fechas.ts`), `agruparEntregas` with `posicion_en_plan`/`entregas_en_plan`. Inline.
-- [ ] T2 S1, S3, S6 — page shell: header, view toggle, toolbar, search, states; Lista moved to `VistaLista` unchanged. Inline.
-- [ ] T3 S2, S4 — month view and side panel. Inline.
+- [x] T1 S3, S6, S7 — data layer: `listarCompromisos({desde, hasta})`, `obtenerProximaFecha`, date helpers (`fechas.ts`), `agruparEntregas` with `posicion_en_plan`/`entregas_en_plan`. Inline. Commit `b8645c6`.
+- [x] T2 S1, S2, S3 — page shell (header, view toggle, toolbar, stats, search), Lista moved to `VistaLista` unchanged, month grid. Inline.
+- [ ] T3 S4, S6 — side panel (overdue + selected day) and calendar states (loading, empty with next date, error). Inline.
 - [ ] T4 S5 — week view. Inline.
 
 ## Log
@@ -26,3 +26,6 @@ Backend data from `odd/tasks/compromisos-calendario-datos.md` (same branch `feat
 - L2 (user, after the month view mockup): "me gusta"; then "agregalas" for the missing backend data.
 - L3 (user, after the backend closed): "implementemos en esta rama"
 - L4 Decisions: no icon library is installed, so chevrons are small inline SVGs (adding a dependency is a delivery risk). The calendar fetches the visible range (`desde`/`hasta`) plus overdue deliveries (`hasta` = yesterday), so navigation is not limited to the default 6 months. View, period and selection live in component state (not URL search params). Search applies to Mes, Semana and Lista.
+- L5 T1 RED: 5 tests failed (missing functions, `fechas.ts` absent). GREEN: vitest `src/features/compromisos` + `lib/api/compromisos.test.ts` 22 passed; `tsc -b` 0 errors after `Compromisos.tsx` stopped passing `listarCompromisos` directly as `queryFn` (its new optional parameter clashed with the React Query context); fix amended into `b8645c6`.
+- L6 Task split changed: the grid and the shell are coupled, so T2 takes the month grid and T3 takes the side panel and the states.
+- L7 T2: the old agenda moved to `VistaLista` (`git mv`) with its 4 tests unchanged, plus a search test written after the filter (no RED observed for that one). Page RED: `Compromisos.test.tsx` failed to import (`./Compromisos` absent). GREEN: vitest `src/features/compromisos` 26 passed; `tsc -b` 0; oxlint clean. The toggle shows Mes and Lista only; Semana is added in T4.
