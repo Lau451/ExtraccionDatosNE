@@ -11,13 +11,13 @@
 Los 12 endpoints montados en `services/presupuestacion/main.py`
 (`app.include_router(productos_router, tags=["productos"])`), sin prefijo adicional.
 
-Roles (`router.py:43-46`):
+Roles (`router.py:59-62`):
 
 ```python
 _ROLES_LECTURA_CATALOGO = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 _ROLES_ESCRITURA_CATALOGO = ("admin", "gerencia", "compras")
 _ROLES_ESCRITURA_CATEGORIAS = ("admin", "gerencia")
-_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
+_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "lider_comercial", "compras")
 ```
 
 Los 2 endpoints `DELETE` (producto, proveedor) no usan ninguna de estas 4
@@ -135,9 +135,11 @@ Sin `DELETE /categorias/{id}` — RN-PRODUCTOS-004.
 
 ## `GET /productos/{producto_id}/costos`
 
-- **Quién puede llamarlo**: `_ROLES_LECTURA_COSTOS` — **no** incluye
-  `lider_comercial` ni `comercial`, a diferencia de `_ROLES_LECTURA_CATALOGO`
-  (`router.py:185`).
+- **Quién puede llamarlo**: `_ROLES_LECTURA_COSTOS` — **no** incluye `comercial`, a
+  diferencia de `_ROLES_LECTURA_CATALOGO` (`router.py:62`, `:288`). `lider_comercial` sí
+  ve costos desde la matriz de roles (`odd/tasks/roles-permisos-matriz.md` S3; verificado
+  en `tests/test_roles_matriz_backend.py:193-211`). En el frontend lo espeja
+  `COSTOS_READ_ROLES` (`frontend/src/features/productos/roles.ts:24`).
 - **Función**: `listar_costos_endpoint`. Valida pertenencia del producto
   (RN-PRODUCTOS-001) antes de listar.
 - **Cliente Supabase**: `service_client` (vía `listar_costos_para_endpoint`, no hay
@@ -146,9 +148,9 @@ Sin `DELETE /categorias/{id}` — RN-PRODUCTOS-004.
 
 ## `POST /productos/{producto_id}/costos`
 
-- **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` — incluye `compras`, más
-  amplio que `_ROLES_LECTURA_COSTOS` para el `GET` del mismo sub-recurso
-  (`router.py:194`).
+- **Quién puede llamarlo**: `_ROLES_ESCRITURA_CATALOGO` (`admin`, `gerencia`,
+  `compras`) — distinto de `_ROLES_LECTURA_COSTOS` para el `GET` del mismo sub-recurso:
+  `superadmin` y `lider_comercial` leen costos pero no los cargan (`router.py:297`).
 - **Función**: `crear_costo_endpoint`. Aplica RN-PRODUCTOS-001, RN-PRODUCTOS-005,
   RN-PRODUCTOS-006 y RN-PRODUCTOS-007.
 - **Cliente Supabase**: `service_client`.

@@ -42,7 +42,7 @@ def test_importar_con_rol_no_autorizado_es_rechazado_sin_crear_nada(
     service_client, seed_drogueria, seed_cliente_pcp_factory, crear_usuario_con_token
 ):
     seed_cliente_pcp_factory(codigo_interno="CLI-PRE-ROUTER-001")
-    # "comercial" no está en ROLES_ESCRITURA_PCP (mismo gate que /pcp/imports/legacy).
+    # "comercial" no está en ROLES_IMPORT_PRESUPUESTOS_LEGACY (solo admin, S6).
     _, token = crear_usuario_con_token(rol="comercial", drogueria_id=seed_drogueria["id"])
     client = _cliente_de_prueba()
 
@@ -69,7 +69,8 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_presupuesto(
     service_client, seed_drogueria, seed_cliente_pcp_factory, crear_usuario_con_token
 ):
     seed_cliente_pcp_factory(codigo_interno="CLI-PRE-ROUTER-002")
-    _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    # Solo admin importa presupuestos legacy (odd/tasks/roles-permisos-matriz.md S6).
+    _, token = crear_usuario_con_token(rol="admin", drogueria_id=seed_drogueria["id"])
     client = _cliente_de_prueba()
 
     respuesta = client.post(

@@ -46,11 +46,14 @@ código verificado en esta sesión.
   [`decisiones.md`](./decisiones.md) D-LOGIN-004 (marcada como superada) y
   [`flujo.md`](./flujo.md).
 - **`requireRole(...)` SÍ tiene call sites — corrige el estado documentado anteriormente.**
-  `routeGuards.ts:15-22` define la función; a diferencia de lo registrado antes (cuando el proposal
+  `routeGuards.ts:27-35` define la función; a diferencia de lo registrado antes (cuando el proposal
   original la dejó "armada pero sin ningún call site"), un grep de `requireRole` en esta sesión
-  encuentra **dos usos reales**: `routes/_authenticated.admin.usuarios.tsx:6`
-  (`requireRole('admin', 'superadmin')`) y `routes/_authenticated.superadmin.empresas.tsx:6`
-  (`requireRole('superadmin')`). Ambos archivos están fuera del alcance de esta documentación (no
+  encontró **dos usos reales**: `routes/_authenticated.admin.usuarios.tsx`
+  (hoy `requireRole(...USUARIOS_ROLES)` = `admin`, `superadmin`, `gerencia`, `:7`) y
+  `routes/_authenticated.superadmin.empresas.tsx:6` (`requireRole('superadmin')`). Desde la matriz
+  de roles (odd/tasks/roles-permisos-matriz.md S9) todas las rutas de negocio, incluida `/`, lo
+  usan, y el rebote por rol insuficiente va a `homeForRol(rol)` (`routeGuards.ts:20-25`), no a `/`.
+  Ambos archivos están fuera del alcance de esta documentación (no
   son parte del módulo Login), pero se cita el hecho acá porque invalida la afirmación anterior y
   porque es la causa raíz del bug de timing corregido en esta sesión — ver
   [`decisiones.md`](./decisiones.md) D-LOGIN-005.

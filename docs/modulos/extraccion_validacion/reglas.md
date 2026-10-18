@@ -139,8 +139,15 @@ llamante, solo la del `proceso_comercial_id` indicado contra la extracción
 ## RN-EXTRACCIONVALIDACION-011 — Roles habilitados para validar [IMPLEMENTADO]
 
 `POST /extracciones/{extraction_id}/validar` requiere uno de `admin`, `gerencia`,
-`lider_comercial`, `comercial` (`_ROLES_VALIDAR`, `router.py:12`, aplicado vía
-`require_roles(*_ROLES_VALIDAR)`, `router.py:19`).
+`lider_comercial`, `comercial` (`_ROLES_VALIDAR`, `router.py:28`, aplicado vía
+`require_roles(*_ROLES_VALIDAR)`, `router.py:150`). Los mismos cuatro roles aplican al
+listado `GET /extracciones` (`_ROLES_LECTURA`, `router.py:31`, `:69` — desde la matriz
+de roles, `odd/tasks/roles-permisos-matriz.md` S2, ya no incluye `superadmin` ni
+`compras`) y al detalle/agrupar/desagrupar (`_ROLES_VALIDAR`, `router.py:84`, `:102`,
+`:117`, `:135`). Verificado en `tests/test_roles_matriz_backend.py:146-165`. En el
+frontend, `VALIDAR_EXTRACCION_ROLES`
+(`frontend/src/features/validar-extraccion/roles.ts:5`) gatea `/validar-extraccion` y
+`/validar-extraccion/$extractionId` y el ítem del Sidebar.
 
 ## RN-EXTRACCIONVALIDACION-012 — Roles notificados en un reemplazo de comparativa [IMPLEMENTADO]
 

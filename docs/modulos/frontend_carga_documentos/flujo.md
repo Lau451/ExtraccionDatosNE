@@ -3,7 +3,12 @@
 ## 1. Carga de documento end-to-end (selección → validación de tipo → submit multipart → respuesta → refresco de "cargas recientes")
 
 ```
-Usuario entra a "/" (Sidebar → "Carga de documentos", Sidebar.tsx:13)
+Usuario entra a "/" (Sidebar → "Carga de documentos", Sidebar.tsx:48)
+        │
+        ▼
+beforeLoad: requireRole(...CARGA_DOCUMENTOS_ROLES) (_authenticated.index.tsx:8)
+  → admin/gerencia/lider_comercial/comercial siguen; compras/superadmin rebotan a
+    homeForRol(rol) (routeGuards.ts:20-25), matriz de roles S1/S9
         │
         ▼
 CargaDocumentos.tsx (CargaDocumentos.tsx:4-16) monta FormCard + RecentCard

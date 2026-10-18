@@ -96,57 +96,71 @@ def eliminar_usuario_auth(client: Client, *, usuario_id: str) -> None: ...
 def crear_usuario(
     client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate
 ) -> dict[str, Any]: ...
-# service.py:13-49
-# Aplica RN-USUARIOS-001 a 007 y RN-USUARIOS-013 (invitación por email). Recibe
+# service.py:24-63
+# Aplica RN-USUARIOS-001 a 007, RN-USUARIOS-013 (invitación por email) y RN-USUARIOS-029
+# (gerencia solo crea roles inferiores a admin). Recibe
 # `client` explícito para poder testearse con service_client inyectado, sin HTTP.
 
 def cambiar_rol(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, nuevo_rol: str
 ) -> dict[str, Any]: ...
-# service.py:52-76
-# Aplica RN-USUARIOS-008 a 012 y RN-USUARIOS-014/015. `nuevo_rol` sigue siendo `str`,
+# service.py:66-94
+# Aplica RN-USUARIOS-008 a 012, RN-USUARIOS-014/015 y RN-USUARIOS-029. `nuevo_rol` sigue siendo `str`,
 # no `Rol` (RN-USUARIOS-012). Orden de validaciones cambió: auto-modificación
 # (RN-USUARIOS-014) corre ANTES que la comprobación de existencia (RN-USUARIOS-011).
 
 def cambiar_activo(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, activo: bool
 ) -> dict[str, Any]: ...
-# service.py:79-98
-# NUEVO. Aplica RN-USUARIOS-016 a 020. Mismo esqueleto de validaciones que cambiar_rol
-# (rol → auto-modificación → existencia → superadmin/sistema → tenant).
+# service.py:97-118
+# NUEVO. Aplica RN-USUARIOS-016 a 020 y RN-USUARIOS-029. Mismo esqueleto de validaciones
+# que cambiar_rol (rol → auto-modificación → existencia → superadmin/sistema →
+# alcance de gerencia → tenant).
 
 def eliminar_usuario(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str
 ) -> None: ...
-# service.py:101-118
-# NUEVO. Aplica RN-USUARIOS-022 a 026 (más RN-USUARIOS-027 en repository.py). Mismo
+# service.py:121-140
+# NUEVO. Aplica RN-USUARIOS-022 a 026 y RN-USUARIOS-029 (más RN-USUARIOS-027 en repository.py). Mismo
 # esqueleto de validaciones que cambiar_activo, termina en repo.eliminar_usuario_auth.
 
 def actualizar_perfil_propio(
     client: Client, *, usuario_id: str, body: UsuarioPerfilUpdate
 ) -> dict[str, Any]: ...
-# service.py:121-128
+# service.py:143-150
 # NUEVO. Aplica RN-USUARIOS-028. Sin chequeo de rol; usa
 # body.model_dump(exclude_unset=True) para no pisar campos no provistos con None.
 
 def crear_usuario_para_endpoint(*, creador: UsuarioPerfil, body: UsuarioCreate) -> dict[str, Any]: ...
-# service.py:131-132
+# service.py:153-154
 
 def cambiar_rol_para_endpoint(*, creador: UsuarioPerfil, usuario_id: str, nuevo_rol: str) -> dict[str, Any]: ...
-# service.py:135-136
+# service.py:157-158
 
 def cambiar_activo_para_endpoint(*, creador: UsuarioPerfil, usuario_id: str, activo: bool) -> dict[str, Any]: ...
-# service.py:139-140
+# service.py:161-162
 # NUEVO wrapper.
 
 def actualizar_perfil_propio_para_endpoint(*, usuario_id: str, body: UsuarioPerfilUpdate) -> dict[str, Any]: ...
-# service.py:143-146
+# service.py:165-168
 # NUEVO wrapper. Sin `creador` — no hay chequeo de rol que requiera el perfil completo
 # del solicitante, solo su `id` (ya resuelto por el router desde el token).
 
 def eliminar_usuario_para_endpoint(*, creador: UsuarioPerfil, usuario_id: str) -> None: ...
-# service.py:149-150
+# service.py:171-172
 # NUEVO wrapper.
+```
+
+Constantes de módulo (matriz de roles, odd/tasks/roles-permisos-matriz.md S7):
+
+```python
+ROLES_GESTION_USUARIOS = ("superadmin", "admin", "gerencia")
+# service.py:12 — importada por router.py para los 4 endpoints de gestión.
+ROLES_GESTIONABLES_POR_GERENCIA = ("gerencia", "lider_comercial", "comercial", "compras")
+# service.py:16 — roles sobre los que gerencia puede operar y que puede asignar.
+
+def _validar_objetivo_de_gerencia(creador: UsuarioPerfil, objetivo: dict[str, Any]) -> None: ...
+# service.py:19-21 — RN-USUARIOS-029 sobre el usuario objetivo.
 ```
 
 Los 5 wrappers `*_para_endpoint` resuelven `get_service_client()` (sin RLS) y delegan en
@@ -157,25 +171,28 @@ preexistentes.
 
 ```python
 router = APIRouter()
-# router.py:22
+# router.py:23
 ```
 
 | Método | Path | Request | Response | Roles requeridos | Archivo |
 |---|---|---|---|---|---|
-| GET | `/usuarios` | — | `list[UsuarioOut]` | Ninguno (solo autenticado) | `router.py:25-30` |
-| GET | `/usuarios/{usuario_id}` | — | `UsuarioOut` (404 si no existe/no visible por RLS) | Ninguno (solo autenticado) | `router.py:33-42` |
-| POST | `/usuarios` | `UsuarioCreate` | `UsuarioOut` | `superadmin`, `admin` | `router.py:45-49` |
-| PATCH | `/usuarios/{usuario_id}/rol` | `UsuarioRolUpdate` | `UsuarioOut` | `superadmin`, `admin` | `router.py:52-58` |
-| PATCH | `/usuarios/{usuario_id}/activo` **[NUEVO]** | `UsuarioActivoUpdate` | `UsuarioOut` | `superadmin`, `admin` | `router.py:61-67` |
-| PATCH | `/usuarios/me` **[NUEVO]** | `UsuarioPerfilUpdate` | `UsuarioOut` | Ninguno (propio perfil) | `router.py:70-75` |
-| DELETE | `/usuarios/{usuario_id}` **[NUEVO]** | — | `204 No Content` | `superadmin`, `admin` | `router.py:78-83` |
+| GET | `/usuarios` | — | `list[UsuarioOut]` | Ninguno (solo autenticado) | `router.py:26-31` |
+| GET | `/usuarios/{usuario_id}` | — | `UsuarioOut` (404 si no existe/no visible por RLS) | Ninguno (solo autenticado) | `router.py:34-43` |
+| POST | `/usuarios` | `UsuarioCreate` | `UsuarioOut` | `ROLES_GESTION_USUARIOS`: `superadmin`, `admin`, `gerencia` | `router.py:46-50` |
+| PATCH | `/usuarios/{usuario_id}/rol` | `UsuarioRolUpdate` | `UsuarioOut` | `ROLES_GESTION_USUARIOS` | `router.py:53-59` |
+| PATCH | `/usuarios/{usuario_id}/activo` **[NUEVO]** | `UsuarioActivoUpdate` | `UsuarioOut` | `ROLES_GESTION_USUARIOS` | `router.py:62-68` |
+| PATCH | `/usuarios/me` **[NUEVO]** | `UsuarioPerfilUpdate` | `UsuarioOut` | Ninguno (propio perfil) | `router.py:71-76` |
+| DELETE | `/usuarios/{usuario_id}` **[NUEVO]** | — | `204 No Content` | `ROLES_GESTION_USUARIOS` | `router.py:79-84` |
+
+`gerencia` pasa el guard del router pero el service la acota a su droguería y a roles
+inferiores a `admin` (RN-USUARIOS-029).
 
 Excepciones de dominio levantadas por este módulo y su status HTTP (mapeo centralizado
 en `core/exceptions.py`, ver [`../core/api.md`](../core/api.md)):
 
 - `ForbiddenError` → 403: RN-USUARIOS-001, 002, 008, 009, 010, 014, 015, 016, 017, 019,
-  020, 022, 023, 025, 026.
-- `NotFoundError` → 404: RN-USUARIOS-011, 018, 024, y el 404 directo de `router.py:41`.
+  020, 022, 023, 025, 026, 029.
+- `NotFoundError` → 404: RN-USUARIOS-011, 018, 024, y el 404 directo de `router.py:42`.
 - `ValidationError` → 422: RN-USUARIOS-005, 006, y la rama no-429 de RN-USUARIOS-013.
 - `ConflictError` → 409: la rama 429 de RN-USUARIOS-013 (rate limit de invitación) y
   RN-USUARIOS-027 (eliminar con actividad asociada).

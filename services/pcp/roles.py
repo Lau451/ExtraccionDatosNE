@@ -9,8 +9,12 @@ y PR7 (negociacion) necesitan exactamente el mismo par. Sin nombre `_` inicial
 a propósito: son un export público de este módulo, no un detalle interno de
 un único router. No es `services/pcp/{router,api,errors}.py` (eso sigue
 siendo tarea de PR5, 5.7): este archivo no agrega ni monta nada, solo declara
-dos constantes.
+constantes.
 """
 
 ROLES_LECTURA_PCP = ("superadmin", "admin", "gerencia", "compras")
 ROLES_ESCRITURA_PCP = ("admin", "gerencia", "compras")
+
+# Import de presupuestos legacy (odd/tasks/roles-permisos-matriz.md S6): solo
+# admin, más restrictivo que el import de PCP (ROLES_ESCRITURA_PCP).
+ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)

@@ -59,7 +59,7 @@ router = APIRouter()
 _ROLES_LECTURA_CATALOGO = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 _ROLES_ESCRITURA_CATALOGO = ("admin", "gerencia", "compras")
 _ROLES_ESCRITURA_CATEGORIAS = ("admin", "gerencia")
-_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
+_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "lider_comercial", "compras")
 
 
 # -- productos ---------------------------------------------------------------

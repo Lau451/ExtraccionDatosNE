@@ -317,26 +317,26 @@ CREATE POLICY eoci_del ON entregas_oc_items FOR DELETE USING ((select es_superad
 -- un tercero puede cumplir ambos roles, restringir a uno solo bloquearía al otro.
 ALTER TABLE terceros ENABLE ROW LEVEL SECURITY;
 CREATE POLICY terceros_sel ON terceros FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY terceros_ins ON terceros FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY terceros_upd ON terceros FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY terceros_ins ON terceros FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY terceros_upd ON terceros FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY terceros_del ON terceros FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE tercero_direcciones ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tdir_sel ON tercero_direcciones FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY tdir_ins ON tercero_direcciones FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY tdir_upd ON tercero_direcciones FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tdir_ins ON tercero_direcciones FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tdir_upd ON tercero_direcciones FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY tdir_del ON tercero_direcciones FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE direccion_usos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY du_sel ON direccion_usos FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY du_ins ON direccion_usos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY du_upd ON direccion_usos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY du_ins ON direccion_usos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY du_upd ON direccion_usos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY du_del ON direccion_usos FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE terceros_contactos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tc_sel ON terceros_contactos FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY tc_ins ON terceros_contactos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY tc_upd ON terceros_contactos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial','comercial','compras') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tc_ins ON terceros_contactos FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY tc_upd ON terceros_contactos FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY tc_del ON terceros_contactos FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE terceros_legacy_map ENABLE ROW LEVEL SECURITY;
@@ -348,20 +348,20 @@ CREATE POLICY tlm_del ON terceros_legacy_map FOR DELETE USING ((select es_supera
 -- Catálogos: lectura para el tenant, escritura acotada a admin/gerencia.
 ALTER TABLE sectores_contacto ENABLE ROW LEVEL SECURITY;
 CREATE POLICY sec_sel ON sectores_contacto FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY sec_ins ON sectores_contacto FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY sec_upd ON sectores_contacto FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY sec_ins ON sectores_contacto FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY sec_upd ON sectores_contacto FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY sec_del ON sectores_contacto FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE condiciones_pago ENABLE ROW LEVEL SECURITY;
 CREATE POLICY cp_sel ON condiciones_pago FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY cp_ins ON condiciones_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY cp_upd ON condiciones_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY cp_ins ON condiciones_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY cp_upd ON condiciones_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY cp_del ON condiciones_pago FOR DELETE USING ((select es_superadmin()));
 
 ALTER TABLE formas_pago ENABLE ROW LEVEL SECURITY;
 CREATE POLICY fp_sel ON formas_pago FOR SELECT USING ((select mismo_tenant(drogueria_id)));
-CREATE POLICY fp_ins ON formas_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY fp_upd ON formas_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY fp_ins ON formas_pago FOR INSERT WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
+CREATE POLICY fp_upd ON formas_pago FOR UPDATE USING ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id))) WITH CHECK ((select get_rol()) IN ('admin','gerencia','lider_comercial') AND (select mismo_tenant(drogueria_id)));
 CREATE POLICY fp_del ON formas_pago FOR DELETE USING ((select es_superadmin()));
 
 -- GRANTs explícitos (tablas nuevas no se auto-exponen al Data API). Sin DELETE

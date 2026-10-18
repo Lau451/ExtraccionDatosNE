@@ -99,6 +99,9 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_pcp(
 ):
     seed_cliente_pcp_factory(codigo_interno="CLI-ROUTER-002")
     _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    # El import de presupuestos legacy es solo admin (odd/tasks/
+    # roles-permisos-matriz.md S6); el de PCP sigue abierto a compras.
+    _, token_admin = crear_usuario_con_token(rol="admin", drogueria_id=seed_drogueria["id"])
     client = _cliente_de_prueba()
 
     # T2: el import de PCP exige un presupuesto ya importado -- se arma acá
@@ -106,7 +109,7 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_pcp(
     respuesta_presupuesto = client.post(
         "/pcp/imports/presupuestos-legacy",
         json=_payload_presupuesto(codigo_cliente="CLI-ROUTER-002", numero_presupuesto="PRE-ROUTER-002"),
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token_admin}"},
     )
     assert respuesta_presupuesto.status_code == 200
 

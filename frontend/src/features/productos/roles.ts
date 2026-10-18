@@ -19,9 +19,9 @@ export const PRODUCTOS_WRITE_ROLES: Rol[] = ['admin', 'gerencia', 'compras']
  * productos (no incluye `compras`). */
 export const CATEGORIAS_WRITE_ROLES: Rol[] = ['admin', 'gerencia']
 
-/** Lectura de costos — no incluye `lider_comercial` ni `comercial`, a
- * diferencia del resto del catálogo. */
-export const COSTOS_READ_ROLES: Rol[] = ['superadmin', 'admin', 'gerencia', 'compras']
+/** Lectura de costos — no incluye `comercial`, a diferencia del resto del
+ * catálogo (spec S3: `lider_comercial` sí los ve). */
+export const COSTOS_READ_ROLES: Rol[] = ['superadmin', 'admin', 'gerencia', 'lider_comercial', 'compras']
 
 export function puedeRol(rol: Rol | undefined, permitidos: Rol[]): boolean {
   return !!rol && permitidos.includes(rol)

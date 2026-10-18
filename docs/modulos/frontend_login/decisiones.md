@@ -40,15 +40,16 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
 
 ### D-LOGIN-003 — `requireRole` se implementa sin usarse todavía [SUPERADA POR EL CÓDIGO — ver nota]
 
-- **Decisión original**: `routeGuards.ts:15-22` define `requireRole(...roles: Rol[])` compuesto
+- **Decisión original**: `routeGuards.ts:27-35` define `requireRole(...roles: Rol[])` compuesto
   sobre `requireAuth`, sin que ninguna ruta del MVP lo invocara al momento de escribir esta
   decisión.
 - **Motivo original**: explícito en el proposal archivado (`proposal.md:35-36`): "se dejó la
   función armada pero sin ningún call site, porque ninguna ruta actual del MVP la necesita
   todavía", listado bajo "Explícitamente fuera de scope".
 - **Nota de esta sesión — el hecho que motivaba la decisión ya no es cierto**: `requireRole` **sí
-  tiene call sites reales** ahora: `routes/_authenticated.admin.usuarios.tsx:6`
-  (`requireRole('admin', 'superadmin')`) y `routes/_authenticated.superadmin.empresas.tsx:6`
+  tiene call sites reales** ahora: `routes/_authenticated.admin.usuarios.tsx`
+  (en ese momento `requireRole('admin', 'superadmin')`; hoy `requireRole(...USUARIOS_ROLES)`, que
+  suma `gerencia`, `:7`) y `routes/_authenticated.superadmin.empresas.tsx:6`
   (`requireRole('superadmin')`) — confirmado por grep y lectura directa en esta sesión. Ambos
   archivos están fuera del alcance de este módulo (pertenecen a `gestion-usuarios/` y
   `gestion-empresas/`), por eso no se documentan acá en detalle, pero el hecho de que existan
@@ -90,7 +91,7 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
   sea `false` (`:62`). `main.tsx` (`InnerApp`) espera `auth.loading || auth.perfilLoading` antes de
   montar `<RouterProvider>` (`main.tsx:27`), en vez de esperar solo `auth.loading` como antes.
 - **Motivo**: bug real encontrado y reproducido en esta sesión (confirmado en vivo con Chrome):
-  `requireRole()` (`routeGuards.ts:15-22`, con call sites reales — ver corrección de D-LOGIN-003)
+  `requireRole()` (`routeGuards.ts:27-35`, con call sites reales — ver corrección de D-LOGIN-003)
   depende de `context.auth.perfil`, que se resuelve en un segundo paso asíncrono aparte de la
   sesión. Sin esperar ese segundo paso, un reload directo (deep-link) a una ruta con `requireRole`
   (p. ej. `/admin/usuarios`) rebotaba a `/` aunque el usuario tuviera el rol correcto, porque el

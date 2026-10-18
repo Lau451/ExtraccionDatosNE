@@ -186,10 +186,10 @@ router = APIRouter()
 
 _ROLES_OC = ("admin", "gerencia", "lider_comercial", "comercial")
 # router.py:21
-_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial", "compras")
-# router.py:22
+_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial")
+# router.py:23 — sin "compras" (odd/tasks/roles-permisos-matriz.md S8).
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-# router.py:23
+# router.py:24
 
 def _validar_oc_de_la_drogueria(
     user_client: Client, usuario: UsuarioPerfil, orden_compra_id: str

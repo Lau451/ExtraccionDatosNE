@@ -42,29 +42,40 @@ genérico de HTML/React que no sea una decisión del módulo.
   (`login.tsx:28`, vía la prop `onSuccess` pasada desde `LoginPage`). Si el usuario ya está
   autenticado y visita `/login` directamente, el mismo destino se resuelve en un `useEffect`
   (`login.tsx:18-22`).
+- **Default `/` y roles sin carga de documentos**: `/` (`routes/_authenticated.index.tsx:8`) tiene
+  guard `requireRole(...CARGA_DOCUMENTOS_ROLES)` desde la matriz de roles
+  (odd/tasks/roles-permisos-matriz.md S9). Un `compras` o `superadmin` que cae en el default `/`
+  es rebotado por ese guard a `homeForRol(rol)` (RN-LOGIN-006): `/productos` o
+  `/superadmin/empresas`.
 - **Origen del `redirect`**: lo establece `requireAuth` al rechazar el acceso a una ruta protegida,
-  usando la URL completa de destino (`location.href`, `routeGuards.ts:11`).
+  usando la URL completa de destino (`location.href`, `routeGuards.ts:12`).
 - [IMPLEMENTADO]
 
 ### RN-LOGIN-005 — Guard de ruta protegida: sin sesión, redirect a `/login` con el destino original
 
 - **Regla**: `requireAuth` lanza `redirect({ to: '/login', search: { redirect: location.href } })`
-  si `context.auth.isAuthenticated` es falso (`routeGuards.ts:9-13`). No hay ninguna otra condición
+  si `context.auth.isAuthenticated` es falso (`routeGuards.ts:10-14`). No hay ninguna otra condición
   (no depende de `perfil`, solo de `isAuthenticated`). Corre una sola vez, en `beforeLoad`, al
   entrar a la ruta — ver RN-LOGIN-009 para el caso de sesión que se cae después.
 - [IMPLEMENTADO]
 
-### RN-LOGIN-006 — `requireRole` restringe por rol, redirect a `/` (no a `/login`) si no alcanza
+### RN-LOGIN-006 — `requireRole` restringe por rol, redirect a la home del rol (no a `/login`) si no alcanza
 
-- **Regla**: `requireRole(...roles: Rol[])` (`routeGuards.ts:15-22`) primero corre `requireAuth`
+- **Regla**: `requireRole(...roles: Rol[])` (`routeGuards.ts:27-35`) primero corre `requireAuth`
   (mismo comportamiento que RN-LOGIN-005 si no hay sesión) y, si hay sesión, exige que
   `context.auth.perfil` no sea `null` y que `perfil.rol` esté en la whitelist recibida; si no,
-  `throw redirect({ to: '/' })` (`routeGuards.ts:18-20`) — a diferencia de `requireAuth`, no manda
-  a `/login`, manda a la home.
+  `throw redirect({ to: homeForRol(rol) })` (`routeGuards.ts:30-32`) — a diferencia de
+  `requireAuth`, no manda a `/login`, manda a la pantalla de aterrizaje del rol.
+- **Home por rol** (`homeForRol`, `routeGuards.ts:20-25`, matriz de roles S9): `/` para
+  `admin`/`gerencia`/`lider_comercial`/`comercial` (`CARGA_DOCUMENTOS_ROLES`), `/productos` para
+  `compras`, `/superadmin/empresas` para `superadmin`, y `/mi-cuenta` (sin guard de rol) si no hay
+  perfil resuelto. Antes redirigía siempre a `/`; como `/` ahora tiene guard de rol propio, eso
+  haría un loop para `compras`/`superadmin`.
 - **Corrección frente a la versión anterior de esta documentación**: esta regla existía en el
-  código pero no se numeraba porque se creía sin call sites. Tiene 2 call sites reales, fuera del
-  alcance de archivos de este módulo: `routes/_authenticated.admin.usuarios.tsx:6` y
-  `routes/_authenticated.superadmin.empresas.tsx:6`.
+  código pero no se numeraba porque se creía sin call sites. Hoy la usan todas las rutas de
+  negocio de `routes/_authenticated.*.tsx` (fuera del alcance de archivos de este módulo), entre
+  ellas `routes/_authenticated.admin.usuarios.tsx:7`, `routes/_authenticated.superadmin.empresas.tsx:6`
+  y `routes/_authenticated.index.tsx:8`.
 - [IMPLEMENTADO]. Depende de que `perfil` esté resuelto en el momento en que corre `beforeLoad` —
   ver RN-LOGIN-010 sobre cómo se garantiza eso en la carga inicial.
 

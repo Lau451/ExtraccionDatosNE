@@ -18,6 +18,12 @@ CRUD de una tabla `licitaciones` que ya no existe — ver `decisiones.md`). `/pr
 responde JSON exclusivamente. El resto de este documento describe el estado previo a T2
 donde no se indica lo contrario; ver los documentos de módulo para el detalle.
 
+**Matriz de roles (`odd/tasks/roles-permisos-matriz.md` S1)**: todo endpoint del servicio
+exige un rol en `ROLES_EXTRACCION` = `admin`, `gerencia`, `lider_comercial`, `comercial`
+(`auth.py:35`), aplicado por `get_drogueria_id_actual` vía `require_roles` (`auth.py:38-39`).
+`compras` y `superadmin` reciben 403. Ver [`casos_de_uso.md`](./casos_de_uso.md)
+"Resumen de auth por endpoint".
+
 Este documento cubre 10 archivos — el resto de `services/extraccion/`
 (`robot.py`, `robot_comparativas.py`, `parsers.py`, `config.py`, `gemini_errors.py`) es
 el módulo "Extracción IA", documentado por separado en

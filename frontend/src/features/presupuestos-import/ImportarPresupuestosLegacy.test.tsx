@@ -57,9 +57,14 @@ describe('ImportarPresupuestosLegacy', () => {
     vi.mocked(importarPresupuestosLegacy).mockReset()
   })
 
-  it('bloquea la navegación directa de un rol de solo lectura y permite a un rol de escritura', () => {
+  it('S6: solo admin puede navegar directo a la importación legacy', () => {
+    expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('admin') as never)).not.toThrow()
+    expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('gerencia') as never)).toThrow()
+    expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('compras') as never)).toThrow()
+  })
+
+  it('sigue bloqueando la navegación directa de superadmin', () => {
     expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('superadmin') as never)).toThrow()
-    expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('compras') as never)).not.toThrow()
   })
 
   it('muestra la vista previa con la cantidad de presupuestos y filas detectadas', async () => {

@@ -31,9 +31,10 @@ from services.terceros.identidad.service import (
 
 router = APIRouter()
 
-# D3/RLS (0008_terceros_modelo.sql: terceros_ins/terceros_upd): mismo set de
-# roles con permiso de escritura sobre terceros.
-_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial", "comercial", "compras")
+# RLS (0037_roles_permisos_matriz.sql, que redefine las políticas de escritura
+# de 0008_terceros_modelo.sql): solo admin/gerencia/lider_comercial escriben
+# terceros, direcciones y contactos (odd/tasks/roles-permisos-matriz.md S4).
+_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial")
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 
 

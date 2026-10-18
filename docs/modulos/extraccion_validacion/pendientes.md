@@ -6,12 +6,12 @@ P3 (mejora, sin urgencia).
 ## P2 — `_ROLES_VALIDAR` no incluye `superadmin` (código muerto en `router.py`)
 
 Agregado por el change `validar-extraccion` (design.md §8.2/§14). `_ROLES_VALIDAR`
-(`router.py:23`, también usado por `GET /extracciones/{id}/filas` desde este change)
+(`router.py:28`, también usado por `GET /extracciones/{id}/filas` desde este change)
 es `("admin", "gerencia", "lider_comercial", "comercial")` — **no incluye
 `"superadmin"`**. `require_roles(*_ROLES_VALIDAR)` le devuelve 403 a un `superadmin`
 antes de que el handler corra, lo que vuelve **código muerto** la rama
 `if usuario.rol != "superadmin"` de `_verificar_pertenencia`
-(`router.py:48` — exime a `superadmin` del chequeo de `drogueria_id`, pero esa rama
+(`router.py:55` — exime a `superadmin` del chequeo de `drogueria_id`, pero esa rama
 nunca se alcanza porque el `Depends(require_roles(...))` ya cortó antes).
 
 El patrón se replicó tal cual (mismo criterio que el resto del módulo) por
@@ -19,12 +19,12 @@ consistencia con `POST .../validar`, que ya tenía este mismo gap antes de este
 change — no es una regresión introducida acá, es la misma brecha heredada,
 ahora también presente en los dos endpoints nuevos de lectura.
 
-**Pendiente de definición funcional**: decidir si `superadmin` debe poder
-validar/leer extracciones de cualquier droguería (en cuyo caso `_ROLES_VALIDAR`
-necesita agregar `"superadmin"` y la rama de `_verificar_pertenencia` deja de ser
-código muerto) o si es intencional que solo pueda operar vía otro camino
-(no identificado en esta sesión). Bugfix aparte, fuera del alcance de
-`validar-extraccion`.
+**Definido por la matriz de roles** (`odd/tasks/roles-permisos-matriz.md` S2): es
+intencional — `superadmin` (y `compras`) no participan de la extracción. El listado
+`GET /extracciones` también dejó de admitirlos (`_ROLES_LECTURA`, `router.py:31`, hoy
+idéntico a `_ROLES_VALIDAR`, `router.py:28`). Lo que sigue pendiente es solo limpieza:
+la rama `if usuario.rol != "superadmin"` de `_verificar_pertenencia` sigue siendo
+código muerto.
 
 ## P2 — Materialización de comparativa no es transaccional entre statements
 

@@ -15,8 +15,8 @@ sesión.
 - **Motivo**: no documentado explícitamente en el código. Inferido de la estructura: las
   reglas de estas operaciones son más finas que lo que una policy de RLS podría expresar
   razonablemente — por ejemplo, distinguir "cambiar rol hacia `admin`" (solo
-  `superadmin`, RN-USUARIOS-015) de "cambiar rol dentro de la misma droguería" (`admin`,
-  RN-USUARIOS-010), o bloquear la auto-modificación (RN-USUARIOS-014/017/023), algo que
+  `superadmin`, RN-USUARIOS-015) de "cambiar rol dentro de la misma droguería" (`admin`/`gerencia`,
+  RN-USUARIOS-010) o acotar a `gerencia` a roles inferiores a `admin` (RN-USUARIOS-029), o bloquear la auto-modificación (RN-USUARIOS-014/017/023), algo que
   la policy `usuarios_upd` de la base ni siquiera contempla (ver
   `docs/schema/rls_final.sql:121-123`: no distingue `usuario_id == auth.uid()`).
 - **Ventajas**: reglas de negocio expresivas y testeables en Python, con mensajes de
@@ -59,9 +59,13 @@ sesión.
   asociada (RN-USUARIOS-027) sin necesitar un servidor HTTP real.
 - **Desventajas**: la lógica de negocio queda desacoplada de la autorización HTTP
   (`require_roles` en `router.py`), que se convierte en una capa de responsabilidad
-  separada y potencialmente duplicada: la whitelist de roles `("superadmin", "admin")`
-  está repetida en `router.py` (4 endpoints de escritura) y de nuevo, de forma distinta,
-  dentro de cada función de `service.py` (RN-USUARIOS-001/008/016/022).
+  separada y potencialmente duplicada: la whitelist de roles se evalúa en `router.py`
+  (4 endpoints de escritura) y de nuevo dentro de cada función de `service.py`
+  (RN-USUARIOS-001/008/016/022). Desde la matriz de roles
+  (odd/tasks/roles-permisos-matriz.md S7) ambas capas comparten la misma constante
+  `ROLES_GESTION_USUARIOS` = `("superadmin", "admin", "gerencia")` (`service.py:12`,
+  importada en `router.py:15`), así que ya no pueden divergir en el set de roles; el
+  alcance fino de `gerencia` (RN-USUARIOS-029) vive solo en `service.py`.
 
 ### D-USUARIOS-004 — `es_sistema` hardcodeado; `Rol` (Python) excluye `"sistema"`
 

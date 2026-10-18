@@ -37,3 +37,48 @@ describe('Sidebar: Compromisos de entrega', () => {
     expect(screen.queryByText('Compromisos de entrega')).toBeNull()
   })
 })
+
+describe('Sidebar: matriz de roles', () => {
+  it.each<Rol>(['admin', 'gerencia', 'lider_comercial', 'comercial'])('S1/S2: muestra carga y validación a %s', (rol) => {
+    rolActual.valor = rol
+    render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'Carga de documentos' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Validar extracción' })).toBeTruthy()
+  })
+
+  it.each<Rol>(['compras', 'superadmin'])('S1/S2: oculta carga y validación a %s', (rol) => {
+    rolActual.valor = rol
+    render(<Sidebar />)
+    expect(screen.queryByText('Carga de documentos')).toBeNull()
+    expect(screen.queryByText('Validar extracción')).toBeNull()
+  })
+
+  it('S6: "Importar presupuestos" solo para admin', () => {
+    rolActual.valor = 'admin'
+    const { unmount } = render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'Importar presupuestos' })).toBeTruthy()
+    unmount()
+    for (const rol of ['gerencia', 'compras'] as Rol[]) {
+      rolActual.valor = rol
+      const r = render(<Sidebar />)
+      expect(screen.queryByText('Importar presupuestos')).toBeNull()
+      r.unmount()
+    }
+  })
+
+  it('S7: "Usuarios" visible para gerencia', () => {
+    rolActual.valor = 'gerencia'
+    render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toBeTruthy()
+  })
+
+  it('S10: "Usuarios" sigue oculto para comercial y PCP sigue visible para compras', () => {
+    rolActual.valor = 'comercial'
+    const { unmount } = render(<Sidebar />)
+    expect(screen.queryByText('Usuarios')).toBeNull()
+    unmount()
+    rolActual.valor = 'compras'
+    render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'PCP' })).toBeTruthy()
+  })
+})

@@ -31,10 +31,10 @@ from services.terceros.catalogos.service import (
 
 router = APIRouter()
 
-# RLS (0008_terceros_modelo.sql: sec_ins/cp_ins/fp_ins): los catálogos
-# comerciales solo se escriben desde admin/gerencia, más restrictivo que
-# terceros_ins/terceros_upd.
-_ROLES_ESCRITURA = ("admin", "gerencia")
+# RLS (0037_roles_permisos_matriz.sql, que redefine sec_*/cp_*/fp_* de
+# 0008_terceros_modelo.sql): los catálogos comerciales se escriben desde
+# admin/gerencia/lider_comercial (odd/tasks/roles-permisos-matriz.md S5).
+_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial")
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 
 

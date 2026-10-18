@@ -3,6 +3,10 @@
 > **Nota (T2, 2026-09-25)**: el HTML legacy y `routers/licitaciones.py` mencionados en
 > algunas reglas abajo se retiraron (`odd/tasks/extraccion-multi-tenant.md`); la
 > identificación pasó a obligatoria en T1. Contenido conservado como registro histórico.
+> Desde la matriz de roles (`odd/tasks/roles-permisos-matriz.md` S1) además se exige rol:
+> `ROLES_EXTRACCION` = `admin`, `gerencia`, `lider_comercial`, `comercial`
+> (`services/extraccion/auth.py:35`, `:38-39`); `compras` y `superadmin` reciben 403 en
+> todos los endpoints. RN-EXTRACCIONAPI-008 ya no describe el comportamiento vigente.
 
 Todas las reglas fueron verificadas contra el código real (`main.py`, `routers/*.py`,
 `supabase_client.py`, `persistent_output.py`, `persistent_chunking.py`,

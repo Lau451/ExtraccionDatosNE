@@ -45,7 +45,7 @@ la navegación a la ruta protegida ocurra antes de que `perfil` esté resuelto �
 secuencia descripta.
 
 **Corrección frente a la versión anterior de esta nota**: antes se afirmaba que "ninguna guard
-depende de `perfil`". Eso ya no es cierto — `requireRole` (`routeGuards.ts:15-22`) **sí** depende
+depende de `perfil`". Eso ya no es cierto — `requireRole` (`routeGuards.ts:27-35`) **sí** depende
 de `context.auth.perfil`, y tiene call sites reales fuera del alcance de este módulo
 (`routes/_authenticated.admin.usuarios.tsx:6`, `routes/_authenticated.superadmin.empresas.tsx:6`).
 El bug de timing corregido en esta sesión (`perfilLoading`, ver [`decisiones.md`](./decisiones.md)
@@ -101,7 +101,7 @@ el caso automático — en los dos manuales, el propio componente ya navega expl
 Usuario navega a una ruta bajo el layout /_authenticated (p. ej. "/")
         │
         ▼
-beforeLoad: requireAuth (_authenticated.tsx:8, ejecuta routeGuards.ts:9-13)
+beforeLoad: requireAuth (_authenticated.tsx:8, ejecuta routeGuards.ts:10-14)
         │
         ├── context.auth.isAuthenticated === true ──► continúa el render normal (<Outlet />)
         │
@@ -119,10 +119,13 @@ que la pantalla ya está montada, es el `useEffect` reactivo de `_authenticated.
 flujo 2) el que redirige — no `requireAuth`.
 
 **Rutas con `requireRole`** (fuera del alcance de archivos de esta documentación, pero relevantes
-acá): `routes/_authenticated.admin.usuarios.tsx` y `routes/_authenticated.superadmin.empresas.tsx`
-agregan, sobre el mismo `beforeLoad`, la verificación de rol de `requireRole(...roles)`
-(`routeGuards.ts:15-22`) — si `perfil` es `null` o su `rol` no está en la whitelist, redirige a `/`
-en vez de a `/login`. Ver [`decisiones.md`](./decisiones.md) D-LOGIN-005 para el bug de timing que
+acá): todas las rutas de negocio de `routes/_authenticated.*.tsx` — entre ellas
+`routes/_authenticated.admin.usuarios.tsx`, `routes/_authenticated.superadmin.empresas.tsx` y,
+desde la matriz de roles (S9), `routes/_authenticated.index.tsx` (`/`) — agregan, sobre el mismo
+`beforeLoad`, la verificación de rol de `requireRole(...roles)` (`routeGuards.ts:27-35`) — si
+`perfil` es `null` o su `rol` no está en la whitelist, redirige a `homeForRol(rol)`
+(`routeGuards.ts:20-25`: `/`, `/productos`, `/superadmin/empresas` o `/mi-cuenta`) en vez de a
+`/login`. Ver [`decisiones.md`](./decisiones.md) D-LOGIN-005 para el bug de timing que
 esto exponía y su corrección.
 
 ## 4. Acceso a `/login` ya autenticado

@@ -80,10 +80,18 @@ archivado (`tasks.md:87-89`: actualizar `PROGRESS.md` a "✅ Hecho" y mover el c
 documentación, ya cubierto en [`../frontend_login/`](../frontend_login/README.md)) y envuelve todas
 las rutas protegidas.
 
-**Sidebar desalineado con las 8 pantallas del MVP — CONFIRMADO**: `NAV_ITEMS`
-(`Sidebar.tsx:12-19`) declara 6 ítems — "Carga de documentos" (única habilitada, apunta a `/`),
-"Licitaciones", "Calendario", "Historial", "Presupuestos", "Comparativas" (las 5 restantes con
-`disabled: true`) — que **no corresponden** a los nombres de las 8 pantallas de
+**Gate por rol (matriz de roles, `odd/tasks/roles-permisos-matriz.md` S1/S2/S6/S7/S9)**: "Carga de
+documentos" (`/`) y "Validar extracción" ya no están en `NAV_ITEMS`; se agregan en `navItems`
+solo para `CARGA_DOCUMENTOS_ROLES`/`VALIDAR_EXTRACCION_ROLES` (`admin`, `gerencia`,
+`lider_comercial`, `comercial`; `Sidebar.tsx:46-51`). "Importar presupuestos" solo para `admin`
+(`PRESUPUESTOS_LEGACY_IMPORT_ROLES`, `:53-56`) y "Usuarios" para `USUARIOS_ROLES` (`admin`,
+`superadmin`, `gerencia`, `:61`). Mismos roles que los guards de las rutas destino.
+
+**Sidebar desalineado con las 8 pantallas del MVP — CONFIRMADO** (estado de la revisión original;
+hoy `NAV_ITEMS`, `Sidebar.tsx:18-30`, tiene "Productos", "Terceros" y los 5 ítems deshabilitados, y
+los ítems por rol se arman en `:45-63`): `NAV_ITEMS` declaraba 6 ítems — "Carga de documentos"
+(única habilitada, apunta a `/`), "Licitaciones", "Calendario", "Historial", "Presupuestos",
+"Comparativas" (las 5 restantes con `disabled: true`) — que **no corresponden** a los nombres de las 8 pantallas de
 `frontend/PROGRESS.md:8-16` ("Login", "Carga de documentos", "Validar extracción", "Procesos
 comerciales", "Matching", "Presupuestos", "Comparativas", "Compras"): no hay ítem para "Procesos
 comerciales", "Validar extracción", "Matching" ni "Compras", y sí hay dos ítems ("Licitaciones",
