@@ -81,9 +81,11 @@ interface NavItem {
 // Sidebar.tsx:4-8 (no exportado)
 
 const NAV_ITEMS: NavItem[]
-// Sidebar.tsx:12-19 (no exportado, constante de módulo)
-// 6 items: "Carga de documentos" (habilitado, to: '/'), "Licitaciones", "Calendario",
-// "Historial", "Presupuestos", "Comparativas" (los 5 restantes con disabled: true).
+// Sidebar.tsx:18-30 (no exportado, constante de módulo)
+// Ítems sin gate por rol: "Productos", "Terceros" y "Licitaciones", "Calendario",
+// "Historial", "Presupuestos", "Comparativas" (estos 5 con disabled: true).
+// "Carga de documentos" (to: '/') ya no está acá: desde la matriz de roles (S1) se agrega en
+// Sidebar() solo si puedeRol(perfil?.rol, CARGA_DOCUMENTOS_ROLES) (:48).
 // Comentario explícito de placeholder (:10-11) — ver README.md.
 
 export function Sidebar(): JSX.Element

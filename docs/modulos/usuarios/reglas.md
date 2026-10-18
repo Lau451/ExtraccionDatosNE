@@ -9,52 +9,69 @@ actualización. El módulo creció de 4 endpoints a 7 y de 2 funciones de negoci
 antes; algunas se modificaron (marcadas **[MODIFICADA]**) y se agregan RN-USUARIOS-013
 en adelante.
 
+**Matriz de roles (odd/tasks/roles-permisos-matriz.md S7)**: `gerencia` se suma a
+`superadmin`/`admin` como rol de gestión de usuarios (`ROLES_GESTION_USUARIOS`,
+`service.py:12`), acotado a su propia droguería y a los roles inferiores a `admin`
+(`ROLES_GESTIONABLES_POR_GERENCIA`, `service.py:16`; RN-USUARIOS-029). Los mensajes de
+RN-USUARIOS-001/008/016/022 y de las reglas de tenant RN-USUARIOS-010/020/026 cambiaron en
+consecuencia. Los casos de `gerencia` y la preservación de `admin`/`superadmin` están
+cubiertos en `tests/usuarios/test_router.py:100-252`.
+
 ## Reglas de creación (`crear_usuario`)
 
-### RN-USUARIOS-001 — Solo `superadmin`/`admin` pueden crear usuarios
+### RN-USUARIOS-001 — **[MODIFICADA]** Solo `superadmin`/`admin`/`gerencia` pueden crear usuarios
 
 - **Descripción**: cualquier otro rol que intente crear un usuario es rechazado antes de
-  evaluar el resto de las reglas.
-- **Condición**: `creador.rol not in ("superadmin", "admin")`.
-- **Resultado**: `ForbiddenError("Solo superadmin o admin pueden crear usuarios")`.
+  evaluar el resto de las reglas. `gerencia` se sumó con la matriz de roles (S7), con el
+  alcance acotado de RN-USUARIOS-029.
+- **Condición**: `creador.rol not in ROLES_GESTION_USUARIOS`
+  (`("superadmin", "admin", "gerencia")`, `service.py:12`).
+- **Resultado**: `ForbiddenError("Solo superadmin, admin o gerencia pueden crear usuarios")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:14-15`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:25-26`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
-  `tests/usuarios/test_service.py:128-132` (`test_rol_no_autorizado_no_puede_crear_usuario`).
+  `tests/usuarios/test_service.py:128-132` (`test_rol_no_autorizado_no_puede_crear_usuario`)
+  y, vía HTTP, en `tests/usuarios/test_router.py:244-252`
+  (`test_roles_sin_gestion_siguen_rechazados`: `lider_comercial`, `comercial` y `compras`
+  reciben 403 en el guard del router).
 
 ### RN-USUARIOS-002 — **[MODIFICADA]** Un `admin` no puede crear usuarios con rol `superadmin` NI `admin`
 
 - **Descripción**: antes de esta sesión solo se bloqueaba crear un `superadmin`; ahora
   también se bloquea crear un `admin`. Crear cualquiera de los dos roles queda reservado
-  a un `superadmin`.
+  a un `superadmin` — aplica igual a `admin` y a `gerencia`.
 - **Condición**: `body.rol in ("superadmin", "admin") and creador.rol != "superadmin"`.
 - **Resultado**: `ForbiddenError("Solo superadmin puede crear usuarios con rol superadmin o admin")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:17-18`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:28-29`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en dos tests separados —
   `tests/usuarios/test_service.py:62-65` (`test_admin_no_puede_crear_superadmin`) y
   `tests/usuarios/test_service.py:68-71` (`test_admin_no_puede_crear_admin`, nuevo en
   esta sesión). Contraparte positiva: `test_superadmin_crea_admin`
-  (`tests/usuarios/test_service.py:74-83`).
+  (`tests/usuarios/test_service.py:74-83`). Para `gerencia`:
+  `tests/usuarios/test_router.py:138-143`
+  (`test_gerencia_no_puede_invitar_admin_ni_superadmin`).
 
-### RN-USUARIOS-003 — Si el creador es `admin`, se fuerza su propia `drogueria_id`
+### RN-USUARIOS-003 — **[MODIFICADA]** Si el creador es `admin` o `gerencia`, se fuerza su propia `drogueria_id`
 
 - **Descripción**: el valor de `body.drogueria_id` se ignora por completo cuando el
-  creador es `admin`; se usa siempre `creador.drogueria_id`.
-- **Condición**: `creador.rol == "admin"`.
+  creador es `admin` o `gerencia`; se usa siempre `creador.drogueria_id`.
+- **Condición**: `creador.rol in ("admin", "gerencia")`.
 - **Resultado**: `drogueria_id = creador.drogueria_id`, sin importar qué venga en el body.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:20-21`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:34-35`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
-  `tests/usuarios/test_service.py:46-59` (`test_admin_crea_usuario_fuerza_su_propia_drogueria`).
+  `tests/usuarios/test_service.py:46-59` (`test_admin_crea_usuario_fuerza_su_propia_drogueria`)
+  y, para `gerencia`, en `tests/usuarios/test_router.py:128-135`
+  (`test_gerencia_invita_rol_inferior_en_su_drogueria`).
 
 ### RN-USUARIOS-004 — Si el creador es `superadmin`, se respeta `body.drogueria_id`
 
 - **Descripción**: contraparte de RN-USUARIOS-003.
-- **Condición**: `creador.rol != "admin"` (en la práctica, `superadmin`).
+- **Condición**: `creador.rol not in ("admin", "gerencia")` (en la práctica, `superadmin`).
 - **Resultado**: `drogueria_id = body.drogueria_id`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:22-23`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:36-37`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:88-100` (`test_superadmin_crea_usuario_con_drogueria_explicita`).
 
@@ -65,7 +82,7 @@ en adelante.
 - **Condición**: `body.rol == "superadmin" and drogueria_id is not None`.
 - **Resultado**: `ValidationError("Un usuario superadmin no debe tener drogueria_id")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:25-26`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:39-40`.
 - **Observaciones**: [IMPLEMENTADO]. Camino contrario cubierto por
   `test_superadmin_crea_otro_superadmin_sin_drogueria`
   (`tests/usuarios/test_service.py:103-113`); no hay test que dispare específicamente
@@ -77,7 +94,7 @@ en adelante.
 - **Condición**: `body.rol != "superadmin" and drogueria_id is None`.
 - **Resultado**: `ValidationError("Los usuarios no-superadmin requieren drogueria_id")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:27-28`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:41-42`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:116-125`
   (`test_superadmin_crea_usuario_no_superadmin_sin_drogueria_lanza_validation_error`).
@@ -89,7 +106,7 @@ en adelante.
 - **Condición**: cualquier llamada exitosa a `crear_usuario`.
 - **Resultado**: la fila insertada en `usuarios` siempre tiene `es_sistema=False`.
 - **Prioridad**: Media.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:47`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:61`.
 - **Observaciones**: [IMPLEMENTADO]. Consistente con el CHECK de la base
   `ck_usuarios_es_sistema: (rol = 'sistema') = (es_sistema = TRUE)`
   (`docs/schema/rls_final.sql:43`): como el `Literal Rol` de Python nunca permite
@@ -134,17 +151,18 @@ en adelante.
 
 ## Reglas de cambio de rol (`cambiar_rol`)
 
-### RN-USUARIOS-008 — Solo `superadmin`/`admin` pueden cambiar el rol de otro usuario
+### RN-USUARIOS-008 — **[MODIFICADA]** Solo `superadmin`/`admin`/`gerencia` pueden cambiar el rol de otro usuario
 
 - **Descripción**: misma restricción de rol que RN-USUARIOS-001, aplicada a `cambiar_rol`.
-- **Condición**: `creador.rol not in ("superadmin", "admin")`.
-- **Resultado**: `ForbiddenError("Solo superadmin o admin pueden cambiar roles")`.
+- **Condición**: `creador.rol not in ROLES_GESTION_USUARIOS` (`service.py:12`).
+- **Resultado**: `ForbiddenError("Solo superadmin, admin o gerencia pueden cambiar roles")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:55-56`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:69-70`.
 - **Observaciones**: [IMPLEMENTADO]. Sin test directo en
-  `tests/usuarios/test_service.py` que dispare específicamente esta rama con un rol no
-  autorizado — ver [`pendientes.md`](./pendientes.md) (hallazgo preexistente, sigue sin
-  cubrirse).
+  `tests/usuarios/test_service.py` que dispare específicamente esta rama del service con
+  un rol no autorizado — ver [`pendientes.md`](./pendientes.md). Vía HTTP, el guard del
+  router rechaza con 403 a `lider_comercial`/`comercial`/`compras` antes de llegar acá
+  (`tests/usuarios/test_router.py:244-252`).
 
 ### RN-USUARIOS-014 — **[NUEVA]** Nadie puede cambiar su propio rol
 
@@ -156,7 +174,7 @@ en adelante.
 - **Condición**: `usuario_id == creador.id`.
 - **Resultado**: `ForbiddenError("No podés cambiar tu propio rol")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:58-59`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:72-73`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:238-245` (`test_no_se_puede_cambiar_el_propio_rol`).
 
@@ -167,7 +185,7 @@ en adelante.
 - **Condición**: `repo.obtener_usuario(client, usuario_id=usuario_id)` devuelve `None`.
 - **Resultado**: `NotFoundError("No se encontró el usuario")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:61-63`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:75-77`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:202-210` (`test_cambiar_rol_usuario_inexistente_lanza_not_found`).
   Ver [`flujo.md`](./flujo.md) para el orden completo de validaciones.
@@ -185,7 +203,7 @@ en adelante.
 - **Condición**: `objetivo["rol"] in ("superadmin", "sistema") or nuevo_rol in ("superadmin", "sistema")`.
 - **Resultado**: `ForbiddenError("Cambiar desde/hacia superadmin o sistema no está permitido por esta vía")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:65-68`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:79-82`.
 - **Observaciones**: [IMPLEMENTADO]. La rama `superadmin` sigue verificada en dos tests
   — `tests/usuarios/test_service.py:179-188` (`test_cambiar_rol_no_permite_hacia_superadmin`)
   y `tests/usuarios/test_service.py:191-199` (`test_cambiar_rol_no_permite_desde_superadmin`).
@@ -201,23 +219,27 @@ en adelante.
 - **Condición**: `nuevo_rol == "admin" and creador.rol != "superadmin"`.
 - **Resultado**: `ForbiddenError("Solo superadmin puede asignar el rol admin")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:70-71`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:84-85`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en dos tests —
   `tests/usuarios/test_service.py:213-222` (`test_admin_no_puede_promover_a_admin`) y
   `tests/usuarios/test_service.py:225-234` (`test_superadmin_puede_promover_a_admin`).
+  También aplica a `gerencia`: `tests/usuarios/test_router.py:154-158`
+  (`test_gerencia_no_puede_asignar_admin`).
 
-### RN-USUARIOS-010 — Un `admin` solo puede cambiar rol dentro de su propia `drogueria_id`
+### RN-USUARIOS-010 — **[MODIFICADA]** Un `admin` o `gerencia` solo puede cambiar rol dentro de su propia `drogueria_id`
 
-- **Descripción**: un `admin` está acotado a los usuarios de su propia droguería; un
-  `superadmin` no tiene esta restricción (más allá de RN-USUARIOS-009/015).
-- **Condición**: `creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id`.
-- **Resultado**: `ForbiddenError("Un admin solo puede modificar usuarios de su droguería")`.
+- **Descripción**: `admin` y `gerencia` están acotados a los usuarios de su propia
+  droguería; un `superadmin` no tiene esta restricción (más allá de
+  RN-USUARIOS-009/015). Se evalúa después de RN-USUARIOS-029.
+- **Condición**: `creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id`.
+- **Resultado**: `ForbiddenError("Un admin solo puede modificar usuarios de su droguería")` (admin) o `ForbiddenError("Gerencia solo puede modificar usuarios de su droguería")` (gerencia).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:73-74`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:91-92`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:151-176` (`test_admin_no_puede_cambiar_rol_de_usuario_de_otra_drogueria`);
   camino positivo en `tests/usuarios/test_service.py:139-148`
-  (`test_admin_cambia_rol_de_usuario_de_su_drogueria`).
+  (`test_admin_cambia_rol_de_usuario_de_su_drogueria`). Para `gerencia`, caso
+  `comercial-otra` de `tests/usuarios/test_router.py:161-171`.
 
 ### RN-USUARIOS-012 — `nuevo_rol` no está tipado contra `Rol`
 
@@ -229,7 +251,7 @@ en adelante.
 - **Resultado**: si el valor no cumple el CHECK de `rol` en Postgres, la excepción del
   driver de Supabase no está mapeada a ningún `DomainError` de este módulo.
 - **Prioridad**: Baja.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:52-54` (firma).
+- **Archivo**: `services/presupuestacion/usuarios/service.py:66-68` (firma).
 - **Observaciones**: [IMPLEMENTADO] el hecho de que sigue sin tipar. Sin cambios desde
   la última revisión. Ver [`pendientes.md`](./pendientes.md) P3.
 
@@ -237,14 +259,16 @@ en adelante.
 
 `cambiar_activo` no existía en la revisión anterior; toda esta sección es nueva.
 
-### RN-USUARIOS-016 — Solo `superadmin`/`admin` pueden activar/desactivar usuarios
+### RN-USUARIOS-016 — **[MODIFICADA]** Solo `superadmin`/`admin`/`gerencia` pueden activar/desactivar usuarios
 
-- **Condición**: `creador.rol not in ("superadmin", "admin")`.
-- **Resultado**: `ForbiddenError("Solo superadmin o admin pueden activar/desactivar usuarios")`.
+- **Condición**: `creador.rol not in ROLES_GESTION_USUARIOS` (`service.py:12`).
+- **Resultado**: `ForbiddenError("Solo superadmin, admin o gerencia pueden activar/desactivar usuarios")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:82-83`.
-- **Observaciones**: [IMPLEMENTADO]. Sin test directo que ejercite un rol no autorizado
-  para `cambiar_activo` — mismo gap que RN-USUARIOS-008, ver [`pendientes.md`](./pendientes.md).
+- **Archivo**: `services/presupuestacion/usuarios/service.py:100-101`.
+- **Observaciones**: [IMPLEMENTADO]. Sin test directo del service que ejercite un rol no
+  autorizado para `cambiar_activo` — mismo gap que RN-USUARIOS-008, ver
+  [`pendientes.md`](./pendientes.md); vía HTTP lo cubre
+  `tests/usuarios/test_router.py:244-252`.
 
 ### RN-USUARIOS-017 — Nadie puede activarse/desactivarse a sí mismo
 
@@ -254,7 +278,7 @@ en adelante.
 - **Condición**: `usuario_id == creador.id`.
 - **Resultado**: `ForbiddenError("No podés activar/desactivar tu propio usuario")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:85-86`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:103-104`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:304-309` (`test_no_se_puede_desactivar_el_propio_usuario`).
 
@@ -263,7 +287,7 @@ en adelante.
 - **Condición**: `repo.obtener_usuario(client, usuario_id=usuario_id)` devuelve `None`.
 - **Resultado**: `NotFoundError("No se encontró el usuario")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:88-90`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:106-108`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:323-331` (`test_cambiar_activo_usuario_inexistente_lanza_not_found`).
 
@@ -275,24 +299,24 @@ en adelante.
 - **Condición**: `objetivo["rol"] in ("superadmin", "sistema")`.
 - **Resultado**: `ForbiddenError("No se puede activar/desactivar un superadmin o sistema por esta vía")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:92-93`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:110-111`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:293-301` (`test_no_se_puede_desactivar_superadmin`) y
   `tests/usuarios/test_service.py:312-320` (`test_no_se_puede_desactivar_usuario_sistema`,
   usa el fixture `seed_usuario_sistema` de `tests/conftest.py:126-142` — confirma
   empíricamente el bug real que motivó extender RN-USUARIOS-009 también acá).
 
-### RN-USUARIOS-020 — Un `admin` solo puede activar/desactivar usuarios de su propia `drogueria_id`
+### RN-USUARIOS-020 — **[MODIFICADA]** Un `admin` o `gerencia` solo puede activar/desactivar usuarios de su propia `drogueria_id`
 
-- **Condición**: `creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id`.
-- **Resultado**: `ForbiddenError("Un admin solo puede modificar usuarios de su droguería")`.
+- **Condición**: `creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id`.
+- **Resultado**: `ForbiddenError("Un admin solo puede modificar usuarios de su droguería")` (admin) o `ForbiddenError("Gerencia solo puede modificar usuarios de su droguería")` (gerencia).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:95-96`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:115-116`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:269-290` (`test_admin_no_puede_desactivar_usuario_de_otra_drogueria`);
   camino positivo en `tests/usuarios/test_service.py:252-266`
   (`test_admin_desactiva_usuario_de_su_drogueria`, que además confirma la
-  reactivación con `activo=True`).
+  reactivación con `activo=True`). Para `gerencia`: `tests/usuarios/test_router.py:174-187`.
 
 ### RN-USUARIOS-021 — El gate real de `activo=False` está en `get_current_user`, no en `cambiar_activo`
 
@@ -322,21 +346,22 @@ en adelante.
 Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 (RN-USUARIOS-016 a 020), aplicado a un `DELETE` en vez de un `UPDATE`.
 
-### RN-USUARIOS-022 — Solo `superadmin`/`admin` pueden eliminar usuarios
+### RN-USUARIOS-022 — **[MODIFICADA]** Solo `superadmin`/`admin`/`gerencia` pueden eliminar usuarios
 
-- **Condición**: `creador.rol not in ("superadmin", "admin")`.
-- **Resultado**: `ForbiddenError("Solo superadmin o admin pueden eliminar usuarios")`.
+- **Condición**: `creador.rol not in ROLES_GESTION_USUARIOS` (`service.py:12`).
+- **Resultado**: `ForbiddenError("Solo superadmin, admin o gerencia pueden eliminar usuarios")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:102-103`.
-- **Observaciones**: [IMPLEMENTADO]. Sin test directo que ejercite un rol no autorizado
-  — mismo gap que RN-USUARIOS-008/016.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:122-123`.
+- **Observaciones**: [IMPLEMENTADO]. Sin test directo del service que ejercite un rol no
+  autorizado — mismo gap que RN-USUARIOS-008/016; vía HTTP lo cubre
+  `tests/usuarios/test_router.py:244-252`.
 
 ### RN-USUARIOS-023 — Nadie puede eliminarse a sí mismo
 
 - **Condición**: `usuario_id == creador.id`.
 - **Resultado**: `ForbiddenError("No podés eliminar tu propio usuario")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:105-106`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:125-126`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:363-366` (`test_no_se_puede_eliminar_el_propio_usuario`).
 
@@ -345,7 +370,7 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 - **Condición**: `repo.obtener_usuario(client, usuario_id=usuario_id)` devuelve `None`.
 - **Resultado**: `NotFoundError("No se encontró el usuario")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:108-110`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:128-130`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:399-406` (`test_eliminar_usuario_inexistente_lanza_not_found`).
 
@@ -354,23 +379,24 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 - **Condición**: `objetivo["rol"] in ("superadmin", "sistema")`.
 - **Resultado**: `ForbiddenError("No se puede eliminar un superadmin o sistema por esta vía")`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:112-113`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:132-133`.
 - **Observaciones**: [IMPLEMENTADO] la rama `superadmin`, verificada en
   `tests/usuarios/test_service.py:369-374` (`test_no_se_puede_eliminar_superadmin`).
   **No se encontró un test que ejercite la rama `sistema` para `eliminar_usuario`**
   (sí existe para `cambiar_activo`, RN-USUARIOS-019) — gap anotado en
   [`pendientes.md`](./pendientes.md).
 
-### RN-USUARIOS-026 — Un `admin` solo puede eliminar usuarios de su propia `drogueria_id`
+### RN-USUARIOS-026 — **[MODIFICADA]** Un `admin` o `gerencia` solo puede eliminar usuarios de su propia `drogueria_id`
 
-- **Condición**: `creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id`.
-- **Resultado**: `ForbiddenError("Un admin solo puede eliminar usuarios de su droguería")`.
+- **Condición**: `creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id`.
+- **Resultado**: `ForbiddenError("Un admin solo puede eliminar usuarios de su droguería")` (admin) o `ForbiddenError("Gerencia solo puede eliminar usuarios de su droguería")` (gerencia).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:115-116`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:137-138`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:378-396` (`test_admin_no_puede_eliminar_usuario_de_otra_drogueria`);
   camino positivo en `tests/usuarios/test_service.py:355-360`
-  (`test_admin_elimina_usuario_de_su_drogueria`).
+  (`test_admin_elimina_usuario_de_su_drogueria`). Para `gerencia`:
+  `tests/usuarios/test_router.py:190-203`.
 
 ### RN-USUARIOS-027 — Eliminar un usuario con actividad asociada falla con `ConflictError` (409), no con un error crudo
 
@@ -396,6 +422,40 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   [`decisiones.md`](./decisiones.md) para por qué se eligió mapear **todo**
   `AuthApiError` acá a `ConflictError`, sin distinguir por status como en la invitación.
 
+## Reglas de alcance de `gerencia` — **[NUEVA, matriz de roles S7]**
+
+### RN-USUARIOS-029 — `gerencia` solo gestiona usuarios de roles inferiores a `admin`
+
+- **Descripción**: `gerencia` puede crear, cambiar el rol, activar/desactivar y eliminar
+  usuarios, pero solo de los roles `gerencia`, `lider_comercial`, `comercial` y `compras`
+  de su propia droguería (RN-USUARIOS-003/010/020/026). Nunca toca usuarios `admin`
+  (ni `superadmin`/`sistema`, ya protegidos por RN-USUARIOS-009/019/025) ni asigna
+  `admin`. Las reglas existentes siguen valiendo: nadie se modifica a sí mismo
+  (RN-USUARIOS-014/017/023) y solo `superadmin` asigna `admin` (RN-USUARIOS-002/015).
+- **Condición**: `creador.rol == "gerencia"` y, según la operación:
+  - crear: `body.rol not in ROLES_GESTIONABLES_POR_GERENCIA` (`service.py:31-32`);
+  - cambiar rol / activar-desactivar / eliminar: `objetivo["rol"] not in
+    ROLES_GESTIONABLES_POR_GERENCIA` (`_validar_objetivo_de_gerencia`, `service.py:19-21`,
+    invocado en `:87`, `:113`, `:135`);
+  - cambiar rol: además `nuevo_rol not in ROLES_GESTIONABLES_POR_GERENCIA`
+    (`service.py:88-89`).
+- **Resultado**: `ForbiddenError("Gerencia solo puede crear usuarios de roles inferiores a admin")`,
+  `ForbiddenError("Gerencia solo puede gestionar usuarios de roles inferiores a admin")` o
+  `ForbiddenError("Gerencia solo puede asignar roles inferiores a admin")`, respectivamente.
+- **Prioridad**: Alta.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:12-21`, `:31-32`, `:87-89`,
+  `:113`, `:135`.
+- **Observaciones**: [IMPLEMENTADO]. Como `Rol` solo admite los 6 roles de negocio
+  (`models.py:7`) y RN-USUARIOS-002/009/015 se evalúan antes, las ramas de `:31-32` y
+  `:88-89` son defensa en profundidad: en la práctica el intento de `gerencia` de crear o
+  asignar `admin`/`superadmin` lo rechazan esas reglas previas con su propio mensaje.
+  La rama efectiva es `_validar_objetivo_de_gerencia` sobre un objetivo `admin`.
+  Verificado vía HTTP en `tests/usuarios/test_router.py:128-203` (casos permitidos y
+  rechazados de `gerencia`: objetivos `admin`, otra droguería, `superadmin`, `sistema` y
+  uno mismo), con preservación de `admin`/`superadmin` en `:210-241`. El frontend
+  espeja la regla: `gerencia` no ve la opción `admin` ni puede editar filas `admin`
+  (`frontend/src/features/gestion-usuarios/GestionUsuarios.tsx:34-37`).
+
 ## Reglas de autoservicio de perfil (`actualizar_perfil_propio`) — **[NUEVA función]**
 
 ### RN-USUARIOS-028 — Cualquier usuario autenticado edita su propio `nombre`/`apellido`, sin chequeo de rol
@@ -404,15 +464,15 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   no valida `creador.rol` en absoluto. La restricción real de "solo tu propio perfil" no
   es una regla de negocio explícita en `service.py` — es que el router toma `usuario_id`
   del propio token (`usuario.id` resuelto por `get_current_user`,
-  `router.py:73`), no de un parámetro de la URL, así que no hay forma de pasar el `id` de
+  `router.py:74`), no de un parámetro de la URL, así que no hay forma de pasar el `id` de
   otro usuario desde este endpoint.
 - **Condición**: cualquier request autenticado a `PATCH /usuarios/me`.
 - **Resultado**: se actualizan únicamente los campos provistos en el body
-  (`body.model_dump(exclude_unset=True)`, `service.py:127`) — un campo omitido no se
+  (`body.model_dump(exclude_unset=True)`, `service.py:149`) — un campo omitido no se
   toca, no se pisa con `None`.
 - **Prioridad**: Media.
-- **Archivo**: `services/presupuestacion/usuarios/service.py:121-128`,
-  `services/presupuestacion/usuarios/router.py:70-75`.
+- **Archivo**: `services/presupuestacion/usuarios/service.py:143-150`,
+  `services/presupuestacion/usuarios/router.py:71-76`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en
   `tests/usuarios/test_service.py:339-347`
   (`test_actualizar_perfil_propio_solo_toca_campos_provistos`, que actualiza solo

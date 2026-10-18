@@ -77,20 +77,29 @@ interface GuardArgs {
   context: { auth: { isAuthenticated: boolean; perfil: { rol: Rol } | null } }
   location: { href: string }
 }
-// routeGuards.ts:4-7 (no exportado)
+// routeGuards.ts:5-8 (no exportado)
 
 export function requireAuth({ context, location }: GuardArgs): void
-// routeGuards.ts:9-13
+// routeGuards.ts:10-14
 // throw redirect({ to: '/login', search: { redirect: location.href } }) si no está autenticado.
 // Usado en beforeLoad de _authenticated.tsx:8.
 
+export function homeForRol(rol: Rol | undefined): string
+// routeGuards.ts:20-25
+// Pantalla de aterrizaje por rol (S9): '/' para CARGA_DOCUMENTOS_ROLES (admin, gerencia,
+// lider_comercial, comercial), '/productos' para compras, '/superadmin/empresas' para
+// superadmin y '/mi-cuenta' (sin guard de rol) si no hay perfil resuelto.
+
 export function requireRole(...roles: Rol[]): (args: GuardArgs) => void
-// routeGuards.ts:15-22
+// routeGuards.ts:27-35
 // Compone requireAuth + verificación de que perfil.rol esté en `roles`; si no,
-// throw redirect({ to: '/' }).
-// CON call sites reales — corrige lo documentado anteriormente ("sin ningún call site"):
-// routes/_authenticated.admin.usuarios.tsx:6 (requireRole('admin', 'superadmin')) y
-// routes/_authenticated.superadmin.empresas.tsx:6 (requireRole('superadmin')). Ambos archivos
+// throw redirect({ to: homeForRol(rol) }) (routeGuards.ts:32) — ya no a '/' fijo: '/'
+// tiene guard de rol propio desde la matriz de roles (odd/tasks/roles-permisos-matriz.md S9)
+// y rebotar ahí a un rol denegado provocaría un loop.
+// CON call sites reales — corrige lo documentado anteriormente ("sin ningún call site"),
+// p. ej. routes/_authenticated.admin.usuarios.tsx:7 (requireRole(...USUARIOS_ROLES) =
+// 'admin', 'superadmin', 'gerencia') y routes/_authenticated.superadmin.empresas.tsx:6
+// (requireRole('superadmin')); hoy todas las rutas de negocio lo usan. Ambos archivos
 // están fuera del alcance de esta documentación (no pertenecen a features/auth/ ni a las rutas
 // listadas acá), pero se cita el call site porque depende de `perfil` estar resuelto — ver
 // decisiones.md D-LOGIN-005.

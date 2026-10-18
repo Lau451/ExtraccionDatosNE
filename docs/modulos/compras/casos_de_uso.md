@@ -36,9 +36,9 @@ ruta abajo es literal, tal como aparece en `router.py`.
 
 - **Qué hace**: registra una entrega física de mercadería sobre una OC, ajustando el
   stock del catálogo por los ítems con `producto_id`.
-- **Roles**: `_ROLES_ENTREGA` = `admin`, `gerencia`, `lider_comercial`, `comercial`,
-  `compras` (`router.py:22`, `:85`) — único endpoint de escritura que admite el rol
-  `"compras"`.
+- **Roles**: `_ROLES_ENTREGA` = `admin`, `gerencia`, `lider_comercial`, `comercial`
+  (`router.py:23`, `:86`) — mismo set que `_ROLES_OC`; `"compras"` ya no registra
+  entregas (odd/tasks/roles-permisos-matriz.md S8, "Planificar entregas").
 - **Función**: `crear_entrega_endpoint` (`router.py:82-95`) →
   `crear_entrega_para_endpoint` (`service.py:306-323`) → `crear_entrega`
   (`service.py:198-285`).

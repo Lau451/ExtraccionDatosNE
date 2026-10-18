@@ -70,7 +70,11 @@ submódulos de `services/pcp/`.
 >    `proceso_comercial`, `fecha_generacion`, `renglon`, `codigo_producto`,
 >    `descripcion_producto`, `cantidad_producto`, `precio_producto`,
 >    `importe_total`. El subtotal por renglón no se importa:
->    `presupuesto_items.monto_total` es GENERATED.
+>    `presupuesto_items.monto_total` es GENERATED. Roles: solo `admin`
+>    (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, `services/pcp/roles.py:20`, aplicado en
+>    `services/pcp/imports/router.py:45`; matriz de roles,
+>    `odd/tasks/roles-permisos-matriz.md` S6). El import de PCP (punto 2) sigue con
+>    `ROLES_ESCRITURA_PCP` (`admin`, `gerencia`, `compras`).
 > 2. **PCP** — `POST /pcp/imports/legacy`. Busca el presupuesto ya importado
 >    por `numero_presupuesto` y reusa su proceso e `items_proceso` (nunca los
 >    crea). Rechaza el lote entero (404) si falta el número, si el presupuesto
@@ -150,7 +154,7 @@ sistema de referencia primario.
 
 | Archivo | Qué hace |
 |---|---|
-| `services/pcp/roles.py` | `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP` (D11) — compartidas por los 6 routers. |
+| `services/pcp/roles.py` | `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP` (D11) — compartidas por los 6 routers — y `ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)` (S6 de la matriz de roles), solo para `/pcp/imports/presupuestos-legacy`. |
 | `services/pcp/errors.py` | Códigos Postgres compartidos (`UNIQUE_VIOLATION`, `CHECK_VIOLATION`) — no lógica de traducción. |
 | `services/pcp/router.py` | Agrega los 6 routers de submódulo en un único `APIRouter`. |
 | `services/pcp/api.py` | Fachada unidireccional: reexporta modelos/funciones de servicio de todos los submódulos. |

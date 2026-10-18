@@ -106,9 +106,11 @@ duplicado. [IMPLEMENTADO].
 
 6 roles, definidos en un único `Literal` en `services/presupuestacion/usuarios/models.py:5`:
 `superadmin`, `admin`, `gerencia`, `lider_comercial`, `comercial`, `compras`.
-[IMPLEMENTADO]. `services/extraccion` no tiene roles propios — su docstring lo dice
-explícitamente ("este servicio no tiene roles ni RLS propios",
-`services/extraccion/auth.py:3`).
+[IMPLEMENTADO]. `services/extraccion` no tiene RLS propia (usa `service_role`), pero desde
+la rama `feat/roles-permisos-matriz` sí tiene guard de rol: `ROLES_EXTRACCION`
+(`admin`, `gerencia`, `lider_comercial`, `comercial`) en `services/extraccion/auth.py`,
+aplicado dentro de `get_drogueria_id_actual`, de la que dependen todos sus endpoints.
+La matriz completa de pantallas y acciones por rol está en [§2.6](#26-matriz-de-permisos-por-rol).
 
 ### 2.2 Enforcement en el router — `require_roles`
 
@@ -247,6 +249,49 @@ destructivas/sensibles sobre otro usuario:
   `sistema`; en `cambiar_rol` la rama `sistema` está implementada en el código pero **sin
   test dedicado** que la ejercite (gap anotado en
   `docs/modulos/usuarios/pendientes.md`, ver también `reglas.md` RN-USUARIOS-009).
+
+### 2.6 Matriz de permisos por rol
+
+Fuente de verdad funcional: `docs/seguridad/matriz-roles.xlsx` (hoja `Propuesta`,
+definida por el usuario; la hoja `Actual (referencia)` conserva el estado previo).
+Implementada en `odd/tasks/roles-permisos-matriz.md` (S1-S10). Cada fila se aplica dos
+veces: en el backend (`require_roles`, 403) y en el frontend (guard de ruta
+`requireRole` y botones con `puedeRol`, listas en `frontend/src/features/*/roles.ts`).
+El guard del frontend es UX; el backend es el control real.
+
+| Pantalla / acción | Roles con acceso |
+|---|---|
+| Carga de documentos y subir documento | admin, gerencia, lider_comercial, comercial |
+| Validar extracción (listado, detalle, agrupar, validar) | admin, gerencia, lider_comercial, comercial |
+| Productos: ver catálogo y stock | los 6 |
+| Productos: ver costos | superadmin, admin, gerencia, lider_comercial, compras |
+| Productos: escribir producto, costo, stock | admin, gerencia, compras |
+| Productos: categorías | admin, gerencia |
+| Terceros: ver | los 6 |
+| Terceros: crear/editar terceros, direcciones, contactos | admin, gerencia, lider_comercial |
+| Terceros: catálogos de apoyo (sectores, condiciones y formas de pago) | admin, gerencia, lider_comercial |
+| Compromisos de entrega | todos menos superadmin |
+| Órdenes de compra: resumen | los 6 |
+| Órdenes de compra: matching, confirmar, planificar y registrar entregas | admin, gerencia, lider_comercial, comercial |
+| PCP: ver | superadmin, admin, gerencia, compras |
+| PCP: escribir e importar PCP | admin, gerencia, compras |
+| Importar presupuestos legacy | admin |
+| Usuarios: gestionar | superadmin, admin, gerencia (gerencia solo sobre gerencia/lider_comercial/comercial/compras de su droguería; no toca admins ni asigna admin) |
+| Empresas (droguerías) | superadmin |
+| Mi cuenta | todos |
+
+**Pantalla de aterrizaje por rol** (`homeForRol`, `frontend/src/features/auth/routeGuards.ts`):
+un rol denegado en una ruta se redirige a su home, no siempre a `/`, para evitar un loop
+cuando el propio `/` le está vedado: `/` para los 4 roles de carga, `/productos` para
+`compras`, `/superadmin/empresas` para `superadmin`, `/mi-cuenta` sin perfil.
+
+**RLS**: la migración `supabase/migrations/0037_roles_permisos_matriz.sql` alinea las
+políticas `INSERT`/`UPDATE` de terceros (`terceros_*`, `tdir_*`, `du_*`, `tc_*`) y de
+catálogos (`sec_*`, `cp_*`, `fp_*`) con la matriz. `terceros_legacy_map` (`tlm_*`) no se
+toca porque la escribe la importación legacy de clientes/proveedores. Las políticas de
+`costos_productos` y `entregas_oc*` existen solo en `docs/schema/rls_final.sql` (no en
+migraciones) y no se modificaron; como esas escrituras/lecturas usan `service_role`, el
+control efectivo es `require_roles` (ver §2.3).
 
 ---
 

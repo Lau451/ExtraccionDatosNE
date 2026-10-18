@@ -57,8 +57,8 @@ Disparado por `POST /ordenes-compra/{orden_compra_id}/entregas`. El detalle del 
 de stock (pasos internos de `stock.entregar_stock_producto`) está documentado en
 [`../core/flujo.md`](../core/flujo.md) Flujo D — no se repite acá.
 
-1. El router valida rol (`_ROLES_ENTREGA`, que incluye `"compras"` además de los roles
-   de `_ROLES_OC`) y pertenencia de droguería de la OC (`router.py:88`,
+1. El router valida rol (`_ROLES_ENTREGA`, mismos roles que `_ROLES_OC`, sin
+   `"compras"`, `router.py:23`) y pertenencia de droguería de la OC (`router.py:89`,
    RN-COMPRAS-014).
 2. `crear_entrega_para_endpoint` resuelve `get_service_client()` (`service.py:316-323`)
    y delega en `crear_entrega`.

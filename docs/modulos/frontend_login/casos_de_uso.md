@@ -38,10 +38,10 @@ usa y con qué restricciones.
 
 El login en sí **no distingue roles**: cualquier usuario con credenciales válidas en Supabase Auth
 puede autenticarse y llegar a `isAuthenticated: true`, independientemente de su `rol` resuelto
-(`perfil.rol`). La guard usada por `/_authenticated` en sí, `requireAuth` (`routeGuards.ts:9-13`),
+(`perfil.rol`). La guard usada por `/_authenticated` en sí, `requireAuth` (`routeGuards.ts:10-14`),
 no consulta `perfil` en ningún punto.
 
-`requireRole(...roles: Rol[])` (`routeGuards.ts:15-22`) restringe por rol, aceptando cualquier
+`requireRole(...roles: Rol[])` (`routeGuards.ts:27-35`) restringe por rol, aceptando cualquier
 combinación de los 6 valores de `Rol` (`superadmin`, `admin`, `gerencia`, `lider_comercial`,
 `comercial`, `compras` — `AuthContext.tsx:6`, idéntica a la lista del backend en
 `usuarios/models.py:5`). **Corrección frente a la versión anterior de esta documentación**: sí
@@ -49,8 +49,16 @@ tiene call sites reales, ambos fuera del alcance de archivos de este módulo:
 
 | Ruta | `requireRole(...)` | Archivo |
 |---|---|---|
-| `/_authenticated/admin/usuarios` | `'admin'`, `'superadmin'` | `routes/_authenticated.admin.usuarios.tsx:6` |
+| `/_authenticated/admin/usuarios` | `USUARIOS_ROLES` = `'admin'`, `'superadmin'`, `'gerencia'` | `routes/_authenticated.admin.usuarios.tsx:7` |
 | `/_authenticated/superadmin/empresas` | `'superadmin'` | `routes/_authenticated.superadmin.empresas.tsx:6` |
+| `/_authenticated/` (carga de documentos) | `CARGA_DOCUMENTOS_ROLES` = `'admin'`, `'gerencia'`, `'lider_comercial'`, `'comercial'` | `routes/_authenticated.index.tsx:8` |
+
+No es la lista completa: desde la matriz de roles (odd/tasks/roles-permisos-matriz.md S9)
+todas las rutas de negocio de `routes/_authenticated.*.tsx` declaran `requireRole` (productos,
+terceros, PCP, compromisos, órdenes de compra, validar extracción, importar presupuestos). Un rol
+que no alcanza no rebota a `/` sino a su pantalla de aterrizaje, `homeForRol(rol)`
+(`routeGuards.ts:20-25`): `/` para los roles de carga de documentos, `/productos` para
+`compras`, `/superadmin/empresas` para `superadmin` y `/mi-cuenta` sin perfil resuelto.
 
 Ver [`README.md`](./README.md), [`decisiones.md`](./decisiones.md) (D-LOGIN-003 corregida,
 D-LOGIN-005) y [`pendientes.md`](./pendientes.md).

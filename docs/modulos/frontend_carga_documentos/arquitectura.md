@@ -151,12 +151,13 @@ asociado.
 
 ## Relación con el Shell (`Sidebar.tsx`)
 
-`Sidebar.tsx` no importa nada de `features/carga-documentos/` ni de `lib/api/extraccion.ts` /
-`lib/api/procesosComerciales.ts` — su único acoplamiento con este módulo es de **navegación**: el
-ítem habilitado `{ label: 'Carga de documentos', to: '/' }` (`Sidebar.tsx:13`) apunta a la ruta
-donde se monta `CargaDocumentos` (`routes/_authenticated.index.tsx:2,5`, confirmado por grep en
-esta sesión: `import { CargaDocumentos } from '@/features/carga-documentos/CargaDocumentos'` y
-`component: CargaDocumentos`). El resto de la relación de `Sidebar.tsx` (con `AuthContext`, JWT,
+`Sidebar.tsx` no importa nada de `lib/api/extraccion.ts` / `lib/api/procesosComerciales.ts`; de
+`features/carga-documentos/` importa solo `CARGA_DOCUMENTOS_ROLES` (`roles.ts`, `Sidebar.tsx:3`,
+matriz de roles S1). Su acoplamiento con este módulo es de **navegación**: el ítem
+`{ label: 'Carga de documentos', to: '/' }` (`Sidebar.tsx:48`), visible solo para
+`CARGA_DOCUMENTOS_ROLES`, apunta a la ruta donde se monta `CargaDocumentos`
+(`routes/_authenticated.index.tsx:3`, `:9`), que tiene el mismo guard
+(`beforeLoad: requireRole(...CARGA_DOCUMENTOS_ROLES)`, `:8`). El resto de la relación de `Sidebar.tsx` (con `AuthContext`, JWT,
 logout) ya está cubierto en [`../frontend_login/arquitectura.md`](../frontend_login/arquitectura.md)
 y no se repite acá — ver la sección "Shell / Navegación" de [`README.md`](./README.md) para el
 detalle de desalineación con las 8 pantallas del MVP.

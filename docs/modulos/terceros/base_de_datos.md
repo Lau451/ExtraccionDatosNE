@@ -64,10 +64,26 @@ justificación de por qué cada tabla resuelve el conflicto distinto).
 
 ## RLS y versión de Postgres
 
-Las 8 tablas llevan el conjunto unión de roles de escritura de `clientes` y
-`proveedores` (`admin`, `gerencia`, `lider_comercial`, `comercial`, `compras`) — un
-tercero puede cumplir ambos roles, restringir a uno solo bloquearía al otro. `DELETE`
-reservado a `superadmin()`. El guard `M0` de la migración exige
+La migración 0008 les dio a `terceros`, `tercero_direcciones`, `direccion_usos`,
+`terceros_contactos` y `terceros_legacy_map` el conjunto unión de roles de escritura de
+`clientes` y `proveedores` (`admin`, `gerencia`, `lider_comercial`, `comercial`,
+`compras`) — un tercero puede cumplir ambos roles, restringir a uno solo bloquearía al
+otro — y a los catálogos (`sectores_contacto`, `condiciones_pago`, `formas_pago`)
+solo `admin`/`gerencia`. **Matriz de roles**
+(`supabase/migrations/0037_roles_permisos_matriz.sql`,
+`odd/tasks/roles-permisos-matriz.md` S4/S5) redefine el `INSERT`/`UPDATE`:
+
+- `terceros`, `tercero_direcciones`, `direccion_usos`, `terceros_contactos`
+  (`terceros_ins/upd`, `tdir_*`, `du_*`, `tc_*`): solo `admin`, `gerencia`,
+  `lider_comercial` — `comercial` y `compras` pierden la escritura (S4).
+- `sectores_contacto`, `condiciones_pago`, `formas_pago` (`sec_*`, `cp_*`, `fp_*`):
+  `admin`, `gerencia`, `lider_comercial` — suma `lider_comercial` (S5).
+- `terceros_legacy_map` (`tlm_*`), las policies `*_sel` (lectura para todo el tenant) y
+  `*_del` no cambian. `DELETE` sigue reservado a `superadmin()`.
+
+Es defensa en profundidad: los routers escriben con service client, así que el guard
+efectivo es `require_roles` con `_ROLES_ESCRITURA` (`services/terceros/identidad/router.py:37`,
+`direcciones/router.py:29`, `contactos/router.py:23`, `catalogos/router.py:37`). El guard `M0` de la migración exige
 `server_version_num >= 150000` (requerido por `WITH (security_invoker = true)`, D6): la
 migración 0008 se aplicó con éxito contra el proyecto de test
 (`grnamollopxdlstcpxhc`), lo que confirma indirectamente que ese proyecto corre

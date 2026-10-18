@@ -170,7 +170,8 @@ que ejercite:
   confirmación y entrega.
 - El ruteo por rol de los 5 endpoints (`_ROLES_OC` vs. `_ROLES_ENTREGA` vs.
   `_ROLES_LECTURA` vs. la whitelist inline de `compras_vs_cotizado_endpoint`,
-  RN-COMPRAS-013).
+  RN-COMPRAS-013), salvo `_ROLES_ENTREGA`: `tests/test_roles_matriz_backend.py:172-186`
+  verifica 403 para `compras`/`superadmin` y que los otros 4 roles pasan el guard.
 - Los 2 endpoints de lectura sobre vistas (`GET /entregas/pendientes`,
   `GET /compras/vs-cotizado`), que no tienen ningún test en absoluto (ni de service ni
   de router, porque no tienen `service.py` propio).

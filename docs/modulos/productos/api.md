@@ -413,8 +413,9 @@ router = APIRouter()
 _ROLES_LECTURA_CATALOGO = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 _ROLES_ESCRITURA_CATALOGO = ("admin", "gerencia", "compras")
 _ROLES_ESCRITURA_CATEGORIAS = ("admin", "gerencia")
-_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "compras")
-# router.py:43-46
+_ROLES_LECTURA_COSTOS = ("superadmin", "admin", "gerencia", "lider_comercial", "compras")
+# router.py:59-62 — lider_comercial agregado en _ROLES_LECTURA_COSTOS por la matriz de
+# roles (odd/tasks/roles-permisos-matriz.md S3); comercial sigue sin ver costos.
 ```
 
 | Método | Path | Request | Response | Roles requeridos | Archivo |

@@ -48,13 +48,15 @@ LoginForm.tsx  routeGuards.ts   routes/login.tsx   routes/_authenticated.tsx
   `useAuth().signIn` (`LoginForm.tsx:6`, `:17`). No tiene lógica de red propia. Agrega un `<Link
   to="/reset-password">` (`LoginForm.tsx:68-70`).
 - **`routeGuards.ts`** no importa `AuthContext.tsx` ni `supabase.ts`: recibe el estado de auth como
-  parámetro (`context.auth`, tipado en `GuardArgs`, `routeGuards.ts:4-7`) inyectado por TanStack
+  parámetro (`context.auth`, tipado en `GuardArgs`, `routeGuards.ts:5-8`) inyectado por TanStack
   Router — ver más abajo cómo llega ese contexto. **Corrección frente a la versión anterior de esta
-  documentación**: `requireRole` ya no es código sin uso — tiene 2 call sites reales,
-  `routes/_authenticated.admin.usuarios.tsx:6` y `routes/_authenticated.superadmin.empresas.tsx:6`
-  (ambos fuera del alcance de archivos de esta documentación). Eso es justamente lo que hace
+  documentación**: `requireRole` ya no es código sin uso — lo usan todas las rutas de negocio,
+  p. ej. `routes/_authenticated.admin.usuarios.tsx:7` y `routes/_authenticated.superadmin.empresas.tsx:6`
+  (fuera del alcance de archivos de esta documentación). Eso es justamente lo que hace
   observable el bug de timing corregido en esta sesión (ver más abajo): `requireRole` lee
-  `context.auth.perfil`, que antes podía llegar `null` al montar el router.
+  `context.auth.perfil`, que antes podía llegar `null` al montar el router. Desde la matriz de
+  roles (S9), `routeGuards.ts` importa `CARGA_DOCUMENTOS_ROLES`
+  (`features/carga-documentos/roles.ts`) para `homeForRol` (`routeGuards.ts:2`, `:20-25`).
 - **`routes/login.tsx`**, **`routes/reset-password.tsx`**, **`routes/accept-invite.tsx`** y
   **`routes/_authenticated.tsx`** son los puntos de entrada de UI/routing: el primero renderiza
   `LoginForm`; los dos siguientes resuelven, vía `useSessionFromLink`, si mostrar el formulario de
@@ -83,13 +85,13 @@ como `context={{ auth }}` a `<RouterProvider>` (`main.tsx:28`). Ese es el mecani
 Antes de esta sesión, `InnerApp()` solo esperaba `auth.loading` (resolución de la sesión de
 Supabase) antes de montar el `RouterProvider`. Pero `perfil` se resuelve en un segundo paso
 asíncrono aparte (el fetch a `GET /usuarios/{id}` dentro de `AuthContext.tsx`), y `requireRole()`
-(`routeGuards.ts:15-22`) depende de `context.auth.perfil` para decidir si autoriza. El router podía
+(`routeGuards.ts:27-35`) depende de `context.auth.perfil` para decidir si autoriza. El router podía
 montarse — y `beforeLoad` podía correr — con `session` ya resuelta pero `perfil` todavía `null`.
 
 **Síntoma reproducido en esta sesión** (confirmado en vivo con Chrome): recargar directamente (deep
 link) una ruta con `requireRole`, como `/admin/usuarios`, rebotaba a `/` aunque el usuario
 autenticado tuviera el rol correcto — porque `requireRole` veía `perfil: null` en ese instante y
-tomaba la rama de "no autorizado" (`routeGuards.ts:18-20`).
+tomaba la rama de "no autorizado" (`routeGuards.ts:30-32`).
 
 **Fix**: `AuthContext.tsx` expone ahora `perfilLoading` (`AuthContext.tsx:23`, `:41`), secuenciado
 explícitamente para no arrancar hasta que `loading` sea `false` (guard en `:62`, comentario

@@ -10,7 +10,7 @@ archivos del módulo, releídos en esta sesión.
 |---|---|---|
 | `UsuarioPerfil` | `core/auth.py` | Tipo del `creador`/`usuario` autenticado en `service.py:5` y `router.py:4`. |
 | `get_current_user` | `core/auth.py` | Dependencia de los 2 endpoints GET y de `PATCH /usuarios/me`, sin exigir rol (`router.py:4`, `:27`, `:36`, `:73`). |
-| `require_roles` | `core/auth.py` | Dependencia de POST, `PATCH /rol`, `PATCH /activo` y `DELETE`, exige `superadmin`/`admin` (`router.py:4`, `:47`, `:56`, `:65`, `:81`). |
+| `require_roles` | `core/auth.py` | Dependencia de POST, `PATCH /rol`, `PATCH /activo` y `DELETE`, exige `ROLES_GESTION_USUARIOS` = `superadmin`/`admin`/`gerencia` (`router.py:48`, `:57`, `:66`, `:82`; constante en `service.py:12`, importada en `router.py:15`). |
 | `get_settings` | `core/config.py` | Resuelve `frontend_url` para armar el `redirect_to` de la invitación de email (`service.py:6`, `:30`). **Nuevo en esta sesión.** |
 | `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto internamente por los 5 wrappers `*_para_endpoint` (`service.py:7`, `:131-132`, `:135-136`, `:139-140`, `:143-146`, `:149-150`). |
 | `get_user_client` | `core/database.py` | Cliente con RLS, inyectado directo en los 2 endpoints GET (`router.py:5`, `:28`, `:37`). |
@@ -34,8 +34,9 @@ la revisión anterior — pero ahora aplica a 5 endpoints de escritura en vez de
   autorización depende únicamente de `Depends(get_current_user)` (sin `require_roles`) y
   del filtrado que aplique RLS del lado de Postgres.
 - **`POST /usuarios`, `PATCH /usuarios/{usuario_id}/rol`, `PATCH /usuarios/{usuario_id}/activo`
-  y `DELETE /usuarios/{usuario_id}`** (`router.py:45-49`, `:52-58`, `:61-67`, `:78-83`)
-  exigen `require_roles("superadmin", "admin")` y delegan en su wrapper
+  y `DELETE /usuarios/{usuario_id}`** (`router.py:46-50`, `:53-59`, `:62-68`, `:79-84`)
+  exigen `require_roles(*ROLES_GESTION_USUARIOS)` (`superadmin`, `admin`, `gerencia`) y
+  delegan en su wrapper
   `*_para_endpoint` correspondiente, que resuelve `get_service_client()` (sin RLS) y
   aplica las reglas de negocio de `service.py` antes de tocar `repository.py`.
 - **`PATCH /usuarios/me`** (`router.py:70-75`) es un tercer caso, nuevo en esta sesión:
@@ -63,8 +64,8 @@ D-USUARIOS-001 y D-USUARIOS-002, y el riesgo asociado en [`pendientes.md`](./pen
                                               PATCH /rol, /activo
         │                    │                    │                    │
   Depends(get_current_user)  Depends(get_current_user)  Depends(require_roles(
-  (router.py:27, :36)        (router.py:73)               "superadmin", "admin"))
-  → JWT válido + perfil      → JWT válido + perfil        (router.py:47, :56, :65, :81)
+  (router.py:28, :37)        (router.py:74)               *ROLES_GESTION_USUARIOS))
+  → JWT válido + perfil      → JWT válido + perfil        (router.py:48, :57, :66, :82)
     en `usuarios`, SIN rol     en `usuarios`, SIN rol    → exige además que
     específico                  específico                 usuario.rol esté en
         │                    │                              esa whitelist

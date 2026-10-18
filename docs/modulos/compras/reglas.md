@@ -241,21 +241,23 @@ RN-COMPRAS-NNN, correlativa.
     `_ROLES_OC = ("admin", "gerencia", "lider_comercial", "comercial")`
     (`router.py:21`).
   - `POST /ordenes-compra/{id}/entregas` →
-    `_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial",
-    "compras")` (`router.py:22`) — el único endpoint de escritura que además admite el
-    rol `"compras"`.
+    `_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial")`
+    (`router.py:23`) — mismo set que `_ROLES_OC`; `"compras"` ya no planifica
+    entregas (odd/tasks/roles-permisos-matriz.md S8).
   - `GET /entregas/pendientes` →
     `_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial",
-    "comercial", "compras")` (`router.py:23`).
+    "comercial", "compras")` (`router.py:24`).
   - `GET /compras/vs-cotizado` → whitelist inline, distinta de las 3 anteriores:
-    `("superadmin", "admin", "gerencia", "compras")` (`router.py:108-110`) — no incluye
+    `("superadmin", "admin", "gerencia", "compras")` (`router.py:109-111`) — no incluye
     `lider_comercial` ni `comercial`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/compras/router.py:21-23`, `:108-110`.
+- **Archivo**: `services/presupuestacion/compras/router.py:21-24`, `:109-111`.
 - **Observaciones**: [IMPLEMENTADO]. `superadmin` no puede crear ni confirmar OCs ni
   registrar entregas (no está en `_ROLES_OC` ni en `_ROLES_ENTREGA`) — solo tiene
-  acceso de lectura. No hay test que ejercite `router.py` para verificar el
-  enforcement real de roles (ver RN-COMPRAS-014 y [`pendientes.md`](./pendientes.md)).
+  acceso de lectura. El guard de rol de `POST /ordenes-compra/{id}/entregas` está cubierto
+  por `tests/test_roles_matriz_backend.py:172-183` (403 para `compras`/`superadmin`);
+  el resto del enforcement de roles de `router.py` sigue sin test (ver RN-COMPRAS-014 y
+  [`pendientes.md`](./pendientes.md)).
 
 ### RN-COMPRAS-014 — Doble validación de pertenencia de droguería (creación vs. resto)
 

@@ -6,8 +6,10 @@
 `services/presupuestacion/main.py:45` (tag `"extraccion"`).
 
 - **Roles habilitados**: `admin`, `gerencia`, `lider_comercial`, `comercial`
-  (`_ROLES_VALIDAR`, `router.py:12`, vía `require_roles(*_ROLES_VALIDAR)` de
-  `core.auth`, `router.py:19`).
+  (`_ROLES_VALIDAR`, `router.py:28`, vía `require_roles(*_ROLES_VALIDAR)` de
+  `core.auth`, `router.py:150`). El listado `GET /extracciones` usa `_ROLES_LECTURA`
+  (`router.py:31`), que desde la matriz de roles (`odd/tasks/roles-permisos-matriz.md`
+  S2) es el mismo set: `superadmin` y `compras` reciben 403 — ver RN-EXTRACCIONVALIDACION-011.
 - **Path param**: `extraction_id: str` — el `id` de la fila de `extraction_results`
   a validar.
 - **Body**: `ValidarExtraccionRequest` (`models.py:8-9`) — un único campo opcional

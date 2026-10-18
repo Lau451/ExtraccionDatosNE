@@ -28,11 +28,22 @@ del modal.
 
 ## Roles
 
-Este módulo (`FormCard`, `RecentCard`) no aplica ninguna lógica de rol propia: los dos endpoints que
-consume activamente (`GET /api/clientes`, `POST /procesar`, `GET /api/documentos`) no exigen roles
-específicos del lado de `services/extraccion` — consistente con
-[`../extraccion_api/casos_de_uso.md`](../extraccion_api/casos_de_uso.md) "Resumen de auth por
-endpoint": "este servicio no tiene roles ni RLS propios". El único punto de este módulo con
-restricción de rol real es el modal huérfano, indirectamente, a través de `_ROLES_ESCRITURA` del
-backend de `services/presupuestacion` (ver tabla arriba) — pero esa restricción no se ejercita hoy
-porque el componente no está montado.
+**[ACTUALIZADO — matriz de roles, `odd/tasks/roles-permisos-matriz.md` S1]**: la pantalla y los
+endpoints que consume quedan restringidos a `admin`, `gerencia`, `lider_comercial` y `comercial`;
+`compras` y `superadmin` no participan de la extracción.
+
+- **Frontend**: `CARGA_DOCUMENTOS_ROLES` (`frontend/src/features/carga-documentos/roles.ts:6`) gatea
+  la ruta `/` (`routes/_authenticated.index.tsx:8`, `beforeLoad: requireRole(...)`) y el ítem
+  "Carga de documentos" del Sidebar (`features/shell/Sidebar.tsx:48`). Un rol denegado que entra
+  a `/` rebota a su home (`homeForRol`, `features/auth/routeGuards.ts:20-25`: `compras` →
+  `/productos`, `superadmin` → `/superadmin/empresas`), nunca de vuelta a `/`.
+- **Backend**: los endpoints que consume este módulo (`GET /api/clientes`, `POST /procesar`,
+  `GET /api/documentos`) exigen `ROLES_EXTRACCION` (`services/extraccion/auth.py:35`, aplicado por
+  `get_drogueria_id_actual` vía `require_roles`, `:38-39`) — ver
+  [`../extraccion_api/casos_de_uso.md`](../extraccion_api/casos_de_uso.md) "Resumen de auth por
+  endpoint". La afirmación anterior ("este servicio no tiene roles ni RLS propios") ya no aplica.
+
+`FormCard` y `RecentCard` no aplican lógica de rol propia más allá de ese guard de ruta. El modal
+huérfano sigue restringido, indirectamente, por `_ROLES_ESCRITURA` del backend de
+`services/presupuestacion` (ver tabla arriba) — pero esa restricción no se ejercita hoy porque el
+componente no está montado.

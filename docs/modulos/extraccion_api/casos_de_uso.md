@@ -24,8 +24,11 @@ se indica explícitamente.
 ## `POST /procesar` — endpoint mixto (HTML legacy + JSON frontend nuevo)
 
 - **Método/path**: `POST /procesar`.
-- **Auth**: JWT opcional vía `Authorization: Bearer` (`get_usuario_id_actual`,
-  `Depends`); sin roles.
+- **Auth**: JWT obligatorio y rol en `ROLES_EXTRACCION` = `admin`, `gerencia`,
+  `lider_comercial`, `comercial` (`Depends(get_drogueria_id_actual)`, `main.py:474`, que
+  depende de `require_roles(*ROLES_EXTRACCION)`, `auth.py:35`, `:38-39`); `compras` y
+  `superadmin` reciben 403 (odd/tasks/roles-permisos-matriz.md S1). Antes: JWT opcional
+  vía `get_usuario_id_actual`, sin roles.
 - **Body**: `multipart/form-data` — `archivo` (requerido), `tipo`, `licitacion_id`,
   `cliente_id` (todos opcionales salvo `archivo`).
 - **Response**: HTML (`index.html` re-renderizado) o JSON `{ok, resultado?, error?, tipo?}`
@@ -67,19 +70,23 @@ site en el frontend nuevo (ver tensión documentada en
 
 | Método/Path | Roles | Response | Consumidor confirmado |
 |---|---|---|---|
-| `PATCH /api/extraction-results/{result_id}` | Ninguno | `ExtractionResultOut` (incluye `licitacion_id`) | `static/licitaciones.js:178-181` (función `_patchExtraction`, HTML legacy) — vincula/desvincula un archivo a una licitación desde el panel de detalle. `openspec/changes/validar-extraccion/proposal.md:41-43` evalúa reusar este mismo endpoint para el flujo nuevo de "Validar extracción" del frontend Vite/React, sin confirmar en esta sesión si ya se implementó. |
+| `PATCH /api/extraction-results/{result_id}` | `ROLES_EXTRACCION` (`admin`, `gerencia`, `lider_comercial`, `comercial`) vía `get_drogueria_id_actual` (`routers/extraction_results.py:37`) | `ExtractionResultOut` (incluye `licitacion_id`) | `static/licitaciones.js:178-181` (función `_patchExtraction`, HTML legacy) — vincula/desvincula un archivo a una licitación desde el panel de detalle. `openspec/changes/validar-extraccion/proposal.md:41-43` evalúa reusar este mismo endpoint para el flujo nuevo de "Validar extracción" del frontend Vite/React, sin confirmar en esta sesión si ya se implementó. |
 
 ## `routers/clientes.py` — `/api/clientes`
 
 | Método/Path | Roles | Response | Consumidor confirmado |
 |---|---|---|---|
-| `GET /api/clientes` | Ninguno | `list[ClienteActivo]` (`id, nombre`), vacío si Supabase no disponible | `frontend/src/lib/api/extraccion.ts:33-35` (`listarClientes`) — selector de cliente en el formulario de upload nuevo (§8). |
+| `GET /api/clientes` | `ROLES_EXTRACCION` vía `get_drogueria_id_actual` (`routers/clientes.py:39`) | `list[ClienteActivo]` (`id, nombre`), vacío si Supabase no disponible | `frontend/src/lib/api/extraccion.ts:33-35` (`listarClientes`) — selector de cliente en el formulario de upload nuevo (§8). |
 
 ## Resumen de auth por endpoint
 
-Ningún endpoint de este módulo usa `require_roles` (patrón de `presupuestacion/core/`) —
-consistente con el docstring de `auth.py:1-11`: "este servicio no tiene roles ni RLS
-propios". Solo `/procesar` tiene algún tipo de identificación (opcional, ver
-RN-EXTRACCIONAPI-008); el resto de los endpoints (routers + `/api/documentos*`) son
-completamente anónimos a nivel de aplicación (protegidos, si acaso, por estar detrás de
-`service_role` de Supabase y no exponer RLS).
+**[ACTUALIZADO — matriz de roles, odd/tasks/roles-permisos-matriz.md S1]**: todos los
+endpoints vigentes del servicio (`POST /procesar`, `GET /api/documentos`,
+`GET /api/documentos/{doc_id}`, `PATCH /api/extraction-results/{result_id}`,
+`GET /api/clientes`) dependen de `get_drogueria_id_actual` (`main.py:474`, `:635`, `:674`;
+`routers/extraction_results.py:37`; `routers/clientes.py:39`), que a su vez depende de
+`require_roles(*ROLES_EXTRACCION)` (`services/extraccion/auth.py:35`, `:38-39`). Es decir:
+JWT obligatorio, rol en `admin`/`gerencia`/`lider_comercial`/`comercial` (403 para `compras`
+y `superadmin`) y, después, droguería asignada (403 si falta, `auth.py:51-55`). Verificado
+en `tests/test_roles_matriz_backend.py:89-140`. La descripción anterior ("ningún endpoint
+usa `require_roles`", `/procesar` con JWT opcional y el resto anónimo) ya no aplica.

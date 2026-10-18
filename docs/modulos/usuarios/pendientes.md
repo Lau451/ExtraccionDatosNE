@@ -10,10 +10,10 @@ desactualizado); el resto son nuevos de esta sesión.
 
 1. **Los 2 endpoints GET no exigen rol ni filtran `drogueria_id` en Python, a diferencia
    de POST/PATCH/DELETE.** `GET /usuarios` y `GET /usuarios/{usuario_id}` solo declaran
-   `Depends(get_current_user)` (`router.py:27`, `:36`), sin `require_roles` ni un filtro
+   `Depends(get_current_user)` (`router.py:28`, `:37`), sin `require_roles` ni un filtro
    `.eq("drogueria_id", ...)` explícito — mientras que POST, los 2 PATCH de rol/activo y
-   el DELETE sí exigen `require_roles("superadmin", "admin")` (`router.py:47`, `:56`,
-   `:65`, `:81`). `PATCH /usuarios/me` es la única excepción deliberada (autoservicio del
+   el DELETE sí exigen `require_roles(*ROLES_GESTION_USUARIOS)` (`superadmin`, `admin`,
+   `gerencia`; `router.py:48`, `:57`, `:66`, `:82`). `PATCH /usuarios/me` es la única excepción deliberada (autoservicio del
    propio perfil, RN-USUARIOS-028). [IMPLEMENTADO] el hecho, sin cambios respecto de la
    revisión anterior.
 
@@ -59,7 +59,11 @@ desactualizado); el resto son nuevos de esta sesión.
    ni RN-USUARIOS-022 (`eliminar_usuario`) — confirmado por grep en
    `tests/usuarios/test_service.py`. [IMPLEMENTADO] el hecho de la ausencia; ya estaba
    señalado parcialmente para RN-USUARIOS-008 en la revisión anterior, y se confirma que
-   sigue así más el mismo gap en las 2 funciones nuevas.
+   sigue así más el mismo gap en las 2 funciones nuevas. Mitigado vía HTTP por la matriz
+   de roles: `tests/usuarios/test_router.py:244-252`
+   (`test_roles_sin_gestion_siguen_rechazados`) verifica 403 para `lider_comercial`,
+   `comercial` y `compras` en los 4 endpoints de gestión, pero el rechazo ocurre en el
+   guard del router (`require_roles`), no en la rama del service.
 
 6. **[NUEVO] Gap de tests: la protección de `sistema` en `cambiar_rol` y
    `eliminar_usuario` no tiene test dedicado.** El fixture `seed_usuario_sistema`
