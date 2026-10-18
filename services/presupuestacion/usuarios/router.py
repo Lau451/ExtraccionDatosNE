@@ -12,6 +12,7 @@ from services.presupuestacion.usuarios.models import (
     UsuarioRolUpdate,
 )
 from services.presupuestacion.usuarios.service import (
+    ROLES_GESTION_USUARIOS,
     actualizar_perfil_propio_para_endpoint,
     cambiar_activo_para_endpoint,
     cambiar_rol_para_endpoint,
@@ -44,7 +45,7 @@ def obtener_usuario_endpoint(
 
 @router.post("/usuarios", response_model=UsuarioOut)
 def crear_usuario_endpoint(
-    body: UsuarioCreate, usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin"))
+    body: UsuarioCreate, usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS))
 ) -> UsuarioOut:
     return crear_usuario_para_endpoint(creador=usuario, body=body)
 
@@ -53,7 +54,7 @@ def crear_usuario_endpoint(
 def cambiar_rol_endpoint(
     usuario_id: str,
     body: UsuarioRolUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
 ) -> UsuarioOut:
     return cambiar_rol_para_endpoint(creador=usuario, usuario_id=usuario_id, nuevo_rol=body.rol)
 
@@ -62,7 +63,7 @@ def cambiar_rol_endpoint(
 def cambiar_activo_endpoint(
     usuario_id: str,
     body: UsuarioActivoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
 ) -> UsuarioOut:
     return cambiar_activo_para_endpoint(creador=usuario, usuario_id=usuario_id, activo=body.activo)
 
@@ -78,6 +79,6 @@ def actualizar_perfil_propio_endpoint(
 @router.delete("/usuarios/{usuario_id}", status_code=204)
 def eliminar_usuario_endpoint(
     usuario_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles("superadmin", "admin")),
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
 ) -> None:
     eliminar_usuario_para_endpoint(creador=usuario, usuario_id=usuario_id)

@@ -9,15 +9,29 @@ from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundErr
 from services.presupuestacion.usuarios import repository as repo
 from services.presupuestacion.usuarios.models import UsuarioCreate, UsuarioPerfilUpdate
 
+ROLES_GESTION_USUARIOS = ("superadmin", "admin", "gerencia")
+
+# gerencia solo gestiona usuarios de estos roles ("solo roles inferiores",
+# odd/tasks/roles-permisos-matriz.md S7): nunca admin, superadmin ni sistema.
+ROLES_GESTIONABLES_POR_GERENCIA = ("gerencia", "lider_comercial", "comercial", "compras")
+
+
+def _validar_objetivo_de_gerencia(creador: UsuarioPerfil, objetivo: dict[str, Any]) -> None:
+    if creador.rol == "gerencia" and objetivo["rol"] not in ROLES_GESTIONABLES_POR_GERENCIA:
+        raise ForbiddenError("Gerencia solo puede gestionar usuarios de roles inferiores a admin")
+
 
 def crear_usuario(client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate) -> dict[str, Any]:
-    if creador.rol not in ("superadmin", "admin"):
-        raise ForbiddenError("Solo superadmin o admin pueden crear usuarios")
+    if creador.rol not in ROLES_GESTION_USUARIOS:
+        raise ForbiddenError("Solo superadmin, admin o gerencia pueden crear usuarios")
 
     if body.rol in ("superadmin", "admin") and creador.rol != "superadmin":
         raise ForbiddenError("Solo superadmin puede crear usuarios con rol superadmin o admin")
 
-    if creador.rol == "admin":
+    if creador.rol == "gerencia" and body.rol not in ROLES_GESTIONABLES_POR_GERENCIA:
+        raise ForbiddenError("Gerencia solo puede crear usuarios de roles inferiores a admin")
+
+    if creador.rol in ("admin", "gerencia"):
         drogueria_id = creador.drogueria_id
     else:
         drogueria_id = body.drogueria_id
@@ -52,8 +66,8 @@ def crear_usuario(client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate
 def cambiar_rol(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, nuevo_rol: str
 ) -> dict[str, Any]:
-    if creador.rol not in ("superadmin", "admin"):
-        raise ForbiddenError("Solo superadmin o admin pueden cambiar roles")
+    if creador.rol not in ROLES_GESTION_USUARIOS:
+        raise ForbiddenError("Solo superadmin, admin o gerencia pueden cambiar roles")
 
     if usuario_id == creador.id:
         raise ForbiddenError("No podés cambiar tu propio rol")
@@ -70,8 +84,12 @@ def cambiar_rol(
     if nuevo_rol == "admin" and creador.rol != "superadmin":
         raise ForbiddenError("Solo superadmin puede asignar el rol admin")
 
-    if creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Un admin solo puede modificar usuarios de su droguería")
+    _validar_objetivo_de_gerencia(creador, objetivo)
+    if creador.rol == "gerencia" and nuevo_rol not in ROLES_GESTIONABLES_POR_GERENCIA:
+        raise ForbiddenError("Gerencia solo puede asignar roles inferiores a admin")
+
+    if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
+        raise ForbiddenError("Solo podés modificar usuarios de tu droguería")
 
     return repo.actualizar_rol(client, usuario_id=usuario_id, rol=nuevo_rol)
 
@@ -79,8 +97,8 @@ def cambiar_rol(
 def cambiar_activo(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, activo: bool
 ) -> dict[str, Any]:
-    if creador.rol not in ("superadmin", "admin"):
-        raise ForbiddenError("Solo superadmin o admin pueden activar/desactivar usuarios")
+    if creador.rol not in ROLES_GESTION_USUARIOS:
+        raise ForbiddenError("Solo superadmin, admin o gerencia pueden activar/desactivar usuarios")
 
     if usuario_id == creador.id:
         raise ForbiddenError("No podés activar/desactivar tu propio usuario")
@@ -92,15 +110,17 @@ def cambiar_activo(
     if objetivo["rol"] in ("superadmin", "sistema"):
         raise ForbiddenError("No se puede activar/desactivar un superadmin o sistema por esta vía")
 
-    if creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Un admin solo puede modificar usuarios de su droguería")
+    _validar_objetivo_de_gerencia(creador, objetivo)
+
+    if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
+        raise ForbiddenError("Solo podés modificar usuarios de tu droguería")
 
     return repo.actualizar_activo(client, usuario_id=usuario_id, activo=activo)
 
 
 def eliminar_usuario(client: Client, *, creador: UsuarioPerfil, usuario_id: str) -> None:
-    if creador.rol not in ("superadmin", "admin"):
-        raise ForbiddenError("Solo superadmin o admin pueden eliminar usuarios")
+    if creador.rol not in ROLES_GESTION_USUARIOS:
+        raise ForbiddenError("Solo superadmin, admin o gerencia pueden eliminar usuarios")
 
     if usuario_id == creador.id:
         raise ForbiddenError("No podés eliminar tu propio usuario")
@@ -112,8 +132,10 @@ def eliminar_usuario(client: Client, *, creador: UsuarioPerfil, usuario_id: str)
     if objetivo["rol"] in ("superadmin", "sistema"):
         raise ForbiddenError("No se puede eliminar un superadmin o sistema por esta vía")
 
-    if creador.rol == "admin" and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Un admin solo puede eliminar usuarios de su droguería")
+    _validar_objetivo_de_gerencia(creador, objetivo)
+
+    if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
+        raise ForbiddenError("Solo podés eliminar usuarios de tu droguería")
 
     repo.eliminar_usuario_auth(client, usuario_id=usuario_id)
 
