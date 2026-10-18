@@ -19,7 +19,8 @@ from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundErr
 router = APIRouter()
 
 _ROLES_OC = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial", "compras")
+# Planificar entregas (odd/tasks/roles-permisos-matriz.md S8): compras no.
+_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial")
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 
 

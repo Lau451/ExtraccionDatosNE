@@ -26,7 +26,9 @@ from services.presupuestacion.extraccion.service import (
 router = APIRouter()
 
 _ROLES_VALIDAR = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
+# Listado de extracciones (odd/tasks/roles-permisos-matriz.md S2): mismo set que
+# la carga de documentos -- superadmin y compras no participan de la extracción.
+_ROLES_LECTURA = ("admin", "gerencia", "lider_comercial", "comercial")
 
 
 def _verificar_pertenencia(

@@ -31,8 +31,8 @@ def _cliente_de_prueba() -> TestClient:
 def test_rol_fuera_de_roles_entregas_es_rechazado_con_403(
     service_client, seed_drogueria, crear_usuario_con_token
 ):
-    # "compras" entrega físicamente (compras/router.py::_ROLES_ENTREGA) pero
-    # no planifica -- no está en _ROLES_ENTREGAS.
+    # "compras" no planifica entregas (odd/tasks/roles-permisos-matriz.md S8):
+    # no está en _ROLES_ENTREGAS ni en compras/router.py::_ROLES_ENTREGA.
     _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
     client = _cliente_de_prueba()
 

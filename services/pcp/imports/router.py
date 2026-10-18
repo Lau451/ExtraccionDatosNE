@@ -5,7 +5,8 @@ Gateado por `ROLES_ESCRITURA_PCP` (`services/pcp/roles.py`, D11) -- mismo
 rol-set que `services/presupuestacion/imports/router.py::_ROLES_IMPORT`
 (`admin`,`gerencia`,`compras`), pero reusando la constante compartida del
 módulo en vez de declarar una copia local, mismo criterio que el resto de
-`services/pcp/**`.
+`services/pcp/**`. `/pcp/imports/presupuestos-legacy` es la excepción: solo
+`admin` (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, odd/tasks/roles-permisos-matriz.md S6).
 """
 
 from fastapi import APIRouter, Depends
@@ -20,7 +21,7 @@ from services.pcp.imports.service import (
     importar_pcp_legacy_para_endpoint,
     importar_presupuesto_legacy_para_endpoint,
 )
-from services.pcp.roles import ROLES_ESCRITURA_PCP
+from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_IMPORT_PRESUPUESTOS_LEGACY
 from services.shared.auth import UsuarioPerfil, require_roles
 
 router = APIRouter()
@@ -41,7 +42,7 @@ def importar_pcp_legacy_endpoint(
 )
 def importar_presupuesto_legacy_endpoint(
     body: ImportPresupuestoLegacyRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_IMPORT_PRESUPUESTOS_LEGACY)),
 ) -> list[ImportPresupuestoLegacyResultado]:
     """Sibling de `/pcp/imports/legacy`: import de presupuestos, mandatorio
     ANTES del import de PCP (agreed design, odd/tasks/
