@@ -223,6 +223,23 @@ def test_admin_sigue_invitando_en_su_drogueria(almacen):
     assert respuesta.json()["drogueria_id"] == DROGUERIA
 
 
+@pytest.mark.parametrize(
+    ("metodo", "ruta", "cuerpo", "mensaje"),
+    [
+        ("patch", "/usuarios/comercial-otra/rol", {"rol": "compras"}, "Un admin solo puede modificar usuarios de su droguería"),
+        ("patch", "/usuarios/comercial-otra/activo", {"activo": False}, "Un admin solo puede modificar usuarios de su droguería"),
+        ("delete", "/usuarios/comercial-otra", None, "Un admin solo puede eliminar usuarios de su droguería"),
+    ],
+)
+def test_admin_sigue_recibiendo_el_mismo_mensaje_fuera_de_su_drogueria(almacen, metodo, ruta, cuerpo, mensaje):
+    cliente = _cliente("admin", usuario_id="admin-yo")
+    respuesta = cliente.request(metodo.upper(), ruta, json=cuerpo)
+
+    assert respuesta.status_code == 403
+    assert mensaje in respuesta.text
+    assert almacen["comercial-otra"] == _fila("comercial-otra", "comercial", OTRA_DROGUERIA)
+
+
 def test_admin_sigue_sin_poder_asignar_admin(almacen):
     respuesta = _cliente("admin", usuario_id="admin-yo").patch(
         "/usuarios/comercial-propio/rol", json={"rol": "admin"}

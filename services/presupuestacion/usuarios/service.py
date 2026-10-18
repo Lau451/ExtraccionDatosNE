@@ -21,6 +21,13 @@ def _validar_objetivo_de_gerencia(creador: UsuarioPerfil, objetivo: dict[str, An
         raise ForbiddenError("Gerencia solo puede gestionar usuarios de roles inferiores a admin")
 
 
+def _mensaje_otra_drogueria(creador: UsuarioPerfil, accion: str) -> str:
+    # admin conserva el texto previo a S7; gerencia recibe uno propio.
+    if creador.rol == "admin":
+        return f"Un admin solo puede {accion} usuarios de su droguería"
+    return f"Gerencia solo puede {accion} usuarios de su droguería"
+
+
 def crear_usuario(client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate) -> dict[str, Any]:
     if creador.rol not in ROLES_GESTION_USUARIOS:
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden crear usuarios")
@@ -89,7 +96,7 @@ def cambiar_rol(
         raise ForbiddenError("Gerencia solo puede asignar roles inferiores a admin")
 
     if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Solo podés modificar usuarios de tu droguería")
+        raise ForbiddenError(_mensaje_otra_drogueria(creador, "modificar"))
 
     return repo.actualizar_rol(client, usuario_id=usuario_id, rol=nuevo_rol)
 
@@ -113,7 +120,7 @@ def cambiar_activo(
     _validar_objetivo_de_gerencia(creador, objetivo)
 
     if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Solo podés modificar usuarios de tu droguería")
+        raise ForbiddenError(_mensaje_otra_drogueria(creador, "modificar"))
 
     return repo.actualizar_activo(client, usuario_id=usuario_id, activo=activo)
 
@@ -135,7 +142,7 @@ def eliminar_usuario(client: Client, *, creador: UsuarioPerfil, usuario_id: str)
     _validar_objetivo_de_gerencia(creador, objetivo)
 
     if creador.rol in ("admin", "gerencia") and objetivo["drogueria_id"] != creador.drogueria_id:
-        raise ForbiddenError("Solo podés eliminar usuarios de tu droguería")
+        raise ForbiddenError(_mensaje_otra_drogueria(creador, "eliminar"))
 
     repo.eliminar_usuario_auth(client, usuario_id=usuario_id)
 
