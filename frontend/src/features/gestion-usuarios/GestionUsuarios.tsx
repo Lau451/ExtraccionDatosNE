@@ -29,8 +29,12 @@ export function GestionUsuarios() {
     droguerias?.find((d) => d.id === drogueriaId)?.nombre ?? drogueriaId ?? '—'
 
   // Solo superadmin puede promover a admin (RN-USUARIOS-002/cambiar_rol
-  // extendida) — no se muestra la opción si quien mira es un admin.
+  // extendida) — no se muestra la opción si quien mira es un admin o
+  // gerencia (spec S7: gerencia solo gestiona roles inferiores).
   const rolesAsignables: Rol[] = perfil?.rol === 'superadmin' ? ['admin', ...ROLES_BASE] : ROLES_BASE
+  // Gerencia tampoco puede tocar a los admins de su droguería (spec S7).
+  const rolesProtegidos: string[] =
+    perfil?.rol === 'gerencia' ? ['superadmin', 'sistema', 'admin'] : ['superadmin', 'sistema']
 
   const cambiarRolMutation = useMutation({
     mutationFn: ({ id, rol }: { id: string; rol: string }) => cambiarRolUsuario(id, rol),
@@ -82,6 +86,7 @@ export function GestionUsuarios() {
                 nombreEmpresa={nombreEmpresa(usuario.drogueria_id)}
                 usuarioActualId={perfil?.id}
                 rolesAsignables={rolesAsignables}
+                rolesProtegidos={rolesProtegidos}
                 onCambiarRol={(rol) => cambiarRolMutation.mutate({ id: usuario.id, rol })}
                 onCambiarActivo={(activo) => cambiarActivoMutation.mutate({ id: usuario.id, activo })}
                 onEliminar={() => setAEliminar(usuario)}
@@ -108,6 +113,7 @@ function FilaUsuario({
   nombreEmpresa,
   usuarioActualId,
   rolesAsignables,
+  rolesProtegidos,
   onCambiarRol,
   onCambiarActivo,
   onEliminar,
@@ -116,14 +122,16 @@ function FilaUsuario({
   nombreEmpresa: string
   usuarioActualId: string | undefined
   rolesAsignables: Rol[]
+  rolesProtegidos: string[]
   onCambiarRol: (rol: string) => void
   onCambiarActivo: (activo: boolean) => void
   onEliminar: () => void
 }) {
-  // superadmin y sistema no son editables desde acá — mismo criterio que el
-  // backend (cambiar_rol/cambiar_activo los rechaza explícitamente). Tampoco
-  // podés cambiarte el rol/estado a vos mismo (mismo criterio que eliminar).
-  const esProtegido = usuario.rol === 'superadmin' || usuario.rol === 'sistema'
+  // superadmin y sistema (y admin, si quien mira es gerencia) no son
+  // editables desde acá — mismo criterio que el backend (cambiar_rol/
+  // cambiar_activo los rechaza explícitamente). Tampoco podés cambiarte el
+  // rol/estado a vos mismo (mismo criterio que eliminar).
+  const esProtegido = rolesProtegidos.includes(usuario.rol)
   const esUnoMismo = usuario.id === usuarioActualId
   const noEditable = esProtegido || esUnoMismo
   // El rol actual siempre tiene que estar en las opciones, aunque quien mira

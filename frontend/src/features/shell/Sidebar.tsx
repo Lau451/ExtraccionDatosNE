@@ -1,7 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth, type Rol } from '@/features/auth/AuthContext'
+import { CARGA_DOCUMENTOS_ROLES } from '@/features/carga-documentos/roles'
 import { COMPROMISOS_READ_ROLES } from '@/features/compromisos/roles'
-import { PCP_READ_ROLES, PCP_WRITE_ROLES, puedeRol } from '@/features/pcp/roles'
+import { USUARIOS_ROLES } from '@/features/gestion-usuarios/roles'
+import { PCP_READ_ROLES, puedeRol } from '@/features/pcp/roles'
+import { PRESUPUESTOS_LEGACY_IMPORT_ROLES } from '@/features/presupuestos-import/roles'
+import { VALIDAR_EXTRACCION_ROLES } from '@/features/validar-extraccion/roles'
 
 interface NavItem {
   label: string
@@ -12,8 +16,6 @@ interface NavItem {
 // Placeholder: los 6 items y sus rutas finales vienen del mockup Figma
 // (SEjXiBEMxprppdgmlNHKO8), todavía sin validar por screenshot en esta sesión.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Carga de documentos', to: '/' },
-  { label: 'Validar extracción', to: '/validar-extraccion' },
   // Todos los roles de negocio tienen lectura de catálogo (ver
   // features/productos/roles.ts), así que no hace falta gate por rol acá.
   { label: 'Productos', to: '/productos' },
@@ -41,20 +43,22 @@ export function Sidebar() {
   }
 
   const navItems: NavItem[] = [
+    // Carga y validación de extracciones: compras y superadmin no participan
+    // (specs S1/S2), mismos roles que los guards de "/" y /validar-extraccion.
+    ...(puedeRol(perfil?.rol, CARGA_DOCUMENTOS_ROLES) ? [{ label: 'Carga de documentos', to: '/' }] : []),
+    ...(puedeRol(perfil?.rol, VALIDAR_EXTRACCION_ROLES)
+      ? [{ label: 'Validar extracción', to: '/validar-extraccion' }]
+      : []),
     ...NAV_ITEMS,
-    // Gateado con PCP_WRITE_ROLES (mismos roles que el endpoint), no
-    // PCP_READ_ROLES -- feature doc presupuestos-legacy-import-ui.md
-    // Decisions: "Importar presupuestos" visible solo a roles de escritura.
-    ...(puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+    // Mismos roles que el endpoint de importación legacy (spec S6: solo admin).
+    ...(puedeRol(perfil?.rol, PRESUPUESTOS_LEGACY_IMPORT_ROLES)
       ? [{ label: 'Importar presupuestos', to: '/presupuestos/importar' }]
       : []),
     ...(puedeRol(perfil?.rol, COMPROMISOS_READ_ROLES)
       ? [{ label: 'Compromisos de entrega', to: '/compromisos' }]
       : []),
     ...(muestraNavegacionPcp(perfil?.rol) ? [{ label: 'PCP', to: '/pcp' }] : []),
-    ...(perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
-      ? [{ label: 'Usuarios', to: '/admin/usuarios' }]
-      : []),
+    ...(puedeRol(perfil?.rol, USUARIOS_ROLES) ? [{ label: 'Usuarios', to: '/admin/usuarios' }] : []),
     ...(perfil?.rol === 'superadmin' ? [{ label: 'Empresas', to: '/superadmin/empresas' }] : []),
   ]
 
