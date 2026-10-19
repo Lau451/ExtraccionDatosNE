@@ -58,6 +58,33 @@ describe('LoginForm (S1: login con usuario)', () => {
     consoleError.mockRestore()
   })
 
+  it('un 429 muestra el mensaje de demasiados intentos del backend', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    signInMock.mockRejectedValue(
+      new ApiError('Demasiados intentos. Probá de nuevo en unos minutos.', 429),
+    )
+    const onSuccess = vi.fn()
+    render(<LoginForm onSuccess={onSuccess} />)
+
+    completarFormulario()
+
+    expect(
+      await screen.findByText('Demasiados intentos. Probá de nuevo en unos minutos.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Usuario o contraseña incorrectos')).toBeNull()
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('un 500 sigue mostrando el mensaje genérico de reintento', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    signInMock.mockRejectedValue(new ApiError('boom', 500))
+    render(<LoginForm onSuccess={vi.fn()} />)
+
+    completarFormulario()
+
+    expect(await screen.findByText('No pudimos iniciar sesión. Probá de nuevo.')).toBeInTheDocument()
+  })
+
   it('reemplaza "¿Olvidaste tu contraseña?" por el aviso de contactar al administrador', () => {
     render(<LoginForm onSuccess={vi.fn()} />)
     expect(screen.queryByText('¿Olvidaste tu contraseña?')).toBeNull()

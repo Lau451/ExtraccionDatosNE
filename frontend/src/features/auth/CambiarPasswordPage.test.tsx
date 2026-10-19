@@ -89,6 +89,20 @@ describe('CambiarPasswordPage (S3)', () => {
     expect(authMock.refrescarPerfil).not.toHaveBeenCalled()
   })
 
+  it('un 429 muestra el mensaje de demasiados intentos y no navega', async () => {
+    vi.mocked(cambiarPasswordPropia).mockRejectedValue(
+      new ApiError('Demasiados intentos. Probá de nuevo en unos minutos.', 429),
+    )
+    render(<CambiarPasswordPage irA={irA} />)
+    llenarYEnviar('temporal1', 'nueva12345', 'nueva12345')
+
+    expect(
+      await screen.findByText('Demasiados intentos. Probá de nuevo en unos minutos.'),
+    ).toBeInTheDocument()
+    expect(irA).not.toHaveBeenCalled()
+    expect(authMock.refrescarPerfil).not.toHaveBeenCalled()
+  })
+
   it('cambio voluntario: ofrece cancelar y vuelve a Mi cuenta', () => {
     authMock.perfil = { id: 'yo', rol: 'admin', debe_cambiar_password: false }
     render(<CambiarPasswordPage irA={irA} />)

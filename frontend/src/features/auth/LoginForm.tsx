@@ -19,12 +19,17 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     } catch (error) {
       console.error('Error al iniciar sesión', error)
       // El backend devuelve el mismo 401 para usuario inexistente y contraseña
-      // incorrecta, así no se pueden sondear usernames (spec S1).
-      setError(
-        error instanceof ApiError && error.status !== 401
-          ? 'No pudimos iniciar sesión. Probá de nuevo.'
-          : 'Usuario o contraseña incorrectos',
-      )
+      // incorrecta, así no se pueden sondear usernames (spec S1). El 429 trae
+      // su propio mensaje (spec S8) para no confundirlo con credenciales mal.
+      if (error instanceof ApiError && error.status === 429) {
+        setError(error.message)
+      } else {
+        setError(
+          error instanceof ApiError && error.status !== 401
+            ? 'No pudimos iniciar sesión. Probá de nuevo.'
+            : 'Usuario o contraseña incorrectos',
+        )
+      }
     } finally {
       setIsSubmitting(false)
     }
