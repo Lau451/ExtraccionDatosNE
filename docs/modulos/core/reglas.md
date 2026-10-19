@@ -370,8 +370,12 @@ Drogueria Nueva Era).
 - **Resultado**: `AuthenticationError("Usuario desactivado")` (mapeada a HTTP 401 por
   RN-CORE-009), en vez de devolver el `UsuarioPerfil`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/core/auth.py:22` (campo `activo` en
-  `UsuarioPerfil`), `:39` (`activo` agregado al `SELECT`), `:47-48` (chequeo y excepción).
+- **Archivo**: `services/shared/auth.py:32` (campo `activo` en `UsuarioPerfil`), `:47`
+  (`activo` en el `SELECT`), `:55-56` (chequeo y excepción, dentro de `_cargar_perfil`).
+  `services/presupuestacion/core/auth.py` es un shim de reexport. Desde
+  login-usuario-alta-admin el chequeo vive en `_cargar_perfil`, compartido por
+  `get_current_user` y `get_current_user_con_password_pendiente`: un desactivado recibe 401
+  también en los endpoints exceptuados del bloqueo de RN-CORE-027.
 - **Observaciones**: [IMPLEMENTADO]. Este es el gate real de "desactivar un usuario" a
   nivel de aplicación: Supabase Auth no invalida el JWT emitido cuando se desactiva un
   usuario en la tabla `usuarios` (son dos sistemas distintos — el JWT sigue siendo
@@ -379,3 +383,29 @@ Drogueria Nueva Era).
   desactivado podría seguir usando cualquier endpoint hasta que su token expirase. Se
   ejecuta en cada request autenticada (vía `get_current_user`, consumida directa o
   indirectamente por `require_roles`), no solo en el login.
+
+### RN-CORE-027 — Usuario con cambio de contraseña pendiente: 403 salvo leer su perfil y cambiar su contraseña
+
+- **Descripción**: `UsuarioPerfil` incluye `debe_cambiar_password: bool = False`, proyectado
+  desde la columna `usuarios.debe_cambiar_password` (migración `0038`). `get_current_user`,
+  después de resolver el perfil (y del chequeo de RN-CORE-026), llama a
+  `exigir_password_al_dia`, que levanta `ForbiddenError` si el flag está en `True`. Como
+  `require_roles` depende de `get_current_user`, el bloqueo alcanza a toda la API
+  (presupuestación, terceros, PCP). La dependencia permisiva
+  `get_current_user_con_password_pendiente` hace lo mismo sin ese último chequeo, y solo la
+  usan `GET /usuarios/{usuario_id}` sobre el propio id y `POST /auth/cambiar-password`.
+- **Condición**: JWT válido, fila en `usuarios` con `activo = True` y
+  `debe_cambiar_password = True`, en un endpoint que dependa de `get_current_user` o
+  `require_roles`.
+- **Resultado**: `ForbiddenError("Debés cambiar tu contraseña antes de continuar")` (HTTP 403
+  por RN-CORE-009).
+- **Prioridad**: Alta.
+- **Archivo**: `services/shared/auth.py:25` (mensaje), `:33` (campo), `:47` (`SELECT`),
+  `:60-62` (`exigir_password_al_dia`), `:65-73` (`get_current_user`), `:76-83`
+  (`get_current_user_con_password_pendiente`).
+- **Observaciones**: [IMPLEMENTADO]. Verificado en `tests/shared/test_auth.py` (403 en un
+  endpoint normal y al listar usuarios, lectura del propio perfil permitida, perfil ajeno
+  bloqueado, usuario al día sin cambios, desactivado sigue en 401, texto del mensaje). El
+  flag lo escriben `usuarios/` (alta y blanqueo) y `auth/` (cambio propio) — ver
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-035. **Solo se aplica en el
+  backend**: las policies RLS no lo miran.

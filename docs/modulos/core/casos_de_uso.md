@@ -60,6 +60,13 @@ eventos de ciclo de vida: `procesos_comerciales`, `eventos`, `extraccion`,
 - Evidencia: `services/presupuestacion/auditoria/router.py:5`, `:17`
   (`require_roles(*_ROLES_LECTURA)`).
 
+`get_current_user_con_password_pendiente` (`services/shared/auth.py:76-83`, importada directo,
+no por el shim) tiene exactamente 2 consumidores: `GET /usuarios/{usuario_id}`
+(`usuarios/router.py:42`, que reaplica `exigir_password_al_dia` si el id no es el propio) y
+`POST /auth/cambiar-password` (`auth/router.py:21`). Todo el resto de la API usa
+`get_current_user`/`require_roles` y queda bloqueado con 403 mientras haya un cambio de
+contraseña pendiente (RN-CORE-027). `POST /auth/login` es público.
+
 `get_current_user` se usa **directamente**, sin pasar por `require_roles` — es decir,
 solo exigiendo autenticación válida, sin restricción de rol — en exactamente 2 routers:
 `usuarios/router.py` y `notificaciones/router.py`. [IMPLEMENTADO]

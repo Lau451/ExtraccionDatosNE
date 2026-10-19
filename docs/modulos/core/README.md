@@ -47,7 +47,7 @@ tres ubicaciones en una sola documentación.
 | `core/stock.py` | Compromiso, liberación y descuento de stock entre depósitos con optimistic locking; el archivo más largo y con más reglas de negocio del módulo. |
 | `core/config.py` | `Settings` (pydantic-settings) leído desde `.env`, y `get_settings()` cacheado. |
 | `core/audit.py` | Inserción de filas en `historial_cambios` (cambios de campo y eventos de ciclo de vida). |
-| `core/auth.py` | Resolución de claims JWT a perfil de usuario (`UsuarioPerfil`) y `require_roles(*roles)` para autorización por rol. |
+| `core/auth.py` | Shim de `services/shared/auth.py`: resolución de claims JWT a perfil de usuario (`UsuarioPerfil`), bloqueo de usuarios desactivados (401) y con cambio de contraseña pendiente (403, con la dependencia permisiva `get_current_user_con_password_pendiente` para las excepciones — RN-CORE-027), y `require_roles(*roles)` para autorización por rol. |
 | `auditoria/models.py` | Modelo de salida `HistorialCambioOut` y una copia duplicada del mapeo entidad→FK de `core/audit.py` (ver [`pendientes.md`](./pendientes.md)). |
 | `auditoria/router.py` | Único endpoint HTTP de este bloque: `GET /historial/{entidad}/{entidad_id}`. |
 | `shared/auth_jwt.py` | Verificación de firma/vigencia de JWT contra el JWKS de Supabase; sin lógica de negocio de ningún dominio, compartido entre `extraccion` y `presupuestacion`. |

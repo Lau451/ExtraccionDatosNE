@@ -3,10 +3,21 @@
 Clasificación P1 (crítico/bloqueante) / P2 (deuda técnica relevante) / P3 (menor), verificada
 contra el código real en esta sesión.
 
-**Pendiente explícito, fuera de este cierre**: configuración de SMTP propio para Supabase Auth
-(hoy usa el SMTP compartido de Supabase, con rate limit bajo para `invite_user_by_email` y
-`resetPasswordForEmail`). Es un paso de configuración operacional del proyecto de Supabase, no un
-cambio de código — decisión explícita del usuario de dejarlo pendiente por ahora.
+**[RETIRADO] SMTP propio para Supabase Auth**: ya no aplica. Desde
+odd/tasks/login-usuario-alta-admin.md el frontend no usa `invite_user_by_email` ni
+`resetPasswordForEmail`; no se envía ningún email de Auth.
+
+**Abiertos del login con nombre de usuario** (detalle en
+[`../usuarios/pendientes.md`](../usuarios/pendientes.md) P1):
+
+- `routeTree.gen.ts` se editó a mano (`@tanstack/router-generator` 1.167.19 vs plugin 1.167.38):
+  se agregó `/cambiar-password` y se quitaron `/reset-password` y `/accept-invite`. Revisar el diff
+  cuando el plugin lo regenere.
+- El guard de `debe_cambiar_password` (RN-LOGIN-011) es UX: la garantía es el 403 del backend, que
+  tampoco cubre RLS.
+- El login depende de la migración `0038` aplicada y del backend desplegado (orden: `0038` primero).
+- Un 429 de Supabase Auth en el login (rate limit por IP compartido por el backend) se ve como
+  "Usuario o contraseña incorrectos".
 
 ## P1 — Crítico
 
@@ -17,9 +28,11 @@ cambio de código — decisión explícita del usuario de dejarlo pendiente por 
    de D-LOGIN-005/007 — y con rol no permitido/permitido), `AuthContext.test.tsx` (secuencia
    `loading`→`perfilLoading`, `signOut` automático en 401 y en 404, ausencia de `signOut` en otros
    errores, `refrescarPerfil`), `LoginForm.test.tsx` y `SetPasswordForm.test.tsx` (éxito, error,
-   validaciones). 16 tests, todos en verde (`npm run test`, verificado en esta sesión). No se
-   agregaron tests de rutas (`login.tsx`, `reset-password.tsx`, `accept-invite.tsx`) ni de
-   `MiCuenta.tsx` — son integración de TanStack Router sobre piezas ya cubiertas; queda como
+   validaciones). 16 tests, todos en verde en esa revisión. Con login-usuario-alta-admin se
+   eliminó `SetPasswordForm.test.tsx` y se agregaron `CambiarPasswordPage.test.tsx`,
+   `cambiarPasswordRoute.test.ts`, `lib/api/auth.test.ts` y `MiCuenta.test.tsx` (suite completa
+   `vitest run`: 66 archivos / 644 tests en verde según odd/tasks/login-usuario-alta-admin.md T4). No se
+   agregaron tests de `login.tsx` — son integración de TanStack Router sobre piezas ya cubiertas; queda como
    posible ampliación futura, no como pendiente crítico.
 
 ## P2 — Deuda técnica relevante
@@ -40,12 +53,17 @@ cambio de código — decisión explícita del usuario de dejarlo pendiente por 
    [`flujo.md`](./flujo.md) #5). El registro libre (auto-signup) sigue sin existir, pero por
    diseño: el alta la hace un admin/superadmin vía invitación (`/accept-invite`), no un
    autoservicio de "crear cuenta" — ver [`flujo.md`](./flujo.md) #6. Se retira como pendiente.
+   **Nota posterior**: con login-usuario-alta-admin se eliminaron `/reset-password` y
+   `/accept-invite` a propósito (D-LOGIN-008): la recuperación es un blanqueo por el admin y el
+   alta es con username + contraseña temporal. No es una regresión.
 
 4. ~~`SetPasswordForm` no valida fuerza de contraseña más allá de `minLength=8`.~~ **Resuelto**: se
    agregó una validación mínima (al menos una letra y un número, además del `minLength=8` ya
    existente) en `SetPasswordForm.tsx`, cubierta por test. [SUPOSICIÓN, no verificada]: sigue sin
    confirmarse si Supabase Auth aplica alguna política de contraseña propia del lado del servidor
    — no se investigó en esta sesión, no era necesario para cerrar este ítem.
+   **Nota posterior**: `SetPasswordForm` se eliminó. `CambiarPasswordForm` exige solo mínimo 8 y
+   distinta de la actual (RN-LOGIN-012, decisión L3 del usuario), sin la regla de letra + número.
 
 ## P3 — Menor
 
@@ -61,7 +79,7 @@ cambio de código — decisión explícita del usuario de dejarlo pendiente por 
    Tampoco hay ningún manejo visible de lo que pasa si el refresh falla (por ejemplo, sesión
    revocada del lado del servidor) más allá de que `onAuthStateChange` eventualmente entregaría
    `session: null`, y ahora sí hay dos mecanismos que reaccionan a eso: el `useEffect` reactivo de
-   `_authenticated.tsx:16-24` (redirect inmediato si la pantalla ya está montada) y `requireAuth`
+   `_authenticated.tsx:17-29` (redirect inmediato si la pantalla ya está montada) y `requireAuth`
    en el próximo `beforeLoad`. Esto reduce, pero no elimina, el riesgo original de este ítem.
 
 2. ~~`LoginForm` no distingue el motivo real de un error de login (RN-LOGIN-003).~~ **Resuelto**:

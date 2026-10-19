@@ -1,195 +1,137 @@
 # Flujos — Usuarios
 
-6 flujos (antes 3). Cada paso cita `archivo:línea` releído y verificado en esta sesión de
-actualización.
+Cada paso cita `archivo:línea` de la rama `feat/login-usuario-alta-admin`.
 
-## Flujo 1 — Alta de usuario por invitación (`POST /usuarios`)
+## Flujo 1 — Alta de usuario por el admin (`POST /usuarios`)
 
 1. El router exige `require_roles(*ROLES_GESTION_USUARIOS)` — `superadmin`, `admin`,
-   `gerencia` (`usuarios/router.py:47-48`, `usuarios/service.py:12`); si el usuario
-   autenticado no tiene uno de esos roles, la
-   dependencia levanta `ForbiddenError` antes de que se ejecute el handler
-   (ver [`../core/`](../core/)).
-2. `crear_usuario_endpoint` llama a `crear_usuario_para_endpoint(creador=usuario,
-   body=body)` (`usuarios/router.py:50`).
-3. `crear_usuario_para_endpoint` resuelve `get_service_client()` y delega en
-   `crear_usuario` (`usuarios/service.py:153-154`).
-4. `crear_usuario` valida en este orden (`usuarios/service.py:25-42`):
-   1. RN-USUARIOS-001 — el creador es `superadmin`/`admin`/`gerencia` (`:25-26`).
-   2. RN-USUARIOS-002 — si `body.rol in ("superadmin", "admin")`, el creador debe ser
-      `superadmin` (`:28-29`).
-   3. RN-USUARIOS-029 — si el creador es `gerencia`, `body.rol` debe ser un rol inferior
-      a `admin` (`:31-32`).
-   4. RN-USUARIOS-003/004 — resuelve `drogueria_id`: la del creador si es `admin` o
-      `gerencia` (`:34-35`), o la del body si es `superadmin` (`:36-37`).
-   5. RN-USUARIOS-005/006 — valida consistencia entre `body.rol` y el `drogueria_id`
-      resuelto (`:39-42`).
-5. Si todas las validaciones pasan, se arma `redirect_to =
-   f"{get_settings().frontend_url}/accept-invite"` (`:44`) y se llama a
-   `repo.invitar_usuario_auth(client, email=body.email, redirect_to=redirect_to,
-   nombre=body.nombre, apellido=body.apellido, rol=body.rol)` (`:45-52`), que invoca
-   `client.auth.admin.invite_user_by_email` con `nombre`/`apellido`/`rol` como metadata
-   de la invitación (`repository.py:9-19`). Supabase Auth crea la cuenta **sin
-   contraseña asignada** y dispara el email de invitación al `redirect_to` indicado
-   (RN-USUARIOS-013).
-6. Si Supabase Auth responde con error, `invitar_usuario_auth` lo traduce a un error de
-   dominio en vez de propagar la excepción cruda (`repository.py:20-32`): `429` →
-   `ConflictError`, cualquier otro código → `ValidationError`. En ambos casos la
-   respuesta HTTP llega con `CORSMiddleware` aplicado y un mensaje legible — ver
-   RN-USUARIOS-013.
-7. `repo.crear_perfil_usuario` inserta la fila de perfil en `usuarios` con el `id`
-   devuelto por Auth, `drogueria_id`, `rol`, `nombre`, `apellido` y `es_sistema=False`
-   hardcodeado (RN-USUARIOS-007) (`usuarios/service.py:53-63`,
-   `usuarios/repository.py:36-37`).
-8. El endpoint responde con `UsuarioOut` construido a partir de la fila insertada
-   (`usuarios/router.py:46`, `response_model=UsuarioOut`).
+   `gerencia` (`usuarios/router.py:57`, `usuarios/service.py:20`). `require_roles`
+   depende de `get_current_user`, así que un creador con cambio de contraseña pendiente
+   recibe 403 antes del handler.
+2. `crear_usuario_endpoint` llama a `crear_usuario_para_endpoint` (`router.py:59`), que
+   resuelve `get_service_client()` y delega en `crear_usuario` (`service.py:298-299`).
+3. `crear_usuario` valida en este orden (`service.py:77-99`):
+   1. RN-USUARIOS-001 — creador en `ROLES_GESTION_USUARIOS` (`:77-78`).
+   2. RN-USUARIOS-002 — `superadmin`/`admin` solo los crea un `superadmin` (`:80-81`).
+   3. RN-USUARIOS-029 — `gerencia` solo crea roles inferiores (`:83-84`).
+   4. RN-USUARIOS-003/004 — resuelve `drogueria_id` (`:86-89`).
+   5. RN-USUARIOS-005/006 — consistencia rol/droguería (`:91-94`).
+   6. RN-USUARIOS-031 — formato y normalización del username (`:96`).
+   7. RN-USUARIOS-032 — contraseña temporal de al menos 8 caracteres (`:97`).
+   8. RN-USUARIOS-033 — username no repetido (`:98-99`).
+4. Genera el email interno opaco `<uuid hex>@<auth_email_domain>` (`:103`,
+   D-USUARIOS-012) y crea la cuenta en Auth con `repo.crear_usuario_auth`
+   (`:104-111`): `create_user` con la contraseña temporal, `email_confirm=True` y
+   `nombre`/`apellido`/`rol` como `user_metadata` (`repository.py:19-26`). No se envía
+   ningún correo. Errores de Auth → 409 (429) o 422 (resto), RN-USUARIOS-040.
+5. Inserta el perfil con `id`, `drogueria_id`, `rol`, `nombre`, `apellido`,
+   `es_sistema=False`, `username` y `debe_cambiar_password=True` (`service.py:113-125`).
+6. Si el INSERT falla, borra la cuenta de Auth recién creada
+   (`repo.descartar_usuario_auth`, `service.py:126-128`) y relanza; si era un unique
+   violation del username, como `ConflictError` (`:129-130`). RN-USUARIOS-034.
+7. Responde `UsuarioOut` con `debe_cambiar_password: true`. El admin le pasa username y
+   contraseña temporal a la persona; en su primer login la obligan a cambiarla (Flujo 8).
 
-Si cualquier validación del paso 4 falla, se levanta la excepción de dominio
-correspondiente **antes** de llamar a Auth Admin — no queda una cuenta de Auth huérfana
-sin fila de perfil por una regla de negocio rechazada. Si el propio `INSERT` del paso 7
-fallara después de que Auth Admin ya envió la invitación (paso 5), no hay compensación
-automática en el código revisado — pendiente de definición funcional (no observado en
-los tests). El usuario terminaría de definir su contraseña recién cuando acepta la
-invitación desde `{frontend_url}/accept-invite`, fuera del alcance de este backend.
+Si cualquier validación del paso 3 falla, no se llama a Auth: no queda cuenta huérfana.
 
 ## Flujo 2 — Cambio de rol (`PATCH /usuarios/{usuario_id}/rol`)
 
-1. El router exige `require_roles(*ROLES_GESTION_USUARIOS)` — `superadmin`, `admin`,
-   `gerencia` (`usuarios/router.py:53-57`).
-2. `cambiar_rol_endpoint` llama a `cambiar_rol_para_endpoint(creador=usuario,
-   usuario_id=usuario_id, nuevo_rol=body.rol)` (`usuarios/router.py:59`).
-3. `cambiar_rol_para_endpoint` resuelve `get_service_client()` y delega en `cambiar_rol`
-   (`usuarios/service.py:157-158`).
-4. `cambiar_rol` valida en este orden (`usuarios/service.py:66-94`) — **el orden cambió
-   respecto de la revisión anterior**: el chequeo de auto-modificación ahora corre antes
-   que la comprobación de existencia:
-   1. RN-USUARIOS-008 — el creador es `superadmin`/`admin`/`gerencia` (`:69-70`).
-   2. RN-USUARIOS-014 — `usuario_id != creador.id` (`:72-73`), **nuevo**, antes de tocar
-      la base.
-   3. RN-USUARIOS-011 — el usuario objetivo existe (`repo.obtener_usuario`, `:75-77`); si
-      no, `NotFoundError`.
-   4. RN-USUARIOS-009 — ni el rol actual del objetivo ni `nuevo_rol` son `superadmin` o
-      `sistema` (`:79-82`, extendido a `sistema` en esta sesión).
-   5. RN-USUARIOS-015 — si `nuevo_rol == "admin"`, el creador debe ser `superadmin`
-      (`:84-85`), **nuevo**.
-   6. RN-USUARIOS-029 — si el creador es `gerencia`, el objetivo y `nuevo_rol` deben ser
-      roles inferiores a `admin` (`:87-89`).
-   7. RN-USUARIOS-010 — si el creador es `admin` o `gerencia`, el objetivo pertenece a su
-      misma `drogueria_id` (`:91-92`).
-5. Si todas las validaciones pasan, `repo.actualizar_rol(client, usuario_id=usuario_id,
-   rol=nuevo_rol)` hace el `UPDATE` de la columna `rol` (`usuarios/service.py:94`,
-   `usuarios/repository.py:45-46`).
-6. El endpoint responde con `UsuarioOut` construido a partir de la fila actualizada
-   (`usuarios/router.py:53`, `response_model=UsuarioOut`).
+1. `require_roles(*ROLES_GESTION_USUARIOS)` (`router.py:66`).
+2. `cambiar_rol_para_endpoint` → `cambiar_rol` con service client (`service.py:302-303`).
+3. `cambiar_rol` valida en este orden (`service.py:137-160`): RN-USUARIOS-008 (`:137-138`),
+   014 auto-modificación (`:140-141`), 011 existencia (`:143-145`), 009
+   `superadmin`/`sistema` (`:147-150`), 015 solo `superadmin` asigna `admin` (`:152-153`),
+   029 alcance de `gerencia` (`:155-157`), 010 droguería (`:159-160`).
+4. `repo.actualizar_rol` (`service.py:162`, `repository.py:74-75`) y respuesta `UsuarioOut`.
 
-Notar que la auto-modificación (paso 4.2) y la existencia (4.3) ocurren **antes** que las
-reglas de protección de rol (4.4/4.5/4.6) y de tenant (4.7): un `admin` que intenta cambiar
-su propio rol recibe `ForbiddenError` de auto-modificación sin importar si el `nuevo_rol`
-pedido también hubiera sido rechazado por otra regla.
+## Flujo 3 — Activar/desactivar usuario (`PATCH /usuarios/{usuario_id}/activo`)
 
-## Flujo 3 — Activar/desactivar usuario (`PATCH /usuarios/{usuario_id}/activo`) — **[NUEVO]**
+1. `require_roles(*ROLES_GESTION_USUARIOS)` (`router.py:75`).
+2. `cambiar_activo` valida (`service.py:168-184`): RN-USUARIOS-016, 017, 018, 019, 029, 020.
+3. `repo.actualizar_activo` (`service.py:186`, `repository.py:78-79`).
+4. **Efecto diferido (RN-USUARIOS-021)**: el bloqueo ocurre en el siguiente request del
+   usuario afectado, en `_cargar_perfil` (`services/shared/auth.py:55-56`), con 401
+   `Usuario desactivado` aunque su JWT siga vigente.
 
-1. El router exige `require_roles(*ROLES_GESTION_USUARIOS)` (`usuarios/router.py:62-66`).
-2. `cambiar_activo_endpoint` llama a `cambiar_activo_para_endpoint(creador=usuario,
-   usuario_id=usuario_id, activo=body.activo)` (`usuarios/router.py:68`).
-3. `cambiar_activo_para_endpoint` resuelve `get_service_client()` y delega en
-   `cambiar_activo` (`usuarios/service.py:161-162`).
-4. `cambiar_activo` valida, en el mismo orden que `cambiar_rol`
-   (`usuarios/service.py:97-118`):
-   1. RN-USUARIOS-016 — el creador es `superadmin`/`admin`/`gerencia` (`:100-101`).
-   2. RN-USUARIOS-017 — `usuario_id != creador.id` (`:103-104`).
-   3. RN-USUARIOS-018 — el usuario objetivo existe (`:106-108`).
-   4. RN-USUARIOS-019 — el objetivo no es `superadmin` ni `sistema` (`:110-111`).
-   5. RN-USUARIOS-029 — si el creador es `gerencia`, el objetivo es un rol inferior a
-      `admin` (`:113`).
-   6. RN-USUARIOS-020 — si el creador es `admin` o `gerencia`, el objetivo pertenece a su
-      misma `drogueria_id` (`:115-116`).
-5. Si todas las validaciones pasan, `repo.actualizar_activo(client, usuario_id=usuario_id,
-   activo=activo)` hace el `UPDATE` de la columna `activo` (`usuarios/service.py:118`,
-   `usuarios/repository.py:49-50`).
-6. El endpoint responde con `UsuarioOut` (`usuarios/router.py:62`,
-   `response_model=UsuarioOut`).
-7. **Efecto diferido, en otro módulo (RN-USUARIOS-021)**: el `UPDATE` en sí no bloquea al
-   usuario de inmediato en ninguna sesión ya autenticada del lado del token JWT — el
-   bloqueo ocurre en la **siguiente** vez que ese usuario pase por `get_current_user`
-   (`core/auth.py:33-49`), que ahora incluye `activo` en el `SELECT` (`:39`) y levanta
-   `AuthenticationError` (401) si `activo=False` (`:47-48`), sin importar que el JWT de
-   Supabase siga técnicamente vigente hasta su expiración.
+## Flujo 4 — Eliminar usuario (`DELETE /usuarios/{usuario_id}`)
 
-## Flujo 4 — Eliminar usuario (`DELETE /usuarios/{usuario_id}`) — **[NUEVO]**
+1. `require_roles(*ROLES_GESTION_USUARIOS)` (`router.py:113`).
+2. `eliminar_usuario` valida (`service.py:190-206`): RN-USUARIOS-022 a 026 y 029.
+3. `repo.eliminar_usuario_auth` (`service.py:208`, `repository.py:86-95`): borra en Auth
+   y cascadea a `usuarios`; con actividad asociada → 409 (RN-USUARIOS-027).
+4. Responde `204 No Content` (`router.py:110`).
 
-1. El router exige `require_roles(*ROLES_GESTION_USUARIOS)` (`usuarios/router.py:79-82`).
-2. `eliminar_usuario_endpoint` llama a `eliminar_usuario_para_endpoint(creador=usuario,
-   usuario_id=usuario_id)` (`usuarios/router.py:84`).
-3. `eliminar_usuario_para_endpoint` resuelve `get_service_client()` y delega en
-   `eliminar_usuario` (`usuarios/service.py:171-172`).
-4. `eliminar_usuario` valida, exactamente el mismo alcance que `cambiar_activo`
-   (`usuarios/service.py:121-140`):
-   1. RN-USUARIOS-022 — el creador es `superadmin`/`admin`/`gerencia` (`:122-123`).
-   2. RN-USUARIOS-023 — `usuario_id != creador.id` (`:125-126`).
-   3. RN-USUARIOS-024 — el usuario objetivo existe (`:128-130`).
-   4. RN-USUARIOS-025 — el objetivo no es `superadmin` ni `sistema` (`:132-133`).
-   5. RN-USUARIOS-029 — si el creador es `gerencia`, el objetivo es un rol inferior a
-      `admin` (`:135`).
-   6. RN-USUARIOS-026 — si el creador es `admin` o `gerencia`, el objetivo pertenece a su
-      misma `drogueria_id` (`:137-138`).
-5. Si todas las validaciones pasan, `repo.eliminar_usuario_auth(client,
-   usuario_id=usuario_id)` llama a `client.auth.admin.delete_user(usuario_id)`
-   (`usuarios/service.py:140`, `usuarios/repository.py:57-61`). La FK
-   `usuarios.id → auth.users.id` tiene `ON DELETE CASCADE`
-   (`docs/schema/rls_final.sql:36`), así que borrar en Auth alcanza para borrar también
-   la fila de `usuarios` — no hay un `DELETE` explícito sobre `usuarios` en este módulo.
-6. Si el usuario tiene actividad asociada por FK sin cascada (eventos, historial de
-   cambios), el `DELETE` en cascada la viola y Supabase Auth devuelve `AuthApiError`,
-   que `eliminar_usuario_auth` traduce a `ConflictError` (RN-USUARIOS-027,
-   `repository.py:62-66`) en vez de propagar el error crudo.
-7. El endpoint responde `204 No Content` sin body (`usuarios/router.py:79`,
-   `status_code=204`).
+## Flujo 5 — Editar perfil propio (`PATCH /usuarios/me`)
 
-## Flujo 5 — Editar perfil propio (`PATCH /usuarios/me`) — **[NUEVO]**
-
-1. El router exige únicamente `Depends(get_current_user)` (`usuarios/router.py:74`), sin
-   `require_roles` — cualquier usuario autenticado con perfil válido puede invocarlo.
-2. `actualizar_perfil_propio_endpoint` llama a
-   `actualizar_perfil_propio_para_endpoint(usuario_id=usuario.id, body=body)`
-   (`usuarios/router.py:76`) — **el `usuario_id` sale del token resuelto por
-   `get_current_user`, nunca de un parámetro de la URL** (RN-USUARIOS-028); no hay forma
-   de editar el perfil de otro usuario por esta vía.
-3. `actualizar_perfil_propio_para_endpoint` resuelve `get_service_client()` y delega en
-   `actualizar_perfil_propio` (`usuarios/service.py:165-168`).
-4. `actualizar_perfil_propio` no aplica ninguna regla de rol; solo calcula
-   `body.model_dump(exclude_unset=True)` (`:149`) para no pisar con `None` los campos que
-   el cliente no envió, y llama a `repo.actualizar_perfil(client, usuario_id=usuario_id,
-   campos=campos)` (`:150`, `repository.py:53-54`), un `UPDATE` genérico con el dict de
-   campos provisto.
-5. El endpoint responde con `UsuarioOut` actualizado (`usuarios/router.py:71`,
-   `response_model=UsuarioOut`).
+1. `Depends(get_current_user)` (`router.py:105`): 403 si hay cambio pendiente.
+2. `actualizar_perfil_propio_para_endpoint(usuario_id=usuario.id, ...)` (`router.py:107`)
+   — el id sale del token (RN-USUARIOS-028).
+3. `body.model_dump(exclude_unset=True)` y `repo.actualizar_perfil` (`service.py:294-295`).
 
 ## Flujo 6 — Listado y obtención (`GET /usuarios`, `GET /usuarios/{usuario_id}`)
 
-Sin cambios respecto de la revisión anterior: ninguno de los dos pasa por
-`repository.py` ni por `service.py` — el router consulta la tabla directo.
+1. `GET /usuarios` exige `get_current_user` (`router.py:33`); `GET /usuarios/{id}` exige
+   `get_current_user_con_password_pendiente` (`router.py:42`) y, si el id no es el
+   propio, aplica `exigir_password_al_dia` (`router.py:47-48`, RN-USUARIOS-035).
+2. Ambos usan `user_client` (con RLS) y hacen `SELECT *` directo (`router.py:36`, `:49`);
+   `NotFoundError` si no hay fila (`:50-51`).
+3. El alcance de filas lo decide la policy `usuarios_sel`; la respuesta incluye
+   `username` y `debe_cambiar_password`. Los usuarios desactivados siguen apareciendo en
+   el listado con `activo: false`.
 
-1. El router exige únicamente `Depends(get_current_user)` (`usuarios/router.py:28`,
-   `:37`), sin `require_roles`: cualquier usuario autenticado con perfil válido en
-   `usuarios` puede invocar estos endpoints.
-2. Se inyecta `user_client` vía `Depends(get_user_client)` (`usuarios/router.py:29`,
-   `:38`) — el cliente **con RLS**, autenticado con el JWT del propio solicitante.
-3. **Listado**: `user_client.table("usuarios").select("*").order("nombre").execute().data`
-   (`usuarios/router.py:31`) — sin ningún filtro `.eq("drogueria_id", ...)` explícito en
-   Python.
-4. **Obtención por id**:
-   `user_client.table("usuarios").select("*").eq("id", usuario_id).limit(1).execute()`
-   (`usuarios/router.py:40`); si no hay resultado, `NotFoundError("No se encontró el
-   usuario")` (`usuarios/router.py:41-42`); si lo hay, se devuelve la primera fila
-   (`:43`).
-5. En ambos casos, qué filas devuelve efectivamente el `SELECT *` — es decir, el
-   aislamiento por droguería, si existe — depende exclusivamente de la policy
-   `usuarios_sel` que evalúa Postgres del lado del servidor
-   (`docs/schema/rls_final.sql:117`, ver [`base_de_datos.md`](./base_de_datos.md)), no de
-   ningún código de este módulo.
-6. **Nota de consistencia**: un usuario con `activo=False` sigue apareciendo en estos
-   listados si RLS lo deja ver (el campo se filtra en `get_current_user` para bloquear al
-   propio usuario desactivado, RN-USUARIOS-021, pero no se usa como filtro de estos dos
-   `SELECT *`) — es decir, un `admin` o `gerencia` puede ver en `GET /usuarios` usuarios desactivados
-   de su droguería con `activo: false` en la respuesta, sin filtro adicional.
+## Flujo 7 — Login con nombre de usuario (`POST /auth/login`) — **[NUEVO]**
+
+1. Endpoint público (`auth/router.py:11-14`) → `login_para_endpoint` → `login` con
+   service client (`auth/service.py:65-66`).
+2. `normalizar_username` (`auth/service.py:22`); si el formato es inválido → 401 genérico.
+3. `obtener_usuario_por_username` (`auth/service.py:26`, `usuarios/repository.py:58-62`);
+   inexistente → 401 genérico.
+4. `obtener_email_auth` con `client.auth.admin.get_user_by_id` (`auth/service.py:30`,
+   `auth/repository.py:9-16`); sin email → 401 genérico.
+5. `iniciar_sesion(email, password)` (`auth/service.py:34`): cliente anon nuevo con
+   `persist_session=False` y httpx propio que se cierra al terminar
+   (`auth/repository.py:24-40`); contraseña incorrecta → 401 genérico.
+6. Devuelve `access_token`, `refresh_token`, `expires_in`, `expires_at`, `token_type` y
+   `user.id` (`auth/service.py:38-45`). El email no se devuelve.
+7. El frontend instala la sesión con `supabase.auth.setSession` y pide
+   `GET /usuarios/{id}` (`frontend/src/features/auth/AuthContext.tsx:121-134`). Si el
+   perfil trae `debe_cambiar_password: true`, los guards lo mandan a `/cambiar-password`.
+
+Todos los rechazos usan el mismo 401 `Usuario o contraseña incorrectos` (RN-USUARIOS-038).
+Un usuario desactivado con credenciales correctas obtiene sesión y recibe 401
+`Usuario desactivado` en el paso 7, con lo que el frontend cierra la sesión.
+
+## Flujo 8 — Cambio de la propia contraseña (`POST /auth/cambiar-password`) — **[NUEVO]**
+
+1. `Depends(get_current_user_con_password_pendiente)` (`auth/router.py:21`): permitido con
+   el flag en `true`; 401 si el usuario está desactivado.
+2. `cambiar_password` (`auth/service.py:48-62`):
+   1. `validar_password(password_nueva)` → 422 si tiene menos de 8 (`:51`).
+   2. Nueva igual a la actual → 422 `La nueva contraseña debe ser distinta de la actual`
+      (`:52-53`).
+   3. Verifica la actual con un sign-in contra Auth; si falla → 422 `La contraseña actual
+      es incorrecta` sin cambiar nada (`:55-57`).
+   4. `actualizar_password_auth` (`:59`) y `debe_cambiar_password=False` (`:60-62`).
+3. Responde `204`. El frontend refresca el perfil y sale de la pantalla de cambio.
+
+## Flujo 9 — Blanqueo de contraseña (`PATCH /usuarios/{usuario_id}/password`) — **[NUEVO]**
+
+1. `require_roles(*ROLES_GESTION_USUARIOS)` (`router.py:84`).
+2. `blanquear_password` (`service.py:243-258`) llama a `_objetivo_gestionable`
+   (`service.py:211-240`): rol del creador, nadie sobre sí mismo, existencia,
+   `superadmin`/`sistema` protegidos, alcance de `gerencia`, droguería.
+3. `validar_password` (`:254`), `actualizar_password_auth` (`:255`) y
+   `debe_cambiar_password=True` (`:256-258`).
+4. Responde `UsuarioOut`. En su próximo request el usuario recibe 403 hasta que la cambie
+   (Flujo 8). Las sesiones abiertas del usuario no se invalidan, pero quedan bloqueadas
+   por el flag.
+
+## Flujo 10 — Edición del nombre de usuario (`PATCH /usuarios/{usuario_id}/username`) — **[NUEVO]**
+
+1. `require_roles(*ROLES_GESTION_USUARIOS)` (`router.py:95`).
+2. `cambiar_username` (`service.py:261-285`): `_objetivo_gestionable`, formato
+   (`:274`), unicidad ignorando al propio objetivo (`:275-277`); si el valor no cambia,
+   devuelve el objetivo sin escribir (`:278-279`); si no, `UPDATE` de `username`
+   (`:281`), con unique violation → 409 (`:282-285`).
+3. No toca la cuenta de Auth (D-USUARIOS-012): el usuario entra con el nuevo username y
+   la misma contraseña.

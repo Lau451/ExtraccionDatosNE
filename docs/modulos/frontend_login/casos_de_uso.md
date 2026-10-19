@@ -4,61 +4,48 @@
 
 | Ruta | Archivo | Protegida | Qué hace |
 |---|---|---|---|
-| `/login` | `frontend/src/routes/login.tsx` | No (pública) | Formulario de email/contraseña; redirige si ya hay sesión. |
-| `/reset-password` | `frontend/src/routes/reset-password.tsx` | No (pública) | Pide email para recuperar contraseña, o muestra `SetPasswordForm` si el link ya dejó sesión temporal. |
-| `/accept-invite` | `frontend/src/routes/accept-invite.tsx` | No (pública) | Activa una cuenta invitada vía sesión temporal + `SetPasswordForm`. |
-| `/_authenticated` (layout pathless) | `frontend/src/routes/_authenticated.tsx` | Sí, vía `beforeLoad: requireAuth` (`_authenticated.tsx:8`) + `useEffect` reactivo (`:16-24`) | Agrupa todas las rutas que requieren sesión; monta `Sidebar` + `<Outlet />`. Las rutas hijas concretas (incluidas las que agregan `requireRole`, ver "Roles" abajo) están fuera del alcance de esta documentación. |
+| `/login` | `frontend/src/routes/login.tsx` | No (pública) | Formulario de usuario/contraseña; redirige si ya hay sesión. |
+| `/cambiar-password` | `frontend/src/routes/cambiar-password.tsx` | Sí, `beforeLoad: requireSession` (`cambiar-password.tsx:8`) — solo sesión, sin chequeo de cambio pendiente (evita el loop) | Cambio de la propia contraseña: forzado tras un alta o blanqueo, o voluntario desde Mi cuenta. Fuera del layout con sidebar. |
+| `/_authenticated` (layout pathless) | `frontend/src/routes/_authenticated.tsx` | Sí, `beforeLoad: requireAuth` (`_authenticated.tsx:8`) + `useEffect` reactivo (`:17-29`) | Agrupa las rutas que requieren sesión; con cambio pendiente manda a `/cambiar-password`. |
 
-`__root.tsx` no define una ruta navegable en sí, solo el nodo raíz y el tipo de contexto. Otra
-ruta relacionada, `/_authenticated/mi-cuenta`, está documentada en
-[`../frontend_mi_cuenta/`](../frontend_mi_cuenta/README.md) (no en este módulo).
+**Eliminadas** (odd/tasks/login-usuario-alta-admin.md S4): `/reset-password` (recuperación por
+email) y `/accept-invite` (activación de cuenta invitada). Ya no existen en
+`frontend/src/routes/` ni en `routeTree.gen.ts`.
 
-## Endpoint de backend consumido
+Otra ruta relacionada, `/_authenticated/mi-cuenta`, está documentada en
+[`../frontend_mi_cuenta/`](../frontend_mi_cuenta/README.md).
 
-| Método | Path | Backend | Quién lo llama | Evidencia |
-|---|---|---|---|---|
-| GET | `/usuarios/{usuario_id}` | `services/presupuestacion` | `AuthContext.tsx` (useEffect de resolución de perfil, y `refrescarPerfil()`) | `AuthContext.tsx:73`: `presupuestacionFetch<Perfil>(`/usuarios/${session.user.id}`)`; `AuthContext.tsx:91` (misma llamada en `refrescarPerfil`) |
+## Endpoints de backend consumidos
 
-Contrato completo (request/response/roles requeridos) documentado en
-[`../usuarios/api.md`](../usuarios/api.md), fila `GET /usuarios/{usuario_id}` — según esa
-documentación, ese endpoint solo exige `Depends(get_current_user)` (cualquier usuario autenticado,
-sin rol específico), consistente con que Login lo llame apenas resuelta la sesión, antes de conocer
-el rol del usuario. Notar que `get_current_user` ahora rechaza con 401 si el usuario está
-desactivado (`core/auth.py`, RN-CORE-026 en `../core/reglas.md`) — ese 401 es justamente lo que
-dispara el `signOut()` automático de `AuthContext.tsx:83` (ver [`decisiones.md`](./decisiones.md)
-D-LOGIN-006).
+| Método | Path | Quién lo llama | Evidencia |
+|---|---|---|---|
+| POST | `/auth/login` | `signIn` de `AuthContext` vía `iniciarSesion` | `lib/api/auth.ts:22-37`, `AuthContext.tsx:125` |
+| POST | `/auth/cambiar-password` | `CambiarPasswordForm` vía `cambiarPasswordPropia` | `lib/api/auth.ts:39-45`, `CambiarPasswordForm.tsx:40` |
+| GET | `/usuarios/{usuario_id}` | `cargarPerfil` de `AuthContext` (efecto de sesión, `signIn` y `refrescarPerfil`) | `AuthContext.tsx:75` |
 
-Además, indirectamente, toda llamada a Supabase Auth (`signInWithPassword`, `getSession`,
-`signOut`, `onAuthStateChange`, `resetPasswordForEmail`, `updateUser`) es una interacción con el
-servicio de Supabase Auth del proyecto — no un endpoint propio de `services/presupuestacion` ni
-`services/extraccion`. Ver [`arquitectura.md`](./arquitectura.md) para el detalle de qué cliente se
-usa y con qué restricciones.
+Contratos completos en [`../usuarios/api.md`](../usuarios/api.md). `GET /usuarios/{id}` sobre el
+propio id es uno de los dos endpoints permitidos con cambio de contraseña pendiente
+(RN-USUARIOS-035), así que el perfil se resuelve aunque el resto de la API responda 403. Un 401
+(usuario desactivado) o 404 de ese endpoint dispara el `signOut()` automático
+(`AuthContext.tsx:84-86`, D-LOGIN-006).
+
+Además, el frontend interactúa con Supabase Auth directamente solo para `setSession`,
+`getSession`, `onAuthStateChange` y `signOut` — el sign-in ya no se hace desde el navegador.
 
 ## Roles
 
-El login en sí **no distingue roles**: cualquier usuario con credenciales válidas en Supabase Auth
-puede autenticarse y llegar a `isAuthenticated: true`, independientemente de su `rol` resuelto
-(`perfil.rol`). La guard usada por `/_authenticated` en sí, `requireAuth` (`routeGuards.ts:10-14`),
-no consulta `perfil` en ningún punto.
+El login en sí **no distingue roles**. `requireAuth` (`routeGuards.ts:20-25`) exige sesión y que
+`perfil.debe_cambiar_password` no sea `true`; no mira el rol.
 
-`requireRole(...roles: Rol[])` (`routeGuards.ts:27-35`) restringe por rol, aceptando cualquier
-combinación de los 6 valores de `Rol` (`superadmin`, `admin`, `gerencia`, `lider_comercial`,
-`comercial`, `compras` — `AuthContext.tsx:6`, idéntica a la lista del backend en
-`usuarios/models.py:5`). **Corrección frente a la versión anterior de esta documentación**: sí
-tiene call sites reales, ambos fuera del alcance de archivos de este módulo:
+`requireRole(...roles: Rol[])` (`routeGuards.ts:38-46`) restringe por rol sobre `requireAuth`:
 
 | Ruta | `requireRole(...)` | Archivo |
 |---|---|---|
 | `/_authenticated/admin/usuarios` | `USUARIOS_ROLES` = `'admin'`, `'superadmin'`, `'gerencia'` | `routes/_authenticated.admin.usuarios.tsx:7` |
 | `/_authenticated/superadmin/empresas` | `'superadmin'` | `routes/_authenticated.superadmin.empresas.tsx:6` |
-| `/_authenticated/` (carga de documentos) | `CARGA_DOCUMENTOS_ROLES` = `'admin'`, `'gerencia'`, `'lider_comercial'`, `'comercial'` | `routes/_authenticated.index.tsx:8` |
+| `/_authenticated/` (carga de documentos) | `CARGA_DOCUMENTOS_ROLES` | `routes/_authenticated.index.tsx:8` |
 
-No es la lista completa: desde la matriz de roles (odd/tasks/roles-permisos-matriz.md S9)
-todas las rutas de negocio de `routes/_authenticated.*.tsx` declaran `requireRole` (productos,
-terceros, PCP, compromisos, órdenes de compra, validar extracción, importar presupuestos). Un rol
-que no alcanza no rebota a `/` sino a su pantalla de aterrizaje, `homeForRol(rol)`
-(`routeGuards.ts:20-25`): `/` para los roles de carga de documentos, `/productos` para
-`compras`, `/superadmin/empresas` para `superadmin` y `/mi-cuenta` sin perfil resuelto.
+Desde la matriz de roles (odd/tasks/roles-permisos-matriz.md S9) todas las rutas de negocio
+declaran `requireRole`. Un rol que no alcanza rebota a `homeForRol(rol)` (`routeGuards.ts:31-36`).
 
-Ver [`README.md`](./README.md), [`decisiones.md`](./decisiones.md) (D-LOGIN-003 corregida,
-D-LOGIN-005) y [`pendientes.md`](./pendientes.md).
+Ver [`decisiones.md`](./decisiones.md) y [`pendientes.md`](./pendientes.md).

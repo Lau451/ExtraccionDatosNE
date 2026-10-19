@@ -50,7 +50,7 @@ pero comparten la misma base de datos Supabase.
 
 - [`catalogo/`](./modulos/catalogo/README.md) — maestro de productos, categorías, proveedores, costos y stock por depósito.
 - [`clientes/`](./modulos/clientes/README.md) — maestro de clientes, contactos, formato de documentos por cliente (instrucciones para el prompt de IA) y observaciones.
-- [`usuarios/`](./modulos/usuarios/README.md) — alta de cuentas por invitación, cambio de rol, activar/desactivar, eliminar y autoservicio de perfil propio.
+- [`usuarios/`](./modulos/usuarios/README.md) — login con nombre de usuario (`POST /auth/login`), alta de cuentas por el admin con usuario y contraseña temporal, cambio forzado de contraseña, blanqueo, cambio de rol, activar/desactivar, eliminar y autoservicio de perfil propio.
 - [`droguerias/`](./modulos/droguerias/README.md) — CRUD de "empresas" (tenants): raíz del multi-tenant, de la que dependen 36 tablas vía `drogueria_id`.
 - [`planes/`](./modulos/planes/README.md) — catálogo de solo lectura de planes de suscripción por droguería; sin CRUD ni enforcement de límites todavía.
 - [`imports/`](./modulos/imports/README.md) — ingesta masiva por lote de productos/costos/stock/proveedores/clientes desde sistemas externos.
@@ -65,9 +65,9 @@ pero comparten la misma base de datos Supabase.
 
 ### Frontend — `frontend/`
 
-- [`frontend_login/`](./modulos/frontend_login/README.md) — autenticación (Supabase Auth), resolución de rol, guard de rutas, reset de contraseña y aceptación de invitación.
+- [`frontend_login/`](./modulos/frontend_login/README.md) — login con nombre de usuario vía backend (sesión de Supabase Auth), resolución de rol, guards de ruta y cambio de contraseña (forzado o voluntario, `/cambiar-password`).
 - [`frontend_carga_documentos/`](./modulos/frontend_carga_documentos/README.md) — única pantalla funcional del MVP además de Login: sube documentos y muestra cargas recientes; incluye también el Shell/Navegación (`Sidebar.tsx`).
-- [`frontend_mi_cuenta/`](./modulos/frontend_mi_cuenta/README.md) — autogestión de la cuenta propia: editar nombre/apellido, cambiar contraseña, cambiar email y cerrar sesión.
+- [`frontend_mi_cuenta/`](./modulos/frontend_mi_cuenta/README.md) — autogestión de la cuenta propia: ver el nombre de usuario, editar nombre/apellido, ir a cambiar la contraseña y cerrar sesión.
 
 ## Estado de la documentación
 

@@ -48,8 +48,8 @@ def obtener_email_usuario(client: Client, *, usuario_id: str) -> str | None:
     """PR11 (tasks.md 11.7) -- `usuarios` (rls_final.sql) NO tiene columna
     `email`: vive en `auth.users`, accesible únicamente vía la Admin API de
     Supabase Auth (`client.auth.admin.get_user_by_id`, mismo mecanismo que
-    `services/presupuestacion/usuarios/repository.py::invitar_usuario_auth`
-    usa para crear el usuario). Requiere que `client` esté inicializado con
+    `services/presupuestacion/auth/repository.py::obtener_email_auth`
+    usa para resolver el email interno en el login). Requiere que `client` esté inicializado con
     la service_role key -- `cerrar_pcp` solo se expone vía su wrapper
     `*_para_endpoint` (service_role), igual que el resto de operaciones de
     escritura cross-tabla de este módulo. Devuelve `None` si el usuario no

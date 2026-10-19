@@ -59,8 +59,11 @@ consulta de forma acotada para resolver el perfil del solicitante autenticado.
 | `id` | Filtro `.eq("id", claims.sub)` para ubicar la fila del usuario autenticado (`services/presupuestacion/core/auth.py:40`). |
 | `drogueria_id` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.drogueria_id` (`core/auth.py:39`, `:20`); nullable (`str | None`). |
 | `rol` | Proyectada en el `SELECT` y usada por `require_roles` para autorizar (`core/auth.py:39`, `:53`). |
-| `activo` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.activo` (`core/auth.py:39`, `:22`); si es `False`, `get_current_user` levanta `AuthenticationError` en vez de devolver el perfil (`core/auth.py:47-48` — ver RN-CORE-026). |
+| `activo` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.activo`; si es `False`, `_cargar_perfil` levanta `AuthenticationError` en vez de devolver el perfil (`services/shared/auth.py:55-56` — ver RN-CORE-026). |
+| `debe_cambiar_password` | **[NUEVA, migración `0038`]** Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.debe_cambiar_password` (default `False`); si es `True`, `get_current_user` levanta `ForbiddenError` (403) salvo en la dependencia permisiva (`services/shared/auth.py:60-83` — ver RN-CORE-027). |
 
-**Operaciones**: SELECT únicamente (`core/auth.py:37-43`), acotado a `id, drogueria_id,
-rol, activo` (no se proyecta la tabla completa). Sin fila para el `sub` del token →
-`NotFoundError` (`core/auth.py:44-45`).
+**Operaciones**: SELECT únicamente (`services/shared/auth.py:45-51`, reexportado por
+`core/auth.py`), acotado a `id, drogueria_id, rol, activo, debe_cambiar_password`. Sin fila
+para el `sub` del token → `NotFoundError` (`:52-53`). Requiere la migración `0038` aplicada:
+sin la columna, este `SELECT` falla en todo request autenticado (ver
+[`../usuarios/pendientes.md`](../usuarios/pendientes.md)).
