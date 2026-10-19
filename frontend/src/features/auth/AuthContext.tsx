@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { iniciarSesion } from '@/lib/api/auth'
 import { ApiError, presupuestacionFetch } from '@/lib/api/presupuestacion'
 import { supabase } from '@/lib/supabase'
 
@@ -15,6 +16,11 @@ export interface Perfil {
   apellido: string | null
   es_sistema: boolean
   activo: boolean
+  username: string
+  // Cuenta creada o blanqueada por un admin: mientras esté en true, el
+  // backend rechaza todo salvo leer el propio perfil y cambiar la contraseña,
+  // y los guards mandan a /cambiar-password (spec S3).
+  debe_cambiar_password: boolean
 }
 
 interface AuthContextValue {
@@ -23,7 +29,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   loading: boolean
   perfilLoading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refrescarPerfil: () => Promise<void>
 }
@@ -59,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Extraído para poder esperarlo explícitamente desde signIn() — sin esto,
   // el fetch de perfil solo se disparaba de forma reactiva (efecto sobre
-  // `session`) y signIn() resolvía apenas signInWithPassword terminaba, antes
+  // `session`) y signIn() resolvía apenas el login terminaba, antes
   // de que perfil estuviera listo. LoginForm navega apenas signIn() resuelve
   // (a `?redirect=`, que puede ser una ruta con requireRole) — reproducido en
   // sesión de testing manual: login → redirect directo a /superadmin/empresas
@@ -112,14 +118,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await cargarPerfil(session.user.id)
   }
 
-  async function signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  async function signIn(username: string, password: string) {
+    // El login va por el backend (spec S1): resuelve el username al email
+    // interno de auth del lado del servidor y devuelve la sesión de Supabase,
+    // que se instala acá para que supabase-js la refresque como siempre.
+    const login = await iniciarSesion(username, password)
+    const { error } = await supabase.auth.setSession({
+      access_token: login.access_token,
+      refresh_token: login.refresh_token,
+    })
     if (error) throw error
     // Esperar el perfil ACÁ, no solo dejar que el efecto reactivo lo cargue
     // solo — LoginForm navega apenas esta promesa resuelve.
-    if (data.user) {
-      await cargarPerfil(data.user.id)
-    }
+    await cargarPerfil(login.user.id)
   }
 
   async function signOut() {

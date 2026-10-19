@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Rol } from './AuthContext'
-import { homeForRol, requireAuth, requireRole } from './routeGuards'
+import { homeForRol, requireAuth, requireRole, requireSession } from './routeGuards'
 
-function args(auth: { isAuthenticated: boolean; perfil: { rol: Rol } | null }) {
+function args(auth: { isAuthenticated: boolean; perfil: { rol: Rol; debe_cambiar_password?: boolean } | null }) {
   return { context: { auth }, location: { href: '/admin/usuarios' } }
 }
 
@@ -69,5 +69,35 @@ describe('homeForRol (S9: aterrizaje sin loop)', () => {
   it('sigue redirigiendo a / a un rol de carga denegado (comportamiento previo)', () => {
     const guard = requireRole('admin', 'superadmin')
     expect(destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: { rol: 'comercial' } })))).toBe('/')
+  })
+})
+
+describe('cambio de contraseña forzado (S3)', () => {
+  const pendiente = { rol: 'admin' as Rol, debe_cambiar_password: true }
+
+  it('requireAuth manda a /cambiar-password mientras el flag está activo', () => {
+    expect(destinoRedirect(() => requireAuth(args({ isAuthenticated: true, perfil: pendiente })))).toBe(
+      '/cambiar-password',
+    )
+  })
+
+  it('requireRole manda a /cambiar-password aunque el rol esté permitido', () => {
+    const guard = requireRole('admin')
+    expect(destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: pendiente })))).toBe('/cambiar-password')
+  })
+
+  it('con el flag apagado no redirige', () => {
+    const guard = requireRole('admin')
+    expect(() =>
+      guard(args({ isAuthenticated: true, perfil: { rol: 'admin', debe_cambiar_password: false } })),
+    ).not.toThrow()
+  })
+
+  it('requireSession (ruta de cambio) deja pasar con el flag activo: sin loop', () => {
+    expect(() => requireSession(args({ isAuthenticated: true, perfil: pendiente }))).not.toThrow()
+  })
+
+  it('requireSession sigue mandando a /login sin sesión', () => {
+    expect(destinoRedirect(() => requireSession(args({ isAuthenticated: false, perfil: null })))).toBe('/login')
   })
 })

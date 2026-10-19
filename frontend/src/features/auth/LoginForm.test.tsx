@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/lib/api/presupuestacion'
 import { LoginForm } from './LoginForm'
 
 const { signInMock } = vi.hoisted(() => ({ signInMock: vi.fn() }))
+
+vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }))
 
 vi.mock('./AuthContext', () => ({
   useAuth: () => ({ signIn: signInMock }),
@@ -16,14 +19,20 @@ beforeEach(() => {
   signInMock.mockReset()
 })
 
-function completarFormulario() {
-  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@test.com' } })
+function completarFormulario(usuario = 'jperez') {
+  fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: usuario } })
   fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'password123' } })
   fireEvent.submit(screen.getByRole('button', { name: /ingresar/i }).closest('form')!)
 }
 
-describe('LoginForm', () => {
-  it('llama a onSuccess cuando signIn resuelve', async () => {
+describe('LoginForm (S1: login con usuario)', () => {
+  it('pide Usuario y contraseña, sin campo de email', () => {
+    render(<LoginForm onSuccess={vi.fn()} />)
+    expect(screen.getByLabelText('Usuario')).toHaveAttribute('type', 'text')
+    expect(screen.queryByLabelText('Email')).toBeNull()
+  })
+
+  it('llama a signIn con el usuario y a onSuccess cuando resuelve', async () => {
     signInMock.mockResolvedValue(undefined)
     const onSuccess = vi.fn()
     render(<LoginForm onSuccess={onSuccess} />)
@@ -31,21 +40,30 @@ describe('LoginForm', () => {
     completarFormulario()
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
-    expect(signInMock).toHaveBeenCalledWith('user@test.com', 'password123')
+    expect(signInMock).toHaveBeenCalledWith('jperez', 'password123')
   })
 
-  it('muestra el mensaje genérico y no llama a onSuccess si signIn falla', async () => {
+  it('un 401 muestra "Usuario o contraseña incorrectos" y no llama a onSuccess', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const errorReal = new Error('Invalid login credentials')
+    const errorReal = new ApiError('Usuario o contraseña incorrectos', 401)
     signInMock.mockRejectedValue(errorReal)
     const onSuccess = vi.fn()
     render(<LoginForm onSuccess={onSuccess} />)
 
     completarFormulario()
 
-    await waitFor(() => expect(screen.getByText('Email o contraseña incorrectos')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Usuario o contraseña incorrectos')).toBeInTheDocument())
     expect(onSuccess).not.toHaveBeenCalled()
     expect(consoleError).toHaveBeenCalledWith(expect.any(String), errorReal)
     consoleError.mockRestore()
+  })
+
+  it('reemplaza "¿Olvidaste tu contraseña?" por el aviso de contactar al administrador', () => {
+    render(<LoginForm onSuccess={vi.fn()} />)
+    expect(screen.queryByText('¿Olvidaste tu contraseña?')).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(
+      screen.getByText('¿Olvidaste tu contraseña? Contactá al administrador para que te la blanquee.'),
+    ).toBeInTheDocument()
   })
 })

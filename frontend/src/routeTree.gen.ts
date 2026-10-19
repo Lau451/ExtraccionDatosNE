@@ -10,9 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
+import { Route as CambiarPasswordRouteImport } from './routes/cambiar-password'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
 import { Route as AuthenticatedCompromisosRouteImport } from './routes/_authenticated.compromisos'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
@@ -42,19 +41,14 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AcceptInviteRoute = AcceptInviteRouteImport.update({
-  id: '/accept-invite',
-  path: '/accept-invite',
+const CambiarPasswordRoute = CambiarPasswordRouteImport.update({
+  id: '/cambiar-password',
+  path: '/cambiar-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -196,9 +190,8 @@ const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
-  '/accept-invite': typeof AcceptInviteRoute
+  '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/pcp': typeof AuthenticatedPcpRouteWithChildren
@@ -224,9 +217,8 @@ export interface FileRoutesByFullPath {
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
 export interface FileRoutesByTo {
-  '/accept-invite': typeof AcceptInviteRoute
+  '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
@@ -252,9 +244,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
-  '/accept-invite': typeof AcceptInviteRoute
+  '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/compromisos': typeof AuthenticatedCompromisosRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/pcp': typeof AuthenticatedPcpRouteWithChildren
@@ -284,9 +275,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/accept-invite'
+    | '/cambiar-password'
     | '/login'
-    | '/reset-password'
     | '/compromisos'
     | '/mi-cuenta'
     | '/pcp'
@@ -312,9 +302,8 @@ export interface FileRouteTypes {
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/accept-invite'
+    | '/cambiar-password'
     | '/login'
-    | '/reset-password'
     | '/compromisos'
     | '/mi-cuenta'
     | '/'
@@ -339,9 +328,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
-    | '/accept-invite'
+    | '/cambiar-password'
     | '/login'
-    | '/reset-password'
     | '/_authenticated/compromisos'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/pcp'
@@ -370,9 +358,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
-  AcceptInviteRoute: typeof AcceptInviteRoute
+  CambiarPasswordRoute: typeof CambiarPasswordRoute
   LoginRoute: typeof LoginRoute
-  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -384,11 +371,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/accept-invite': {
-      id: '/accept-invite'
-      path: '/accept-invite'
-      fullPath: '/accept-invite'
-      preLoaderRoute: typeof AcceptInviteRouteImport
+    '/cambiar-password': {
+      id: '/cambiar-password'
+      path: '/cambiar-password'
+      fullPath: '/cambiar-password'
+      preLoaderRoute: typeof CambiarPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -396,13 +383,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -688,9 +668,8 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
-  AcceptInviteRoute: AcceptInviteRoute,
+  CambiarPasswordRoute: CambiarPasswordRoute,
   LoginRoute: LoginRoute,
-  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

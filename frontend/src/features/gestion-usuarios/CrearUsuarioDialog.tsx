@@ -3,19 +3,31 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth, type Rol } from '@/features/auth/AuthContext'
 import { listarDroguerias } from '@/lib/api/droguerias'
-import { invitarUsuario } from '@/lib/api/usuarios'
+import { crearUsuario } from '@/lib/api/usuarios'
+import {
+  ERROR_PASSWORD_TEMPORAL,
+  ERROR_USERNAME,
+  PASSWORD_TEMPORAL_MINIMO,
+  mensajeDeError,
+  normalizarUsername,
+  usernameValido,
+} from './credenciales'
 
-const CAMPOS_VACIOS = { email: '', nombre: '', apellido: '' }
+const CAMPOS_VACIOS = { username: '', password: '', nombre: '', apellido: '' }
 
-export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol[] }) {
+/** Alta de usuario por el admin (spec S2): sin email ni invitación. El admin
+ * le pasa usuario y contraseña temporal, y el usuario la cambia en el primer
+ * ingreso (spec S3). */
+export function CrearUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol[] }) {
   const { perfil } = useAuth()
   const [open, setOpen] = useState(false)
   const [campos, setCampos] = useState(CAMPOS_VACIOS)
   const [rol, setRol] = useState<Rol>(rolesAsignables[0])
   const [drogueriaId, setDrogueriaId] = useState('')
+  const [errorValidacion, setErrorValidacion] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  // Un admin invita siempre dentro de su propia droguería (el backend la
+  // Un admin crea siempre dentro de su propia droguería (el backend la
   // fuerza sola, ver crear_usuario en usuarios/service.py) — no necesita
   // elegirla. Un superadmin no pertenece a ninguna, así que sí tiene que
   // elegir a cuál empresa va el usuario nuevo.
@@ -28,8 +40,9 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
 
   const mutation = useMutation({
     mutationFn: () =>
-      invitarUsuario({
+      crearUsuario({
         ...campos,
+        username: normalizarUsername(campos.username),
         rol,
         ...(esSuperadmin ? { drogueria_id: drogueriaId } : {}),
       }),
@@ -41,6 +54,22 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
     },
   })
 
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setErrorValidacion(null)
+    if (!usernameValido(normalizarUsername(campos.username))) {
+      setErrorValidacion(ERROR_USERNAME)
+      return
+    }
+    if (campos.password.length < PASSWORD_TEMPORAL_MINIMO) {
+      setErrorValidacion(ERROR_PASSWORD_TEMPORAL)
+      return
+    }
+    mutation.mutate()
+  }
+
+  const error = errorValidacion ?? (mutation.isError ? mensajeDeError(mutation.error, 'No se pudo crear el usuario.') : null)
+
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
@@ -48,7 +77,7 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
           type="button"
           className="rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white"
         >
-          + Invitar usuario
+          + Crear usuario
         </button>
       </Dialog.Trigger>
 
@@ -56,26 +85,35 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
         <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-slate-900">
-            Invitar usuario
+            Crear usuario
           </Dialog.Title>
-          <p className="mt-1 text-xs text-slate-500">
-            Se le envía un email para que defina su propia contraseña.
-          </p>
+          <Dialog.Description className="mt-1 text-xs text-slate-500">
+            Pasale al usuario su nombre de usuario y la contraseña temporal. Se le va a pedir que la
+            cambie en el primer ingreso.
+          </Dialog.Description>
 
-          <form
-            className="mt-4 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              mutation.mutate()
-            }}
-          >
+          <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
             <label className="block text-sm">
-              <span className="mb-1 block text-slate-600">Email</span>
+              <span className="mb-1 block text-slate-600">Usuario</span>
               <input
-                type="email"
                 required
-                value={campos.email}
-                onChange={(event) => setCampos((c) => ({ ...c, email: event.target.value }))}
+                autoCapitalize="none"
+                autoComplete="off"
+                value={campos.username}
+                onChange={(event) =>
+                  setCampos((c) => ({ ...c, username: event.target.value.toLowerCase() }))
+                }
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Contraseña temporal</span>
+              <input
+                required
+                autoComplete="new-password"
+                value={campos.password}
+                onChange={(event) => setCampos((c) => ({ ...c, password: event.target.value }))}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
             </label>
@@ -136,11 +174,7 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
               </label>
             )}
 
-            {mutation.isError && (
-              <p className="text-sm text-red-600">
-                {mutation.error instanceof Error ? mutation.error.message : 'No se pudo invitar.'}
-              </p>
-            )}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <Dialog.Close asChild>
@@ -153,7 +187,7 @@ export function InvitarUsuarioDialog({ rolesAsignables }: { rolesAsignables: Rol
                 disabled={mutation.isPending}
                 className="rounded-md bg-navy px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
-                {mutation.isPending ? 'Invitando…' : 'Invitar'}
+                {mutation.isPending ? 'Creando…' : 'Crear'}
               </button>
             </div>
           </form>

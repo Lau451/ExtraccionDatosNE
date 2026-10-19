@@ -11,6 +11,8 @@ export interface Usuario {
   apellido: string | null
   es_sistema: boolean
   activo: boolean
+  username: string
+  debe_cambiar_password: boolean
 }
 
 export interface ActualizarPerfilPayload {
@@ -18,8 +20,11 @@ export interface ActualizarPerfilPayload {
   apellido?: string
 }
 
-export interface InvitarUsuarioPayload {
-  email: string
+/** Alta por el admin (spec S2): username + contraseña temporal, sin email ni
+ * invitación. El usuario la tiene que cambiar en el primer ingreso (S3). */
+export interface CrearUsuarioPayload {
+  username: string
+  password: string
   nombre: string
   apellido: string
   rol: Rol
@@ -38,11 +43,28 @@ export function listarUsuarios(): Promise<Usuario[]> {
   return presupuestacionFetch<Usuario[]>('/usuarios')
 }
 
-export function invitarUsuario(payload: InvitarUsuarioPayload): Promise<Usuario> {
+export function crearUsuario(payload: CrearUsuarioPayload): Promise<Usuario> {
   return presupuestacionFetch<Usuario>('/usuarios', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+}
+
+/** Blanqueo (spec S4): contraseña temporal nueva + `debe_cambiar_password`. */
+export function blanquearPasswordUsuario(usuarioId: string, password: string): Promise<Usuario> {
+  return presupuestacionFetch<Usuario>(`/usuarios/${usuarioId}/password`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function cambiarUsernameUsuario(usuarioId: string, username: string): Promise<Usuario> {
+  return presupuestacionFetch<Usuario>(`/usuarios/${usuarioId}/username`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
   })
 }
 

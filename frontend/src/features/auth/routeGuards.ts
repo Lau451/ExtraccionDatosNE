@@ -3,13 +3,24 @@ import { CARGA_DOCUMENTOS_ROLES } from '@/features/carga-documentos/roles'
 import type { Rol } from './AuthContext'
 
 interface GuardArgs {
-  context: { auth: { isAuthenticated: boolean; perfil: { rol: Rol } | null } }
+  context: { auth: { isAuthenticated: boolean; perfil: { rol: Rol; debe_cambiar_password?: boolean } | null } }
   location: { href: string }
 }
 
-export function requireAuth({ context, location }: GuardArgs) {
+// Solo exige sesión. La usa directamente /cambiar-password: si usara
+// requireAuth, el chequeo del cambio forzado la redirigiría a sí misma (loop).
+export function requireSession({ context, location }: GuardArgs) {
   if (!context.auth.isAuthenticated) {
     throw redirect({ to: '/login', search: { redirect: location.href } })
+  }
+}
+
+// Toda ruta protegida pasa por acá (el layout _authenticated y requireRole):
+// mientras la contraseña sea temporal se manda a cambiarla (spec S3).
+export function requireAuth(args: GuardArgs) {
+  requireSession(args)
+  if (args.context.auth.perfil?.debe_cambiar_password) {
+    throw redirect({ to: '/cambiar-password' })
   }
 }
 

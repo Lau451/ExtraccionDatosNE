@@ -10,7 +10,8 @@ export const Route = createFileRoute('/_authenticated')({
 })
 
 function AuthenticatedLayout() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, perfil } = useAuth()
+  const debeCambiarPassword = perfil?.debe_cambiar_password ?? false
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -20,8 +21,12 @@ function AuthenticatedLayout() {
     // pantalla se quedaba montada sin redirigir. Chequeo reactivo acá.
     if (!isAuthenticated) {
       navigate({ to: '/login' })
+    } else if (debeCambiarPassword) {
+      // Mismo motivo para el cambio forzado (spec S3): requireAuth lo cubre al
+      // navegar, esto cubre un perfil que pasó a tener el flag ya montado.
+      navigate({ to: '/cambiar-password' })
     }
-  }, [isAuthenticated, navigate])
+  }, [isAuthenticated, debeCambiarPassword, navigate])
 
   return (
     <div className="flex min-h-svh bg-slate-50">
