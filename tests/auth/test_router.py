@@ -17,6 +17,9 @@ from services.shared.exceptions import register_exception_handlers
 
 MENSAJE_LOGIN = "Usuario o contraseña incorrectos"
 MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."
+# Email interno ficticio con el que intentan el sign-in los usernames que no
+# resuelven a una cuenta (dominio por defecto de Settings.auth_email_domain).
+EMAIL_LOGIN_INEXISTENTE = "login-inexistente@usuarios.local"
 
 # La real, antes de que el fixture `estado` la reemplace: los tests de S8 la
 # ejercitan con Supabase Auth simulado a nivel de create_client.
@@ -167,8 +170,27 @@ def test_login_usuario_inexistente_y_password_incorrecta_dan_el_mismo_error(esta
 
     assert inexistente.status_code == incorrecta.status_code == 401
     assert inexistente.json() == incorrecta.json() == {"detail": MENSAJE_LOGIN}
-    # el usuario inexistente ni siquiera llega a Supabase Auth
-    assert estado["sign_ins"] == [("0f3c@usuarios.local", "otra-cosa")]
+    # el usuario inexistente también intenta el sign-in, con el email ficticio
+    assert estado["sign_ins"] == [
+        (EMAIL_LOGIN_INEXISTENTE, "temporal1"),
+        ("0f3c@usuarios.local", "otra-cosa"),
+    ]
+
+
+def test_login_usuario_inexistente_intenta_el_sign_in_con_el_email_ficticio(estado):
+    """S1: el username inexistente hace el mismo sign-in que uno real, contra un
+    email interno que no corresponde a ninguna cuenta; aunque Auth lo aceptara,
+    la respuesta es el 401 genérico."""
+    estado["passwords"][EMAIL_LOGIN_INEXISTENTE] = "temporal1"
+
+    respuesta = _cliente(estado).post(
+        "/auth/login", json={"username": "nadie", "password": "temporal1"}
+    )
+
+    assert respuesta.status_code == 401
+    assert respuesta.json() == {"detail": MENSAJE_LOGIN}
+    assert estado["sign_ins"] == [(EMAIL_LOGIN_INEXISTENTE, "temporal1")]
+    assert EMAIL_LOGIN_INEXISTENTE not in estado["emails"].values()
 
 
 @pytest.mark.parametrize("username", ["jp", "x" * 31, "j perez", "jperez@mail.com"])
@@ -179,7 +201,7 @@ def test_login_con_username_de_formato_invalido_da_el_error_generico(estado, use
 
     assert respuesta.status_code == 401
     assert respuesta.json() == {"detail": MENSAJE_LOGIN}
-    assert estado["sign_ins"] == []
+    assert estado["sign_ins"] == [(EMAIL_LOGIN_INEXISTENTE, "temporal1")]
 
 
 def test_login_sin_cuenta_auth_da_el_error_generico(estado):
@@ -191,7 +213,7 @@ def test_login_sin_cuenta_auth_da_el_error_generico(estado):
 
     assert respuesta.status_code == 401
     assert respuesta.json() == {"detail": MENSAJE_LOGIN}
-    assert estado["sign_ins"] == []
+    assert estado["sign_ins"] == [(EMAIL_LOGIN_INEXISTENTE, "temporal1")]
 
 
 def test_login_sin_enumeracion_todos_los_fallos_responden_igual(estado):
@@ -353,6 +375,21 @@ def test_login_con_limite_de_intentos_da_429(estado, monkeypatch):
     assert respuesta.status_code == 429
     assert respuesta.json() == {"detail": MENSAJE_RATE_LIMIT}
     assert estado["sign_ins"] == [("0f3c@usuarios.local", "temporal1")]
+
+
+def test_login_con_limite_de_intentos_no_distingue_usernames(estado, monkeypatch):
+    """S1+S8: bajo 429 de Supabase, existente, inexistente e inválido responden igual."""
+    _auth_responde(monkeypatch, estado, status=429)
+    cliente = _cliente(estado)
+
+    existente = cliente.post("/auth/login", json={"username": "jperez", "password": "x12345678"})
+    inexistente = cliente.post("/auth/login", json={"username": "nadie", "password": "x12345678"})
+    invalido = cliente.post("/auth/login", json={"username": "j perez@x", "password": "x12345678"})
+    vacio = cliente.post("/auth/login", json={"username": "", "password": ""})
+
+    respuestas = (existente, inexistente, invalido, vacio)
+    assert {r.status_code for r in respuestas} == {429}
+    assert all(r.json() == {"detail": MENSAJE_RATE_LIMIT} for r in respuestas)
 
 
 def test_login_con_credenciales_invalidas_de_auth_sigue_dando_401(estado, monkeypatch):

@@ -5,6 +5,7 @@ from supabase import Client
 from services.presupuestacion.auth import repository as repo
 from services.presupuestacion.auth.models import CambiarPasswordIn, LoginIn
 from services.presupuestacion.core.auth import UsuarioPerfil
+from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import AuthenticationError, ValidationError
 from services.presupuestacion.usuarios import repository as usuarios_repo
@@ -14,6 +15,25 @@ from services.presupuestacion.usuarios.service import normalizar_username, valid
 # pueden sondear usernames (odd/tasks/login-usuario-alta-admin.md S1).
 MENSAJE_LOGIN_INVALIDO = "Usuario o contraseña incorrectos"
 
+# Local part del email ficticio de login_fallido. Nunca coincide con una cuenta
+# real: las altas usan `<uuid4 hex>@dominio` (sin guiones) y las cuentas
+# previas conservan su email real.
+_LOCAL_EMAIL_INEXISTENTE = "login-inexistente"
+
+
+def email_login_inexistente() -> str:
+    return f"{_LOCAL_EMAIL_INEXISTENTE}@{get_settings().auth_email_domain}"
+
+
+def _login_fallido(password: str) -> AuthenticationError:
+    """Intento de un username que no resuelve a una cuenta (formato inválido,
+    inexistente o sin cuenta de Auth). Igual hace el sign-in contra Supabase con
+    un email ficticio: así comparte el 429 del límite de intentos (S8) y el
+    tiempo de un intento real, y no se pueden sondear usernames (S1). El
+    RateLimitError se propaga; cualquier otro resultado es el 401 genérico."""
+    repo.iniciar_sesion(email=email_login_inexistente(), password=password)
+    return AuthenticationError(MENSAJE_LOGIN_INVALIDO)
+
 
 def login(client: Client, *, body: LoginIn) -> dict[str, Any]:
     """Resuelve el username al email interno de Auth del lado del servidor y abre
@@ -21,15 +41,15 @@ def login(client: Client, *, body: LoginIn) -> dict[str, Any]:
     rechaza después con 401 "Usuario desactivado", igual que antes de este cambio."""
     username = normalizar_username(body.username)
     if username is None:
-        raise AuthenticationError(MENSAJE_LOGIN_INVALIDO)
+        raise _login_fallido(body.password)
 
     usuario = usuarios_repo.obtener_usuario_por_username(client, username=username)
     if usuario is None:
-        raise AuthenticationError(MENSAJE_LOGIN_INVALIDO)
+        raise _login_fallido(body.password)
 
     email = repo.obtener_email_auth(client, usuario_id=usuario["id"])
     if email is None:
-        raise AuthenticationError(MENSAJE_LOGIN_INVALIDO)
+        raise _login_fallido(body.password)
 
     sesion = repo.iniciar_sesion(email=email, password=body.password)
     if sesion is None:

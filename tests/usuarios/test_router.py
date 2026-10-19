@@ -101,14 +101,20 @@ def almacen(monkeypatch, auth_admin) -> dict[str, dict]:
     return filas
 
 
-def _cliente(rol: str, usuario_id: str = "yo", drogueria_id: str | None = DROGUERIA) -> TestClient:
+def _cliente(
+    rol: str,
+    usuario_id: str = "yo",
+    drogueria_id: str | None = DROGUERIA,
+    *,
+    raise_server_exceptions: bool = True,
+) -> TestClient:
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
         id=usuario_id, drogueria_id=drogueria_id, rol=rol
     )
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
 
 def _body_crear(rol: str) -> dict:
@@ -558,6 +564,34 @@ def test_blanqueo_con_auth_fallida_restaura_el_flag_y_devuelve_el_error(
     assert respuesta.status_code == 422
     assert respuesta.json() == {"detail": "No se pudo cambiar la contraseña: Auth no disponible"}
     assert almacen["comercial-propio"]["debe_cambiar_password"] is flag_previo
+
+
+def test_blanqueo_si_falla_la_restauracion_el_flag_queda_true(almacen, auth_admin, monkeypatch):
+    """S9: si Auth falla y también falla restaurar el flag, la cuenta queda con
+    el cambio forzado pendiente (falla cerrado) y el pedido da 500."""
+    almacen["comercial-propio"]["debe_cambiar_password"] = False
+    original = repo.actualizar_perfil
+    llamadas = []
+
+    def _perfil(client, *, usuario_id, campos):
+        llamadas.append(campos)
+        if len(llamadas) == 2:
+            raise RuntimeError("db caída")
+        return original(client, usuario_id=usuario_id, campos=campos)
+
+    def _auth_falla(client, *, usuario_id, password):
+        raise service.ValidationError("No se pudo cambiar la contraseña: Auth no disponible")
+
+    monkeypatch.setattr(repo, "actualizar_perfil", _perfil)
+    monkeypatch.setattr(repo, "actualizar_password_auth", _auth_falla)
+
+    respuesta = _cliente("gerencia", raise_server_exceptions=False).patch(
+        "/usuarios/comercial-propio/password", json={"password": "temporal2"}
+    )
+
+    assert respuesta.status_code == 500
+    assert llamadas == [{"debe_cambiar_password": True}, {"debe_cambiar_password": False}]
+    assert almacen["comercial-propio"]["debe_cambiar_password"] is True
 
 
 # ---------------------------------------------------------------------------
