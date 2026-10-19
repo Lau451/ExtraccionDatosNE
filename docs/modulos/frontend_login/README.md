@@ -37,7 +37,7 @@ propios, no de autenticación.
   [`../usuarios/`](../usuarios/README.md).
 - **No hay recuperación de contraseña por email.** Se eliminó `/reset-password`
   (D-LOGIN-008). El login muestra "¿Olvidaste tu contraseña? Contactá al administrador para que te
-  la blanquee." (`LoginForm.tsx:76-78`).
+  la blanquee." (`LoginForm.tsx:81-83`).
 - **No muestra ni conoce el email de Supabase Auth.** El backend resuelve username → email interno
   y devuelve solo la sesión (`lib/api/auth.ts:1-20`).
 - **No tiene `estados.md` ni `base_de_datos.md`.** Ver [`arquitectura.md`](./arquitectura.md).

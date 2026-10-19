@@ -151,16 +151,16 @@ def eliminar_usuario(client: Client, *, creador: UsuarioPerfil, usuario_id: str)
 # service.py:189-208 — RN-USUARIOS-022 a 027, 029.
 
 def blanquear_password(client: Client, *, creador: UsuarioPerfil, usuario_id: str, password: str) -> dict[str, Any]: ...
-# service.py:243-258 — NUEVO. RN-USUARIOS-032, 035, 036.
+# service.py:243-269 — NUEVO. RN-USUARIOS-032, 035, 036, 044 (flag antes que Auth).
 
 def cambiar_username(client: Client, *, creador: UsuarioPerfil, usuario_id: str, username: str) -> dict[str, Any]: ...
-# service.py:261-285 — NUEVO. RN-USUARIOS-031, 033, 037.
+# service.py:272-296 — NUEVO. RN-USUARIOS-031, 033, 037.
 
 def actualizar_perfil_propio(client: Client, *, usuario_id: str, body: UsuarioPerfilUpdate) -> dict[str, Any]: ...
-# service.py:288-295 — RN-USUARIOS-028.
+# service.py:299-306 — RN-USUARIOS-028.
 ```
 
-Los 7 wrappers `*_para_endpoint` (`service.py:298-333`) resuelven `get_service_client()`
+Los 7 wrappers `*_para_endpoint` (`service.py:309-344`) resuelven `get_service_client()`
 (sin RLS) y delegan en su función de negocio homónima.
 
 ## `usuarios/router.py`
@@ -218,16 +218,20 @@ class CambiarPasswordIn(BaseModel):
 ## `auth/repository.py`
 
 ```python
+MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."   # auth/repository.py:11
+
 def obtener_email_auth(client: Client, *, usuario_id: str) -> str | None: ...
-# auth/repository.py:9-16 — client.auth.admin.get_user_by_id; None si AuthApiError o sin
+# auth/repository.py:14-21 — client.auth.admin.get_user_by_id; None si AuthApiError o sin
 # usuario. El email nunca sale del backend.
 
 def iniciar_sesion(*, email: str, password: str) -> Session | None: ...
-# auth/repository.py:19-41 — crea un cliente anon NUEVO por llamada (create_client con
+# auth/repository.py:24-49 — crea un cliente anon NUEVO por llamada (create_client con
 # supabase_anon_key, persist_session=False, auto_refresh_token=False y un httpx propio que
-# se cierra en el finally, :27-40) y llama a sign_in_with_password. None si AuthApiError.
+# se cierra en el finally, :33-48) y llama a sign_in_with_password. AuthApiError con
+# status 429 → RateLimitError(MENSAJE_RATE_LIMIT) (:43-45, RN-USUARIOS-043); cualquier
+# otro AuthApiError → None (:46).
 # No usa el service client ni los cacheados por token: sign_in_with_password guarda la
-# sesión en el propio cliente (comentario :20-23).
+# sesión en el propio cliente (comentario :25-29).
 ```
 
 ## `auth/service.py`
@@ -239,10 +243,10 @@ def login(client: Client, *, body: LoginIn) -> dict[str, Any]: ...
 # auth/service.py:18-45 — RN-USUARIOS-038.
 
 def cambiar_password(client: Client, *, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...
-# auth/service.py:48-62 — RN-USUARIOS-039.
+# auth/service.py:48-65 — RN-USUARIOS-039.
 
-def login_para_endpoint(*, body: LoginIn) -> dict[str, Any]: ...                  # :65-66
-def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...  # :69-70
+def login_para_endpoint(*, body: LoginIn) -> dict[str, Any]: ...                  # :68-69
+def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...  # :72-73
 # Ambos con get_service_client().
 ```
 
@@ -250,12 +254,12 @@ def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPassw
 
 | Método | Path | Request | Response | Dependencia de auth | Archivo |
 |---|---|---|---|---|---|
-| POST | `/auth/login` | `LoginIn` | `LoginOut` (401 `Usuario o contraseña incorrectos`) | Ninguna (público) | `auth/router.py:11-14` |
-| POST | `/auth/cambiar-password` | `CambiarPasswordIn` | `204 No Content` | `get_current_user_con_password_pendiente` (permitido con cambio pendiente) | `auth/router.py:17-23` |
+| POST | `/auth/login` | `LoginIn` | `LoginOut` (401 `Usuario o contraseña incorrectos`; 429 `Demasiados intentos. Probá de nuevo en unos minutos.`) | Ninguna (público) | `auth/router.py:11-14` |
+| POST | `/auth/cambiar-password` | `CambiarPasswordIn` | `204 No Content` (422 de RN-USUARIOS-039; 429 con el mismo mensaje del login) | `get_current_user_con_password_pendiente` (permitido con cambio pendiente) | `auth/router.py:17-23` |
 
 ## Errores de dominio y status HTTP
 
-Mapeo centralizado en `services/shared/exceptions.py:46-54` (`STATUS_MAP`), ver
+Mapeo centralizado en `services/shared/exceptions.py:50-59` (`STATUS_MAP`), ver
 [`../core/api.md`](../core/api.md):
 
 - `ForbiddenError` → 403: RN-USUARIOS-001, 002, 008, 009, 010, 014, 015, 016, 017, 019,
@@ -271,3 +275,11 @@ Mapeo centralizado en `services/shared/exceptions.py:46-54` (`STATUS_MAP`), ver
 - `AuthenticationError` → 401: `POST /auth/login` con credenciales inválidas
   (RN-USUARIOS-038), y `get_current_user`/`get_current_user_con_password_pendiente`
   cuando `activo=False` (RN-USUARIOS-021).
+- `RateLimitError` → 429 (**[NUEVO]**, `exceptions.py:38-39`, `:56`): Supabase Auth
+  respondió 429 en el sign-in de `POST /auth/login` o en la verificación de la contraseña
+  actual de `POST /auth/cambiar-password` (RN-USUARIOS-043). Body
+  `{"detail": "Demasiados intentos. Probá de nuevo en unos minutos."}`. El 429 de
+  `create_user` en el alta sigue siendo 409 (RN-USUARIOS-040).
+- Un error de PostgREST por el trigger de `0039` (SQLSTATE `42501`, RN-USUARIOS-042) solo
+  lo ve quien escribe `usuarios` con su JWT por fuera del backend; ningún endpoint del
+  módulo lo dispara, porque escriben con el service client.

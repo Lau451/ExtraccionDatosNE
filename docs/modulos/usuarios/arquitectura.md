@@ -13,10 +13,10 @@ hermano `auth/` depende de Core y de `usuarios/` (`auth/service.py:10-11`). [IMP
 | `get_current_user` | `core/auth.py` | Dependencia de `GET /usuarios` y `PATCH /usuarios/me`, sin exigir rol (`router.py:33`, `:105`). Rechaza con 403 si hay cambio de contraseña pendiente. |
 | `get_current_user_con_password_pendiente`, `exigir_password_al_dia` | `services/shared/auth.py` | Importadas directo (no están en el shim de Core). `GET /usuarios/{usuario_id}` usa la permisiva y aplica `exigir_password_al_dia` si el id no es el propio (`router.py:26`, `:42`, `:47-48`); `POST /auth/cambiar-password` usa la permisiva (`auth/router.py:6`, `:21`). |
 | `require_roles` | `core/auth.py` | Dependencia de POST, `PATCH /rol`, `/activo`, `/password`, `/username` y `DELETE`, exige `ROLES_GESTION_USUARIOS` = `superadmin`/`admin`/`gerencia` (`router.py:57`, `:66`, `:75`, `:84`, `:95`, `:113`; constante en `service.py:20`). |
-| `get_settings` | `core/config.py` (shim de `services/shared/config.py`) | Resuelve `auth_email_domain` para el email interno opaco del alta (`service.py:9`, `:103`). Ya no se usa `frontend_url` en este módulo. `auth/repository.py:24` lo usa para `supabase_url`/`supabase_anon_key`. |
-| `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto por los 7 wrappers `*_para_endpoint` (`service.py:298-333`) y por los 2 de `auth/service.py:65-70`. |
+| `get_settings` | `core/config.py` (shim de `services/shared/config.py`) | Resuelve `auth_email_domain` para el email interno opaco del alta (`service.py:9`, `:103`). Ya no se usa `frontend_url` en este módulo. `auth/repository.py:30` lo usa para `supabase_url`/`supabase_anon_key`. |
+| `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto por los 7 wrappers `*_para_endpoint` (`service.py:309-344`) y por los 2 de `auth/service.py:68-73`. |
 | `get_user_client` | `core/database.py` | Cliente con RLS, inyectado directo en los 2 endpoints GET (`router.py:34`, `:43`). |
-| `build_resilient_httpx_client` | `services/shared/http_client.py` | httpx propio por login, cerrado al terminar (`auth/repository.py:27`, `:40`). |
+| `build_resilient_httpx_client` | `services/shared/http_client.py` | httpx propio por login, cerrado al terminar (`auth/repository.py:33`, `:48`). |
 | `ForbiddenError`, `NotFoundError`, `ValidationError`, `ConflictError`, `AuthenticationError` | `core/exceptions.py` | Errores de dominio de `service.py`, `repository.py`, `router.py` y `auth/service.py` (`AuthenticationError` del login, `auth/service.py:9`). |
 
 ## Asimetría de capas: GET directo a BD vs escritura vía `service.py`
@@ -32,7 +32,7 @@ hermano `auth/` depende de Core y de `usuarios/` (`auth/service.py:10-11`). [IMP
   autorización es estructural (el `usuario_id` sale del token).
 - **`POST /auth/login`** (`auth/router.py:11-14`): público. Usa el service client para
   resolver username → id → email interno, y un cliente anon nuevo para el sign-in
-  (`auth/repository.py:19-41`) — nunca el service client ni los cacheados por token,
+  (`auth/repository.py:24-49`) — nunca el service client ni los cacheados por token,
   porque `sign_in_with_password` guarda la sesión en el propio cliente.
 - **`POST /auth/cambiar-password`** (`auth/router.py:17-23`): dependencia permisiva (sin el
   bloqueo por cambio pendiente) + service client; el `usuario_id` sale del token.
@@ -57,7 +57,7 @@ POST /auth/login  GET /usuarios(/{id})   PATCH /usuarios/me    POST /auth/      
    │        al_dia si id ajeno           │                     │                      │
    │              │                service client        service client               *_para_endpoint
    │        user_client (RLS)      actualizar_perfil_    cambiar_password             → service client
-   │        SELECT directo         propio                (auth/service.py:48-62)      → reglas RN-USUARIOS
+   │        SELECT directo         propio                (auth/service.py:48-65)      → reglas RN-USUARIOS
    │        (usuarios_sel)                                                            → repository.py
    │
 service client: username → fila → email interno (Admin API)

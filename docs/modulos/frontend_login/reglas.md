@@ -7,7 +7,7 @@ el número, no se renumera.
 
 ### RN-LOGIN-001 — **[MODIFICADA]** Validación de formulario: solo la nativa del navegador
 
-- **Regla**: los campos "Usuario" y "Contraseña" son `required` (`LoginForm.tsx:36-64`); el de
+- **Regla**: los campos "Usuario" y "Contraseña" son `required` (`LoginForm.tsx:41-69`); el de
   usuario es `type="text"` con `autoCapitalize="none"` y `autoComplete="username"`. No hay
   validación de formato en JavaScript: el formato (3-30 caracteres `a-z 0-9 . _ -`) lo valida el
   backend, que ante un formato inválido devuelve el mismo 401 genérico (RN-USUARIOS-031/038). El
@@ -26,7 +26,8 @@ el número, no se renumera.
 
 - **Regla**: `LoginForm` muestra `'Usuario o contraseña incorrectos'` si el error es un 401 o no es
   un `ApiError` (por ejemplo, un error de `setSession`), y `'No pudimos iniciar sesión. Probá de
-  nuevo.'` para cualquier otro `ApiError` (`LoginForm.tsx:20-27`). Siempre hace `console.error` del
+  nuevo.'` para cualquier otro `ApiError` salvo el 429 (`LoginForm.tsx:26-32`; el 429 sigue
+  RN-LOGIN-013). Siempre hace `console.error` del
   error original (`:20`). El backend devuelve el mismo 401 para usuario inexistente y contraseña
   incorrecta, así que no se pueden sondear usernames.
 - [IMPLEMENTADO]. Cubierto por `LoginForm.test.tsx`.
@@ -57,7 +58,7 @@ el número, no se renumera.
 
 - Eliminada junto con `/reset-password` (odd/tasks/login-usuario-alta-admin.md S4). No hay
   recuperación por email: el login muestra "¿Olvidaste tu contraseña? Contactá al administrador
-  para que te la blanquee." (`LoginForm.tsx:76-78`).
+  para que te la blanquee." (`LoginForm.tsx:81-83`).
 
 ### RN-LOGIN-008 — **[ELIMINADA]** `SetPasswordForm`
 
@@ -101,3 +102,19 @@ el número, no se renumera.
 - **Resultado**: tras el 204, `refrescarPerfil()` y navegación completa a `homeForRol(rol)`. A
   diferencia del viejo `SetPasswordForm`, no hace `signOut()`: el usuario sigue logueado.
 - [IMPLEMENTADO]. Cubierto por `CambiarPasswordPage.test.tsx`.
+
+### RN-LOGIN-013 — **[NUEVA]** Un 429 del backend muestra su propio mensaje en login y cambio de contraseña
+
+- **Regla**: si `POST /auth/login` responde 429, `LoginForm` muestra el `detail` del backend tal
+  cual (`error.message`, `LoginForm.tsx:24-25`) en vez de "Usuario o contraseña incorrectos". En
+  `CambiarPasswordForm` el 429 de `POST /auth/cambiar-password` sale por el mismo camino que
+  cualquier `ApiError`: se muestra su `detail` (`CambiarPasswordForm.tsx:47`). El texto lo define
+  el backend: "Demasiados intentos. Probá de nuevo en unos minutos." (RN-USUARIOS-043). En ningún
+  caso se navega ni se llama a `onSuccess`.
+- **Motivo**: el límite de intentos de Supabase Auth lo comparten todos los usuarios (el sign-in
+  sale del backend); mostrarlo como credenciales inválidas confundía al usuario
+  (odd/tasks/login-usuario-alta-admin.md S8).
+- [IMPLEMENTADO] (commit `0c8052c`). Cubierto por `LoginForm.test.tsx` ("un 429 muestra el mensaje
+  de demasiados intentos del backend", y "un 500 sigue mostrando el mensaje genérico de
+  reintento") y `CambiarPasswordPage.test.tsx` ("un 429 muestra el mensaje de demasiados intentos
+  y no navega").

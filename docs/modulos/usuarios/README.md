@@ -76,7 +76,7 @@ módulo de negocio importa de `usuarios/`.
 
 - [`arquitectura.md`](./arquitectura.md) — dependencias hacia Core, asimetría de capas
   entre GET y escritura, diagrama del flujo de autorización.
-- [`base_de_datos.md`](./base_de_datos.md) — tabla `usuarios`, migración `0038`, qué toca
+- [`base_de_datos.md`](./base_de_datos.md) — tabla `usuarios`, migraciones `0038` y `0039` (trigger que protege `username`/`debe_cambiar_password`), qué toca
   y qué no toca este módulo, policy RLS relevante.
 - [`reglas.md`](./reglas.md) — reglas de negocio (RN-USUARIOS-NNN).
 - [`flujo.md`](./flujo.md) — los flujos principales paso a paso.

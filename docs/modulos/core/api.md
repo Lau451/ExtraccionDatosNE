@@ -17,6 +17,11 @@ class ForbiddenError(DomainError): ...        # exceptions.py:15-16
 class NotFoundError(DomainError): ...         # exceptions.py:19-20
 class ConflictError(DomainError): ...         # exceptions.py:23-24
 class ValidationError(DomainError): ...       # exceptions.py:27-28
+class RateLimitError(DomainError): ...        # NUEVO, services/shared/exceptions.py:38-39 → 429
+# Un servicio externo (p.ej. Supabase Auth) rechazó el pedido por límite de intentos.
+# Entrada `RateLimitError: 429` en STATUS_MAP (services/shared/exceptions.py:56). El shim
+# core/exceptions.py no la reexporta: se importa de services.shared.exceptions
+# (services/presupuestacion/auth/repository.py:6). Ver ../usuarios/reglas.md RN-USUARIOS-043.
 
 STATUS_MAP: dict[type[DomainError], int]      # exceptions.py:31-37
 

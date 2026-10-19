@@ -172,7 +172,7 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
   y entrega el `access_token`/`refresh_token` recibidos a `supabase.auth.setSession`
   (`AuthContext.tsx:121-134`). Se eliminaron `/reset-password`, `/accept-invite`,
   `SetPasswordForm.tsx` y `useSessionFromLink.ts`; el login indica contactar al administrador
-  (`LoginForm.tsx:76-78`).
+  (`LoginForm.tsx:81-83`).
 - **Motivo**: pedido del usuario (odd/tasks/login-usuario-alta-admin.md L1): login con nombre de
   usuario, cuentas creadas por el admin, y "si se olvida la contraseña se deberá contactar con el
   admin para blanquear otra". El email de Supabase Auth es interno y no debe llegar al navegador

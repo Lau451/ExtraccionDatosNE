@@ -50,14 +50,19 @@ Drogueria Nueva Era).
 
 - **Descripción**: cada subclase de `DomainError` se mapea a un código HTTP fijo:
   `AuthenticationError`→401, `ForbiddenError`→403, `NotFoundError`→404,
-  `ConflictError`→409, `ValidationError`→422.
+  `ConflictError`→409, `ValidationError`→422 y, **[MODIFICADA]**, `RateLimitError`→429
+  (`services/shared/exceptions.py:38-39`, `:56`; la usa el login de
+  `presupuestacion/auth/` cuando Supabase Auth responde 429 — ver
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-043).
 - **Condición**: se levanta cualquiera de estas excepciones durante el manejo de una
   request.
 - **Resultado**: FastAPI responde con el status y el `detail` (`exc.message`)
   correspondiente vía `JSONResponse`.
 - **Prioridad**: Alta.
 - **Archivo**: `services/presupuestacion/core/exceptions.py:31-37` (`STATUS_MAP`),
-  `:40-46` (`register_exception_handlers`).
+  `:40-46` (`register_exception_handlers`). La implementación real vive hoy en
+  `services/shared/exceptions.py` (`STATUS_MAP` en `:50-59`); `core/exceptions.py` es un
+  shim de reexport que no incluye `RateLimitError`.
 - **Observaciones**: [IMPLEMENTADO]. Una excepción de dominio no listada en
   `STATUS_MAP` cae al default `500` (`exceptions.py:42`), no a un error específico —
   ver D-CORE-007.
@@ -405,7 +410,10 @@ Drogueria Nueva Era).
   (`get_current_user_con_password_pendiente`).
 - **Observaciones**: [IMPLEMENTADO]. Verificado en `tests/shared/test_auth.py` (403 en un
   endpoint normal y al listar usuarios, lectura del propio perfil permitida, perfil ajeno
-  bloqueado, usuario al día sin cambios, desactivado sigue en 401, texto del mensaje). El
-  flag lo escriben `usuarios/` (alta y blanqueo) y `auth/` (cambio propio) — ver
-  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-035. **Solo se aplica en el
-  backend**: las policies RLS no lo miran.
+  bloqueado, usuario al día sin cambios, desactivado sigue en 401, texto del mensaje) y por
+  el barrido de regresión `tests/auth/test_flag_sweep.py` (todas las rutas de
+  `presupuestacion` y `extraccion` dan este 403 salvo las tres exceptuadas). El flag lo
+  escriben `usuarios/` (alta y blanqueo) y `auth/` (cambio propio) — ver
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-035. **El bloqueo se aplica
+  en el backend**: las policies RLS no lo miran. Desde la migración `0039` el usuario no
+  puede cambiar el flag por PostgREST (RN-USUARIOS-042), pero sí leer lo que RLS le permita.

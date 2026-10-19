@@ -222,8 +222,8 @@ actuales.
 
 - **Decisión**: el frontend manda `{username, password}` a `POST /auth/login`; el backend
   resuelve username → id → email interno con el service client y la Admin API
-  (`auth/service.py:22-32`, `auth/repository.py:9-16`), hace el sign-in con un cliente
-  anon nuevo por llamada (`auth/repository.py:19-41`) y devuelve la sesión, que el
+  (`auth/service.py:22-32`, `auth/repository.py:14-21`), hace el sign-in con un cliente
+  anon nuevo por llamada (`auth/repository.py:24-49`) y devuelve la sesión, que el
   frontend instala con `supabase.auth.setSession` (`frontend/src/features/auth/AuthContext.tsx:121-134`).
 - **Motivo**: S1 exige que el email de auth nunca llegue al navegador. Resolverlo en el
   cliente exigiría exponer el mapeo username → email (por ejemplo una RPC pública), que

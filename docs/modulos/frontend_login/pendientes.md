@@ -13,11 +13,14 @@ odd/tasks/login-usuario-alta-admin.md el frontend no usa `invite_user_by_email` 
 - `routeTree.gen.ts` se editó a mano (`@tanstack/router-generator` 1.167.19 vs plugin 1.167.38):
   se agregó `/cambiar-password` y se quitaron `/reset-password` y `/accept-invite`. Revisar el diff
   cuando el plugin lo regenere.
-- El guard de `debe_cambiar_password` (RN-LOGIN-011) es UX: la garantía es el 403 del backend, que
-  tampoco cubre RLS.
-- El login depende de la migración `0038` aplicada y del backend desplegado (orden: `0038` primero).
-- Un 429 de Supabase Auth en el login (rate limit por IP compartido por el backend) se ve como
-  "Usuario o contraseña incorrectos".
+- El guard de `debe_cambiar_password` (RN-LOGIN-011) es UX: la garantía es el 403 del backend. Por
+  PostgREST directo, desde `0039` el usuario ya no puede limpiar el flag (RN-USUARIOS-042), pero
+  todavía puede leer lo que RLS le permita.
+- El login depende de las migraciones `0038` y `0039` aplicadas y del backend desplegado (orden:
+  `0038`, `0039`, backend).
+- ~~Un 429 de Supabase Auth en el login se ve como "Usuario o contraseña incorrectos".~~
+  **Resuelto** (commits `2b4bf79` y `0c8052c`): el backend responde 429 y el login y el cambio de
+  contraseña muestran su mensaje (RN-LOGIN-013). El límite por IP compartido sigue existiendo.
 
 ## P1 — Crítico
 
