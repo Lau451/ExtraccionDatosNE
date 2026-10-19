@@ -99,6 +99,18 @@ nueva que se agregue después.
 contra el proyecto real: los nombres de los roles dueños y que bajo PostgREST
 `current_user` sea el rol del JWT — ver [`pendientes.md`](./pendientes.md).
 
+## Migración `0040_usuarios_protege_alta` — **[NUEVA]**
+
+Trigger `BEFORE INSERT` `trg_usuarios_protege_alta` sobre `usuarios`: rechaza (SQLSTATE
+`42501`, `Solo el sistema puede dar de alta usuarios.`) cualquier alta que no venga del
+`service_role` o de un dueño de la base (`postgres`, `supabase_admin`). Mismas
+excepciones que `0039`. Cierra el borrar y volver a insertar una fila para saltear el
+guard de `UPDATE` de `0039` (RN-USUARIOS-046). El único alta en runtime es
+`crear_perfil_usuario` con el service client.
+
+**Estado**: [IMPLEMENTADO] en SQL (commit `ce39be0`), revisado, **no aplicado todavía**.
+Se aplica después de `0039`. El `down` borra solo el trigger y la función de `0040`.
+
 ## Policy RLS `usuarios_sel`
 
 `docs/schema/rls_final.sql:117`:

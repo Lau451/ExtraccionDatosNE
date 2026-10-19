@@ -68,6 +68,11 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
    `debe_cambiar_password=false` en su fila debe fallar con `42501`, y el blanqueo por el
    backend debe seguir funcionando.
 
+8. **La migración `0040_usuarios_protege_alta` no está aplicada.** Aplicarla después de
+   `0039` (RN-USUARIOS-046). Mismas confirmaciones pendientes que el punto 7; prueba
+   sugerida: un `INSERT` por PostgREST con el JWT de un admin debe fallar con `42501` y
+   el alta desde la pantalla de usuarios debe seguir funcionando.
+
 ## P2 — Deuda técnica relevante
 
 1. **Los 2 endpoints GET no exigen rol ni filtran `drogueria_id` en Python.** `GET /usuarios`
@@ -109,12 +114,11 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
    mantiene Auth primero y flag después: si falla el segundo paso, el usuario tiene que
    cambiarla de nuevo (falla cerrado, aceptado en S9).
 
-9. **Diferencia de tiempos en el login (enumeración por timing).** El body y el status son
-   idénticos para todos los fallos (`tests/auth/test_router.py:197`), pero un username con
-   formato inválido o inexistente responde sin llamar a Supabase Auth
-   (`auth/service.py:22-24`, `:26-28`), mientras que uno existente hace el sign-in
-   (`:34`). La diferencia de tiempo puede revelar qué usernames existen. Abierto: no se
-   eligió corregirlo (L5).
+9. **Diferencia de tiempos en el login — [MAYORMENTE RESUELTO, commit `ea8648f`]**. Un
+   username inexistente o inválido ahora también hace el sign-in contra Supabase con un
+   email ficticio (RN-USUARIOS-045), así que bajo 429 todos responden igual y el tiempo se
+   parece al de un intento real. Queda una diferencia chica: un username real hace además
+   `get_user_by_id` antes del sign-in.
 
 10. **El email del cierre de PCP iría a la dirección interna opaca.** `obtener_email_usuario`
     (`services/pcp/negociacion/repository.py:47-62`) lee el email de `auth.users`, que para

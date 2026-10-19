@@ -11,7 +11,7 @@ Las referencias de línea de esta revisión corresponden a la rama
 Numeración: RN-USUARIOS-001 a 029 existían antes; algunas se modificaron (marcadas
 **[MODIFICADA]**). RN-USUARIOS-013 (alta por invitación de email) quedó **[ELIMINADA]** —
 se conserva el número, no se renumera. RN-USUARIOS-030 en adelante son del login con
-nombre de usuario y del alta por el admin; RN-USUARIOS-042 a 044, del endurecimiento posterior
+nombre de usuario y del alta por el admin; RN-USUARIOS-042 a 046, del endurecimiento posterior
 (trigger de `0039`, 429 visible y blanqueo que falla cerrado).
 
 **Matriz de roles (odd/tasks/roles-permisos-matriz.md S7)**: `gerencia` se suma a
@@ -613,7 +613,7 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   contraseña incorrecta.
 - **Resultado**: siempre `AuthenticationError("Usuario o contraseña incorrectos")` (401,
   `auth/service.py:15`), así no se pueden sondear usernames. **[MODIFICADA]** Excepción:
-  si Supabase Auth responde 429 en el sign-in, el login responde 429 (RN-USUARIOS-043). Un usuario **desactivado**
+  si Supabase Auth responde 429 en el sign-in, el login responde 429 (RN-USUARIOS-043) para cualquier username, exista o no (RN-USUARIOS-045). Un usuario **desactivado**
   con credenciales correctas sí obtiene sesión y recibe el 401 `Usuario desactivado` en
   el primer request siguiente (RN-USUARIOS-021). El endpoint es público
   (`auth/router.py:11-14`).
@@ -753,3 +753,47 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   (`test_blanqueo_con_auth_fallida_restaura_el_flag_y_devuelve_el_error`, con flag previo
   `false` y `true`). Si la restauración misma fallara, su error reemplaza al de Auth y el
   flag queda en `true` (falla cerrado).
+
+### RN-USUARIOS-045 — **[NUEVA]** Login sin cuenta real igual intenta el sign-in (sin sondeo bajo 429)
+
+- **Descripción**: si el username tiene formato inválido, no existe o no tiene cuenta de
+  Auth, `login` (`services/presupuestacion/auth/service.py`) llama a `_login_fallido`,
+  que hace igual `repo.iniciar_sesion` con un email ficticio fijo
+  `login-inexistente@<AUTH_EMAIL_DOMAIN>` (`email_login_inexistente()`) y la contraseña
+  recibida. El email ficticio nunca coincide con una cuenta real: las altas usan
+  `<uuid4 hex>@dominio` y las cuentas previas conservan su email real.
+- **Condición**: el username no resuelve a una cuenta.
+- **Resultado**: si Supabase responde 429, `RateLimitError` se propaga y el login responde
+  el mismo 429 que un username existente (RN-USUARIOS-043); en cualquier otro caso
+  responde el 401 genérico de RN-USUARIOS-038, aunque Auth aceptara el email ficticio
+  (nunca se devuelve esa sesión).
+- **Prioridad**: Alta.
+- **Archivo**: `services/presupuestacion/auth/service.py` (`_login_fallido`,
+  `email_login_inexistente`, `login`).
+- **Observaciones**: [IMPLEMENTADO] (commit `ea8648f`). Corrige el bloqueante L7 del
+  documento de feature: antes, bajo 429, un username existente respondía 429 y uno
+  inexistente 401, lo que permitía sondear usernames. Verificado en
+  `tests/auth/test_router.py` (`test_login_con_limite_de_intentos_no_distingue_usernames`
+  y los casos de sign-in con el email ficticio). Residual: un username real hace además
+  `get_user_by_id` antes del sign-in, así que fuera del 429 queda una diferencia de tiempo
+  chica (ver [`pendientes.md`](./pendientes.md)).
+
+### RN-USUARIOS-046 — **[NUEVA]** Solo el backend da de alta filas de `usuarios` (trigger de `0040`)
+
+- **Descripción**: el trigger `BEFORE INSERT` `trg_usuarios_protege_alta`
+  (`supabase/migrations/0040_usuarios_protege_alta.sql`) rechaza cualquier `INSERT` en
+  `usuarios` con SQLSTATE `42501` y el mensaje `Solo el sistema puede dar de alta
+  usuarios.`, salvo que `current_user` sea `service_role`, `postgres` o
+  `supabase_admin`, o `auth.role() = 'service_role'` (mismas excepciones que
+  RN-USUARIOS-042).
+- **Condición**: un `INSERT` en `usuarios` hecho con el JWT de un usuario (PostgREST).
+- **Resultado**: se rechaza. Cierra el camino de borrar una fila y volver a insertarla con
+  `debe_cambiar_password=false` o con otro `username`, que el trigger de `0039` (solo
+  `UPDATE`) no cubría. El alta del backend (`usuarios/repository.py`
+  `crear_perfil_usuario`, con el service client) y los fixtures de test (todos con el
+  service client) no cambian.
+- **Prioridad**: Alta.
+- **Archivo**: `supabase/migrations/0040_usuarios_protege_alta.sql`,
+  `supabase/migrations/0040_usuarios_protege_alta.down.sql`.
+- **Observaciones**: [IMPLEMENTADO] en SQL (commit `ce39be0`), revisado, **no aplicado
+  todavía**. Va después de `0039` (ya aplicada).
