@@ -26,7 +26,8 @@ def _perfil(usuario: dict) -> UsuarioPerfil:
 
 def _body(**overrides) -> UsuarioCreate:
     base = {
-        "email": f"nuevo-{uuid.uuid4()}@seed.local",
+        "username": f"nuevo-{uuid.uuid4().hex[:12]}",
+        "password": secrets.token_urlsafe(16),
         "nombre": "Usuario Nuevo",
         "apellido": "Apellido Nuevo",
         "rol": "comercial",
@@ -37,10 +38,10 @@ def _body(**overrides) -> UsuarioCreate:
 
 # ---------------------------------------------------------------------------
 # crear_usuario
-# Estos tests SÍ ejercitan crear_usuario de punta a punta (incluida la
-# invitación real por email vía Supabase Auth) — a diferencia de los de
-# cambiar_rol/cambiar_activo más abajo, que usan crear_usuario_directo para no
-# gastar el rate limit de envío de mails en setup que no es lo que se testea.
+# Estos tests SÍ ejercitan crear_usuario de punta a punta (incluida el alta real
+# de la cuenta en Supabase Auth, sin email) — a diferencia de los de
+# cambiar_rol/cambiar_activo más abajo, que usan crear_usuario_directo como
+# setup porque no es lo que se testea.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     usuario_sistema_id: str
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     frontend_url: str = "http://localhost:5173"
+    # login-usuario-alta-admin S2: dominio de los emails internos y opacos
+    # (`<uuid>@<dominio>`) con los que se crean las cuentas de Supabase Auth. Nunca
+    # se envía correo a esas direcciones ni se muestran en el frontend.
+    auth_email_domain: str = "usuarios.local"
 
     # gestor-pcp PR11 (design.md D9/D10) -- feature flags del módulo
     # services/pcp/. `pcp_mensajeria_adapter` selecciona el adaptador de
