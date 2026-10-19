@@ -56,6 +56,9 @@ def cambiar_password(client: Client, *, usuario: UsuarioPerfil, body: CambiarPas
     if email is None or repo.iniciar_sesion(email=email, password=body.password_actual) is None:
         raise ValidationError("La contraseña actual es incorrecta")
 
+    # Auth primero, flag después (S9): si falla el update del flag, el flag queda
+    # en TRUE y el usuario vuelve a la pantalla de cambio (falla cerrado), nunca
+    # queda desbloqueado con la contraseña temporal.
     usuarios_repo.actualizar_password_auth(client, usuario_id=usuario.id, password=body.password_nueva)
     usuarios_repo.actualizar_perfil(
         client, usuario_id=usuario.id, campos={"debe_cambiar_password": False}

@@ -244,7 +244,7 @@ def blanquear_password(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, password: str
 ) -> dict[str, Any]:
     """S4: nueva contraseña temporal; el usuario debe cambiarla al entrar."""
-    _objetivo_gestionable(
+    objetivo = _objetivo_gestionable(
         client,
         creador=creador,
         usuario_id=usuario_id,
@@ -252,10 +252,21 @@ def blanquear_password(
         mensaje_protegido="No se puede blanquear la contraseña de un superadmin o sistema por esta vía",
     )
     validar_password(password)
-    repo.actualizar_password_auth(client, usuario_id=usuario_id, password=password)
-    return repo.actualizar_perfil(
+    # S9: el flag va antes que Auth, así la cuenta nunca queda con una contraseña
+    # puesta por el admin y sin cambio forzado. Si Auth falla, la contraseña no
+    # cambió y se restaura el flag previo.
+    flag_previo = objetivo["debe_cambiar_password"]
+    perfil = repo.actualizar_perfil(
         client, usuario_id=usuario_id, campos={"debe_cambiar_password": True}
     )
+    try:
+        repo.actualizar_password_auth(client, usuario_id=usuario_id, password=password)
+    except Exception:
+        repo.actualizar_perfil(
+            client, usuario_id=usuario_id, campos={"debe_cambiar_password": flag_previo}
+        )
+        raise
+    return perfil
 
 
 def cambiar_username(

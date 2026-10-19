@@ -517,6 +517,50 @@ def test_blanqueo_usuario_inexistente_da_404(almacen, auth_admin):
 
 
 # ---------------------------------------------------------------------------
+# S9: blanqueo atómico (flag antes que Auth, se restaura si Auth falla)
+# ---------------------------------------------------------------------------
+
+def test_blanqueo_marca_el_flag_antes_de_cambiar_la_password_en_auth(almacen, auth_admin, monkeypatch):
+    flag_al_cambiar_auth = []
+
+    def _actualizar_password(client, *, usuario_id, password):
+        flag_al_cambiar_auth.append(almacen[usuario_id]["debe_cambiar_password"])
+        auth_admin["passwords"].append((usuario_id, password))
+
+    monkeypatch.setattr(repo, "actualizar_password_auth", _actualizar_password)
+
+    respuesta = _cliente("gerencia").patch(
+        "/usuarios/comercial-propio/password", json={"password": "temporal2"}
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["debe_cambiar_password"] is True
+    assert flag_al_cambiar_auth == [True]
+    assert almacen["comercial-propio"]["debe_cambiar_password"] is True
+    assert auth_admin["passwords"] == [("comercial-propio", "temporal2")]
+
+
+@pytest.mark.parametrize("flag_previo", [False, True])
+def test_blanqueo_con_auth_fallida_restaura_el_flag_y_devuelve_el_error(
+    almacen, auth_admin, monkeypatch, flag_previo
+):
+    almacen["comercial-propio"]["debe_cambiar_password"] = flag_previo
+
+    def _auth_falla(client, *, usuario_id, password):
+        raise service.ValidationError("No se pudo cambiar la contraseña: Auth no disponible")
+
+    monkeypatch.setattr(repo, "actualizar_password_auth", _auth_falla)
+
+    respuesta = _cliente("gerencia").patch(
+        "/usuarios/comercial-propio/password", json={"password": "temporal2"}
+    )
+
+    assert respuesta.status_code == 422
+    assert respuesta.json() == {"detail": "No se pudo cambiar la contraseña: Auth no disponible"}
+    assert almacen["comercial-propio"]["debe_cambiar_password"] is flag_previo
+
+
+# ---------------------------------------------------------------------------
 # S5: edición de username por el admin
 # ---------------------------------------------------------------------------
 

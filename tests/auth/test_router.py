@@ -4,6 +4,7 @@ tabla usuarios se reemplazan por un almacén en memoria, así corren sin red."""
 
 import pytest
 from fastapi import FastAPI
+from supabase_auth.errors import AuthApiError
 from fastapi.testclient import TestClient
 
 from services.presupuestacion.auth import repository as auth_repo
@@ -15,6 +16,11 @@ from services.shared.database import get_user_client
 from services.shared.exceptions import register_exception_handlers
 
 MENSAJE_LOGIN = "Usuario o contraseña incorrectos"
+MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."
+
+# La real, antes de que el fixture `estado` la reemplace: los tests de S8 la
+# ejercitan con Supabase Auth simulado a nivel de create_client.
+_INICIAR_SESION_REAL = auth_repo.iniciar_sesion
 
 
 class _Sesion:
@@ -188,6 +194,35 @@ def test_login_sin_cuenta_auth_da_el_error_generico(estado):
     assert estado["sign_ins"] == []
 
 
+def test_login_sin_enumeracion_todos_los_fallos_responden_igual(estado):
+    """S10b: ningún fallo de login deja distinguir si el username existe."""
+    cliente = _cliente(estado)
+    intentos = {
+        "inexistente": {"username": "nadie", "password": "temporal1"},
+        "password_incorrecta": {"username": "jperez", "password": "otra-cosa"},
+        "formato_invalido": {"username": "j perez@x", "password": "temporal1"},
+        "vacio": {"username": "", "password": "temporal1"},
+        "existente_con_espacios_y_mayusculas": {"username": "  JPerez ", "password": "otra-cosa"},
+        "inexistente_con_espacios_y_mayusculas": {"username": "  NADIE ", "password": "temporal1"},
+    }
+
+    respuestas = {caso: cliente.post("/auth/login", json=body) for caso, body in intentos.items()}
+
+    assert {caso: r.status_code for caso, r in respuestas.items()} == dict.fromkeys(intentos, 401)
+    assert {caso: r.json() for caso, r in respuestas.items()} == dict.fromkeys(
+        intentos, {"detail": MENSAJE_LOGIN}
+    )
+
+
+def test_login_exitoso_no_expone_ningun_email(estado):
+    respuesta = _cliente(estado).post(
+        "/auth/login", json={"username": "  JPerez ", "password": "temporal1"}
+    )
+
+    assert respuesta.status_code == 200
+    assert "@" not in respuesta.text
+
+
 def test_login_es_publico(estado):
     # sin Authorization: no debe pedir token
     respuesta = _cliente(estado).post(
@@ -281,6 +316,79 @@ def test_cambiar_password_requiere_autenticacion(estado):
     )
 
     assert respuesta.status_code == 401
+    _sin_cambios(estado)
+
+
+# ---------------------------------------------------------------------------
+# S8: límite de intentos de Supabase Auth visible
+# ---------------------------------------------------------------------------
+
+def _auth_responde(monkeypatch, estado: dict, *, status: int) -> None:
+    """iniciar_sesion real con un Supabase Auth simulado que responde `status`
+    a todo sign-in (429 = límite de pedidos; 400 = credenciales inválidas)."""
+
+    class _Auth:
+        def sign_in_with_password(self, credenciales):
+            estado["sign_ins"].append((credenciales["email"], credenciales["password"]))
+            if status == 429:
+                raise AuthApiError("Request rate limit reached", 429, "over_request_rate_limit")
+            raise AuthApiError("Invalid login credentials", 400, "invalid_credentials")
+
+    def _create_client(url, key, options=None):
+        cliente = type("Cliente", (), {})()
+        cliente.auth = _Auth()
+        return cliente
+
+    monkeypatch.setattr(auth_repo, "iniciar_sesion", _INICIAR_SESION_REAL)
+    monkeypatch.setattr(auth_repo, "create_client", _create_client)
+
+
+def test_login_con_limite_de_intentos_da_429(estado, monkeypatch):
+    _auth_responde(monkeypatch, estado, status=429)
+
+    respuesta = _cliente(estado).post(
+        "/auth/login", json={"username": "jperez", "password": "temporal1"}
+    )
+
+    assert respuesta.status_code == 429
+    assert respuesta.json() == {"detail": MENSAJE_RATE_LIMIT}
+    assert estado["sign_ins"] == [("0f3c@usuarios.local", "temporal1")]
+
+
+def test_login_con_credenciales_invalidas_de_auth_sigue_dando_401(estado, monkeypatch):
+    _auth_responde(monkeypatch, estado, status=400)
+
+    respuesta = _cliente(estado).post(
+        "/auth/login", json={"username": "jperez", "password": "otra-cosa"}
+    )
+
+    assert respuesta.status_code == 401
+    assert respuesta.json() == {"detail": MENSAJE_LOGIN}
+
+
+def test_cambiar_password_con_limite_de_intentos_da_429_y_no_cambia_nada(estado, monkeypatch):
+    _auth_responde(monkeypatch, estado, status=429)
+
+    respuesta = _cliente(estado, sub="id-jperez").post(
+        "/auth/cambiar-password",
+        json={"password_actual": "temporal1", "password_nueva": "definitiva8"},
+    )
+
+    assert respuesta.status_code == 429
+    assert respuesta.json() == {"detail": MENSAJE_RATE_LIMIT}
+    _sin_cambios(estado)
+
+
+def test_cambiar_password_con_credenciales_invalidas_de_auth_sigue_dando_422(estado, monkeypatch):
+    _auth_responde(monkeypatch, estado, status=400)
+
+    respuesta = _cliente(estado, sub="id-jperez").post(
+        "/auth/cambiar-password",
+        json={"password_actual": "equivocada", "password_nueva": "definitiva8"},
+    )
+
+    assert respuesta.status_code == 422
+    assert respuesta.json() == {"detail": "La contraseña actual es incorrecta"}
     _sin_cambios(estado)
 
 
