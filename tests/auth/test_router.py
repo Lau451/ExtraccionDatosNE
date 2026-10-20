@@ -712,3 +712,79 @@ def test_login_hace_la_misma_secuencia_de_llamadas_para_todo_username(estado, mo
 
     esperada = (1, [("GET", "/auth/v1/admin/users/{id}"), ("POST", "/auth/v1/token")])
     assert secuencias == dict.fromkeys(secuencias, esperada)
+
+
+def _sin_cambios_lookup_real(estado: dict) -> None:
+    """_sin_cambios tras _lookup_auth_real (la fila pasa a _ID_JPEREZ)."""
+    assert estado["password_updates"] == []
+    assert estado["perfil_updates"] == []
+    assert estado["usuarios"][_ID_JPEREZ]["debe_cambiar_password"] is True
+
+
+# S12 (L14 #2): el lookup del email de Auth dentro de /auth/cambiar-password.
+@pytest.mark.parametrize(
+    "falla,esperado",
+    [(r, _NO_DISPONIBLE) for r in _CAIDAS.values()] + [(_RL_NO_JSON, _LIMITE)],
+    ids=[*_CAIDAS, "429_no_json"],
+)
+def test_cambiar_password_con_lookup_de_auth_caido_no_cambia_nada(estado, monkeypatch, falla, esperado):
+    def responder(request):
+        if request.url.path.startswith(_RUTA_USUARIO_AUTH):
+            return falla(request)
+        return httpx.Response(200, json={})  # nunca debería llegar al sign-in
+
+    pedidos = _gotrue_real(monkeypatch, responder=responder)
+    _lookup_auth_real(monkeypatch, estado)
+    respuesta = _cliente(estado, sub=_ID_JPEREZ).post(
+        "/auth/cambiar-password", json={"password_actual": "temporal1", "password_nueva": "definitiva8"}
+    )
+    assert (respuesta.status_code, respuesta.json()) == esperado
+    assert [p for p in pedidos if p.url.path == "/auth/v1/token"] == []
+    _sin_cambios_lookup_real(estado)
+
+
+def test_cambiar_password_sin_cuenta_auth_da_422(estado, monkeypatch):
+    def responder(request):
+        if request.url.path.startswith(_RUTA_USUARIO_AUTH):
+            return httpx.Response(404, json={"code": 404, "error_code": "user_not_found", "msg": "User not found"})
+        return httpx.Response(400, json=_BAD)
+
+    _gotrue_real(monkeypatch, responder=responder)
+    _lookup_auth_real(monkeypatch, estado)
+    respuesta = _cliente(estado, sub=_ID_JPEREZ).post(
+        "/auth/cambiar-password", json={"password_actual": "temporal1", "password_nueva": "definitiva8"}
+    )
+    assert (respuesta.status_code, respuesta.json()) == (422, {"detail": "La contraseña actual es incorrecta"})
+    _sin_cambios_lookup_real(estado)
+
+
+def test_login_solo_la_cuenta_real_obtiene_sesion_aunque_auth_acepte_el_placeholder(estado, monkeypatch):
+    """S13: aunque Auth emitiera sesión para el email ficticio, solo la cuenta real entra."""
+
+    def responder(request):
+        if request.url.path.startswith(_RUTA_USUARIO_AUTH):
+            uid = request.url.path.removeprefix(_RUTA_USUARIO_AUTH)
+            if uid == _ID_JPEREZ:
+                return httpx.Response(200, json=_usuario_auth(uid))
+            return httpx.Response(404, json={"code": 404, "error_code": "user_not_found", "msg": "User not found"})
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "acc",
+                "refresh_token": "ref",
+                "expires_in": 3600,
+                "expires_at": 1_900_000_000,
+                "token_type": "bearer",
+                "user": _usuario_auth(_ID_JPEREZ),
+            },
+        )
+
+    _gotrue_real(monkeypatch, responder=responder)
+    _lookup_auth_real(monkeypatch, estado)
+    cliente = _cliente(estado)
+    for username in _USERNAMES_PARIDAD + ["login inexistente", "login-inexistente"]:
+        r = cliente.post("/auth/login", json={"username": username, "password": "x12345678"})
+        if username.strip().lower() == "jperez":
+            assert r.status_code == 200 and "@" not in r.text, username
+        else:
+            assert (r.status_code, r.json()) == (401, {"detail": MENSAJE_LOGIN}), username
