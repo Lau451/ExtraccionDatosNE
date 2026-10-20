@@ -1,5 +1,5 @@
 from supabase import Client, ClientOptions, create_client
-from supabase_auth.errors import AuthApiError
+from supabase_auth.errors import AuthApiError, AuthInvalidCredentialsError
 from supabase_auth.types import Session
 
 from services.presupuestacion.core.config import get_settings
@@ -43,6 +43,10 @@ def iniciar_sesion(*, email: str, password: str) -> Session | None:
     except AuthApiError as exc:
         if exc.status == 429:
             raise RateLimitError(MENSAJE_RATE_LIMIT) from exc
+        return None
+    except AuthInvalidCredentialsError:
+        # gotrue la lanza antes del HTTP (p.ej. password vacía) y no es un
+        # AuthApiError: sin este catch salía como 500 en vez del 401 genérico.
         return None
     finally:
         http.close()

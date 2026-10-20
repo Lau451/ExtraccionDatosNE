@@ -440,3 +440,28 @@ def test_cambiar_password_usuario_desactivado_sigue_recibiendo_401(estado):
     assert respuesta.status_code == 401
     assert respuesta.json() == {"detail": "Usuario desactivado"}
     _sin_cambios(estado)
+
+
+@pytest.mark.parametrize("username", ["jperez", "nadie", "j perez@x", ""])
+def test_login_con_password_vacia_da_el_401_generico(estado, monkeypatch, username):
+    """S1: con el cliente gotrue real, una password vacía falla antes del HTTP
+    (AuthInvalidCredentialsError, no AuthApiError). Tiene que dar el mismo 401
+    genérico para cualquier username, nunca un 500."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(auth_repo, "iniciar_sesion", _INICIAR_SESION_REAL)
+    monkeypatch.setattr(
+        auth_repo,
+        "get_settings",
+        lambda: SimpleNamespace(supabase_url="http://127.0.0.1:9", supabase_anon_key="aaa.bbb.ccc"),
+    )
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(router)
+
+    respuesta = TestClient(app, raise_server_exceptions=False).post(
+        "/auth/login", json={"username": username, "password": ""}
+    )
+
+    assert respuesta.status_code == 401
+    assert respuesta.json() == {"detail": MENSAJE_LOGIN}
