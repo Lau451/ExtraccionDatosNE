@@ -10,7 +10,9 @@ import {
   listarUsuarios,
   type Usuario,
 } from '@/lib/api/usuarios'
-import { InvitarUsuarioDialog } from './InvitarUsuarioDialog'
+import { BlanquearPasswordDialog } from './BlanquearPasswordDialog'
+import { CrearUsuarioDialog } from './CrearUsuarioDialog'
+import { EditarUsernameDialog } from './EditarUsernameDialog'
 
 const ROLES_BASE: Rol[] = ['gerencia', 'lider_comercial', 'comercial', 'compras']
 
@@ -18,6 +20,8 @@ export function GestionUsuarios() {
   const { perfil } = useAuth()
   const queryClient = useQueryClient()
   const [aEliminar, setAEliminar] = useState<Usuario | null>(null)
+  const [aBlanquear, setABlanquear] = useState<Usuario | null>(null)
+  const [aRenombrar, setARenombrar] = useState<Usuario | null>(null)
   const { data: usuarios, isPending } = useQuery({
     queryKey: ['usuarios'],
     queryFn: listarUsuarios,
@@ -58,7 +62,7 @@ export function GestionUsuarios() {
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-navy">Usuarios</h1>
-        <InvitarUsuarioDialog rolesAsignables={rolesAsignables} />
+        <CrearUsuarioDialog rolesAsignables={rolesAsignables} />
       </div>
 
       {(cambiarRolMutation.isError || cambiarActivoMutation.isError || eliminarMutation.isError) && (
@@ -72,6 +76,7 @@ export function GestionUsuarios() {
           <thead>
             <tr className="border-b border-slate-200 text-left text-slate-500">
               <th className="py-2 font-medium">Nombre</th>
+              <th className="py-2 font-medium">Usuario</th>
               <th className="py-2 font-medium">Empresa</th>
               <th className="py-2 font-medium">Rol</th>
               <th className="py-2 font-medium">Estado</th>
@@ -90,6 +95,8 @@ export function GestionUsuarios() {
                 onCambiarRol={(rol) => cambiarRolMutation.mutate({ id: usuario.id, rol })}
                 onCambiarActivo={(activo) => cambiarActivoMutation.mutate({ id: usuario.id, activo })}
                 onEliminar={() => setAEliminar(usuario)}
+                onBlanquearPassword={() => setABlanquear(usuario)}
+                onEditarUsername={() => setARenombrar(usuario)}
               />
             ))}
           </tbody>
@@ -104,6 +111,9 @@ export function GestionUsuarios() {
         isPending={eliminarMutation.isPending}
         onConfirm={() => aEliminar && eliminarMutation.mutate(aEliminar.id)}
       />
+
+      <BlanquearPasswordDialog usuario={aBlanquear} onClose={() => setABlanquear(null)} />
+      <EditarUsernameDialog usuario={aRenombrar} onClose={() => setARenombrar(null)} />
     </div>
   )
 }
@@ -117,6 +127,8 @@ function FilaUsuario({
   onCambiarRol,
   onCambiarActivo,
   onEliminar,
+  onBlanquearPassword,
+  onEditarUsername,
 }: {
   usuario: Usuario
   nombreEmpresa: string
@@ -126,11 +138,14 @@ function FilaUsuario({
   onCambiarRol: (rol: string) => void
   onCambiarActivo: (activo: boolean) => void
   onEliminar: () => void
+  onBlanquearPassword: () => void
+  onEditarUsername: () => void
 }) {
   // superadmin y sistema (y admin, si quien mira es gerencia) no son
   // editables desde acá — mismo criterio que el backend (cambiar_rol/
   // cambiar_activo los rechaza explícitamente). Tampoco podés cambiarte el
-  // rol/estado a vos mismo (mismo criterio que eliminar).
+  // rol/estado a vos mismo (mismo criterio que eliminar). Blanquear la
+  // contraseña y editar el usuario siguen la misma regla (spec S4/S5).
   const esProtegido = rolesProtegidos.includes(usuario.rol)
   const esUnoMismo = usuario.id === usuarioActualId
   const noEditable = esProtegido || esUnoMismo
@@ -145,6 +160,7 @@ function FilaUsuario({
       <td className="py-2">
         {usuario.nombre} {usuario.apellido ?? ''}
       </td>
+      <td className="py-2 text-slate-500">{usuario.username}</td>
       <td className="py-2 text-slate-500">{usuario.drogueria_id ? nombreEmpresa : '—'}</td>
       <td className="py-2">
         {noEditable ? (
@@ -176,6 +192,24 @@ function FilaUsuario({
             className="text-sm font-medium text-accent hover:underline"
           >
             {usuario.activo ? 'Desactivar' : 'Reactivar'}
+          </button>
+        )}
+        {!noEditable && (
+          <button
+            type="button"
+            onClick={onBlanquearPassword}
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            Blanquear contraseña
+          </button>
+        )}
+        {!noEditable && (
+          <button
+            type="button"
+            onClick={onEditarUsername}
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            Editar usuario
           </button>
         )}
         {!noEditable && (

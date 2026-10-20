@@ -8,17 +8,22 @@ from services.presupuestacion.usuarios.models import (
     UsuarioActivoUpdate,
     UsuarioCreate,
     UsuarioOut,
+    UsuarioPasswordUpdate,
     UsuarioPerfilUpdate,
     UsuarioRolUpdate,
+    UsuarioUsernameUpdate,
 )
 from services.presupuestacion.usuarios.service import (
     ROLES_GESTION_USUARIOS,
     actualizar_perfil_propio_para_endpoint,
+    blanquear_password_para_endpoint,
     cambiar_activo_para_endpoint,
     cambiar_rol_para_endpoint,
+    cambiar_username_para_endpoint,
     crear_usuario_para_endpoint,
     eliminar_usuario_para_endpoint,
 )
+from services.shared.auth import exigir_password_al_dia, get_current_user_con_password_pendiente
 
 router = APIRouter()
 
@@ -34,9 +39,13 @@ def listar_usuarios_endpoint(
 @router.get("/usuarios/{usuario_id}", response_model=UsuarioOut)
 def obtener_usuario_endpoint(
     usuario_id: str,
-    usuario: UsuarioPerfil = Depends(get_current_user),
+    usuario: UsuarioPerfil = Depends(get_current_user_con_password_pendiente),
     user_client: Client = Depends(get_user_client),
 ) -> UsuarioOut:
+    # Con un cambio de contraseña pendiente solo se puede leer el propio perfil
+    # (odd/tasks/login-usuario-alta-admin.md S3).
+    if usuario_id != usuario.id:
+        exigir_password_al_dia(usuario)
     resultado = user_client.table("usuarios").select("*").eq("id", usuario_id).limit(1).execute()
     if not resultado.data:
         raise NotFoundError("No se encontró el usuario")
@@ -66,6 +75,28 @@ def cambiar_activo_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
 ) -> UsuarioOut:
     return cambiar_activo_para_endpoint(creador=usuario, usuario_id=usuario_id, activo=body.activo)
+
+
+@router.patch("/usuarios/{usuario_id}/password", response_model=UsuarioOut)
+def blanquear_password_endpoint(
+    usuario_id: str,
+    body: UsuarioPasswordUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+) -> UsuarioOut:
+    return blanquear_password_para_endpoint(
+        creador=usuario, usuario_id=usuario_id, password=body.password
+    )
+
+
+@router.patch("/usuarios/{usuario_id}/username", response_model=UsuarioOut)
+def cambiar_username_endpoint(
+    usuario_id: str,
+    body: UsuarioUsernameUpdate,
+    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+) -> UsuarioOut:
+    return cambiar_username_para_endpoint(
+        creador=usuario, usuario_id=usuario_id, username=body.username
+    )
 
 
 @router.patch("/usuarios/me", response_model=UsuarioOut)

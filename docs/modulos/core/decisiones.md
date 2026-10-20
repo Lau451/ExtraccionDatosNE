@@ -89,6 +89,15 @@ Numeración D-CORE-NNN según el descubrimiento previo, verificada contra el có
   indirecto no contendría literalmente la cadena `"get_service_client"` y pasaría el
   test sin detectarse); es un chequeo de substring de texto, no de análisis estático
   real de imports/uso.
+- **Excepciones (allowlist)**: el test acepta los routers de
+  `_ROUTERS_CON_SERVICE_CLIENT` (`tests/core/test_database.py:10-19`), cada uno con su
+  justificación y con filtro `drogueria_id` explícito en su repository (hoy
+  `oc_entregas` y `oc_export`), y falla también si un router de la lista deja de usarlo.
+  `oc_resumen` (solo lectura) no entra en la allowlist: su repository no filtra
+  `drogueria_id` y sus tablas tienen RLS `mismo_tenant`, así que desde el commit `d7b8127`
+  lee con `get_user_client` (como `auditoria/router.py`) y conserva el chequeo de
+  `drogueria_id` en Python como defensa en profundidad (RN-CORE-016,
+  odd/tasks/login-usuario-alta-admin.md S16).
 
 ### D-CORE-007 — Manejo de excepciones de dominio centralizado en un único registro
 

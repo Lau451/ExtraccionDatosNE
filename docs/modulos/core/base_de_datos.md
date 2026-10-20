@@ -59,8 +59,40 @@ consulta de forma acotada para resolver el perfil del solicitante autenticado.
 | `id` | Filtro `.eq("id", claims.sub)` para ubicar la fila del usuario autenticado (`services/presupuestacion/core/auth.py:40`). |
 | `drogueria_id` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.drogueria_id` (`core/auth.py:39`, `:20`); nullable (`str | None`). |
 | `rol` | Proyectada en el `SELECT` y usada por `require_roles` para autorizar (`core/auth.py:39`, `:53`). |
-| `activo` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.activo` (`core/auth.py:39`, `:22`); si es `False`, `get_current_user` levanta `AuthenticationError` en vez de devolver el perfil (`core/auth.py:47-48` — ver RN-CORE-026). |
+| `activo` | Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.activo`; si es `False`, `_cargar_perfil` levanta `AuthenticationError` en vez de devolver el perfil (`services/shared/auth.py:55-56` — ver RN-CORE-026). |
+| `debe_cambiar_password` | **[NUEVA, migración `0038`]** Proyectada en el `SELECT` y mapeada a `UsuarioPerfil.debe_cambiar_password` (default `False`); si es `True`, `get_current_user` levanta `ForbiddenError` (403) salvo en la dependencia permisiva (`services/shared/auth.py:60-83` — ver RN-CORE-027). |
 
-**Operaciones**: SELECT únicamente (`core/auth.py:37-43`), acotado a `id, drogueria_id,
-rol, activo` (no se proyecta la tabla completa). Sin fila para el `sub` del token →
-`NotFoundError` (`core/auth.py:44-45`).
+**Operaciones**: SELECT únicamente (`services/shared/auth.py:45-51`, reexportado por
+`core/auth.py`), acotado a `id, drogueria_id, rol, activo, debe_cambiar_password`. Sin fila
+para el `sub` del token → `NotFoundError` (`:52-53`). Requiere la migración `0038` aplicada:
+sin la columna, este `SELECT` falla en todo request autenticado (ver
+[`../usuarios/pendientes.md`](../usuarios/pendientes.md)).
+
+## Helpers de RLS (`get_drogueria_id`, `get_rol`, `es_superadmin`, `mismo_tenant`, `password_al_dia`)
+
+Core no los define ni los llama: viven en la base y los usan las policies RLS que se
+aplican a todo lo que pasa por `get_user_client` (incluida la lectura de `usuarios` de
+`_cargar_perfil`). No están en ninguna migración salvo `0041`; la definición de referencia
+es `docs/schema/rls_final.sql:106-152`. Todos son `LANGUAGE sql STABLE SECURITY DEFINER`
+con `search_path = public` y leen la fila de `usuarios` con `id = auth.uid()`;
+`mismo_tenant(uuid)` es `es_superadmin() OR p_drogueria = get_drogueria_id()`.
+
+**[MODIFICADA, migración `0041`]** `get_drogueria_id()`, `get_rol()` y `es_superadmin()`
+suman `AND NOT debe_cambiar_password`: con el cambio de contraseña pendiente devuelven
+`NULL`/`NULL`/`false`, como para alguien sin fila en `usuarios`, y `mismo_tenant()` deja de
+dar acceso. El helper nuevo `password_al_dia()` (`FALSE` solo para quien tiene el flag en
+`true`; `EXECUTE` también a `anon`) cubre las lecturas que no pasan por los otros
+(`planes_sel`, `no_sel`, `ne_sel`, `np_sel`, `licitaciones_all_access`). La rama
+`id = auth.uid()` de `usuarios_sel` no cambia, así que `_cargar_perfil` sigue leyendo la
+propia fila y el backend puede responder el 403 de RN-CORE-027. Con el flag en `false`, los
+helpers devuelven lo mismo que antes. Detalle en
+[`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-048.
+
+**Estado**: [IMPLEMENTADO] en SQL (commit `e099547`), **no ejecutado ni aplicado**. Antes de
+aplicarla hay 3 chequeos en el SQL Editor del proyecto real (detalle en
+[`../usuarios/pendientes.md`](../usuarios/pendientes.md) P1-3): (1) que la definición,
+dueño y permisos actuales de los helpers coincidan con `rls_final.sql`, porque `0041` los
+recrea suponiendo esa definición; (2) que las policies que reescribe (`planes_sel`,
+`no_sel`, `ne_sel`, `np_sel`, `licitaciones_all_access`) coincidan con lo que restaura su
+`.down.sql`; (3) que no queden caminos de lectura que no pasen por los helpers ni por
+`password_al_dia()` (policies con `auth.uid()` propio o `USING (true)`, vistas, RPCs).

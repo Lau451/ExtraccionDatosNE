@@ -60,9 +60,10 @@ def limpiar_usuario_creado(service_client):
 @pytest.fixture
 def crear_usuario_directo(service_client):
     """Factory de setup para tests que necesitan "un usuario ya existente" sin
-    ejercitar crear_usuario (que invita por email desde la migración a
-    invite_user_by_email — usarlo como scaffolding agota el rate limit de Auth
-    en pocos tests). Inserta directo, igual que seed_admin/seed_superadmin."""
+    ejercitar crear_usuario (la regla bajo test en otros archivos). Inserta
+    directo, igual que seed_admin/seed_superadmin; el username lo completa el
+    DEFAULT de la columna (0038)."""
+
     creados = []
 
     def _crear(*, rol: str, drogueria_id: str | None, activo: bool = True) -> dict:

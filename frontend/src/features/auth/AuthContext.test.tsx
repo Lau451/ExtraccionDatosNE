@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthContext'
 
@@ -8,6 +9,7 @@ vi.mock('@/lib/supabase', () => ({
       getSession: vi.fn(),
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       signOut: vi.fn().mockResolvedValue({ error: null }),
+      setSession: vi.fn(),
     },
   },
 }))
@@ -24,8 +26,11 @@ vi.mock('@/lib/api/presupuestacion', () => {
   return { presupuestacionFetch: vi.fn(), ApiError }
 })
 
+vi.mock('@/lib/api/auth', () => ({ iniciarSesion: vi.fn() }))
+
 import { supabase } from '@/lib/supabase'
 import { ApiError, presupuestacionFetch } from '@/lib/api/presupuestacion'
+import { iniciarSesion } from '@/lib/api/auth'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sesionFalsa = { user: { id: 'user-1' } } as any
@@ -39,7 +44,30 @@ function perfilFalso(nombre: string) {
     apellido: null,
     es_sistema: false,
     activo: true,
+    username: 'ana',
+    debe_cambiar_password: false,
   }
+}
+
+function SignInProbe() {
+  const { signIn, perfil } = useAuth()
+  const [estado, setEstado] = useState('idle')
+  return (
+    <div>
+      <span data-testid="estado">{estado}</span>
+      <span data-testid="perfil">{perfil ? perfil.nombre : 'null'}</span>
+      <button
+        onClick={() =>
+          signIn('jperez', 'secreta123').then(
+            () => setEstado('ok'),
+            (error: Error) => setEstado(`error:${error.message}`),
+          )
+        }
+      >
+        entrar
+      </button>
+    </div>
+  )
 }
 
 function Probe() {
@@ -58,6 +86,63 @@ beforeEach(() => {
   vi.mocked(supabase.auth.getSession).mockReset()
   vi.mocked(supabase.auth.signOut).mockClear()
   vi.mocked(presupuestacionFetch).mockReset()
+  vi.mocked(supabase.auth.setSession).mockReset()
+  vi.mocked(iniciarSesion).mockReset()
+})
+
+describe('signIn con username (S1)', () => {
+  const login = {
+    access_token: 'acc',
+    refresh_token: 'ref',
+    expires_in: 3600,
+    expires_at: 123,
+    token_type: 'bearer',
+    user: { id: 'user-1' },
+  }
+
+  it('llama a /auth/login, instala la sesión con setSession y espera el perfil antes de resolver', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as never)
+    vi.mocked(iniciarSesion).mockResolvedValue(login)
+    vi.mocked(supabase.auth.setSession).mockResolvedValue({ data: {}, error: null } as never)
+    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+
+    render(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    )
+
+    await act(async () => {
+      screen.getByText('entrar').click()
+    })
+
+    await waitFor(() => expect(screen.getByTestId('estado').textContent).toBe('ok'))
+    expect(iniciarSesion).toHaveBeenCalledWith('jperez', 'secreta123')
+    expect(supabase.auth.setSession).toHaveBeenCalledWith({ access_token: 'acc', refresh_token: 'ref' })
+    expect(presupuestacionFetch).toHaveBeenCalledWith('/usuarios/user-1')
+    expect(screen.getByTestId('perfil').textContent).toBe('Ana')
+  })
+
+  it('propaga el error del login y no instala sesión', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as never)
+    vi.mocked(iniciarSesion).mockRejectedValue(new ApiError('Usuario o contraseña incorrectos', 401))
+
+    render(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    )
+
+    await act(async () => {
+      screen.getByText('entrar').click()
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('estado').textContent).toBe('error:Usuario o contraseña incorrectos'),
+    )
+    expect(supabase.auth.setSession).not.toHaveBeenCalled()
+    expect(presupuestacionFetch).not.toHaveBeenCalled()
+  })
 })
 
 describe('AuthProvider', () => {

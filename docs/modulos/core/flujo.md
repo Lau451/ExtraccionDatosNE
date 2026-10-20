@@ -59,14 +59,18 @@ Disparado en cada request a un endpoint protegido de `presupuestacion/` que decl
    `AuthenticationError` (`core/auth.py:27-28`).
 4. Si el token es válido, `get_current_claims` devuelve un `UserClaims(sub, exp)`
    (`core/auth.py:29`).
-5. `get_current_user` (`core/auth.py:32-45`) recibe esos claims junto con un
-   `user_client` (vía `get_user_client`, que aplica RLS con el mismo token,
-   `core/database.py:25-29`), y consulta
-   `SELECT id, drogueria_id, rol FROM usuarios WHERE id = claims.sub`
-   (`core/auth.py:36-42`).
+5. `get_current_user` (`services/shared/auth.py:65-73`, reexportado por `core/auth.py`)
+   recibe esos claims junto con un `user_client` (vía `get_user_client`, que aplica RLS con
+   el mismo token, `core/database.py:25-29`), y `_cargar_perfil` consulta
+   `SELECT id, drogueria_id, rol, activo, debe_cambiar_password FROM usuarios WHERE id = claims.sub`
+   (`services/shared/auth.py:44-51`).
 6. Si no hay fila, levanta `NotFoundError("No se encontró el perfil de usuario")`
-   (`core/auth.py:43-44`, RN-CORE-013). Si la hay, devuelve un `UsuarioPerfil`
-   (`core/auth.py:45`).
+   (`:52-53`, RN-CORE-013). Si `activo` es `False`, `AuthenticationError("Usuario
+   desactivado")` (`:55-56`, RN-CORE-026). Si `debe_cambiar_password` es `True`,
+   `ForbiddenError("Debés cambiar tu contraseña antes de continuar")` (`:60-62`, `:72`,
+   RN-CORE-027) — salvo que el endpoint use `get_current_user_con_password_pendiente`
+   (`:76-83`), que se detiene después del chequeo de `activo`. Si no, devuelve el
+   `UsuarioPerfil`.
 7. Si el endpoint usó `require_roles(*roles)`, su dependencia interna valida
    `usuario.rol in roles`; si no pertenece, levanta `ForbiddenError`
    (`core/auth.py:48-54`, RN-CORE-012).

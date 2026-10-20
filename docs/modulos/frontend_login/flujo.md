@@ -1,209 +1,119 @@
 # Flujos — Login
 
-## 1. Login exitoso (submit → `signInWithPassword` → resolución de rol → redirect)
+## 1. Login exitoso (submit → `POST /auth/login` → `setSession` → perfil → redirect)
 
 ```
-Usuario completa el form en LoginForm (email, password)
+Usuario completa el form en LoginForm (usuario, contraseña)
         │
         ▼
-handleSubmit (LoginForm.tsx:12-24)
-  preventDefault, setError(null), setIsSubmitting(true)
+handleSubmit (LoginForm.tsx:12-36) ──► signIn(username.trim(), password) (:17)
         │
         ▼
-signIn(email, password) — useAuth() (AuthContext.tsx:95-98)
-  await supabase.auth.signInWithPassword({ email, password })
+signIn (AuthContext.tsx:121-134)
+  iniciarSesion(username, password) ──► POST /auth/login (lib/api/auth.ts:22-37)
+        │                               el backend resuelve username → email interno y abre la sesión
+        ├── 401 ──► ApiError ──► LoginForm: "Usuario o contraseña incorrectos" (RN-LOGIN-003)
+        ├── 429 ──► ApiError ──► LoginForm: detail del backend, "Demasiados intentos..." (RN-LOGIN-013)
+        ├── 503 (Supabase Auth caído o con 5xx) ──► muestra el detail del backend, "El servicio de autenticación no está disponible..." (RN-LOGIN-014)
+        ├── otro error HTTP ──► "No pudimos iniciar sesión. Probá de nuevo."
         │
-        ├── error ──► throw error ──► catch en LoginForm.tsx:19
-        │                              setError('Email o contraseña incorrectos')
-        │                              (ver RN-LOGIN-003)
-        │
-        ▼ (sin error)
-onAuthStateChange dispara (AuthContext.tsx:49-53, suscripción activa desde el mount)
-  setSession(newSession)
-        │
-        ▼
-useEffect con dependencia [session, loading] (AuthContext.tsx:58-87)
-  setPerfilLoading(true) (:70) ──► presupuestacionFetch<Perfil>(`/usuarios/${session.user.id}`)
-                                    (AuthContext.tsx:73, ver ../usuarios/api.md)
-        │
-        ├── éxito ──► setPerfil(perfil resuelto) (:74)
-        └── error ──► setPerfil(null) (:76); si status 401/404 ──► signOut() automático (:82-84)
-        │
-        ▼ (en ambos casos)
-setPerfilLoading(false) (:86, finally)
+        ▼ (200 con access_token/refresh_token/user.id)
+supabase.auth.setSession({ access_token, refresh_token }) (:126-130) ──► onAuthStateChange → setSession
         │
         ▼
-onSuccess() en LoginForm (LoginForm.tsx:18) ──► navigate({ to: redirect ?? '/' })
-  (login.tsx:28, RN-LOGIN-004)
+await cargarPerfil(login.user.id) (:133) ──► GET /usuarios/{id} (:75)
+        ├── éxito ──► setPerfil (incluye username y debe_cambiar_password)
+        └── 401/404 ──► setPerfil(null) + signOut() automático (:84-86)
+        │
+        ▼
+onSuccess() ──► irA(redirect ?? '/') = window.location.href (login.tsx:22-24, :40; D-LOGIN-007)
+        │
+        ▼
+App se remonta; InnerApp espera loading/perfilLoading; beforeLoad de la ruta destino:
+  requireAuth ──► si perfil.debe_cambiar_password ──► redirect a /cambiar-password (flujo 5)
+  requireRole ──► si el rol no alcanza ──► homeForRol(rol)
 ```
 
-**Nota de orden**: `onSuccess()` (y por lo tanto la navegación) se dispara apenas
-`signInWithPassword` resuelve sin error, **sin esperar** a que termine la resolución de `perfil`
-(ese `useEffect` corre en paralelo, disparado por el cambio de `session`). Es decir, es posible que
-la navegación a la ruta protegida ocurra antes de que `perfil` esté resuelto — la ruta destino ve
-`isAuthenticated: true` pero potencialmente `perfil: null` por un instante. [IMPLEMENTADO] la
-secuencia descripta.
-
-**Corrección frente a la versión anterior de esta nota**: antes se afirmaba que "ninguna guard
-depende de `perfil`". Eso ya no es cierto — `requireRole` (`routeGuards.ts:27-35`) **sí** depende
-de `context.auth.perfil`, y tiene call sites reales fuera del alcance de este módulo
-(`routes/_authenticated.admin.usuarios.tsx:6`, `routes/_authenticated.superadmin.empresas.tsx:6`).
-El bug de timing corregido en esta sesión (`perfilLoading`, ver [`decisiones.md`](./decisiones.md)
-D-LOGIN-005) resuelve la carrera para el **montaje inicial del router** (carga de página/reload):
-`main.tsx` no monta `RouterProvider` hasta que `perfil` también resolvió. Pero ese fix no cubre
-necesariamente este flujo de login interactivo: acá el router ya está montado, y `onSuccess()`
-navega de forma síncrona apenas `signInWithPassword` resuelve, sin esperar el `useEffect` de
-`perfil` que dispara el cambio de `session`. [SUPOSICIÓN, no verificada en runtime en esta sesión]:
-si un login exitoso redirige directamente a una ruta con `requireRole` (vía `?redirect=`), podría
-existir la misma carrera que se corrigió para el reload — no se reprodujo ni se descartó
-explícitamente en esta sesión. Ver [`pendientes.md`](./pendientes.md) P2 para el seguimiento.
+`GET /usuarios/{propio id}` funciona aunque haya un cambio de contraseña pendiente
+(RN-USUARIOS-035), así que el perfil siempre se resuelve tras el login. Un usuario desactivado
+obtiene sesión pero el perfil responde 401 → logout automático.
 
 ## 2. Logout
 
 ```
-useAuth().signOut() — llamado desde el botón "Cerrar sesión" del Sidebar (features/shell/Sidebar.tsx
-:70-72, fuera del alcance de archivos de esta documentación) o desde Mi cuenta
-(../frontend_mi_cuenta/, botón propio) o automáticamente por AuthContext.tsx en 401/404 de perfil
-(ver flujo 1)
+useAuth().signOut() — botón "Cerrar sesión" del Sidebar, de Mi cuenta o de /cambiar-password,
+o automático por AuthContext en 401/404 de perfil
         │
         ▼
-signOut() (AuthContext.tsx:100-102)
-  await supabase.auth.signOut()
+signOut() (AuthContext.tsx:136-138) ──► supabase.auth.signOut()
         │
         ▼
-onAuthStateChange dispara con newSession = null (AuthContext.tsx:49-53)
-  setSession(null)
+onAuthStateChange con null ──► setSession(null) ──► efecto de perfil: setPerfil(null) (:96-100)
         │
         ▼
-useEffect [session, loading] (AuthContext.tsx:64-68)
-  session es null ──► setPerfil(null), setPerfilLoading(false), return (sin llamar al backend)
-        │
-        ▼
-_authenticated.tsx: useEffect reactivo (_authenticated.tsx:16-24)
-  isAuthenticated pasó a false ──► navigate({ to: '/login' })
+_authenticated.tsx: useEffect reactivo (_authenticated.tsx:17-29) ──► navigate({ to: '/login' })
 ```
 
-**Corrección frente a la versión anterior de esta doc**: antes se afirmaba que no había ningún
-consumidor real de `signOut()` dentro ni fuera del alcance. Ahora hay al menos tres: el botón
-"Cerrar sesión" del `Sidebar` (`features/shell/Sidebar.tsx:70-72`, fuera del alcance de archivos
-de esta documentación pero es el más visible en la UI), el botón equivalente de Mi cuenta
-(`features/mi-cuenta/MiCuenta.tsx`, documentado en
-[`../frontend_mi_cuenta/`](../frontend_mi_cuenta/README.md)), y la llamada automática de
-`AuthContext.tsx:83` ante un 401/404 al resolver `perfil` (ver flujo 1 y
-[`decisiones.md`](./decisiones.md) D-LOGIN-006). El `useEffect` reactivo de `_authenticated.tsx`
-(agregado en esta sesión) es lo que efectivamente saca al usuario de la pantalla protegida en
-el caso automático — en los dos manuales, el propio componente ya navega explícitamente a
-`/login` tras el `signOut()`.
+Los botones manuales navegan explícitamente a `/login` tras el `signOut()`; el caso automático lo
+resuelve el `useEffect` reactivo.
 
-## 3. Acceso a ruta protegida sin sesión
+## 3. Acceso a ruta protegida
 
 ```
-Usuario navega a una ruta bajo el layout /_authenticated (p. ej. "/")
+Usuario navega a una ruta bajo /_authenticated
         │
         ▼
-beforeLoad: requireAuth (_authenticated.tsx:8, ejecuta routeGuards.ts:10-14)
-        │
-        ├── context.auth.isAuthenticated === true ──► continúa el render normal (<Outlet />)
-        │
-        └── context.auth.isAuthenticated === false
-                 │
-                 ▼
-        throw redirect({ to: '/login', search: { redirect: location.href } })
-                 │
-                 ▼
-        LoginPage (login.tsx) — el usuario ve el form, con `redirect` cargado en el search param
+beforeLoad: requireAuth (_authenticated.tsx:8, routeGuards.ts:20-25)
+        ├── sin sesión ──► redirect({ to: '/login', search: { redirect: location.href } })
+        ├── perfil.debe_cambiar_password ──► redirect({ to: '/cambiar-password' })
+        └── ok ──► render (<Outlet />); si la ruta usa requireRole y el rol no alcanza
+                   ──► redirect a homeForRol(rol) (routeGuards.ts:38-46)
 ```
 
-Esto cubre solo la entrada a la ruta (`beforeLoad` corre una vez). Si la sesión se cae *después* de
-que la pantalla ya está montada, es el `useEffect` reactivo de `_authenticated.tsx:16-24` (ver
-flujo 2) el que redirige — no `requireAuth`.
-
-**Rutas con `requireRole`** (fuera del alcance de archivos de esta documentación, pero relevantes
-acá): todas las rutas de negocio de `routes/_authenticated.*.tsx` — entre ellas
-`routes/_authenticated.admin.usuarios.tsx`, `routes/_authenticated.superadmin.empresas.tsx` y,
-desde la matriz de roles (S9), `routes/_authenticated.index.tsx` (`/`) — agregan, sobre el mismo
-`beforeLoad`, la verificación de rol de `requireRole(...roles)` (`routeGuards.ts:27-35`) — si
-`perfil` es `null` o su `rol` no está en la whitelist, redirige a `homeForRol(rol)`
-(`routeGuards.ts:20-25`: `/`, `/productos`, `/superadmin/empresas` o `/mi-cuenta`) en vez de a
-`/login`. Ver [`decisiones.md`](./decisiones.md) D-LOGIN-005 para el bug de timing que
-esto exponía y su corrección.
+`beforeLoad` corre una vez al entrar. Si la sesión se cae o el perfil pasa a tener el flag con la
+pantalla ya montada, el `useEffect` de `_authenticated.tsx:17-29` redirige.
 
 ## 4. Acceso a `/login` ya autenticado
 
-```
-Usuario (con sesión activa) navega a /login
-        │
-        ▼
-LoginPage (login.tsx:13-16) lee isAuthenticated (true) y redirect (search param, si vino de un guard)
-        │
-        ▼
-useEffect (login.tsx:18-22): isAuthenticated === true ──► navigate({ to: redirect ?? '/' })
-```
+`LoginPage` (`login.tsx:26-44`) no tiene `beforeLoad`; un `useEffect` (`:30-34`) hace
+`irA(redirect ?? '/')` si `isAuthenticated` ya es `true`. Si el usuario tiene un cambio pendiente,
+el `requireAuth` de la ruta destino lo manda a `/cambiar-password`.
 
-Esta ruta **no** tiene un `beforeLoad` propio (a diferencia de `_authenticated.tsx`) — el redirect
-en caso de ya estar autenticado ocurre client-side, después del render inicial, vía `useEffect`, no
-antes de renderizar. [IMPLEMENTADO] — confirmado leyendo `login.tsx` completo: no hay `beforeLoad`
-en la definición de la ruta (`login.tsx:6-11`).
-
-## 5. Recuperación de contraseña (`/reset-password`)
+## 5. Cambio de contraseña (forzado o voluntario, `/cambiar-password`)
 
 ```
-Usuario navega a /reset-password (sin sesión) ──► click "¿Olvidaste tu contraseña?" en LoginForm
+Llegada: redirect de requireAuth / useEffect (forzado), o link "Cambiar contraseña" de Mi cuenta
         │
         ▼
-useSessionFromLink() (reset-password.tsx:12) ──► checking: true, hasSession: false (estado inicial)
+beforeLoad: requireSession (cambiar-password.tsx:8) — solo exige sesión
         │
         ▼
-getSession() resuelve sin sesión ──► checking: false, hasSession: false
+CambiarPasswordPage (CambiarPasswordPage.tsx:12-52)
+  forzado = perfil.debe_cambiar_password
+    ├── true  ──► texto "Tu contraseña es temporal. Tenés que cambiarla antes de continuar."; sin "Cancelar"
+    └── false ──► botón "Cancelar" ──► /mi-cuenta
+  "Cerrar sesión" siempre disponible (no deja al usuario atrapado)
         │
         ▼
-SolicitarResetForm (reset-password.tsx:30-97): usuario ingresa email
+CambiarPasswordForm.handleSubmit (CambiarPasswordForm.tsx:19-51)
+  validaciones en JS (:23-36): mínimo 8, distinta de la actual, repetir coincide
         │
         ▼
-supabase.auth.resetPasswordForEmail(email, { redirectTo: `${origin}/reset-password` })
-  (reset-password.tsx:41-43)
+cambiarPasswordPropia ──► POST /auth/cambiar-password (lib/api/auth.ts:39-45)
+        ├── 422 ──► muestra el detail del backend (p. ej. "La contraseña actual es incorrecta")
+        ├── 429 ──► muestra el detail del backend, "Demasiados intentos..." (RN-LOGIN-013)
+        ├── 503 ──► muestra el detail del backend, "El servicio de autenticación no está disponible..." (RN-LOGIN-014)
+        │
+        ▼ (204)
+refrescarPerfil() (:43) ──► debe_cambiar_password queda en false
         │
         ▼
-"Si el email existe, te enviamos un link" (mensaje genérico, no confirma si el email existe)
-        │
-        ▼
-Usuario abre el link del mail ──► vuelve a /reset-password con fragmento de sesión temporal
-        │
-        ▼
-useSessionFromLink() detecta la sesión (onAuthStateChange/getSession) ──► hasSession: true
-        │
-        ▼
-<SetPasswordForm title="Elegí tu nueva contraseña" /> (reset-password.tsx:21)
-        │
-        ▼
-handleSubmit (SetPasswordForm.tsx:18-38): valida password === confirmacion (:22-25)
-  ──► supabase.auth.updateUser({ password }) (:29)
-  ──► supabase.auth.signOut() (:31)
-  ──► navigate({ to: '/login' }) (:32)
+onSuccess ──► irA(homeForRol(perfil.rol)) (CambiarPasswordPage.tsx:31)
 ```
 
-El usuario tiene que loguearse de nuevo con la contraseña nueva — `SetPasswordForm` no deja al
-usuario autenticado tras el cambio (hace `signOut()` explícito). [IMPLEMENTADO].
+## Flujos eliminados
 
-## 6. Activación de cuenta invitada (`/accept-invite`)
-
-Mismo mecanismo que el flujo 5, con dos diferencias: el link lo genera el backend al invitar (ver
-`docs/modulos/usuarios/` — `redirect_to` construido con `frontend_url` de `core/config.py`, fila
-`RN-CORE` correspondiente en `../core/reglas.md`), y no hay pantalla de "pedir el link" — si no hay
-sesión temporal, `accept-invite.tsx:21-24` muestra directamente un mensaje de link inválido/
-expirado, sin ninguna acción de reenvío propia (el reenvío, si existe, lo hace un admin desde
-`usuarios/`, fuera del alcance de esta documentación).
-
-```
-Usuario abre el link de invitación ──► /accept-invite con fragmento de sesión temporal
-        │
-        ▼
-useSessionFromLink() (accept-invite.tsx:10)
-        │
-        ├── hasSession: true ──► <SetPasswordForm title="Creá tu contraseña para activar tu
-        │                          cuenta" submitLabel="Activar cuenta" /> (accept-invite.tsx:19)
-        │                          ──► mismo handleSubmit del flujo 5 ──► /login
-        │
-        └── hasSession: false ──► mensaje fijo "Este link de invitación no es válido o ya
-                                    expiró..." (accept-invite.tsx:21-24), sin acción disponible
-```
+Los flujos de recuperación por email (`/reset-password`) y activación de cuenta invitada
+(`/accept-invite`) se eliminaron con odd/tasks/login-usuario-alta-admin.md. La recuperación ahora
+la hace un admin con "Blanquear contraseña" en gestión de usuarios
+(`PATCH /usuarios/{id}/password`); el usuario entra con la contraseña temporal y cae en el flujo 5.

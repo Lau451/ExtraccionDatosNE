@@ -17,6 +17,15 @@ class ForbiddenError(DomainError): ...        # exceptions.py:15-16
 class NotFoundError(DomainError): ...         # exceptions.py:19-20
 class ConflictError(DomainError): ...         # exceptions.py:23-24
 class ValidationError(DomainError): ...       # exceptions.py:27-28
+class RateLimitError(DomainError): ...        # NUEVO, services/shared/exceptions.py:38-39 → 429
+# Un servicio externo (p.ej. Supabase Auth) rechazó el pedido por límite de intentos.
+# Entrada `RateLimitError: 429` en STATUS_MAP (services/shared/exceptions.py:60). El shim
+# core/exceptions.py no la reexporta: se importa de services.shared.exceptions
+# (services/presupuestacion/auth/repository.py:14-18). Ver ../usuarios/reglas.md RN-USUARIOS-043.
+class ServicioExternoNoDisponibleError(DomainError): ...  # NUEVO, services/shared/exceptions.py:42-43 → 503
+# Un servicio externo (p.ej. Supabase Auth) no responde o responde con un error propio (5xx).
+# Entrada `ServicioExternoNoDisponibleError: 503` en STATUS_MAP (services/shared/exceptions.py:61).
+# Tampoco está en el shim; la importa auth/repository.py. Ver ../usuarios/reglas.md RN-USUARIOS-047.
 
 STATUS_MAP: dict[type[DomainError], int]      # exceptions.py:31-37
 
@@ -126,10 +135,17 @@ class Settings(BaseSettings):
     usuario_sistema_id: str
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     frontend_url: str = "http://localhost:5173"
+    auth_email_domain: str = "usuarios.local"
+    # ... (flags de PCP y de exportación de OC)
 
     @property
     def cors_origins_list(self) -> list[str]: ...
-# config.py:9-21
+# Implementación real en services/shared/config.py:9-42 (core/config.py es un shim de reexport).
+# auth_email_domain (variable de entorno / .env AUTH_EMAIL_DOMAIN, opcional, default
+# "usuarios.local", services/shared/config.py:18-21): dominio de los emails internos y opacos
+# `<uuid hex>@<dominio>` con los que usuarios/service.py crea las cuentas de Supabase Auth
+# (odd/tasks/login-usuario-alta-admin.md S2). Nunca se envía correo a esas direcciones ni se
+# muestran en el frontend. frontend_url ya no lo usa usuarios/ (era el redirect de la invitación).
 
 @lru_cache
 def get_settings() -> Settings: ...
@@ -202,25 +218,48 @@ class UserClaims(BaseModel):
     exp: int
 # auth.py:13-15
 
+MENSAJE_CAMBIO_PASSWORD_PENDIENTE = "Debés cambiar tu contraseña antes de continuar"
+# shared/auth.py:25
+
 class UsuarioPerfil(BaseModel):
     id: str
     drogueria_id: str | None
     rol: str
     activo: bool = True
-# auth.py:18-22
+    debe_cambiar_password: bool = False
+# shared/auth.py:28-33
 
 def get_current_claims(token: str = Depends(get_bearer_token)) -> UserClaims: ...
-# auth.py:25-30
+# shared/auth.py:36-41
+
+def _cargar_perfil(claims: UserClaims, client: Client) -> UsuarioPerfil: ...
+# shared/auth.py:44-57 — SELECT id, drogueria_id, rol, activo, debe_cambiar_password; NotFoundError
+# sin fila; AuthenticationError("Usuario desactivado") si activo es False (:55-56).
+
+def exigir_password_al_dia(perfil: UsuarioPerfil) -> None: ...
+# shared/auth.py:60-62 — ForbiddenError(MENSAJE_CAMBIO_PASSWORD_PENDIENTE) si el flag está en True.
 
 def get_current_user(
     claims: UserClaims = Depends(get_current_claims),
     client: Client = Depends(get_user_client),
 ) -> UsuarioPerfil: ...
-# auth.py:33-49 — levanta AuthenticationError si perfil.activo es False (auth.py:47-48)
+# shared/auth.py:65-73 — _cargar_perfil + exigir_password_al_dia (RN-CORE-026, RN-CORE-027).
+
+def get_current_user_con_password_pendiente(
+    claims: UserClaims = Depends(get_current_claims),
+    client: Client = Depends(get_user_client),
+) -> UsuarioPerfil: ...
+# shared/auth.py:76-83 — dependencia permisiva: solo _cargar_perfil, sin el bloqueo por cambio
+# pendiente. Solo para leer el propio perfil y cambiar la propia contraseña (RN-CORE-027).
 
 def require_roles(*roles: str) -> Callable[..., UsuarioPerfil]: ...
-# auth.py:48-54
+# shared/auth.py:86-92 — depende de get_current_user, así que también bloquea con cambio pendiente.
 ```
+
+`core/auth.py` es un shim que reexporta `UserClaims`, `UsuarioPerfil`, `get_current_claims`,
+`get_current_user` y `require_roles` desde `services/shared/auth.py`;
+`exigir_password_al_dia` y `get_current_user_con_password_pendiente` se importan directo de
+`services.shared.auth` (`usuarios/router.py:26`, `auth/router.py:6`).
 
 ## `auditoria/models.py`
 

@@ -30,6 +30,9 @@ CREATE TABLE usuarios (
     apellido        TEXT        NULL,
     es_sistema      BOOLEAN     NOT NULL DEFAULT FALSE,
     activo          BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- username y debe_cambiar_password: migración 0038 (login por usuario).
+    username        TEXT        NOT NULL DEFAULT ('u' || left(replace(gen_random_uuid()::text, '-', ''), 12)),
+    debe_cambiar_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (id),
@@ -40,29 +43,84 @@ CREATE TABLE usuarios (
         (rol IN ('superadmin', 'sistema') AND drogueria_id IS NULL) OR
         (rol NOT IN ('superadmin', 'sistema') AND drogueria_id IS NOT NULL)
     ),
-    CONSTRAINT ck_usuarios_es_sistema CHECK ((rol = 'sistema') = (es_sistema = TRUE))
+    CONSTRAINT ck_usuarios_es_sistema CHECK ((rol = 'sistema') = (es_sistema = TRUE)),
+    CONSTRAINT ck_usuarios_username_formato CHECK (username ~ '^[a-z0-9._-]{3,30}$')
 );
 
 COMMENT ON COLUMN usuarios.es_sistema IS 'TRUE para usuarios técnicos (SYSTEM, IA_AGENT, SCHEDULER) que ejecutan procesos automáticos. Existen en auth.users (login deshabilitado) para mantener un único origen de identidad; el backend los usa con service_role.';
 
 CREATE INDEX idx_usuarios_drogueria ON usuarios (drogueria_id) WHERE drogueria_id IS NOT NULL;
 CREATE TRIGGER t_u_usuarios BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+CREATE UNIQUE INDEX ux_usuarios_username_lower ON usuarios (lower(username));
+
+-- Guards de usuarios (migraciones 0039, 0040, 0041): fuera de service_role y
+-- de los dueños de la base (postgres, supabase_admin), nadie cambia
+-- debe_cambiar_password, username ni id (UPDATE) ni inserta filas (INSERT).
+-- SECURITY INVOKER: current_user tiene que ser el rol que escribe.
+CREATE OR REPLACE FUNCTION trg_usuarios_protege_credenciales()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY INVOKER SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF (NEW.debe_cambiar_password IS DISTINCT FROM OLD.debe_cambiar_password
+        OR NEW.username IS DISTINCT FROM OLD.username)
+       AND current_user NOT IN ('service_role', 'postgres', 'supabase_admin')
+       AND coalesce(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Solo el sistema puede cambiar el nombre de usuario o el cambio de contraseña pendiente.'
+            USING ERRCODE = '42501';
+    END IF;
+    IF NEW.id IS DISTINCT FROM OLD.id
+       AND current_user NOT IN ('service_role', 'postgres', 'supabase_admin')
+       AND coalesce(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Solo el sistema puede cambiar el id de un usuario.'
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION trg_usuarios_protege_credenciales() FROM PUBLIC;
+CREATE TRIGGER trg_usuarios_protege_credenciales BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION trg_usuarios_protege_credenciales();
+
+CREATE OR REPLACE FUNCTION trg_usuarios_protege_alta()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY INVOKER SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF current_user NOT IN ('service_role', 'postgres', 'supabase_admin')
+       AND coalesce(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Solo el sistema puede dar de alta usuarios.'
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION trg_usuarios_protege_alta() FROM PUBLIC;
+CREATE TRIGGER trg_usuarios_protege_alta BEFORE INSERT ON usuarios FOR EACH ROW EXECUTE FUNCTION trg_usuarios_protege_alta();
 
 
 -- -----------------------------------------------------------------------------
 -- FUNCIONES AUXILIARES
+-- Migración 0041 (S14): mientras el usuario tiene debe_cambiar_password = true,
+-- get_drogueria_id()/get_rol()/es_superadmin() ignoran su fila (NULL/NULL/false,
+-- igual que sin fila en usuarios) y password_al_dia() da FALSE: sin acceso por
+-- PostgREST salvo su propia fila de usuarios (rama id = auth.uid() de usuarios_sel).
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION get_drogueria_id()
 RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$ SELECT drogueria_id FROM usuarios WHERE id = auth.uid(); $$;
+AS $$ SELECT drogueria_id FROM usuarios WHERE id = auth.uid() AND NOT debe_cambiar_password; $$;
 
 CREATE OR REPLACE FUNCTION get_rol()
 RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$ SELECT rol FROM usuarios WHERE id = auth.uid(); $$;
+AS $$ SELECT rol FROM usuarios WHERE id = auth.uid() AND NOT debe_cambiar_password; $$;
 
 CREATE OR REPLACE FUNCTION es_superadmin()
 RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$ SELECT EXISTS (SELECT 1 FROM usuarios WHERE id = auth.uid() AND rol = 'superadmin'); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM usuarios WHERE id = auth.uid() AND rol = 'superadmin' AND NOT debe_cambiar_password); $$;
+
+-- FALSE solo si quien consulta tiene el cambio de contraseña pendiente; TRUE
+-- para todos los demás (incluido anon). Lo usan las ramas de lectura que no
+-- pasan por los helpers de arriba (planes_sel, no_sel, ne_sel, np_sel).
+CREATE OR REPLACE FUNCTION password_al_dia()
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT NOT EXISTS (SELECT 1 FROM usuarios WHERE id = auth.uid() AND debe_cambiar_password); $$;
 
 -- Pertenece a la droguería del recurso (o es superadmin)
 CREATE OR REPLACE FUNCTION mismo_tenant(p_drogueria UUID)
@@ -87,6 +145,12 @@ GRANT EXECUTE ON FUNCTION get_rol()          TO authenticated;
 GRANT EXECUTE ON FUNCTION es_superadmin()    TO authenticated;
 GRANT EXECUTE ON FUNCTION mismo_tenant(UUID) TO authenticated;
 
+-- password_al_dia() también a anon: la evalúa licitaciones_all_access
+-- (tabla legada de la migración 0004, legible por anon) si existe.
+REVOKE EXECUTE ON FUNCTION password_al_dia() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION password_al_dia() TO anon;
+GRANT EXECUTE ON FUNCTION password_al_dia() TO authenticated;
+
 
 -- =============================================================================
 -- POLÍTICAS
@@ -107,7 +171,7 @@ CREATE POLICY droguerias_del ON droguerias FOR DELETE USING ((select es_superadm
 -- Catálogo de solo-lectura para cualquier autenticado; escritura solo superadmin.
 -- Migración 0007 (supabase/migrations/). Solo estructura: sin enforcement de límites todavía.
 ALTER TABLE planes ENABLE ROW LEVEL SECURITY;
-CREATE POLICY planes_sel ON planes FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY planes_sel ON planes FOR SELECT USING (auth.role() = 'authenticated' AND (select password_al_dia()));
 CREATE POLICY planes_ins ON planes FOR INSERT WITH CHECK ((select es_superadmin()));
 CREATE POLICY planes_upd ON planes FOR UPDATE USING ((select es_superadmin())) WITH CHECK ((select es_superadmin()));
 CREATE POLICY planes_del ON planes FOR DELETE USING ((select es_superadmin()));
@@ -646,9 +710,11 @@ CREATE POLICY ppa_upd ON proveedor_producto_alias FOR UPDATE USING ((select get_
 CREATE POLICY ppa_del ON proveedor_producto_alias FOR DELETE USING ((select es_superadmin()));
 
 -- notificaciones: cada uno ve LAS SUYAS. admin/gerencia ven las de su droguería.
+-- Las ramas propias (auth.uid()) de no_sel/ne_sel/np_sel llevan
+-- password_al_dia() desde la migración 0041 (S14).
 ALTER TABLE notificaciones ENABLE ROW LEVEL SECURITY;
 CREATE POLICY no_sel ON notificaciones FOR SELECT USING (
-    destinatario_id = (select auth.uid())
+    (destinatario_id = (select auth.uid()) AND (select password_al_dia()))
     OR ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)))
     OR (select es_superadmin())
 );
@@ -660,7 +726,7 @@ CREATE POLICY no_del ON notificaciones FOR DELETE USING ((select es_superadmin()
 
 ALTER TABLE notificacion_entregas ENABLE ROW LEVEL SECURITY;
 CREATE POLICY ne_sel ON notificacion_entregas FOR SELECT USING (
-    EXISTS (SELECT 1 FROM notificaciones n WHERE n.id = notificacion_id AND n.destinatario_id = (select auth.uid()))
+    (EXISTS (SELECT 1 FROM notificaciones n WHERE n.id = notificacion_id AND n.destinatario_id = (select auth.uid())) AND (select password_al_dia()))
     OR ((select get_rol()) IN ('admin','gerencia') AND (select mismo_tenant(drogueria_id)))
     OR (select es_superadmin())
 );
@@ -673,7 +739,7 @@ CREATE POLICY ne_del ON notificacion_entregas FOR DELETE USING ((select es_super
 
 ALTER TABLE notificacion_preferencias ENABLE ROW LEVEL SECURITY;
 CREATE POLICY np_sel ON notificacion_preferencias FOR SELECT USING (
-    usuario_id = (select auth.uid())
+    (usuario_id = (select auth.uid()) AND (select password_al_dia()))
     OR ((select get_rol()) = 'admin' AND (select mismo_tenant(drogueria_id)))
     OR (select es_superadmin())
 );

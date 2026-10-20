@@ -480,11 +480,11 @@ Supabase Auth vía `postgrest`/`gotrue`).
 - **Qué se hace**: la capa `repository.py` de cada módulo atrapa la excepción concreta
   del SDK externo y la traduce a un `DomainError` ya mapeado por `STATUS_MAP` (§6.1), en
   vez de dejarla propagar cruda.
-  - `usuarios/repository.py:20-32` (`invitar_usuario_auth`) atrapa `AuthApiError`: si
-    `exc.status == 429` (rate limit de envío de emails), `ConflictError`; para cualquier
-    otro código, `ValidationError` con el mensaje de Supabase
-    (`docs/modulos/usuarios/reglas.md` RN-USUARIOS-013).
-  - `usuarios/repository.py:57-66` (`eliminar_usuario_auth`) atrapa **cualquier**
+  - `usuarios/repository.py:27-38` (`crear_usuario_auth`, que reemplazó a la invitación por
+    email `invitar_usuario_auth`) atrapa `AuthApiError`: si `exc.status == 429` (rate
+    limit), `ConflictError`; para cualquier otro código, `ValidationError` con el mensaje de
+    Supabase (`docs/modulos/usuarios/reglas.md` RN-USUARIOS-040).
+  - `usuarios/repository.py:86-95` (`eliminar_usuario_auth`) atrapa **cualquier**
     `AuthApiError` y lo traduce a `ConflictError` (actividad asociada) — sin distinguir
     por status, a diferencia del caso anterior (`docs/modulos/usuarios/reglas.md`
     RN-USUARIOS-027).
@@ -501,9 +501,10 @@ Supabase Auth vía `postgrest`/`gotrue`).
   aparece como `Failed to fetch` sin ningún mensaje legible, en vez de un error de
   dominio con status y mensaje claros. [IMPLEMENTADO] el mecanismo de traducción en los
   dos módulos citados; [SUPOSICIÓN] el efecto exacto sobre CORS no fue reproducido con un
-  test automatizado en esta sesión — el mapeo de errores de `usuarios/repository.py` fue
+  test automatizado en esta sesión — el mapeo de errores de la invitación por email fue
   verificado manualmente por el usuario contra Supabase Auth real (rate limit y email
-  inválido), ver RN-USUARIOS-013.
+  inválido); `crear_usuario_auth` conserva el mismo mapeo sin test automatizado, ver
+  RN-USUARIOS-040.
 - **Recomendación**: cualquier módulo nuevo que llame a un servicio externo (hoy sería
   solo Supabase Auth; a futuro, cualquier proveedor de email/WhatsApp si se implementa
   el envío real de `notificaciones`, ver `docs/glosario.md` "Estado de entrega de

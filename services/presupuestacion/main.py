@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.presupuestacion.auditoria.router import router as auditoria_router
+from services.presupuestacion.auth.router import router as auth_router
 from services.presupuestacion.automatizaciones.router import router as automatizaciones_router
 from services.presupuestacion.clientes.router import router as clientes_router
 from services.presupuestacion.comparativas.router import router as comparativas_router
@@ -58,6 +59,7 @@ app.include_router(clientes_router, tags=["clientes"])
 app.include_router(procesos_comerciales_router, tags=["procesos_comerciales"])
 app.include_router(imports_router, tags=["imports"])
 app.include_router(productos_router, tags=["productos"])
+app.include_router(auth_router, tags=["auth"])
 app.include_router(usuarios_router, tags=["usuarios"])
 app.include_router(droguerias_router, tags=["droguerias"])
 app.include_router(planes_router, tags=["planes"])

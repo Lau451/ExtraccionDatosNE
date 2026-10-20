@@ -1,10 +1,10 @@
-import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { ApiError } from '@/lib/api/presupuestacion'
 import { useAuth } from './AuthContext'
 
 export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const { signIn } = useAuth()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -14,11 +14,23 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     setError(null)
     setIsSubmitting(true)
     try {
-      await signIn(email, password)
+      await signIn(username.trim(), password)
       onSuccess()
     } catch (error) {
       console.error('Error al iniciar sesión', error)
-      setError('Email o contraseña incorrectos')
+      // El backend devuelve el mismo 401 para usuario inexistente y contraseña
+      // incorrecta, así no se pueden sondear usernames (spec S1). El 429 (spec S8)
+      // y el 503 de Auth caído (spec S12) traen su propio mensaje para no
+      // confundirlos con credenciales mal.
+      if (error instanceof ApiError && (error.status === 429 || error.status === 503)) {
+        setError(error.message)
+      } else {
+        setError(
+          error instanceof ApiError && error.status !== 401
+            ? 'No pudimos iniciar sesión. Probá de nuevo.'
+            : 'Usuario o contraseña incorrectos',
+        )
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -27,16 +39,17 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm text-slate-600">
-          Email
+        <label htmlFor="username" className="mb-1 block text-sm text-slate-600">
+          Usuario
         </label>
         <input
-          id="email"
-          type="email"
+          id="username"
+          type="text"
           required
+          autoCapitalize="none"
           autoComplete="username"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
@@ -66,9 +79,9 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
         {isSubmitting ? 'Ingresando…' : 'Ingresar'}
       </button>
 
-      <Link to="/reset-password" className="block text-center text-sm text-accent">
-        ¿Olvidaste tu contraseña?
-      </Link>
+      <p className="text-center text-sm text-slate-500">
+        ¿Olvidaste tu contraseña? Contactá al administrador para que te la blanquee.
+      </p>
     </form>
   )
 }

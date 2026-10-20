@@ -60,7 +60,11 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
   [`pendientes.md`](./pendientes.md), que ahora describe un riesgo real (código con call sites pero
   sin test) en vez de un riesgo hipotético.
 
-### D-LOGIN-004 — Registro y recuperación de contraseña quedan fuera de scope [SUPERADA — ver D-LOGIN-005/006 y `/reset-password`, `/accept-invite`]
+### D-LOGIN-004 — Registro y recuperación de contraseña quedan fuera de scope [SUPERADA — ver D-LOGIN-005/006 y `/reset-password`, `/accept-invite`; luego D-LOGIN-008]
+
+> **Nota posterior (odd/tasks/login-usuario-alta-admin.md)**: `/reset-password`, `/accept-invite`,
+> `SetPasswordForm` y `useSessionFromLink` se eliminaron. Ya no hay recuperación por email; ver
+> D-LOGIN-008. Lo de abajo queda como registro histórico.
 
 - **Decisión original**: no había implementación de `supabase.auth.signUp` ni de
   `supabase.auth.resetPasswordForEmail` en ningún archivo de `frontend/src/` al momento de escribir
@@ -142,9 +146,9 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
 
 - **Decisión**: dos cambios relacionados, ambos motivados por el mismo bug:
   1. `AuthContext.tsx` llama a `supabase.auth.signOut()` automáticamente si el fetch de `perfil`
-     falla con `ApiError.status` 401 o 404 (`AuthContext.tsx:75-84`).
+     falla con `ApiError.status` 401 o 404 (`AuthContext.tsx:84-86`).
   2. `routes/_authenticated.tsx` (`AuthenticatedLayout`) agrega un `useEffect` reactivo
-     (`_authenticated.tsx:16-24`) que redirige a `/login` si `isAuthenticated` pasa a `false`
+     (`_authenticated.tsx:17-29`) que redirige a `/login` si `isAuthenticated` pasa a `false`
      mientras la pantalla ya está montada.
 - **Motivo**: segundo bug real encontrado y reproducido en esta sesión. Si el fetch de `perfil`
   fallaba con 401 (usuario desactivado — ver `core/auth.py` `get_current_user`, RN-CORE-026 en
@@ -161,3 +165,39 @@ Numeración D-LOGIN-NNN, verificada contra el código y el proposal archivado
   probable dado que `presupuestacionFetch` solo lanza `ApiError` con el `status` real de la
   respuesta, `lib/api/presupuestacion.ts:35-38`) también dispararía logout. No se agregó
   distinción adicional por motivo del error.
+
+### D-LOGIN-008 — **[NUEVA]** Login con nombre de usuario vía backend + `setSession`; sin recuperación por email
+
+- **Decisión**: `signIn(username, password)` llama a `POST /auth/login` (`lib/api/auth.ts:22-37`)
+  y entrega el `access_token`/`refresh_token` recibidos a `supabase.auth.setSession`
+  (`AuthContext.tsx:121-134`). Se eliminaron `/reset-password`, `/accept-invite`,
+  `SetPasswordForm.tsx` y `useSessionFromLink.ts`; el login indica contactar al administrador
+  (`LoginForm.tsx:81-83`).
+- **Motivo**: pedido del usuario (odd/tasks/login-usuario-alta-admin.md L1): login con nombre de
+  usuario, cuentas creadas por el admin, y "si se olvida la contraseña se deberá contactar con el
+  admin para blanquear otra". El email de Supabase Auth es interno y no debe llegar al navegador
+  (S1), así que la resolución username → email y el sign-in los hace el backend
+  (D-USUARIOS-011 en `../usuarios/decisiones.md`). Supabase Auth sigue debajo (opción A,
+  D-USUARIOS-010).
+- **Ventajas**: `supabase-js` sigue manejando persistencia y refresh de la sesión sin cambios; el
+  resto del frontend (`presupuestacionFetch`, guards) no se enteró del cambio salvo por el nuevo
+  flag del perfil.
+- **Desventajas**: el login depende de que el backend esté arriba (antes bastaba Supabase Auth);
+  sin autoservicio de recuperación, un olvido requiere a un admin disponible.
+
+### D-LOGIN-009 — **[NUEVA]** Cambio forzado en una ruta propia fuera del layout, con `requireSession`
+
+- **Decisión**: el cambio de contraseña vive en `/cambiar-password` (`routes/cambiar-password.tsx`),
+  fuera de `/_authenticated` (sin sidebar), protegida solo por `requireSession`; `requireAuth`
+  manda ahí mientras `perfil.debe_cambiar_password` sea `true`. La misma pantalla sirve para el
+  cambio voluntario desde Mi cuenta (con "Cancelar"). "Cambiar email" se quitó de Mi cuenta (el
+  email es interno, L-T4a).
+- **Motivo**: comentarios del código: con `requireAuth` la ruta se redirigiría a sí misma
+  (`routeGuards.ts:10-11`, `cambiar-password.tsx:5-6`), y con el cambio forzado el sidebar solo
+  llevaría a rutas que rebotan de vuelta (`CambiarPasswordPage.tsx:5-7`). "Cerrar sesión" queda
+  siempre disponible para no dejar al usuario atrapado.
+- **Ventajas**: un único formulario y un único endpoint para ambos casos; el guard del frontend
+  replica el bloqueo del backend (RN-USUARIOS-035), así el usuario no ve pantallas que fallarían
+  con 403.
+- **Desventajas**: la ruta se agregó editando `routeTree.gen.ts` a mano (desfase de versión del
+  generador) — ver [`pendientes.md`](./pendientes.md).

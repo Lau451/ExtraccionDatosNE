@@ -8,7 +8,9 @@ Rol = Literal["superadmin", "admin", "gerencia", "lider_comercial", "comercial",
 
 
 class UsuarioCreate(BaseModel):
-    email: str
+    username: str
+    # Contraseña temporal: el usuario debe cambiarla en el primer login.
+    password: str
     nombre: str
     apellido: str
     rol: Rol
@@ -21,6 +23,14 @@ class UsuarioRolUpdate(BaseModel):
 
 class UsuarioActivoUpdate(BaseModel):
     activo: bool
+
+
+class UsuarioPasswordUpdate(BaseModel):
+    password: str
+
+
+class UsuarioUsernameUpdate(BaseModel):
+    username: str
 
 
 class UsuarioPerfilUpdate(BaseModel):
@@ -36,3 +46,5 @@ class UsuarioOut(BaseModel):
     apellido: str | None
     es_sistema: bool
     activo: bool
+    username: str
+    debe_cambiar_password: bool

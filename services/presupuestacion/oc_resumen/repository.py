@@ -1,6 +1,6 @@
-# Repository del módulo oc_resumen (T1). Lecturas puras con el SERVICE client,
-# igual que oc_entregas: el aislamiento por droguería lo da el filtro explícito
-# `drogueria_id` en el service. Las lecturas de renglones / entregas se reusan
+# Repository del módulo oc_resumen (T1). Lecturas puras con el USER client: RLS
+# (`mismo_tenant`) aísla por droguería y el service además compara `drogueria_id`
+# explícitamente. Las lecturas de renglones / entregas se reusan
 # de oc_entregas.repository; acá solo van las que cambian de columnas.
 from typing import Any
 

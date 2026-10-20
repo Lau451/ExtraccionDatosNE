@@ -50,14 +50,21 @@ Drogueria Nueva Era).
 
 - **Descripción**: cada subclase de `DomainError` se mapea a un código HTTP fijo:
   `AuthenticationError`→401, `ForbiddenError`→403, `NotFoundError`→404,
-  `ConflictError`→409, `ValidationError`→422.
+  `ConflictError`→409, `ValidationError`→422 y, **[MODIFICADA]**, `RateLimitError`→429
+  (`services/shared/exceptions.py:38-39`, `:60`; la usa el login de
+  `presupuestacion/auth/` cuando Supabase Auth responde 429 — ver
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-043) y
+  `ServicioExternoNoDisponibleError`→503 (`:42-43`, `:61`; la usa `presupuestacion/auth/`
+  cuando Supabase Auth no responde o responde 5xx — RN-USUARIOS-047).
 - **Condición**: se levanta cualquiera de estas excepciones durante el manejo de una
   request.
 - **Resultado**: FastAPI responde con el status y el `detail` (`exc.message`)
   correspondiente vía `JSONResponse`.
 - **Prioridad**: Alta.
 - **Archivo**: `services/presupuestacion/core/exceptions.py:31-37` (`STATUS_MAP`),
-  `:40-46` (`register_exception_handlers`).
+  `:40-46` (`register_exception_handlers`). La implementación real vive hoy en
+  `services/shared/exceptions.py` (`STATUS_MAP` en `:54-64`); `core/exceptions.py` es un
+  shim de reexport que no incluye `RateLimitError` ni `ServicioExternoNoDisponibleError`.
 - **Observaciones**: [IMPLEMENTADO]. Una excepción de dominio no listada en
   `STATUS_MAP` cae al default `500` (`exceptions.py:42`), no a un error específico —
   ver D-CORE-007.
@@ -115,23 +122,31 @@ Drogueria Nueva Era).
 - **Archivo**: `services/presupuestacion/core/database.py:19-22`.
 - **Observaciones**: [IMPLEMENTADO].
 
-### RN-CORE-016 — `get_service_client` no debe importarse en ningún `router.py` (enforced por test, no por lint)
+### RN-CORE-016 — `get_service_client` no debe importarse en ningún `router.py` salvo los de la allowlist (enforced por test, no por lint)
 
 - **Descripción**: convención de arquitectura — el cliente sin RLS solo debe usarse en
   `service.py` de jobs de sistema, nunca en un `router.py` expuesto a requests de
-  usuario.
+  usuario. **[MODIFICADA]** Excepción: los routers de `_ROUTERS_CON_SERVICE_CLIENT`
+  (`tests/core/test_database.py:10-19`), cada uno con su justificación y con filtro
+  `drogueria_id` explícito en cada query de su repository: hoy `oc_entregas/router.py` y
+  `oc_export/router.py`.
 - **Condición**: existencia de la cadena de texto `"get_service_client"` en el contenido
-  de algún archivo `router.py` bajo `services/presupuestacion/`.
-- **Resultado**: si se detecta, el test falla — pero esto **no** es un chequeo de
-  análisis estático (no verifica imports reales ni uso efectivo), es una búsqueda de
-  substring sobre el texto del archivo.
+  de algún archivo `router.py` bajo `services/presupuestacion/` que no esté en la
+  allowlist, o un router de la allowlist que ya no la contenga (lista obsoleta).
+- **Resultado**: en cualquiera de los dos casos el test falla — pero esto **no** es un
+  chequeo de análisis estático (no verifica imports reales ni uso efectivo), es una
+  búsqueda de substring sobre el texto del archivo.
 - **Prioridad**: Alta.
-- **Archivo**: verificado exclusivamente por `tests/core/test_database.py:8-25`; no hay
-  ningún enforcement en el código de `core/` mismo.
+- **Archivo**: verificado exclusivamente por
+  `tests/core/test_database.py:30-50` (`test_service_client_no_se_importa_en_ningun_router`);
+  no hay ningún enforcement en el código de `core/` mismo.
 - **Observaciones**: [IMPLEMENTADO] el test; [SUPOSICIÓN] que sea suficiente como
-  enforcement — ver `pendientes.md` P2(3). Confirmado por grep: los 15 archivos que
-  importan `get_service_client` son 14 `service.py` más `core/database.py` (su propia
-  definición); ninguno es un `router.py`.
+  enforcement — ver `pendientes.md` P2(3). Confirmado por grep: los únicos `router.py`
+  que contienen `get_service_client` son los dos de la allowlist. `oc_resumen/router.py`
+  rompía el test (usaba el service client sin estar en la lista y su repository no
+  filtra `drogueria_id`); desde el commit `d7b8127` lee con `get_user_client` bajo RLS
+  (`mismo_tenant`) y el chequeo de `drogueria_id` en Python de su service queda como
+  defensa en profundidad — ver D-CORE-006 (odd/tasks/login-usuario-alta-admin.md S16).
 
 ### RN-CORE-017 — Clasificación de `tipo_cambio` para cambios de campo
 
@@ -370,8 +385,12 @@ Drogueria Nueva Era).
 - **Resultado**: `AuthenticationError("Usuario desactivado")` (mapeada a HTTP 401 por
   RN-CORE-009), en vez de devolver el `UsuarioPerfil`.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/core/auth.py:22` (campo `activo` en
-  `UsuarioPerfil`), `:39` (`activo` agregado al `SELECT`), `:47-48` (chequeo y excepción).
+- **Archivo**: `services/shared/auth.py:32` (campo `activo` en `UsuarioPerfil`), `:47`
+  (`activo` en el `SELECT`), `:55-56` (chequeo y excepción, dentro de `_cargar_perfil`).
+  `services/presupuestacion/core/auth.py` es un shim de reexport. Desde
+  login-usuario-alta-admin el chequeo vive en `_cargar_perfil`, compartido por
+  `get_current_user` y `get_current_user_con_password_pendiente`: un desactivado recibe 401
+  también en los endpoints exceptuados del bloqueo de RN-CORE-027.
 - **Observaciones**: [IMPLEMENTADO]. Este es el gate real de "desactivar un usuario" a
   nivel de aplicación: Supabase Auth no invalida el JWT emitido cuando se desactiva un
   usuario en la tabla `usuarios` (son dos sistemas distintos — el JWT sigue siendo
@@ -379,3 +398,35 @@ Drogueria Nueva Era).
   desactivado podría seguir usando cualquier endpoint hasta que su token expirase. Se
   ejecuta en cada request autenticada (vía `get_current_user`, consumida directa o
   indirectamente por `require_roles`), no solo en el login.
+
+### RN-CORE-027 — Usuario con cambio de contraseña pendiente: 403 salvo leer su perfil y cambiar su contraseña
+
+- **Descripción**: `UsuarioPerfil` incluye `debe_cambiar_password: bool = False`, proyectado
+  desde la columna `usuarios.debe_cambiar_password` (migración `0038`). `get_current_user`,
+  después de resolver el perfil (y del chequeo de RN-CORE-026), llama a
+  `exigir_password_al_dia`, que levanta `ForbiddenError` si el flag está en `True`. Como
+  `require_roles` depende de `get_current_user`, el bloqueo alcanza a toda la API
+  (presupuestación, terceros, PCP). La dependencia permisiva
+  `get_current_user_con_password_pendiente` hace lo mismo sin ese último chequeo, y solo la
+  usan `GET /usuarios/{usuario_id}` sobre el propio id y `POST /auth/cambiar-password`.
+- **Condición**: JWT válido, fila en `usuarios` con `activo = True` y
+  `debe_cambiar_password = True`, en un endpoint que dependa de `get_current_user` o
+  `require_roles`.
+- **Resultado**: `ForbiddenError("Debés cambiar tu contraseña antes de continuar")` (HTTP 403
+  por RN-CORE-009).
+- **Prioridad**: Alta.
+- **Archivo**: `services/shared/auth.py:25` (mensaje), `:33` (campo), `:47` (`SELECT`),
+  `:60-62` (`exigir_password_al_dia`), `:65-73` (`get_current_user`), `:76-83`
+  (`get_current_user_con_password_pendiente`).
+- **Observaciones**: [IMPLEMENTADO]. Verificado en `tests/shared/test_auth.py` (403 en un
+  endpoint normal y al listar usuarios, lectura del propio perfil permitida, perfil ajeno
+  bloqueado, usuario al día sin cambios, desactivado sigue en 401, texto del mensaje) y por
+  el barrido de regresión `tests/auth/test_flag_sweep.py` (todas las rutas de
+  `presupuestacion` y `extraccion` dan este 403 salvo las tres exceptuadas). El flag lo
+  escriben `usuarios/` (alta y blanqueo) y `auth/` (cambio propio) — ver
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-035. **El bloqueo se aplica
+  en el backend**. Desde la migración `0039` el usuario no puede cambiar el flag por
+  PostgREST (RN-USUARIOS-042). La migración `0041` hace que los helpers de RLS también lo
+  miren, así que con el flag en `true` no lee nada por PostgREST salvo su propia fila de
+  `usuarios` (RN-USUARIOS-048); **`0041` no está aplicada todavía**, y hasta entonces sí
+  puede leer lo que RLS le permita — ver [`base_de_datos.md`](./base_de_datos.md).

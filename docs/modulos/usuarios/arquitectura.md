@@ -2,91 +2,67 @@
 
 ## Dependencias hacia Core
 
-Usuarios no importa de ningún otro módulo de negocio de `presupuestacion/`; depende
-exclusivamente de Core. [IMPLEMENTADO] — confirmado por inspección de imports de los 4
-archivos del módulo, releídos en esta sesión.
+`usuarios/` no importa de ningún otro módulo de negocio de `presupuestacion/`; depende
+exclusivamente de Core (y de `services/shared/auth.py`, que Core reexporta). El paquete
+hermano `auth/` depende de Core y de `usuarios/` (`auth/service.py:10-11`). [IMPLEMENTADO]
+— confirmado por inspección de imports en la rama `feat/login-usuario-alta-admin`.
 
 | Import | Origen | Uso |
 |---|---|---|
-| `UsuarioPerfil` | `core/auth.py` | Tipo del `creador`/`usuario` autenticado en `service.py:5` y `router.py:4`. |
-| `get_current_user` | `core/auth.py` | Dependencia de los 2 endpoints GET y de `PATCH /usuarios/me`, sin exigir rol (`router.py:4`, `:27`, `:36`, `:73`). |
-| `require_roles` | `core/auth.py` | Dependencia de POST, `PATCH /rol`, `PATCH /activo` y `DELETE`, exige `ROLES_GESTION_USUARIOS` = `superadmin`/`admin`/`gerencia` (`router.py:48`, `:57`, `:66`, `:82`; constante en `service.py:12`, importada en `router.py:15`). |
-| `get_settings` | `core/config.py` | Resuelve `frontend_url` para armar el `redirect_to` de la invitación de email (`service.py:6`, `:30`). **Nuevo en esta sesión.** |
-| `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto internamente por los 5 wrappers `*_para_endpoint` (`service.py:7`, `:131-132`, `:135-136`, `:139-140`, `:143-146`, `:149-150`). |
-| `get_user_client` | `core/database.py` | Cliente con RLS, inyectado directo en los 2 endpoints GET (`router.py:5`, `:28`, `:37`). |
-| `ForbiddenError`, `NotFoundError`, `ValidationError` | `core/exceptions.py` | Errores de dominio levantados por `service.py` (la mayoría de las RN-USUARIOS-NNN) y por `router.py` (`NotFoundError` en `obtener_usuario_endpoint`, `router.py:6`, `:41`). |
-| `ConflictError` | `core/exceptions.py` | **Nuevo en esta sesión.** Levantado por `repository.py` al mapear `AuthApiError` de Supabase Auth (RN-USUARIOS-013 rama 429, RN-USUARIOS-027). |
-
-`AuthenticationError` no la importa este módulo directamente, pero su efecto lo alcanza
-igual: `get_current_user` (`core/auth.py:47-48`) la levanta cuando `activo=False`
-(RN-USUARIOS-021), gateando todos los endpoints de `usuarios/` que dependen de esa
-función. Ver [`../core/`](../core/) para la documentación de estas piezas — no se repite
-acá.
+| `UsuarioPerfil` | `core/auth.py` (shim de `services/shared/auth.py`) | Tipo del `creador`/`usuario` autenticado en `service.py:8`, `router.py:4`, `auth/service.py:7`, `auth/router.py:5`. |
+| `get_current_user` | `core/auth.py` | Dependencia de `GET /usuarios` y `PATCH /usuarios/me`, sin exigir rol (`router.py:33`, `:105`). Rechaza con 403 si hay cambio de contraseña pendiente. |
+| `get_current_user_con_password_pendiente`, `exigir_password_al_dia` | `services/shared/auth.py` | Importadas directo (no están en el shim de Core). `GET /usuarios/{usuario_id}` usa la permisiva y aplica `exigir_password_al_dia` si el id no es el propio (`router.py:26`, `:42`, `:47-48`); `POST /auth/cambiar-password` usa la permisiva (`auth/router.py:6`, `:21`). |
+| `require_roles` | `core/auth.py` | Dependencia de POST, `PATCH /rol`, `/activo`, `/password`, `/username` y `DELETE`, exige `ROLES_GESTION_USUARIOS` = `superadmin`/`admin`/`gerencia` (`router.py:57`, `:66`, `:75`, `:84`, `:95`, `:113`; constante en `service.py:20`). |
+| `get_settings` | `core/config.py` (shim de `services/shared/config.py`) | Resuelve `auth_email_domain` para el email interno opaco del alta (`service.py:9`, `:103`). Ya no se usa `frontend_url` en este módulo. `auth/repository.py:30` lo usa para `supabase_url`/`supabase_anon_key`. |
+| `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto por los 7 wrappers `*_para_endpoint` (`service.py:309-344`) y por los 2 de `auth/service.py:68-73`. |
+| `get_user_client` | `core/database.py` | Cliente con RLS, inyectado directo en los 2 endpoints GET (`router.py:34`, `:43`). |
+| `build_resilient_httpx_client` | `services/shared/http_client.py` | httpx propio por login, cerrado al terminar (`auth/repository.py:33`, `:48`). |
+| `ForbiddenError`, `NotFoundError`, `ValidationError`, `ConflictError`, `AuthenticationError` | `core/exceptions.py` | Errores de dominio de `service.py`, `repository.py`, `router.py` y `auth/service.py` (`AuthenticationError` del login, `auth/service.py:9`). |
 
 ## Asimetría de capas: GET directo a BD vs escritura vía `service.py`
 
-Este es el rasgo arquitectónico más notable del módulo, sin cambios de fondo respecto de
-la revisión anterior — pero ahora aplica a 5 endpoints de escritura en vez de 2:
+- **`GET /usuarios` y `GET /usuarios/{usuario_id}`** (`router.py:31-36`, `:39-52`)
+  consultan la tabla `usuarios` **directamente** con `user_client`, sin pasar por
+  `repository.py` ni por `service.py`. El alcance de filas lo decide RLS.
+- **`POST /usuarios` y los `PATCH` de gestión (`/rol`, `/activo`, `/password`,
+  `/username`) y `DELETE`** (`router.py:55-99`, `:110-115`) exigen
+  `require_roles(*ROLES_GESTION_USUARIOS)` y delegan en su wrapper `*_para_endpoint`,
+  que resuelve `get_service_client()` (sin RLS) y aplica las reglas de `service.py`.
+- **`PATCH /usuarios/me`** (`router.py:102-107`): `get_current_user` + service client; su
+  autorización es estructural (el `usuario_id` sale del token).
+- **`POST /auth/login`** (`auth/router.py:11-14`): público. Usa el service client para
+  resolver username → id → email interno, y un cliente anon nuevo para el sign-in
+  (`auth/repository.py:24-49`) — nunca el service client ni los cacheados por token,
+  porque `sign_in_with_password` guarda la sesión en el propio cliente.
+- **`POST /auth/cambiar-password`** (`auth/router.py:17-23`): dependencia permisiva (sin el
+  bloqueo por cambio pendiente) + service client; el `usuario_id` sale del token.
 
-- **`GET /usuarios` y `GET /usuarios/{usuario_id}`** (`router.py:25-30`, `:33-42`)
-  consultan la tabla `usuarios` **directamente** con `user_client` (`Depends(get_user_client)`,
-  `router.py:28`, `:37`), sin pasar por `repository.py` ni por `service.py`. La
-  autorización depende únicamente de `Depends(get_current_user)` (sin `require_roles`) y
-  del filtrado que aplique RLS del lado de Postgres.
-- **`POST /usuarios`, `PATCH /usuarios/{usuario_id}/rol`, `PATCH /usuarios/{usuario_id}/activo`
-  y `DELETE /usuarios/{usuario_id}`** (`router.py:46-50`, `:53-59`, `:62-68`, `:79-84`)
-  exigen `require_roles(*ROLES_GESTION_USUARIOS)` (`superadmin`, `admin`, `gerencia`) y
-  delegan en su wrapper
-  `*_para_endpoint` correspondiente, que resuelve `get_service_client()` (sin RLS) y
-  aplica las reglas de negocio de `service.py` antes de tocar `repository.py`.
-- **`PATCH /usuarios/me`** (`router.py:70-75`) es un tercer caso, nuevo en esta sesión:
-  exige solo `Depends(get_current_user)` (como los GET) pero delega en `service.py` y
-  usa `get_service_client()` (como los otros de escritura) — su autorización no es ni
-  RLS ni una whitelist de roles, sino estructural: el `usuario_id` que recibe
-  `actualizar_perfil_propio` sale del token, no de un parámetro de URL, así que no hay
-  forma de que un usuario edite el perfil de otro por esta vía.
-
-En otras palabras: para escribir sobre otros usuarios, el módulo no confía en RLS —
-implementa sus propias reglas de autorización en Python contra un cliente que bypasea
-RLS. Para leer, y para que un usuario edite su propio perfil, el módulo no aplica ninguna
-regla de rol — se apoya en RLS (para leer) o en que el `id` del propio token nunca puede
-apuntar a otro usuario (para `PATCH /me`). Ver [`decisiones.md`](./decisiones.md)
-D-USUARIOS-001 y D-USUARIOS-002, y el riesgo asociado en [`pendientes.md`](./pendientes.md).
+Para escribir sobre otros usuarios el módulo no confía en RLS: implementa sus reglas en
+Python contra un cliente que bypasea RLS. Ver D-USUARIOS-001/002.
 
 ## Diagrama textual del flujo de autorización
 
 ```
-                              Request HTTP a /usuarios*
-                                        │
-        ┌───────────────────┬───────────────────┬───────────────────┐
-        │                    │                    │                    │
-  GET /usuarios(/{id})  PATCH /usuarios/me   POST /usuarios        DELETE /usuarios/{id}
-                                              PATCH /rol, /activo
-        │                    │                    │                    │
-  Depends(get_current_user)  Depends(get_current_user)  Depends(require_roles(
-  (router.py:28, :37)        (router.py:74)               *ROLES_GESTION_USUARIOS))
-  → JWT válido + perfil      → JWT válido + perfil        (router.py:48, :57, :66, :82)
-    en `usuarios`, SIN rol     en `usuarios`, SIN rol    → exige además que
-    específico                  específico                 usuario.rol esté en
-        │                    │                              esa whitelist
-  Depends(get_user_client)   usuario.id (del token,                │
-  (router.py:28, :37)        no de la URL) se pasa      *_para_endpoint resuelve
-  → cliente CON RLS          como usuario_id             get_service_client()
-        │                    (router.py:75)              (service.py:131-150)
-  SELECT directo sobre             │                              │
-  `usuarios` (router.py:30, :39)  get_service_client()   → cliente SIN RLS
-        │                    (service.py:143-146)                │
-  Aislamiento por tenant            │                    crear_usuario / cambiar_rol /
-  (si existe) depende de la  actualizar_perfil_propio    cambiar_activo / eliminar_usuario
-  policy `usuarios_sel` de   (service.py:121-128)         (service.py:13-118)
-  Postgres — no verificable  → sin reglas de rol,         → reglas RN-USUARIOS-NNN
-  solo con este módulo         solo campos provistos        evaluadas en Python
-  (ver pendientes.md)                                              │
-                                                          repository.py (INSERT/UPDATE/DELETE)
+                                   Request HTTP
+                                         │
+   ┌──────────────┬──────────────────────┼─────────────────────┬──────────────────────┐
+   │              │                      │                     │                      │
+POST /auth/login  GET /usuarios(/{id})   PATCH /usuarios/me    POST /auth/            POST /usuarios, DELETE
+(público)         │                      │                     cambiar-password       PATCH /rol /activo
+   │              │                      │                     │                      /password /username
+   │        GET /usuarios:         get_current_user      get_current_user_con_        require_roles(...)
+   │        get_current_user       (403 si flag)         password_pendiente           → get_current_user
+   │        GET /{id}: permisiva   usuario.id del        (sin 403 por flag;             (403 si flag)
+   │        + exigir_password_     token                 401 si inactivo)             → whitelist de rol
+   │        al_dia si id ajeno           │                     │                      │
+   │              │                service client        service client               *_para_endpoint
+   │        user_client (RLS)      actualizar_perfil_    cambiar_password             → service client
+   │        SELECT directo         propio                (auth/service.py:48-65)      → reglas RN-USUARIOS
+   │        (usuarios_sel)                                                            → repository.py
+   │
+service client: username → fila → email interno (Admin API)
+cliente anon nuevo: sign_in_with_password → sesión (auth/service.py:18-45)
 ```
 
-Notar que las tres ramas usan mecanismos de autorización distintos y no comparables
-directamente: la de lectura es declarativa (policy de RLS en la base), la de escritura
-sobre otros usuarios es imperativa (if/raise en `service.py`), y la de autoservicio de
-perfil propio no es ninguna de las dos — es una garantía estructural (el `id` sale del
-token) sin ningún `if` de autorización explícito.
+El chequeo de `debe_cambiar_password` vive en `services/shared/auth.py:60-83`, no en
+este módulo: `usuarios/` y `auth/` solo eligen qué dependencia usa cada endpoint.
