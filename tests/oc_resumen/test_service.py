@@ -151,6 +151,14 @@ def test_oc_de_otra_drogueria_da_not_found(monkeypatch):
         _resumen()
 
 
+def test_usuario_sin_drogueria_da_not_found_aunque_rls_devuelva_la_oc(monkeypatch):
+    # Superadmin (drogueria_id NULL): RLS le deja ver cualquier OC con el user client,
+    # pero el chequeo explícito de drogueria_id en el service sigue respondiendo 404.
+    _parchar(monkeypatch, oc=_oc(drogueria_id="d1"))
+    with pytest.raises(NotFoundError, match="No se encontró la orden de compra"):
+        service.obtener_resumen(MagicMock(), orden_compra_id=OC_ID, drogueria_id=None)
+
+
 @pytest.mark.parametrize("id_invalido", ["oc-1", "", "123", "no-es-uuid"])
 def test_id_no_uuid_da_not_found_sin_consultar_la_base(monkeypatch, id_invalido):
     # Postgres rechaza el cast a uuid con un 500: se corta antes de tocar el repository.

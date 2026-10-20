@@ -10,6 +10,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user
+from services.presupuestacion.core.database import get_user_client
+from services.presupuestacion.oc_resumen import router as router_module
+from services.presupuestacion.oc_resumen.models import OcResumenOut
 from services.presupuestacion.oc_resumen.router import _ROLES_LECTURA, router
 from services.shared.exceptions import register_exception_handlers
 
@@ -42,6 +45,38 @@ def test_rol_fuera_de_roles_lectura_es_rechazado_con_403():
     respuesta = TestClient(app).get("/ordenes-compra/oc-1/resumen")
 
     assert respuesta.status_code == 403
+
+
+def test_lee_con_el_user_client_y_la_drogueria_del_usuario(monkeypatch):
+    # La lectura va con el JWT del usuario (RLS mismo_tenant); el service sigue
+    # recibiendo drogueria_id para el chequeo explícito en Python.
+    user_client = object()
+    llamadas = []
+
+    def _obtener_resumen(client, **kwargs):
+        llamadas.append((client, kwargs))
+        return OcResumenOut(
+            orden_compra_id="oc-1", numero_oc="OC-1", estado="confirmada", renglones=[], entregas=[]
+        )
+
+    monkeypatch.setattr(router_module, "obtener_resumen", _obtener_resumen)
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(
+        id="u-1", drogueria_id="d1", rol="compras"
+    )
+    app.dependency_overrides[get_user_client] = lambda: user_client
+
+    respuesta = TestClient(app).get("/ordenes-compra/oc-1/resumen")
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["orden_compra_id"] == "oc-1"
+    assert llamadas == [(user_client, {"orden_compra_id": "oc-1", "drogueria_id": "d1"})]
+
+
+def test_router_no_usa_el_service_client():
+    assert not hasattr(router_module, "get_service_client")
 
 
 @pytest.mark.integration
