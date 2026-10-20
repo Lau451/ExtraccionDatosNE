@@ -39,6 +39,10 @@ class RateLimitError(DomainError):
     """Un servicio externo (p.ej. Supabase Auth) rechazó el pedido por límite de intentos."""
 
 
+class ServicioExternoNoDisponibleError(DomainError):
+    """Un servicio externo (p.ej. Supabase Auth) no responde o responde con un error propio (5xx)."""
+
+
 class ExtraccionNoDisponibleError(DomainError):
     """El CSV crudo de la extracción no es accesible desde este servicio."""
 
@@ -54,6 +58,7 @@ STATUS_MAP: dict[type[DomainError], int] = {
     ConflictError: 409,
     ValidationError: 422,
     RateLimitError: 429,
+    ServicioExternoNoDisponibleError: 503,
     ExtraccionNoDisponibleError: 503,
     IntegracionNoConfigurada: 503,
 }

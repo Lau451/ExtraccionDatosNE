@@ -22,9 +22,14 @@ MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."
 # resuelven a una cuenta (dominio por defecto de Settings.auth_email_domain).
 EMAIL_LOGIN_INEXISTENTE = "login-inexistente@usuarios.local"
 
+MENSAJE_AUTH_NO_DISPONIBLE = (
+    "El servicio de autenticación no está disponible. Probá de nuevo en unos minutos."
+)
+
 # La real, antes de que el fixture `estado` la reemplace: los tests de S8 la
 # ejercitan con Supabase Auth simulado a nivel de create_client.
 _INICIAR_SESION_REAL = auth_repo.iniciar_sesion
+_OBTENER_EMAIL_AUTH_REAL = auth_repo.obtener_email_auth
 
 
 class _Sesion:
@@ -54,11 +59,13 @@ def estado(monkeypatch) -> dict:
         "emails": {"id-jperez": "0f3c@usuarios.local"},
         "passwords": {"0f3c@usuarios.local": "temporal1"},
         "sign_ins": [],
+        "lookups": [],
         "password_updates": [],
         "perfil_updates": [],
     }
 
     def _por_username(client, *, username):
+        estado["lookups"].append(username)
         return next(
             (f for f in estado["usuarios"].values() if f["username"] == username), None
         )
@@ -474,13 +481,17 @@ _RL = {"code": 429, "error_code": "over_request_rate_limit", "msg": "Request rat
 _BAD = {"code": 400, "error_code": "invalid_credentials", "msg": "Invalid login credentials"}
 
 
-def _gotrue_real(monkeypatch, *, status, body):
+def _gotrue_real(monkeypatch, *, status=None, body=None, responder=None):
+    """Cliente gotrue real sobre httpx.MockTransport. `responder(request)` arma la
+    respuesta por ruta (o lanza un error de red); si no, todo responde `status`/`body`."""
     from types import SimpleNamespace
 
     pedidos = []
 
     def handler(request):
         pedidos.append(request)
+        if responder is not None:
+            return responder(request)
         return httpx.Response(status, json=body)
 
     monkeypatch.setattr(auth_repo, "iniciar_sesion", _INICIAR_SESION_REAL)
@@ -534,3 +545,170 @@ def test_cambiar_password_actual_vacia_da_422_sin_cambios(estado, monkeypatch):
     assert (respuesta.status_code, respuesta.json()) == (422, {"detail": "La contraseña actual es incorrecta"})
     assert pedidos == []
     _sin_cambios(estado)
+
+
+# ---------------------------------------------------------------------------
+# S12: Supabase Auth caído o con respuestas no parseables -> 503 / 429 claros
+# ---------------------------------------------------------------------------
+
+def _red_caida(request):
+    raise httpx.ConnectError("connection refused", request=request)
+
+
+_CAIDAS = {
+    "502": lambda r: httpx.Response(502, text="<html>502 Bad Gateway</html>"),
+    "503": lambda r: httpx.Response(503, text="<html>503 Service Unavailable</html>"),
+    "504": lambda r: httpx.Response(504, text="<html>504 Gateway Timeout</html>"),
+    "500_json": lambda r: httpx.Response(
+        500, json={"code": 500, "error_code": "unexpected_failure", "msg": "Internal Server Error"}
+    ),
+    "500_no_json": lambda r: httpx.Response(500, text="<html>Internal Server Error</html>"),
+    "red": _red_caida,
+}
+_RL_NO_JSON = lambda r: httpx.Response(429, text="Too Many Requests")  # noqa: E731
+_NO_DISPONIBLE = (503, {"detail": MENSAJE_AUTH_NO_DISPONIBLE})
+_LIMITE = (429, {"detail": MENSAJE_RATE_LIMIT})
+
+
+@pytest.mark.parametrize(
+    "responder,esperado",
+    [(r, _NO_DISPONIBLE) for r in _CAIDAS.values()] + [(_RL_NO_JSON, _LIMITE)],
+    ids=[*_CAIDAS, "429_no_json"],
+)
+def test_login_con_auth_caido_responde_igual_para_todo_username(estado, monkeypatch, responder, esperado):
+    """S12 + S1: un Auth caído da 503 (o el 429 de S8) para todo username, nunca
+    500 ni el 401 de credenciales."""
+    pedidos = _gotrue_real(monkeypatch, responder=responder)
+    cliente = _cliente(estado)
+
+    respuestas = [
+        cliente.post("/auth/login", json={"username": u, "password": "x12345678"})
+        for u in _USERNAMES_PARIDAD
+    ]
+
+    assert [(r.status_code, r.json()) for r in respuestas] == [esperado] * len(_USERNAMES_PARIDAD)
+    assert len(pedidos) == len(_USERNAMES_PARIDAD)
+
+
+@pytest.mark.parametrize(
+    "responder,esperado",
+    [(r, _NO_DISPONIBLE) for r in _CAIDAS.values()] + [(_RL_NO_JSON, _LIMITE)],
+    ids=[*_CAIDAS, "429_no_json"],
+)
+def test_cambiar_password_con_auth_caido_no_cambia_nada(estado, monkeypatch, responder, esperado):
+    """S12: verificar la contraseña actual con Auth caído da 503 (o 429), nunca
+    el 422 de contraseña incorrecta, y no toca nada."""
+    _gotrue_real(monkeypatch, responder=responder)
+
+    respuesta = _cliente(estado, sub="id-jperez").post(
+        "/auth/cambiar-password",
+        json={"password_actual": "temporal1", "password_nueva": "definitiva8"},
+    )
+
+    assert (respuesta.status_code, respuesta.json()) == esperado
+    _sin_cambios(estado)
+
+
+# Con el lookup de Auth real (get_user_by_id): el id del usuario tiene que ser un uuid.
+_ID_JPEREZ = "5b0c6a1e-3f7d-4c2a-9e8b-1a2b3c4d5e6f"
+_RUTA_USUARIO_AUTH = "/auth/v1/admin/users/"
+
+
+def _usuario_auth(usuario_id: str) -> dict:
+    return {
+        "id": usuario_id,
+        "email": "0f3c@usuarios.local",
+        "aud": "authenticated",
+        "app_metadata": {},
+        "user_metadata": {},
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def _lookup_auth_real(monkeypatch, estado: dict) -> None:
+    """obtener_email_auth real con un service client gotrue sobre el mismo
+    MockTransport que instala _gotrue_real (llamar después de _gotrue_real)."""
+    from supabase import ClientOptions, create_client
+
+    fila = estado["usuarios"].pop("id-jperez")
+    estado["usuarios"][_ID_JPEREZ] = {**fila, "id": _ID_JPEREZ}
+    estado["emails"] = {_ID_JPEREZ: "0f3c@usuarios.local"}
+    servicio = create_client(
+        "http://auth.test",
+        "aaa.bbb.ccc",
+        options=ClientOptions(httpx_client=auth_repo.build_resilient_httpx_client()),
+    )
+    monkeypatch.setattr(auth_repo, "obtener_email_auth", _OBTENER_EMAIL_AUTH_REAL)
+    monkeypatch.setattr(auth_service, "get_service_client", lambda: servicio)
+
+
+@pytest.mark.parametrize(
+    "falla,esperado",
+    [
+        (_CAIDAS["502"], _NO_DISPONIBLE),
+        (_CAIDAS["500_json"], _NO_DISPONIBLE),
+        (_CAIDAS["red"], _NO_DISPONIBLE),
+        (_RL_NO_JSON, _LIMITE),
+    ],
+    ids=["502", "500_json", "red", "429_no_json"],
+)
+def test_login_con_lookup_de_auth_caido_responde_igual_para_todo_username(
+    estado, monkeypatch, falla, esperado
+):
+    """S12 + S13: si get_user_by_id falla, existente e inexistente dan la misma
+    respuesta (también lo intenta el inexistente, con el id ficticio)."""
+
+    def responder(request):
+        if request.url.path.startswith(_RUTA_USUARIO_AUTH):
+            return falla(request)
+        return httpx.Response(400, json=_BAD)
+
+    _gotrue_real(monkeypatch, responder=responder)
+    _lookup_auth_real(monkeypatch, estado)
+    cliente = _cliente(estado)
+
+    respuestas = [
+        cliente.post("/auth/login", json={"username": u, "password": "x12345678"})
+        for u in _USERNAMES_PARIDAD
+    ]
+
+    assert [(r.status_code, r.json()) for r in respuestas] == [esperado] * len(_USERNAMES_PARIDAD)
+
+
+# ---------------------------------------------------------------------------
+# S13: misma secuencia de llamadas externas para todo username
+# ---------------------------------------------------------------------------
+
+def test_login_hace_la_misma_secuencia_de_llamadas_para_todo_username(estado, monkeypatch):
+    """S13: lookup de username, lookup en Auth y sign-in para existente,
+    inexistente, mal formado y vacío; todos terminan en el mismo 401."""
+    import re
+
+    def responder(request):
+        if request.url.path.startswith(_RUTA_USUARIO_AUTH):
+            usuario_id = request.url.path.removeprefix(_RUTA_USUARIO_AUTH)
+            if usuario_id == _ID_JPEREZ:
+                return httpx.Response(200, json=_usuario_auth(usuario_id))
+            return httpx.Response(
+                404, json={"code": 404, "error_code": "user_not_found", "msg": "User not found"}
+            )
+        return httpx.Response(400, json=_BAD)
+
+    pedidos = _gotrue_real(monkeypatch, responder=responder)
+    _lookup_auth_real(monkeypatch, estado)
+    cliente = _cliente(estado)
+    uuid = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+    secuencias = {}
+    for username in ["jperez", "nadie", "j perez@x", ""]:
+        pedidos.clear()
+        estado["lookups"].clear()
+        respuesta = cliente.post("/auth/login", json={"username": username, "password": "x12345678"})
+        assert (respuesta.status_code, respuesta.json()) == (401, {"detail": MENSAJE_LOGIN})
+        secuencias[username] = (
+            len(estado["lookups"]),
+            [(p.method, uuid.sub("{id}", p.url.path)) for p in pedidos],
+        )
+
+    esperada = (1, [("GET", "/auth/v1/admin/users/{id}"), ("POST", "/auth/v1/token")])
+    assert secuencias == dict.fromkeys(secuencias, esperada)
