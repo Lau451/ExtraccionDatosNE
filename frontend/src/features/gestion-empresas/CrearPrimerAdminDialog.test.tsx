@@ -66,7 +66,7 @@ describe('CrearPrimerAdminDialog', () => {
     completar(dialogo, 'ag', 'temporal1')
     expect(
       dialogo.getByText(
-        'El usuario debe tener entre 3 y 30 caracteres: letras minúsculas, números, punto, guion o guion bajo.',
+        'El nombre de usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo',
       ),
     ).toBeInTheDocument()
     expect(crearUsuario).not.toHaveBeenCalled()

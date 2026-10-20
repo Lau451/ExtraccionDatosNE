@@ -7,7 +7,8 @@ export interface LoginResponse {
   access_token: string
   refresh_token: string
   expires_in: number
-  expires_at: number
+  // Backend `LoginOut.expires_at` is `int | None` (spec S11).
+  expires_at: number | null
   token_type: string
   user: { id: string }
 }

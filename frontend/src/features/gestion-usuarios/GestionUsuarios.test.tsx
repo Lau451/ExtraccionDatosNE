@@ -123,7 +123,7 @@ function completarAlta(dialogo: ReturnType<typeof within>, username: string, pas
 }
 
 const ERROR_USERNAME =
-  'El usuario debe tener entre 3 y 30 caracteres: letras minúsculas, números, punto, guion o guion bajo.'
+  'El nombre de usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo'
 const ERROR_TEMPORAL = 'La contraseña temporal debe tener al menos 8 caracteres.'
 const DUPLICADO = 'Ya existe un usuario con ese nombre de usuario'
 
