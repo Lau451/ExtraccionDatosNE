@@ -14,13 +14,19 @@ odd/tasks/login-usuario-alta-admin.md el frontend no usa `invite_user_by_email` 
   se agregó `/cambiar-password` y se quitaron `/reset-password` y `/accept-invite`. Revisar el diff
   cuando el plugin lo regenere.
 - El guard de `debe_cambiar_password` (RN-LOGIN-011) es UX: la garantía es el 403 del backend. Por
-  PostgREST directo, desde `0039` el usuario ya no puede limpiar el flag (RN-USUARIOS-042), pero
-  todavía puede leer lo que RLS le permita.
-- El login depende de las migraciones `0038` y `0039` aplicadas y del backend desplegado (orden:
-  `0038`, `0039`, backend).
+  PostgREST directo, desde `0039` el usuario ya no puede limpiar el flag (RN-USUARIOS-042) y, con
+  `0041` aplicada, tampoco leer nada salvo su propia fila de `usuarios` (RN-USUARIOS-048).
+  **`0041` está escrita pero no aplicada** (ver [`../usuarios/pendientes.md`](../usuarios/pendientes.md)
+  P1-3): hasta aplicarla, la lectura sigue abierta.
+- El login depende de las migraciones `0038`, `0039` y `0040` (aplicadas) y del backend desplegado
+  (orden: `0038`, `0039`, `0040`, backend). `0041` no es requisito del login.
 - ~~Un 429 de Supabase Auth en el login se ve como "Usuario o contraseña incorrectos".~~
   **Resuelto** (commits `2b4bf79` y `0c8052c`): el backend responde 429 y el login y el cambio de
   contraseña muestran su mensaje (RN-LOGIN-013). El límite por IP compartido sigue existiendo.
+- ~~Supabase Auth caído (502-504, 429 no JSON, 500 JSON) salía como 500 o como "Usuario o
+  contraseña incorrectos".~~ **Resuelto** (commit `34bcc44`): el backend responde 503 (o 429) igual
+  para todo username (RN-LOGIN-014, RN-USUARIOS-047). El login muestra su texto genérico de
+  reintento, no el `detail` del 503.
 
 ## P1 — Crítico
 

@@ -29,15 +29,39 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
 
 3. **`debe_cambiar_password` se aplica solo en el backend, no en RLS.** El bloqueo vive en
    `get_current_user` (`services/shared/auth.py:60-73`).
-   - **Escritura — [RESUELTO, commit `804d9c5`, pendiente de aplicar]**: la policy
+   - **Escritura — [RESUELTO, commit `804d9c5`, aplicada]**: la policy
      `usuarios_upd` dejaba que un admin limpiara su propio flag o editara usernames por
      PostgREST con su JWT. El trigger de `0039` lo rechaza (RN-USUARIOS-042).
-   - **Lectura — abierto (residual, fuera de alcance de S7)**: un usuario con contraseña
-     temporal tiene un JWT válido de Supabase y las policies RLS no miran el flag, así que
-     puede leer por PostgREST directo lo que RLS le permita. El frontend no hace llamadas
-     directas a `supabase.from/rpc`, pero nada lo impide a nivel de base.
-     [RECOMENDACIÓN]: si se quiere cerrar, sumar el flag a `get_rol()`/las policies
-     (requiere migración propia).
+   - **Lectura — [RESUELTO en código, commit `e099547`, PENDIENTE DE APLICAR]**: la
+     migración `0041_usuarios_password_pendiente_sin_lectura` hace que los helpers de RLS
+     ignoren al usuario con el flag en `true` y suma `password_al_dia()` a las lecturas que
+     no pasan por ellos (RN-USUARIOS-048). Sin aplicar, la lectura por PostgREST sigue
+     abierta.
+   - **`UPDATE id` — [RESUELTO en código, commit `e099547`, PENDIENTE DE APLICAR]**: un
+     superadmin podía borrar la fila B y hacer `UPDATE id = B` sobre otra fila sin
+     referencias. La misma `0041` extiende el guard de `0039` a `id` (RN-USUARIOS-049).
+
+   **Antes de aplicar `0041`, 3 chequeos en el SQL Editor del proyecto real** (la SQL no
+   se ejecutó en ninguna base):
+   1. **Helpers contra `rls_final.sql`**: los helpers no están en ninguna migración y
+      `0041` los recrea con `CREATE OR REPLACE` suponiendo la definición de
+      `docs/schema/rls_final.sql`. Consultar `pg_get_functiondef`, dueño (`proowner`) y
+      permisos (`proacl`) de `get_drogueria_id`, `get_rol`, `es_superadmin` y
+      `mismo_tenant` en `pg_proc` (consulta en el encabezado de `0041`) y confirmar que
+      coinciden (misma firma, `STABLE`, `SECURITY DEFINER`, `search_path = public`).
+   2. **Policies contra el `down`**: consultar en `pg_policies` `planes_sel`, `no_sel`,
+      `ne_sel`, `np_sel` y `licitaciones_all_access` y confirmar que su `qual` actual es el
+      que restaura `0041_usuarios_password_pendiente_sin_lectura.down.sql`; si difiere,
+      `0041` pisaría una versión distinta y el `down` no volvería al estado real.
+   3. **Caminos de lectura que quedan afuera**: buscar en `pg_policies` (y en vistas o
+      RPCs) lecturas que no pasen por `get_rol()`/`get_drogueria_id()`/`es_superadmin()`/
+      `mismo_tenant()` ni por `password_al_dia()` (p.ej. ramas `auth.uid()` propias o
+      `USING (true)`), más allá de `usuarios_sel` (que queda a propósito). Conocidos sin
+      relevar: `comparativas_results`/`licitaciones_results` (`0001`).
+
+   Prueba sugerida después de aplicar: con el JWT de un usuario con el flag en `true`, un
+   `GET` por PostgREST de cualquier tabla devuelve vacío salvo su fila de `usuarios`, y el
+   login, el cambio de contraseña y el `GET /usuarios/{id}` propio siguen funcionando.
 
 4. **Desactivar los sign-ups públicos en el dashboard de Supabase.** Con la anon key
    (pública en el frontend) cualquiera podría llamar a `signUp` contra Supabase Auth y
@@ -68,10 +92,19 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
    `debe_cambiar_password=false` en su fila debe fallar con `42501`, y el blanqueo por el
    backend debe seguir funcionando.
 
-8. **La migración `0040_usuarios_protege_alta` no está aplicada.** Aplicarla después de
-   `0039` (RN-USUARIOS-046). Mismas confirmaciones pendientes que el punto 7; prueba
-   sugerida: un `INSERT` por PostgREST con el JWT de un admin debe fallar con `42501` y
-   el alta desde la pantalla de usuarios debe seguir funcionando.
+8. **[RESUELTO 2026-10-19] La migración `0040_usuarios_protege_alta` está aplicada** en el
+   proyecto real, después de `0039` (RN-USUARIOS-046, L10 del documento de feature). Su
+   efecto no se probó: mismas confirmaciones pendientes que el punto 7; prueba sugerida:
+   un `INSERT` por PostgREST con el JWT de un admin debe fallar con `42501` y el alta desde
+   la pantalla de usuarios debe seguir funcionando.
+
+9. **[RESUELTO, commit `34bcc44`] Errores de Supabase Auth mal mapeados en login y cambio
+   de contraseña.** Un 502-504 o un 429 con body no JSON salían como 500, un 500 con JSON
+   como credenciales inválidas (401/422), y un error del `get_user_by_id` que no era
+   `AuthApiError` como 500 solo para usernames reales. Ahora Auth caído o 5xx da 503
+   `El servicio de autenticación no está disponible. Probá de nuevo en unos minutos.`
+   (RN-USUARIOS-047) y el 429 no JSON da 429 (RN-USUARIOS-043), igual para todo username.
+   Un `AuthError` de un tipo no listado se sigue relanzando (500).
 
 ## P2 — Deuda técnica relevante
 
@@ -114,11 +147,11 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
    mantiene Auth primero y flag después: si falla el segundo paso, el usuario tiene que
    cambiarla de nuevo (falla cerrado, aceptado en S9).
 
-9. **Diferencia de tiempos en el login — [MAYORMENTE RESUELTO, commit `ea8648f`]**. Un
-   username inexistente o inválido ahora también hace el sign-in contra Supabase con un
-   email ficticio (RN-USUARIOS-045), así que bajo 429 todos responden igual y el tiempo se
-   parece al de un intento real. Queda una diferencia chica: un username real hace además
-   `get_user_by_id` antes del sign-in.
+9. **Diferencia de tiempos en el login — [RESUELTO, commits `ea8648f` y `34bcc44`]**. Todo
+   username hace las mismas tres llamadas (lookup de username, `get_user_by_id` y
+   sign-in), con placeholders cuando no resuelve a una cuenta (RN-USUARIOS-045). Mismo
+   número de idas y vueltas no garantiza el mismo tiempo exacto (Supabase puede tardar
+   distinto por cuenta).
 
 10. **El email del cierre de PCP iría a la dirección interna opaca.** `obtener_email_usuario`
     (`services/pcp/negociacion/repository.py:47-62`) lee el email de `auth.users`, que para
@@ -149,3 +182,8 @@ reverificada contra el código de la rama `feat/login-usuario-alta-admin`.
 6. **Conviven emails reales e internos en `auth.users`.** Los usuarios previos a `0038`
    conservan su email real (D-USUARIOS-012); no hay migración que los pase al formato
    opaco. No afecta el login, pero el email real sigue existiendo en Auth.
+
+7. **[RESUELTO, commit `9f9561c`] Frontend desalineado con el backend en dos detalles.**
+   `LoginResponse.expires_at` era `number` y el backend devuelve `int | None` (ahora
+   `number | null`, `frontend/src/lib/api/auth.ts`); y el error de formato de username del
+   frontend decía "letras minúsculas" (ahora el texto exacto del backend, RN-USUARIOS-031).

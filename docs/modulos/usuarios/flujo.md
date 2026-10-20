@@ -82,25 +82,32 @@ Si cualquier validación del paso 3 falla, no se llama a Auth: no queda cuenta h
 ## Flujo 7 — Login con nombre de usuario (`POST /auth/login`) — **[NUEVO]**
 
 1. Endpoint público (`auth/router.py:11-14`) → `login_para_endpoint` → `login` con
-   service client (`auth/service.py:68-69`).
-2. `normalizar_username` (`auth/service.py:22`); si el formato es inválido → 401 genérico.
-3. `obtener_usuario_por_username` (`auth/service.py:26`, `usuarios/repository.py:58-62`);
-   inexistente → 401 genérico.
-4. `obtener_email_auth` con `client.auth.admin.get_user_by_id` (`auth/service.py:30`,
-   `auth/repository.py:14-21`); sin email → 401 genérico.
-5. `iniciar_sesion(email, password)` (`auth/service.py:34`): cliente anon nuevo con
+   service client (`auth/service.py:89-90`).
+2. `normalizar_username` (`auth/service.py:44`). Los pasos 3 a 5 se hacen **siempre**,
+   para cualquier username (RN-USUARIOS-045): lo que no resuelve a una cuenta sigue con
+   placeholders y termina en el 401 genérico.
+3. `obtener_usuario_por_username` (`auth/service.py:45-47`, `usuarios/repository.py:58-62`)
+   con el username normalizado, o con el placeholder `login inexistente` si el formato es
+   inválido.
+4. `obtener_email_auth` con `client.auth.admin.get_user_by_id` (`auth/service.py:48-50`,
+   `auth/repository.py:52-68`) con el id de la fila, o con el uuid nulo si no hubo fila.
+5. `iniciar_sesion(email, password)` (`auth/service.py:53-55`) con el email real o, sin
+   cuenta real, con `login-inexistente@<AUTH_EMAIL_DOMAIN>`: cliente anon nuevo con
    `persist_session=False` y httpx propio que se cierra al terminar
-   (`auth/repository.py:30-48`); contraseña incorrecta → 401 genérico; 429 de Supabase
-   Auth → 429 `Demasiados intentos. Probá de nuevo en unos minutos.` (`:43-45`,
-   RN-USUARIOS-043).
+   (`auth/repository.py:71-104`). Contraseña incorrecta o sin cuenta real → 401
+   genérico (`auth/service.py:56-57`).
+   En los pasos 4 y 5: 429 de Supabase Auth (JSON o no) → 429 `Demasiados intentos. Probá
+   de nuevo en unos minutos.` (RN-USUARIOS-043); Auth caído o 5xx → 503 `El servicio de
+   autenticación no está disponible. Probá de nuevo en unos minutos.` (RN-USUARIOS-047).
 6. Devuelve `access_token`, `refresh_token`, `expires_in`, `expires_at`, `token_type` y
-   `user.id` (`auth/service.py:38-45`). El email no se devuelve.
+   `user.id` (`auth/service.py:59-66`). El email no se devuelve.
 7. El frontend instala la sesión con `supabase.auth.setSession` y pide
    `GET /usuarios/{id}` (`frontend/src/features/auth/AuthContext.tsx:121-134`). Si el
    perfil trae `debe_cambiar_password: true`, los guards lo mandan a `/cambiar-password`.
 
 Todos los rechazos de credenciales usan el mismo 401 `Usuario o contraseña incorrectos`
-(RN-USUARIOS-038); solo el límite de intentos de Auth se distingue, con 429.
+(RN-USUARIOS-038); solo el límite de intentos de Auth (429) y Auth caído (503) se
+distinguen, igual para todo username.
 Un usuario desactivado con credenciales correctas obtiene sesión y recibe 401
 `Usuario desactivado` en el paso 7, con lo que el frontend cierra la sesión.
 
@@ -108,16 +115,18 @@ Un usuario desactivado con credenciales correctas obtiene sesión y recibe 401
 
 1. `Depends(get_current_user_con_password_pendiente)` (`auth/router.py:21`): permitido con
    el flag en `true`; 401 si el usuario está desactivado.
-2. `cambiar_password` (`auth/service.py:48-65`):
-   1. `validar_password(password_nueva)` → 422 si tiene menos de 8 (`:51`).
+2. `cambiar_password` (`auth/service.py:69-86`):
+   1. `validar_password(password_nueva)` → 422 si tiene menos de 8 (`:72`).
    2. Nueva igual a la actual → 422 `La nueva contraseña debe ser distinta de la actual`
-      (`:52-53`).
-   3. Verifica la actual con un sign-in contra Auth; si falla → 422 `La contraseña actual
-      es incorrecta` sin cambiar nada (`:55-57`); si Auth responde 429 → 429, también sin
-      cambiar nada (RN-USUARIOS-043).
-   4. `actualizar_password_auth` (`:62`) y después `debe_cambiar_password=False`
-      (`:63-65`). Si falla el segundo paso, el flag queda en `true` y el usuario vuelve a la
-      pantalla de cambio (falla cerrado, `:59-61`).
+      (`:73-74`).
+   3. Busca el email interno (`obtener_email_auth`) y verifica la actual con un sign-in
+      contra Auth; si falla → 422 `La contraseña actual es incorrecta` sin cambiar nada
+      (`:76-78`). Si Auth responde 429 → 429 (RN-USUARIOS-043); si Auth no responde o
+      responde 5xx, en el lookup o en el sign-in → 503 (RN-USUARIOS-047). En ambos casos sin
+      cambiar nada.
+   4. `actualizar_password_auth` (`:83`) y después `debe_cambiar_password=False`
+      (`:84-86`). Si falla el segundo paso, el flag queda en `true` y el usuario vuelve a la
+      pantalla de cambio (falla cerrado, `:80-82`).
 3. Responde `204`. El frontend refresca el perfil y sale de la pantalla de cambio.
 
 ## Flujo 9 — Blanqueo de contraseña (`PATCH /usuarios/{usuario_id}/password`) — **[NUEVO]**

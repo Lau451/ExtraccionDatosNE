@@ -218,35 +218,56 @@ class CambiarPasswordIn(BaseModel):
 ## `auth/repository.py`
 
 ```python
-MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."   # auth/repository.py:11
+MENSAJE_RATE_LIMIT = "Demasiados intentos. Probá de nuevo en unos minutos."   # auth/repository.py:23
+MENSAJE_AUTH_NO_DISPONIBLE = (
+    "El servicio de autenticación no está disponible. Probá de nuevo en unos minutos."
+)   # auth/repository.py:25-27 — NUEVO (RN-USUARIOS-047)
+
+def _status_http(exc: AuthError) -> int | None: ...
+# auth/repository.py:30-38 — exc.status de AuthApiError/CustomAuthError; para
+# AuthUnknownError (body no JSON) lo lee del httpx.HTTPStatusError en __cause__/__context__.
+
+def _error_de_servicio(exc: AuthError) -> DomainError | None: ...
+# auth/repository.py:41-49 — 429 → RateLimitError (RN-USUARIOS-043); AuthRetryableError,
+# AuthUnknownError o status >= 500 → ServicioExternoNoDisponibleError (RN-USUARIOS-047);
+# None = error de credenciales/datos.
 
 def obtener_email_auth(client: Client, *, usuario_id: str) -> str | None: ...
-# auth/repository.py:14-21 — client.auth.admin.get_user_by_id; None si AuthApiError o sin
-# usuario. El email nunca sale del backend.
+# auth/repository.py:52-68 — client.auth.admin.get_user_by_id. 429/5xx/body no
+# parseable → el error de _error_de_servicio; httpx.RequestError (red) → 503; otro
+# AuthApiError → None; cualquier otro AuthError se relanza. None también si no hay usuario.
+# El email nunca sale del backend.
 
 def iniciar_sesion(*, email: str, password: str) -> Session | None: ...
-# auth/repository.py:24-49 — crea un cliente anon NUEVO por llamada (create_client con
+# auth/repository.py:71-104 — crea un cliente anon NUEVO por llamada (create_client con
 # supabase_anon_key, persist_session=False, auto_refresh_token=False y un httpx propio que
-# se cierra en el finally, :33-48) y llama a sign_in_with_password. AuthApiError con
-# status 429 → RateLimitError(MENSAJE_RATE_LIMIT) (:43-45, RN-USUARIOS-043); cualquier
-# otro AuthApiError → None (:46).
+# se cierra en el finally, :81-103) y llama a sign_in_with_password. Errores de servicio
+# → el error de _error_de_servicio (:91-94); httpx.RequestError → 503 (:100-101);
+# AuthApiError o AuthInvalidCredentialsError (password vacía, antes del HTTP) → None
+# (:97-98); cualquier otro AuthError se relanza.
 # No usa el service client ni los cacheados por token: sign_in_with_password guarda la
-# sesión en el propio cliente (comentario :25-29).
+# sesión en el propio cliente (docstring :72-77).
 ```
 
 ## `auth/service.py`
 
 ```python
-MENSAJE_LOGIN_INVALIDO = "Usuario o contraseña incorrectos"   # auth/service.py:15
+MENSAJE_LOGIN_INVALIDO = "Usuario o contraseña incorrectos"   # auth/service.py:16
+_LOCAL_EMAIL_INEXISTENTE = "login-inexistente"                  # :21
+_USERNAME_INEXISTENTE = "login inexistente"                     # :26 — placeholder (RN-USUARIOS-045)
+_ID_INEXISTENTE = "00000000-0000-0000-0000-000000000000"        # :27 — placeholder (RN-USUARIOS-045)
+
+def email_login_inexistente() -> str: ...                       # :30-31
 
 def login(client: Client, *, body: LoginIn) -> dict[str, Any]: ...
-# auth/service.py:18-45 — RN-USUARIOS-038.
+# auth/service.py:34-66 — RN-USUARIOS-038 y RN-USUARIOS-045 (siempre lookup de username,
+# lookup en Auth y sign-in, con placeholders si el username no resuelve a una cuenta).
 
 def cambiar_password(client: Client, *, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...
-# auth/service.py:48-65 — RN-USUARIOS-039.
+# auth/service.py:69-86 — RN-USUARIOS-039.
 
-def login_para_endpoint(*, body: LoginIn) -> dict[str, Any]: ...                  # :68-69
-def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...  # :72-73
+def login_para_endpoint(*, body: LoginIn) -> dict[str, Any]: ...                  # :89-90
+def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPasswordIn) -> None: ...  # :93-94
 # Ambos con get_service_client().
 ```
 
@@ -254,12 +275,12 @@ def cambiar_password_para_endpoint(*, usuario: UsuarioPerfil, body: CambiarPassw
 
 | Método | Path | Request | Response | Dependencia de auth | Archivo |
 |---|---|---|---|---|---|
-| POST | `/auth/login` | `LoginIn` | `LoginOut` (401 `Usuario o contraseña incorrectos`; 429 `Demasiados intentos. Probá de nuevo en unos minutos.`) | Ninguna (público) | `auth/router.py:11-14` |
-| POST | `/auth/cambiar-password` | `CambiarPasswordIn` | `204 No Content` (422 de RN-USUARIOS-039; 429 con el mismo mensaje del login) | `get_current_user_con_password_pendiente` (permitido con cambio pendiente) | `auth/router.py:17-23` |
+| POST | `/auth/login` | `LoginIn` | `LoginOut` (401 `Usuario o contraseña incorrectos`; 429 `Demasiados intentos. Probá de nuevo en unos minutos.`; 503 `El servicio de autenticación no está disponible. Probá de nuevo en unos minutos.`; los tres iguales para todo username) | Ninguna (público) | `auth/router.py:11-14` |
+| POST | `/auth/cambiar-password` | `CambiarPasswordIn` | `204 No Content` (422 de RN-USUARIOS-039; 429 y 503 con los mismos mensajes del login, también si falla el lookup del email) | `get_current_user_con_password_pendiente` (permitido con cambio pendiente) | `auth/router.py:17-23` |
 
 ## Errores de dominio y status HTTP
 
-Mapeo centralizado en `services/shared/exceptions.py:50-59` (`STATUS_MAP`), ver
+Mapeo centralizado en `services/shared/exceptions.py:54-64` (`STATUS_MAP`), ver
 [`../core/api.md`](../core/api.md):
 
 - `ForbiddenError` → 403: RN-USUARIOS-001, 002, 008, 009, 010, 014, 015, 016, 017, 019,
@@ -275,11 +296,17 @@ Mapeo centralizado en `services/shared/exceptions.py:50-59` (`STATUS_MAP`), ver
 - `AuthenticationError` → 401: `POST /auth/login` con credenciales inválidas
   (RN-USUARIOS-038), y `get_current_user`/`get_current_user_con_password_pendiente`
   cuando `activo=False` (RN-USUARIOS-021).
-- `RateLimitError` → 429 (**[NUEVO]**, `exceptions.py:38-39`, `:56`): Supabase Auth
-  respondió 429 en el sign-in de `POST /auth/login` o en la verificación de la contraseña
-  actual de `POST /auth/cambiar-password` (RN-USUARIOS-043). Body
+- `RateLimitError` → 429 (**[NUEVO]**, `exceptions.py:38-39`, `:60`): Supabase Auth
+  respondió 429 (con o sin body JSON) en el lookup o el sign-in de `POST /auth/login` o
+  de `POST /auth/cambiar-password` (RN-USUARIOS-043). Body
   `{"detail": "Demasiados intentos. Probá de nuevo en unos minutos."}`. El 429 de
   `create_user` en el alta sigue siendo 409 (RN-USUARIOS-040).
-- Un error de PostgREST por el trigger de `0039` (SQLSTATE `42501`, RN-USUARIOS-042) solo
+- `ServicioExternoNoDisponibleError` → 503 (**[NUEVO]**, `exceptions.py:42-43`, `:61`):
+  Supabase Auth no respondió o respondió 5xx (502-504, 500 con o sin JSON, red caída) en
+  el lookup o el sign-in de `POST /auth/login` o de `POST /auth/cambiar-password`
+  (RN-USUARIOS-047). Body
+  `{"detail": "El servicio de autenticación no está disponible. Probá de nuevo en unos minutos."}`.
+- Un error de PostgREST por el trigger de `0039`/`0040`/`0041` (SQLSTATE `42501`,
+  RN-USUARIOS-042, 046, 049) solo
   lo ve quien escribe `usuarios` con su JWT por fuera del backend; ningún endpoint del
   módulo lo dispara, porque escriben con el service client.

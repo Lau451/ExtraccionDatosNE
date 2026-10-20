@@ -14,6 +14,7 @@ signIn (AuthContext.tsx:121-134)
         │                               el backend resuelve username → email interno y abre la sesión
         ├── 401 ──► ApiError ──► LoginForm: "Usuario o contraseña incorrectos" (RN-LOGIN-003)
         ├── 429 ──► ApiError ──► LoginForm: detail del backend, "Demasiados intentos..." (RN-LOGIN-013)
+        ├── 503 (Supabase Auth caído o con 5xx) ──► "No pudimos iniciar sesión. Probá de nuevo." (RN-LOGIN-014)
         ├── otro error HTTP ──► "No pudimos iniciar sesión. Probá de nuevo."
         │
         ▼ (200 con access_token/refresh_token/user.id)
@@ -101,6 +102,7 @@ CambiarPasswordForm.handleSubmit (CambiarPasswordForm.tsx:19-51)
 cambiarPasswordPropia ──► POST /auth/cambiar-password (lib/api/auth.ts:39-45)
         ├── 422 ──► muestra el detail del backend (p. ej. "La contraseña actual es incorrecta")
         ├── 429 ──► muestra el detail del backend, "Demasiados intentos..." (RN-LOGIN-013)
+        ├── 503 ──► muestra el detail del backend, "El servicio de autenticación no está disponible..." (RN-LOGIN-014)
         │
         ▼ (204)
 refrescarPerfil() (:43) ──► debe_cambiar_password queda en false

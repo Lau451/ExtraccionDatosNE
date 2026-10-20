@@ -272,6 +272,8 @@ actuales.
   incluidos `services/terceros/` y `services/pcp/` que dependen de la misma función.
 - **Ventajas**: un endpoint nuevo queda bloqueado por defecto; liberar uno exige optar
   explícitamente por la dependencia permisiva.
-- **Desventajas**: el bloqueo es solo del backend; un JWT válido sigue sirviendo contra
-  PostgREST/RLS directo (el frontend no hace llamadas directas, pero nada lo impide a
-  nivel de base) — ver [`pendientes.md`](./pendientes.md).
+- **Desventajas**: el bloqueo es del backend; contra PostgREST/RLS directo lo replica
+  `0041` en los helpers de RLS (RN-USUARIOS-048), que todavía **no está aplicada**. Hasta
+  aplicarla, un JWT válido sigue sirviendo para leer por PostgREST (el frontend no hace
+  llamadas directas, pero nada lo impide a nivel de base) — ver
+  [`pendientes.md`](./pendientes.md).

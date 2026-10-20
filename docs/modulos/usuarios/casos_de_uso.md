@@ -14,6 +14,10 @@ continuar` excepto `GET /usuarios/{su propio id}` y `POST /auth/cambiar-password
 - **Body**: `LoginIn { username, password }`.
 - **Reglas**: RN-USUARIOS-031 y 038 — mismo 401 `Usuario o contraseña incorrectos` para
   username inexistente, formato inválido, cuenta sin Auth o contraseña incorrecta.
+  RN-USUARIOS-043, 045 y 047 — 429 `Demasiados intentos. Probá de nuevo en unos minutos.`
+  si Supabase Auth limita intentos y 503 `El servicio de autenticación no está disponible.
+  Probá de nuevo en unos minutos.` si no responde o responde 5xx; iguales para todo
+  username, que siempre hace la misma secuencia de llamadas.
 - **Respuesta**: `LoginOut` con los campos de la sesión de Supabase (`access_token`,
   `refresh_token`, `expires_in`, `expires_at`, `token_type`, `user.id`). Nunca el email.
 
@@ -25,7 +29,9 @@ continuar` excepto `GET /usuarios/{su propio id}` y `POST /auth/cambiar-password
 - **Body**: `CambiarPasswordIn { password_actual, password_nueva }`.
 - **Reglas**: RN-USUARIOS-032 y 039 (422 con `La contraseña debe tener al menos 8
   caracteres`, `La nueva contraseña debe ser distinta de la actual` o `La contraseña
-  actual es incorrecta`). En éxito, `204` y `debe_cambiar_password=false`.
+  actual es incorrecta`), y el 429/503 de RN-USUARIOS-043 y 047 si Supabase Auth limita
+  intentos o no está disponible (también en el lookup del email), sin cambiar nada. En
+  éxito, `204` y `debe_cambiar_password=false`.
 
 ## `GET /usuarios`
 

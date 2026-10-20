@@ -10,7 +10,7 @@ no la modela ni la administra.
 
 | Columna | Qué hace este módulo |
 |---|---|
-| `id` | PK, FK a `auth.users` con `ON DELETE CASCADE` (`docs/schema/rls_final.sql:36`). Generada por Supabase Auth Admin en `repo.crear_usuario_auth` (`repository.py:12-39`) y usada como PK al insertar el perfil (`service.py:116`). Filtro en `obtener_usuario`, `actualizar_rol`, `actualizar_activo`, `actualizar_perfil` y `eliminar_usuario_auth` (`repository.py:69-95`). |
+| `id` | PK, FK a `auth.users` con `ON DELETE CASCADE` (`docs/schema/rls_final.sql:36`). Generada por Supabase Auth Admin en `repo.crear_usuario_auth` (`repository.py:12-39`) y usada como PK al insertar el perfil (`service.py:116`). Filtro en `obtener_usuario`, `actualizar_rol`, `actualizar_activo`, `actualizar_perfil` y `eliminar_usuario_auth` (`repository.py:69-95`). Con `0041` aplicada, solo la cambian el backend o un dueño de la base (RN-USUARIOS-049). |
 | `drogueria_id` | Nullable, FK a `droguerias`. Escrita al crear (RN-USUARIOS-003/004) y validada según el rol (RN-USUARIOS-005/006). Leída para comparar contra la droguería del creador `admin`/`gerencia` (RN-USUARIOS-010/020/026/036/037). |
 | `rol` | TEXT con CHECK en la base (incluye `"sistema"`, no representado en el `Literal Rol` — D-USUARIOS-004). Escrita al crear (`service.py:118`) y actualizada por `actualizar_rol` (`repository.py:74-75`). Leída para la protección de `superadmin`/`sistema` y el alcance de `gerencia`. |
 | `nombre` | TEXT NOT NULL. Escrita al crear (`service.py:119`) y editable vía `PATCH /usuarios/me` (RN-USUARIOS-028). |
@@ -18,7 +18,7 @@ no la modela ni la administra.
 | `es_sistema` | BOOLEAN, default `FALSE`. Solo se escribe, siempre `False` (`service.py:121`, RN-USUARIOS-007). |
 | `activo` | BOOLEAN, default `TRUE`. Escrita por `cambiar_activo` (`repository.py:78-79`); Core la evalúa en `_cargar_perfil` (`services/shared/auth.py:55-56`) para bloquear con 401 (RN-USUARIOS-021). |
 | `username` | **[NUEVA, `0038`]** TEXT NOT NULL, formato `^[a-z0-9._-]{3,30}$` (CHECK `ck_usuarios_username_formato`), único sin distinguir mayúsculas (índice `ux_usuarios_username_lower` sobre `lower(username)`). DEFAULT aleatorio `'u' \|\| 12 hex` para filas insertadas por fuera del backend (seeds, fixtures). Escrita al crear (`service.py:122`) y por `cambiar_username` (`service.py:292`); leída por `obtener_usuario_por_username` (`repository.py:58-62`) en el alta, la edición y el login. |
-| `debe_cambiar_password` | **[NUEVA, `0038`]** BOOLEAN NOT NULL DEFAULT `FALSE`. `TRUE` al crear (`service.py:123`) y al blanquear, antes de tocar Auth (`service.py:259-261`, RN-USUARIOS-044); `FALSE` tras `POST /auth/cambiar-password` (`auth/service.py:63-65`). Core la evalúa en `get_current_user` (RN-USUARIOS-035). Desde `0039` solo la cambian el backend o un dueño de la base (RN-USUARIOS-042). |
+| `debe_cambiar_password` | **[NUEVA, `0038`]** BOOLEAN NOT NULL DEFAULT `FALSE`. `TRUE` al crear (`service.py:123`) y al blanquear, antes de tocar Auth (`service.py:259-261`, RN-USUARIOS-044); `FALSE` tras `POST /auth/cambiar-password` (`auth/service.py:63-65`). Core la evalúa en `get_current_user` (RN-USUARIOS-035). Desde `0039` solo la cambian el backend o un dueño de la base (RN-USUARIOS-042). Con `0041` aplicada, los helpers de RLS la miran: en `true`, el usuario no lee nada por PostgREST salvo su propia fila (RN-USUARIOS-048). |
 | `created_at`, `updated_at` | No expuestas en ningún modelo del módulo. `created_at` define el orden del backfill de `0038`. |
 
 El email **no** es una columna de `usuarios`: vive en `auth.users.email`. Desde
@@ -108,8 +108,35 @@ excepciones que `0039`. Cierra el borrar y volver a insertar una fila para salte
 guard de `UPDATE` de `0039` (RN-USUARIOS-046). El único alta en runtime es
 `crear_perfil_usuario` con el service client.
 
-**Estado**: [IMPLEMENTADO] en SQL (commit `ce39be0`), revisado, **no aplicado todavía**.
-Se aplica después de `0039`. El `down` borra solo el trigger y la función de `0040`.
+**Estado**: [IMPLEMENTADO] en SQL (commit `ce39be0`), revisado, **aplicado en el proyecto
+real** después de `0039` (L10 del documento de feature; efecto no probado con un JWT real).
+El `down` borra solo el trigger y la función de `0040`.
+
+## Migración `0041_usuarios_password_pendiente_sin_lectura` — **[NUEVA]**
+
+`supabase/migrations/0041_usuarios_password_pendiente_sin_lectura.sql` (+ `.down.sql`, que
+restaura helpers, policies y guard como estaban). Cierra la lectura por PostgREST de un
+usuario con el cambio de contraseña pendiente (RN-USUARIOS-048) y el cambio de
+`usuarios.id` (RN-USUARIOS-049):
+
+1. `get_drogueria_id()`, `get_rol()` y `es_superadmin()` se recrean con la misma firma,
+   `LANGUAGE sql`, `STABLE`, `SECURITY DEFINER` y `search_path = public`, sumando
+   `AND NOT debe_cambiar_password`. Con el flag en `true` devuelven `NULL`/`NULL`/`false`.
+   `mismo_tenant()` no se toca (se arma con los otros).
+2. Helper nuevo `password_al_dia()` (`SECURITY DEFINER`, sin recursión de RLS): `FALSE` solo
+   si quien consulta tiene fila con el flag en `true`; `TRUE` para todos los demás, incluido
+   `anon`. `EXECUTE` a `authenticated` y también a `anon` (lo evalúa
+   `licitaciones_all_access`).
+3. `ALTER POLICY` de las lecturas que no pasan por los helpers: `planes_sel`, `no_sel`,
+   `ne_sel`, `np_sel` y, solo si existe la tabla legada, `licitaciones_all_access`.
+4. `trg_usuarios_protege_credenciales()` (de `0039`) rechaza también cambios de `id`.
+
+La rama `id = auth.uid()` de `usuarios_sel` (abajo) queda igual a propósito: el backend
+lee la propia fila con el JWT del usuario. Re-ejecutable (`CREATE OR REPLACE` +
+`ALTER POLICY`).
+
+**Estado**: [IMPLEMENTADO] en SQL (commit `e099547`), **no ejecutado ni aplicado**. Antes
+de aplicarla, los 3 chequeos del SQL Editor de [`pendientes.md`](./pendientes.md) P1-3.
 
 ## Policy RLS `usuarios_sel`
 
@@ -125,8 +152,10 @@ CREATE POLICY usuarios_sel ON usuarios FOR SELECT USING (
 
 De esta policy dependen `GET /usuarios` y `GET /usuarios/{usuario_id}` para acotar qué
 filas ve cada usuario (sin filtro `.eq("drogueria_id", ...)` en Python, `router.py:36`,
-`:49`). `0038` no toca RLS: `debe_cambiar_password` **no** se evalúa en ninguna policy
-(el bloqueo de lectura es solo del backend, ver [`pendientes.md`](./pendientes.md)).
+`:49`). `0038` no toca RLS. Con `0041` aplicada, `debe_cambiar_password` se evalúa a
+través de `es_superadmin()`/`get_drogueria_id()`: un usuario con el flag en `true` solo
+ve su propia fila por la rama `id = auth.uid()` (RN-USUARIOS-048). Hasta aplicarla, el
+bloqueo de lectura es solo del backend (ver [`pendientes.md`](./pendientes.md)).
 
 `docs/schema/rls_final.sql:118-124` define además `usuarios_ins`, `usuarios_upd` y
 `usuarios_del`, pero ninguna aplica al camino de escritura de este módulo: todos los

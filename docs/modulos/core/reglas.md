@@ -51,9 +51,11 @@ Drogueria Nueva Era).
 - **Descripción**: cada subclase de `DomainError` se mapea a un código HTTP fijo:
   `AuthenticationError`→401, `ForbiddenError`→403, `NotFoundError`→404,
   `ConflictError`→409, `ValidationError`→422 y, **[MODIFICADA]**, `RateLimitError`→429
-  (`services/shared/exceptions.py:38-39`, `:56`; la usa el login de
+  (`services/shared/exceptions.py:38-39`, `:60`; la usa el login de
   `presupuestacion/auth/` cuando Supabase Auth responde 429 — ver
-  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-043).
+  [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-043) y
+  `ServicioExternoNoDisponibleError`→503 (`:42-43`, `:61`; la usa `presupuestacion/auth/`
+  cuando Supabase Auth no responde o responde 5xx — RN-USUARIOS-047).
 - **Condición**: se levanta cualquiera de estas excepciones durante el manejo de una
   request.
 - **Resultado**: FastAPI responde con el status y el `detail` (`exc.message`)
@@ -61,8 +63,8 @@ Drogueria Nueva Era).
 - **Prioridad**: Alta.
 - **Archivo**: `services/presupuestacion/core/exceptions.py:31-37` (`STATUS_MAP`),
   `:40-46` (`register_exception_handlers`). La implementación real vive hoy en
-  `services/shared/exceptions.py` (`STATUS_MAP` en `:50-59`); `core/exceptions.py` es un
-  shim de reexport que no incluye `RateLimitError`.
+  `services/shared/exceptions.py` (`STATUS_MAP` en `:54-64`); `core/exceptions.py` es un
+  shim de reexport que no incluye `RateLimitError` ni `ServicioExternoNoDisponibleError`.
 - **Observaciones**: [IMPLEMENTADO]. Una excepción de dominio no listada en
   `STATUS_MAP` cae al default `500` (`exceptions.py:42`), no a un error específico —
   ver D-CORE-007.
@@ -120,23 +122,31 @@ Drogueria Nueva Era).
 - **Archivo**: `services/presupuestacion/core/database.py:19-22`.
 - **Observaciones**: [IMPLEMENTADO].
 
-### RN-CORE-016 — `get_service_client` no debe importarse en ningún `router.py` (enforced por test, no por lint)
+### RN-CORE-016 — `get_service_client` no debe importarse en ningún `router.py` salvo los de la allowlist (enforced por test, no por lint)
 
 - **Descripción**: convención de arquitectura — el cliente sin RLS solo debe usarse en
   `service.py` de jobs de sistema, nunca en un `router.py` expuesto a requests de
-  usuario.
+  usuario. **[MODIFICADA]** Excepción: los routers de `_ROUTERS_CON_SERVICE_CLIENT`
+  (`tests/core/test_database.py:10-19`), cada uno con su justificación y con filtro
+  `drogueria_id` explícito en cada query de su repository: hoy `oc_entregas/router.py` y
+  `oc_export/router.py`.
 - **Condición**: existencia de la cadena de texto `"get_service_client"` en el contenido
-  de algún archivo `router.py` bajo `services/presupuestacion/`.
-- **Resultado**: si se detecta, el test falla — pero esto **no** es un chequeo de
-  análisis estático (no verifica imports reales ni uso efectivo), es una búsqueda de
-  substring sobre el texto del archivo.
+  de algún archivo `router.py` bajo `services/presupuestacion/` que no esté en la
+  allowlist, o un router de la allowlist que ya no la contenga (lista obsoleta).
+- **Resultado**: en cualquiera de los dos casos el test falla — pero esto **no** es un
+  chequeo de análisis estático (no verifica imports reales ni uso efectivo), es una
+  búsqueda de substring sobre el texto del archivo.
 - **Prioridad**: Alta.
-- **Archivo**: verificado exclusivamente por `tests/core/test_database.py:8-25`; no hay
-  ningún enforcement en el código de `core/` mismo.
+- **Archivo**: verificado exclusivamente por
+  `tests/core/test_database.py:30-50` (`test_service_client_no_se_importa_en_ningun_router`);
+  no hay ningún enforcement en el código de `core/` mismo.
 - **Observaciones**: [IMPLEMENTADO] el test; [SUPOSICIÓN] que sea suficiente como
-  enforcement — ver `pendientes.md` P2(3). Confirmado por grep: los 15 archivos que
-  importan `get_service_client` son 14 `service.py` más `core/database.py` (su propia
-  definición); ninguno es un `router.py`.
+  enforcement — ver `pendientes.md` P2(3). Confirmado por grep: los únicos `router.py`
+  que contienen `get_service_client` son los dos de la allowlist. `oc_resumen/router.py`
+  rompía el test (usaba el service client sin estar en la lista y su repository no
+  filtra `drogueria_id`); desde el commit `d7b8127` lee con `get_user_client` bajo RLS
+  (`mismo_tenant`) y el chequeo de `drogueria_id` en Python de su service queda como
+  defensa en profundidad — ver D-CORE-006 (odd/tasks/login-usuario-alta-admin.md S16).
 
 ### RN-CORE-017 — Clasificación de `tipo_cambio` para cambios de campo
 
@@ -415,5 +425,8 @@ Drogueria Nueva Era).
   `presupuestacion` y `extraccion` dan este 403 salvo las tres exceptuadas). El flag lo
   escriben `usuarios/` (alta y blanqueo) y `auth/` (cambio propio) — ver
   [`../usuarios/reglas.md`](../usuarios/reglas.md) RN-USUARIOS-035. **El bloqueo se aplica
-  en el backend**: las policies RLS no lo miran. Desde la migración `0039` el usuario no
-  puede cambiar el flag por PostgREST (RN-USUARIOS-042), pero sí leer lo que RLS le permita.
+  en el backend**. Desde la migración `0039` el usuario no puede cambiar el flag por
+  PostgREST (RN-USUARIOS-042). La migración `0041` hace que los helpers de RLS también lo
+  miren, así que con el flag en `true` no lee nada por PostgREST salvo su propia fila de
+  `usuarios` (RN-USUARIOS-048); **`0041` no está aplicada todavía**, y hasta entonces sí
+  puede leer lo que RLS le permita — ver [`base_de_datos.md`](./base_de_datos.md).

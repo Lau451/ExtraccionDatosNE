@@ -12,7 +12,8 @@ Numeración: RN-USUARIOS-001 a 029 existían antes; algunas se modificaron (marc
 **[MODIFICADA]**). RN-USUARIOS-013 (alta por invitación de email) quedó **[ELIMINADA]** —
 se conserva el número, no se renumera. RN-USUARIOS-030 en adelante son del login con
 nombre de usuario y del alta por el admin; RN-USUARIOS-042 a 046, del endurecimiento posterior
-(trigger de `0039`, 429 visible y blanqueo que falla cerrado).
+(trigger de `0039`, 429 visible y blanqueo que falla cerrado); RN-USUARIOS-047 a 049, de la
+segunda ronda de avisos (503 con Supabase Auth caído y migración `0041`).
 
 **Matriz de roles (odd/tasks/roles-permisos-matriz.md S7)**: `gerencia` se suma a
 `superadmin`/`admin` como rol de gestión de usuarios (`ROLES_GESTION_USUARIOS`,
@@ -463,7 +464,10 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 - **Resultado**: en alta y edición, `ValidationError("El nombre de usuario debe tener
   entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo")` (422,
   `service.py:30-33`, `:53-57`). En el login, el error genérico de RN-USUARIOS-038 (401),
-  sin revelar que el formato era inválido.
+  sin revelar que el formato era inválido. El frontend valida antes de enviar con el mismo
+  texto exacto (`ERROR_USERNAME` en `frontend/src/features/gestion-usuarios/credenciales.ts`,
+  commit `9f9561c`, odd/tasks/login-usuario-alta-admin.md S11); antes decía "letras
+  minúsculas" y terminaba en punto.
 - **Prioridad**: Alta.
 - **Archivo**: `services/presupuestacion/usuarios/service.py:28`, `:30-33`, `:40-43`, `:53-57`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en `tests/usuarios/test_router.py:326`
@@ -551,9 +555,10 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   `extraccion` responden 403 con este mensaje salvo `POST /auth/login`,
   `POST /auth/cambiar-password` y el `GET /usuarios/{usuario_id}` propio (`:99`), el
   `GET` de otro id da 403 (`:106`) y el propio se lee (`:113`). **El bloqueo se aplica en
-  el backend**: RLS no mira este flag, así que el usuario todavía puede leer por
-  PostgREST lo que RLS le permita; lo que sí no puede es limpiar el flag por esa vía
-  (RN-USUARIOS-042) — ver [`pendientes.md`](./pendientes.md).
+  el backend**; por PostgREST el usuario no puede limpiar el flag (RN-USUARIOS-042) y,
+  con `0041` aplicada, tampoco leer nada salvo su propia fila de `usuarios`
+  (RN-USUARIOS-048). **`0041` no está aplicada todavía**: hasta entonces RLS no mira el
+  flag y la lectura por PostgREST sigue abierta — ver [`pendientes.md`](./pendientes.md).
 
 ### RN-USUARIOS-036 — Blanqueo de contraseña por el admin (`PATCH /usuarios/{id}/password`)
 
@@ -603,22 +608,26 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 
 ### RN-USUARIOS-038 — Login con nombre de usuario (`POST /auth/login`), error genérico
 
-- **Descripción**: `login` (`auth/service.py:18-45`) normaliza el username
+- **Descripción**: `login` (`auth/service.py:34-66`) normaliza el username
   (RN-USUARIOS-031), busca la fila por username con el service client, obtiene el email
-  interno de Auth con la Admin API (`auth/repository.py:14-21`) y abre la sesión con un
-  cliente anon nuevo por llamada (`auth/repository.py:24-49`). Devuelve los campos de la
+  interno de Auth con la Admin API (`obtener_email_auth`, `auth/repository.py:52-68`) y
+  abre la sesión con un cliente anon nuevo por llamada (`iniciar_sesion`,
+  `auth/repository.py:71-104`). **[MODIFICADA]** Las tres llamadas se hacen siempre, para
+  cualquier username (RN-USUARIOS-045). Devuelve los campos de la
   sesión de Supabase (`access_token`, `refresh_token`, `expires_in`, `expires_at`,
   `token_type`, `user.id`) para `supabase.auth.setSession`. El email nunca se devuelve.
 - **Condición**: username con formato inválido, inexistente, sin cuenta de Auth o
   contraseña incorrecta.
 - **Resultado**: siempre `AuthenticationError("Usuario o contraseña incorrectos")` (401,
   `auth/service.py:15`), así no se pueden sondear usernames. **[MODIFICADA]** Excepción:
-  si Supabase Auth responde 429 en el sign-in, el login responde 429 (RN-USUARIOS-043) para cualquier username, exista o no (RN-USUARIOS-045). Un usuario **desactivado**
+  si Supabase Auth responde 429 en el sign-in, el login responde 429 (RN-USUARIOS-043) para cualquier username, exista o no (RN-USUARIOS-045);
+  si Auth no responde o responde 5xx (en el lookup o en el sign-in), responde 503
+  (RN-USUARIOS-047), también igual para todo username. Un usuario **desactivado**
   con credenciales correctas sí obtiene sesión y recibe el 401 `Usuario desactivado` en
   el primer request siguiente (RN-USUARIOS-021). El endpoint es público
   (`auth/router.py:11-14`).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/auth/service.py:13-45`,
+- **Archivo**: `services/presupuestacion/auth/service.py:14-66`,
   `services/presupuestacion/auth/repository.py`, `services/presupuestacion/auth/router.py:11-14`.
 - **Observaciones**: [IMPLEMENTADO]. Verificado en `tests/auth/test_router.py:134`
   (sesión), `:153` (mayúsculas), `:162` (inexistente y contraseña incorrecta dan el mismo
@@ -633,13 +642,13 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 
 ### RN-USUARIOS-039 — Cambio de la propia contraseña (`POST /auth/cambiar-password`)
 
-- **Descripción**: `cambiar_password` (`auth/service.py:48-65`) sirve para el cambio
+- **Descripción**: `cambiar_password` (`auth/service.py:69-86`) sirve para el cambio
   forzado y para el voluntario desde Mi cuenta. Orden: valida la nueva (RN-USUARIOS-032),
-  exige que sea distinta de la actual, verifica la actual con un sign-in contra Auth y
-  recién entonces actualiza la contraseña en Auth y pone `debe_cambiar_password=False`
-  (`:62-65`). Ese orden (Auth primero, flag después) es a propósito: si falla el
-  `UPDATE` del flag, queda en `true` y el usuario vuelve a la pantalla de cambio (falla
-  cerrado, comentario `:59-61`).
+  exige que sea distinta de la actual, busca el email interno con `obtener_email_auth`,
+  verifica la actual con un sign-in contra Auth (`:76-78`) y recién entonces actualiza la
+  contraseña en Auth y pone `debe_cambiar_password=False` (`:83-86`). Ese orden (Auth
+  primero, flag después) es a propósito: si falla el `UPDATE` del flag, queda en `true` y
+  el usuario vuelve a la pantalla de cambio (falla cerrado, comentario `:80-82`).
 - **Condición / Resultado** (todos 422, `ValidationError`):
   - nueva con menos de 8 caracteres → `"La contraseña debe tener al menos 8 caracteres"`;
   - nueva igual a la actual → `"La nueva contraseña debe ser distinta de la actual"`;
@@ -648,8 +657,11 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   - En éxito, `204 No Content`.
   - **[MODIFICADA]** Si Supabase Auth responde 429 al verificar la actual → 429
     (RN-USUARIOS-043), sin cambiar nada.
+  - **[MODIFICADA]** Si Auth no responde o responde 5xx, tanto en el lookup del email
+    (`get_user_by_id`) como en la verificación de la actual → 503 (RN-USUARIOS-047), sin
+    cambiar nada. Antes un 5xx del lookup daba el 422 de contraseña incorrecta.
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/auth/service.py:48-65`,
+- **Archivo**: `services/presupuestacion/auth/service.py:69-86`,
   `services/presupuestacion/auth/router.py:17-23`.
 - **Observaciones**: [IMPLEMENTADO]. La contraseña actual incorrecta da 422 y no 401 a
   propósito: un 401 haría que el frontend cerrara la sesión (D-USUARIOS-013). Verificado
@@ -700,36 +712,42 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   fila no cambia. Aplica también a un admin sobre su propia fila.
 - **Prioridad**: Alta.
 - **Archivo**: `supabase/migrations/0039_usuarios_protege_credenciales.sql:30-57`.
-- **Observaciones**: [IMPLEMENTADO] en SQL (commit `804d9c5`), revisado, **no ejecutado en
-  ninguna base** y sin test automatizado. Se eligió trigger y no `REVOKE UPDATE` por
+- **Observaciones**: [IMPLEMENTADO] en SQL (commit `804d9c5`), revisado y sin test
+  automatizado. Se eligió trigger y no `REVOKE UPDATE` por
   columna porque el `GRANT UPDATE` de tabla de Supabase a `authenticated` lo anularía —
-  ver [`base_de_datos.md`](./base_de_datos.md). Residual fuera de alcance: un usuario con
-  el flag en `true` sigue pudiendo **leer** por PostgREST lo que RLS le permita — ver
-  [`pendientes.md`](./pendientes.md).
+  ver [`base_de_datos.md`](./base_de_datos.md). Aplicada en el proyecto real (2026-10-19,
+  L6 del documento de feature). La lectura por PostgREST de un usuario con el flag en
+  `true` la cierra `0041` (RN-USUARIOS-048, no aplicada); el mismo trigger suma el guard de
+  `usuarios.id` en `0041` (RN-USUARIOS-049).
 
 ### RN-USUARIOS-043 — **[NUEVA]** Límite de intentos de Supabase Auth visible: 429 en login y cambio de contraseña
 
-- **Descripción**: `iniciar_sesion` (`auth/repository.py:24-49`) traduce un `AuthApiError`
-  con `status == 429` a `RateLimitError(MENSAJE_RATE_LIMIT)` (`:43-45`); cualquier otro
-  `AuthApiError` sigue devolviendo `None` (`:46`). Lo usan el login (`auth/service.py:34`)
-  y la verificación de la contraseña actual (`auth/service.py:56`), así que el 429 no se
-  disfraza de credenciales inválidas en ninguno de los dos.
-- **Condición**: Supabase Auth responde 429 al `sign_in_with_password`.
+- **Descripción**: **[MODIFICADA]** `_error_de_servicio` (`auth/repository.py:41-49`)
+  traduce un 429 de Auth a `RateLimitError(MENSAJE_RATE_LIMIT)`. El status sale de
+  `exc.status` (`AuthApiError`/`CustomAuthError`) o, si el body no era JSON
+  (`AuthUnknownError`, sin status), del `httpx.HTTPStatusError` que queda en
+  `__cause__`/`__context__` (`_status_http`, `:30-38`), así que un 429 no JSON también da
+  429. Lo usan `iniciar_sesion` (`:91-94`) y `obtener_email_auth` (`:58-61`), es decir el
+  login y la verificación de la contraseña actual: el 429 no se disfraza de credenciales
+  inválidas en ninguno de los dos. Un `AuthApiError` que no es de servicio sigue
+  devolviendo `None` (credenciales inválidas).
+- **Condición**: Supabase Auth responde 429 (con o sin body JSON) al
+  `sign_in_with_password` o al `get_user_by_id`.
 - **Resultado**: `POST /auth/login` y `POST /auth/cambiar-password` responden 429
   `{"detail": "Demasiados intentos. Probá de nuevo en unos minutos."}`
-  (`RateLimitError` → 429 en `services/shared/exceptions.py:56`). En el cambio de
+  (`RateLimitError` → 429 en `services/shared/exceptions.py:60`). En el cambio de
   contraseña no se toca Auth ni el flag. Con credenciales inválidas siguen el 401 genérico
   de RN-USUARIOS-038 y el 422 de RN-USUARIOS-039. El alta (`crear_usuario_auth`) no cambia:
   su 429 sigue siendo 409 (RN-USUARIOS-040).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/auth/repository.py:9-11`, `:43-45`,
-  `services/shared/exceptions.py:38-39`, `:56`.
-- **Observaciones**: [IMPLEMENTADO] (commit `2b4bf79`). Verificado en
+- **Archivo**: `services/presupuestacion/auth/repository.py:23`, `:30-49`,
+  `services/shared/exceptions.py:38-39`, `:60`.
+- **Observaciones**: [IMPLEMENTADO] (commit `2b4bf79`; 429 no JSON en `34bcc44`). Verificado en
   `tests/auth/test_router.py:346` (`test_login_con_limite_de_intentos_da_429`), `:358`
   (400 de Auth sigue dando 401), `:369`
   (`test_cambiar_password_con_limite_de_intentos_da_429_y_no_cambia_nada`) y `:382` (400
-  de Auth sigue dando 422). Un error que no sea `AuthApiError` (p.ej. de red) no se
-  atrapa y sale como 500.
+  de Auth sigue dando 422), más el caso `429_no_json` de los tests de RN-USUARIOS-047. Los
+  errores de red y los 5xx ya no salen como 500: dan 503 (RN-USUARIOS-047).
 
 ### RN-USUARIOS-044 — **[NUEVA]** Blanqueo que falla cerrado: flag primero, se restaura si Auth falla
 
@@ -754,29 +772,35 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
   `false` y `true`). Si la restauración misma fallara, su error reemplaza al de Auth y el
   flag queda en `true` (falla cerrado).
 
-### RN-USUARIOS-045 — **[NUEVA]** Login sin cuenta real igual intenta el sign-in (sin sondeo bajo 429)
+### RN-USUARIOS-045 — **[MODIFICADA]** Login: la misma secuencia de llamadas para todo username (sin sondeo por 429 ni por tiempo)
 
-- **Descripción**: si el username tiene formato inválido, no existe o no tiene cuenta de
-  Auth, `login` (`services/presupuestacion/auth/service.py`) llama a `_login_fallido`,
-  que hace igual `repo.iniciar_sesion` con un email ficticio fijo
-  `login-inexistente@<AUTH_EMAIL_DOMAIN>` (`email_login_inexistente()`) y la contraseña
-  recibida. El email ficticio nunca coincide con una cuenta real: las altas usan
-  `<uuid4 hex>@dominio` y las cuentas previas conservan su email real.
-- **Condición**: el username no resuelve a una cuenta.
-- **Resultado**: si Supabase responde 429, `RateLimitError` se propaga y el login responde
-  el mismo 429 que un username existente (RN-USUARIOS-043); en cualquier otro caso
-  responde el 401 genérico de RN-USUARIOS-038, aunque Auth aceptara el email ficticio
-  (nunca se devuelve esa sesión).
+- **Descripción**: `login` (`auth/service.py:34-66`) hace siempre las mismas tres
+  llamadas externas: lookup del username en `usuarios`, lookup de la cuenta en Auth
+  (`get_user_by_id`) y sign-in. Si el username no resuelve a una cuenta usa placeholders
+  fijos (`:23-27`): formato inválido → busca el username `login inexistente` (tiene un
+  espacio, nunca cumple RN-USUARIOS-031); sin fila → busca en Auth el uuid nulo
+  `00000000-0000-0000-0000-000000000000` (Auth nunca lo asigna); sin cuenta real → el
+  sign-in va con el email ficticio `login-inexistente@<AUTH_EMAIL_DOMAIN>`
+  (`email_login_inexistente()`, `:30-31`) y la contraseña recibida. El email ficticio
+  nunca coincide con una cuenta real: las altas usan `<uuid4 hex>@dominio` y las cuentas
+  previas conservan su email real.
+- **Condición**: cualquier login.
+- **Resultado**: un username existente y uno inexistente o inválido hacen la misma
+  cantidad de idas y vueltas, y comparten el 429 (RN-USUARIOS-043) y el 503
+  (RN-USUARIOS-047). Sin cuenta real, el resultado es siempre el 401 genérico de
+  RN-USUARIOS-038, aunque Auth aceptara el email ficticio (`cuenta_real`, `:51`, `:56`;
+  nunca se devuelve esa sesión).
 - **Prioridad**: Alta.
-- **Archivo**: `services/presupuestacion/auth/service.py` (`_login_fallido`,
-  `email_login_inexistente`, `login`).
-- **Observaciones**: [IMPLEMENTADO] (commit `ea8648f`). Corrige el bloqueante L7 del
-  documento de feature: antes, bajo 429, un username existente respondía 429 y uno
-  inexistente 401, lo que permitía sondear usernames. Verificado en
-  `tests/auth/test_router.py` (`test_login_con_limite_de_intentos_no_distingue_usernames`
-  y los casos de sign-in con el email ficticio). Residual: un username real hace además
-  `get_user_by_id` antes del sign-in, así que fuera del 429 queda una diferencia de tiempo
-  chica (ver [`pendientes.md`](./pendientes.md)).
+- **Archivo**: `services/presupuestacion/auth/service.py:18-66`.
+- **Observaciones**: [IMPLEMENTADO] (commit `ea8648f`; secuencia uniforme en `34bcc44`,
+  odd/tasks/login-usuario-alta-admin.md S13). Corrige el bloqueante L7 del documento de
+  feature y cierra el residual de tiempo de esa versión (antes, un username inexistente no
+  hacía el `get_user_by_id`). Verificado en `tests/auth/test_router.py`
+  (`test_login_con_limite_de_intentos_no_distingue_usernames` y
+  `test_login_hace_la_misma_secuencia_de_llamadas_para_todo_username`: para `jperez`,
+  `nadie`, `j perez@x` y vacío, un lookup de username, `GET /auth/v1/admin/users/{id}` y
+  `POST /auth/v1/token`). Mismo número de llamadas no es mismo tiempo exacto: el
+  tiempo de respuesta de Supabase sigue variando por cuenta.
 
 ### RN-USUARIOS-046 — **[NUEVA]** Solo el backend da de alta filas de `usuarios` (trigger de `0040`)
 
@@ -795,5 +819,83 @@ Comparte exactamente el mismo alcance de autorización que `cambiar_activo`
 - **Prioridad**: Alta.
 - **Archivo**: `supabase/migrations/0040_usuarios_protege_alta.sql`,
   `supabase/migrations/0040_usuarios_protege_alta.down.sql`.
-- **Observaciones**: [IMPLEMENTADO] en SQL (commit `ce39be0`), revisado, **no aplicado
-  todavía**. Va después de `0039` (ya aplicada).
+- **Observaciones**: [IMPLEMENTADO] en SQL (commit `ce39be0`). Aplicada en el proyecto
+  real después de `0039` (L10 del documento de feature); su efecto no se probó con un JWT
+  real.
+
+### RN-USUARIOS-047 — **[NUEVA]** Supabase Auth caído: 503 en login y cambio de contraseña
+
+- **Descripción**: `_error_de_servicio` (`auth/repository.py:41-49`) traduce a
+  `ServicioExternoNoDisponibleError(MENSAJE_AUTH_NO_DISPONIBLE)` (`:25-27`) todo error de
+  Auth que no es de credenciales: `AuthRetryableError` (502-504), `AuthUnknownError` (body
+  no parseable que no es 429) y cualquier status >= 500 (incluido un 500 con JSON, que
+  antes salía como credenciales inválidas). Los errores de red (`httpx.RequestError`, que
+  gotrue no envuelve) también (`:65-67`, `:100-101`). Aplica a `obtener_email_auth` y a
+  `iniciar_sesion`, así que cubre el lookup del email, el sign-in del login y la
+  verificación de la contraseña actual. Un `AuthError` de otro tipo que no está en la
+  lista se relanza (500).
+- **Condición**: Supabase Auth no responde o responde 5xx.
+- **Resultado**: `POST /auth/login` y `POST /auth/cambiar-password` responden 503
+  `{"detail": "El servicio de autenticación no está disponible. Probá de nuevo en unos minutos."}`
+  (`ServicioExternoNoDisponibleError` → 503, `services/shared/exceptions.py:42-43`, `:61`).
+  En el login la respuesta es la misma para todo username (RN-USUARIOS-045). En el cambio
+  de contraseña no se toca Auth ni el flag; un 5xx del lookup del email da 503, no el 422
+  de contraseña incorrecta. Credenciales inválidas siguen dando el 401 de
+  RN-USUARIOS-038 y el 422 de RN-USUARIOS-039.
+- **Prioridad**: Alta.
+- **Archivo**: `services/presupuestacion/auth/repository.py:24-68`, `:91-101`,
+  `services/shared/exceptions.py:42-43`, `:61`.
+- **Observaciones**: [IMPLEMENTADO] (commit `34bcc44`, odd/tasks/login-usuario-alta-admin.md
+  S12). Verificado en `tests/auth/test_router.py` con gotrue real sobre
+  `httpx.MockTransport` (502, 503 y 504 HTML, 500 JSON, 500 no JSON, red caída, 429 no
+  JSON): `test_login_con_auth_caido_responde_igual_para_todo_username`,
+  `test_cambiar_password_con_auth_caido_no_cambia_nada` y
+  `test_login_con_lookup_de_auth_caido_responde_igual_para_todo_username`. El 503 del lookup
+  dentro de `cambiar-password` usa la misma `obtener_email_auth`, sin test propio de esa
+  ruta. El frontend muestra el `detail` en el cambio de contraseña y su texto genérico en
+  el login (`../frontend_login/reglas.md` RN-LOGIN-014).
+
+### RN-USUARIOS-048 — **[NUEVA]** Con el cambio de contraseña pendiente no se lee nada por PostgREST (migración `0041`)
+
+- **Descripción**: `0041_usuarios_password_pendiente_sin_lectura` hace que los helpers de
+  RLS `get_drogueria_id()`, `get_rol()` y `es_superadmin()` ignoren la fila del usuario
+  mientras tenga `debe_cambiar_password = true` (`AND NOT debe_cambiar_password`):
+  devuelven `NULL`/`NULL`/`false`, como para alguien sin fila en `usuarios`.
+  `mismo_tenant()` se arma con ellos, así que también queda sin acceso. Las lecturas que
+  no pasan por los helpers suman el helper nuevo `password_al_dia()` (`planes_sel`,
+  `no_sel`, `ne_sel`, `np_sel` y, si la tabla legada existe, `licitaciones_all_access`).
+  La rama `id = auth.uid()` de `usuarios_sel` queda igual a propósito: el backend lee la
+  propia fila con el JWT del usuario (`services/shared/auth.py:_cargar_perfil`) para saber
+  que tiene el cambio pendiente.
+- **Condición**: un request por PostgREST con el JWT de un usuario con
+  `debe_cambiar_password = true`.
+- **Resultado**: no lee ninguna tabla ni vista salvo su propia fila de `usuarios`. Las
+  escrituras que pasan por los helpers también quedan bloqueadas (intencional). Las rutas
+  del backend permitidas con el flag (RN-USUARIOS-035) siguen funcionando. Cuando el flag
+  vuelve a `false`, todo queda exactamente como antes.
+- **Prioridad**: Alta.
+- **Archivo**: `supabase/migrations/0041_usuarios_password_pendiente_sin_lectura.sql`
+  (+ `.down.sql`), `docs/schema/rls_final.sql`.
+- **Observaciones**: [IMPLEMENTADO] en SQL (commit `e099547`,
+  odd/tasks/login-usuario-alta-admin.md S14), **no ejecutado ni aplicado**. Antes de
+  aplicarla, los 3 chequeos del SQL Editor de [`pendientes.md`](./pendientes.md) P1-3.
+  Residual: las ramas de escritura `no_upd`/`np_ins`/`np_upd`/`np_del` siguen solo con
+  `auth.uid()` (escrituras, fuera de S14), y la RLS de `comparativas_results`/
+  `licitaciones_results` (`0001`) no está relevada.
+
+### RN-USUARIOS-049 — **[NUEVA]** `usuarios.id` solo lo cambia el backend (guard de `0039` extendido en `0041`)
+
+- **Descripción**: `0041` redefine `trg_usuarios_protege_credenciales()` (la función del
+  trigger de RN-USUARIOS-042; el trigger no se recrea) para rechazar también un `UPDATE`
+  que cambie `usuarios.id`, con las mismas excepciones (`service_role`, `postgres`,
+  `supabase_admin`, o `auth.role() = 'service_role'`).
+- **Condición**: `NEW.id IS DISTINCT FROM OLD.id` desde un rol que no es el backend ni un
+  dueño de la base.
+- **Resultado**: `RAISE EXCEPTION 'Solo el sistema puede cambiar el id de un usuario.'`
+  con SQLSTATE `42501`; la fila no cambia. El mensaje de RN-USUARIOS-042 no cambia.
+  Cierra el hueco de un superadmin que borraba la fila B y hacía `UPDATE id = B` sobre
+  otra fila sin referencias, quedándose con la identidad de `auth.users` B.
+- **Prioridad**: Alta.
+- **Archivo**: `supabase/migrations/0041_usuarios_password_pendiente_sin_lectura.sql`.
+- **Observaciones**: [IMPLEMENTADO] en SQL (commit `e099547`,
+  odd/tasks/login-usuario-alta-admin.md S15), **no aplicado**.
