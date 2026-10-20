@@ -14,7 +14,7 @@ signIn (AuthContext.tsx:121-134)
         │                               el backend resuelve username → email interno y abre la sesión
         ├── 401 ──► ApiError ──► LoginForm: "Usuario o contraseña incorrectos" (RN-LOGIN-003)
         ├── 429 ──► ApiError ──► LoginForm: detail del backend, "Demasiados intentos..." (RN-LOGIN-013)
-        ├── 503 (Supabase Auth caído o con 5xx) ──► "No pudimos iniciar sesión. Probá de nuevo." (RN-LOGIN-014)
+        ├── 503 (Supabase Auth caído o con 5xx) ──► muestra el detail del backend, "El servicio de autenticación no está disponible..." (RN-LOGIN-014)
         ├── otro error HTTP ──► "No pudimos iniciar sesión. Probá de nuevo."
         │
         ▼ (200 con access_token/refresh_token/user.id)

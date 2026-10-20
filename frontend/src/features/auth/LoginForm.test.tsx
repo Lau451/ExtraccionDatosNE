@@ -75,6 +75,23 @@ describe('LoginForm (S1: login con usuario)', () => {
     expect(onSuccess).not.toHaveBeenCalled()
   })
 
+  it('un 503 muestra el mensaje de servicio no disponible del backend', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    signInMock.mockRejectedValue(
+      new ApiError('El servicio de autenticación no está disponible. Probá de nuevo en unos minutos.', 503),
+    )
+    const onSuccess = vi.fn()
+    render(<LoginForm onSuccess={onSuccess} />)
+
+    completarFormulario()
+
+    expect(
+      await screen.findByText('El servicio de autenticación no está disponible. Probá de nuevo en unos minutos.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Usuario o contraseña incorrectos')).toBeNull()
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
   it('un 500 sigue mostrando el mensaje genérico de reintento', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     signInMock.mockRejectedValue(new ApiError('boom', 500))

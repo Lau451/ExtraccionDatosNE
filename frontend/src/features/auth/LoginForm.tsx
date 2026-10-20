@@ -19,9 +19,10 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     } catch (error) {
       console.error('Error al iniciar sesión', error)
       // El backend devuelve el mismo 401 para usuario inexistente y contraseña
-      // incorrecta, así no se pueden sondear usernames (spec S1). El 429 trae
-      // su propio mensaje (spec S8) para no confundirlo con credenciales mal.
-      if (error instanceof ApiError && error.status === 429) {
+      // incorrecta, así no se pueden sondear usernames (spec S1). El 429 (spec S8)
+      // y el 503 de Auth caído (spec S12) traen su propio mensaje para no
+      // confundirlos con credenciales mal.
+      if (error instanceof ApiError && (error.status === 429 || error.status === 503)) {
         setError(error.message)
       } else {
         setError(

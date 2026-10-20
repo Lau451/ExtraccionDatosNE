@@ -25,8 +25,8 @@ odd/tasks/login-usuario-alta-admin.md el frontend no usa `invite_user_by_email` 
   contraseña muestran su mensaje (RN-LOGIN-013). El límite por IP compartido sigue existiendo.
 - ~~Supabase Auth caído (502-504, 429 no JSON, 500 JSON) salía como 500 o como "Usuario o
   contraseña incorrectos".~~ **Resuelto** (commit `34bcc44`): el backend responde 503 (o 429) igual
-  para todo username (RN-LOGIN-014, RN-USUARIOS-047). El login muestra su texto genérico de
-  reintento, no el `detail` del 503.
+  para todo username (RN-LOGIN-014, RN-USUARIOS-047). El login y el cambio de contraseña muestran
+  el `detail` del 503.
 
 ## P1 — Crítico
 

@@ -90,11 +90,10 @@ export function useAuth(): AuthContextValue
 export function LoginForm({ onSuccess }: { onSuccess: () => void }): JSX.Element
 // LoginForm.tsx:5-86. Campos "Usuario" (type="text", autoCapitalize="none",
 // autoComplete="username", :40-54) y "Contraseña". signIn(username.trim(), password) (:17).
-// Error: 429 → el detail del backend tal cual ("Demasiados intentos. Probá de nuevo en unos
-// minutos.", :24-25, RN-LOGIN-013); 401 o error que no es ApiError → "Usuario o contraseña
-// incorrectos"; otro ApiError → "No pudimos iniciar sesión. Probá de nuevo." (:26-32), incluido
-// el 503 "El servicio de autenticación no está disponible..." del backend (RN-LOGIN-014): el
-// form no muestra ese detail, muestra su propio texto genérico de reintento. Texto
+// Error: 429 y 503 → el detail del backend tal cual ("Demasiados intentos. Probá de nuevo en
+// unos minutos.", RN-LOGIN-013; "El servicio de autenticación no está disponible. Probá de nuevo
+// en unos minutos.", RN-LOGIN-014; :25-26); 401 o error que no es ApiError → "Usuario o
+// contraseña incorrectos"; otro ApiError → "No pudimos iniciar sesión. Probá de nuevo." Texto
 // fijo "¿Olvidaste tu contraseña? Contactá al administrador para que te la blanquee." (:81-83).
 // Ya no enlaza a /reset-password.
 ```

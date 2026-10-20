@@ -119,17 +119,16 @@ el número, no se renumera.
   reintento") y `CambiarPasswordPage.test.tsx` ("un 429 muestra el mensaje de demasiados intentos
   y no navega").
 
-### RN-LOGIN-014 — **[NUEVA]** Supabase Auth caído: el backend responde 503; login muestra su texto genérico, cambio de contraseña el `detail`
+### RN-LOGIN-014 — **[NUEVA]** Supabase Auth caído: el backend responde 503 y el frontend muestra su `detail`
 
 - **Regla**: si Supabase Auth no responde o responde 5xx, `POST /auth/login` y
   `POST /auth/cambiar-password` responden 503 `El servicio de autenticación no está disponible.
-  Probá de nuevo en unos minutos.` (RN-USUARIOS-047). `LoginForm` no tiene rama propia para el 503:
-  cae en "otro `ApiError`" y muestra `'No pudimos iniciar sesión. Probá de nuevo.'`
-  (`LoginForm.tsx:26-32`, RN-LOGIN-003), no el `detail`. `CambiarPasswordForm` muestra el `detail`
+  Probá de nuevo en unos minutos.` (RN-USUARIOS-047). `LoginForm` muestra ese `detail` igual que el
+  del 429 (`LoginForm.tsx:25-26`); un 500 sigue mostrando `'No pudimos iniciar sesión. Probá de
+  nuevo.'` (RN-LOGIN-003). `CambiarPasswordForm` muestra el `detail`
   del backend como con cualquier `ApiError` (`CambiarPasswordForm.tsx:47`). En ningún caso se
   navega ni se llama a `onSuccess`.
 - **Motivo**: antes una caída de Auth salía como 500 o como "credenciales incorrectas"
   (odd/tasks/login-usuario-alta-admin.md S12).
-- [IMPLEMENTADO] en el backend (commit `34bcc44`). Sin test de frontend específico del 503; el
-  caso "un 500 sigue mostrando el mensaje genérico de reintento" de `LoginForm.test.tsx` cubre la
-  misma rama.
+- [IMPLEMENTADO] backend (commit `34bcc44`) y `LoginForm` (test "un 503 muestra el mensaje de
+  servicio no disponible del backend" en `LoginForm.test.tsx`).
