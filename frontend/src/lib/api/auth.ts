@@ -30,7 +30,9 @@ export async function iniciarSesion(username: string, password: string): Promise
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const message = typeof body?.detail === 'string' ? body.detail : `Error ${response.status} al iniciar sesión`
+    // Without a backend `detail` (e.g. a proxy 503/429 with an HTML body) the login
+    // screen shows a friendly retry text instead of "Error N" (spec S12).
+    const message = typeof body?.detail === 'string' ? body.detail : 'No pudimos iniciar sesión. Probá de nuevo.'
     throw new ApiError(message, response.status)
   }
 

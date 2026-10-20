@@ -58,6 +58,18 @@ describe('iniciarSesion (S1)', () => {
   })
 })
 
+describe('iniciarSesion sin detail del backend (S12)', () => {
+  it.each([503, 429])('un %i sin JSON (proxy) da el texto genérico de reintento, no "Error N"', async (status) => {
+    fetchMock.mockResolvedValue({ ok: false, status, json: () => Promise.reject(new SyntaxError('no json')) })
+
+    const error = await iniciarSesion('jperez', 'password123').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(status)
+    expect((error as ApiError).message).toBe('No pudimos iniciar sesión. Probá de nuevo.')
+  })
+})
+
 describe('cambiarPasswordPropia (S3)', () => {
   it('hace POST /auth/cambiar-password autenticado con password_actual y password_nueva', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 204, json: () => Promise.reject(new Error('sin body')) })

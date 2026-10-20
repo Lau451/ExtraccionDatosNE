@@ -34,7 +34,9 @@ export interface CambiarPasswordPayload {
 export async function iniciarSesion(username: string, password: string): Promise<LoginResponse>
 // auth.ts:22-37 — fetch directo a `${PRESUPUESTACION_BASE_URL}/auth/login` (no usa
 // presupuestacionFetch, para no mandar el Authorization de una sesión vieja, :20-21). Si la
-// respuesta no es ok, lanza ApiError(detail ?? `Error ${status} al iniciar sesión`, status).
+// respuesta no es ok, lanza ApiError(detail ?? 'No pudimos iniciar sesión. Probá de nuevo.', status):
+// sin `detail` (p.ej. un 503/429 de un proxy con body HTML) el login muestra ese texto de reintento,
+// nunca "Error N" (RN-LOGIN-014).
 
 export function cambiarPasswordPropia(payload: CambiarPasswordPayload): Promise<void>
 // auth.ts:39-45 — presupuestacionFetch POST /auth/cambiar-password (con Authorization).

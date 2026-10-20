@@ -125,7 +125,8 @@ el número, no se renumera.
   `POST /auth/cambiar-password` responden 503 `El servicio de autenticación no está disponible.
   Probá de nuevo en unos minutos.` (RN-USUARIOS-047). `LoginForm` muestra ese `detail` igual que el
   del 429 (`LoginForm.tsx:25-26`); un 500 sigue mostrando `'No pudimos iniciar sesión. Probá de
-  nuevo.'` (RN-LOGIN-003). `CambiarPasswordForm` muestra el `detail`
+  nuevo.'` (RN-LOGIN-003). Si el 503 o el 429 no traen `detail` (p.ej. un proxy con body HTML),
+  `iniciarSesion` usa ese mismo texto de reintento, nunca "Error N" (`lib/api/auth.ts`). `CambiarPasswordForm` muestra el `detail`
   del backend como con cualquier `ApiError` (`CambiarPasswordForm.tsx:47`). En ningún caso se
   navega ni se llama a `onSuccess`.
 - **Motivo**: antes una caída de Auth salía como 500 o como "credenciales incorrectas"
