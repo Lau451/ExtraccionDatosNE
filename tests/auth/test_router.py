@@ -2,6 +2,7 @@
 (odd/tasks/login-usuario-alta-admin.md S1/S3). Unitarios: Supabase Auth y la
 tabla usuarios se reemplazan por un almacén en memoria, así corren sin red."""
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from supabase_auth.errors import AuthApiError
@@ -465,3 +466,71 @@ def test_login_con_password_vacia_da_el_401_generico(estado, monkeypatch, userna
 
     assert respuesta.status_code == 401
     assert respuesta.json() == {"detail": MENSAJE_LOGIN}
+
+
+# S1+S8 (L8): real gotrue client over httpx.MockTransport, no network.
+_USERNAMES_PARIDAD = ["jperez", "JPEREZ", " jperez ", "nadie", "j perez@x", "", "jp", "x" * 31]
+_RL = {"code": 429, "error_code": "over_request_rate_limit", "msg": "Request rate limit reached"}
+_BAD = {"code": 400, "error_code": "invalid_credentials", "msg": "Invalid login credentials"}
+
+
+def _gotrue_real(monkeypatch, *, status, body):
+    from types import SimpleNamespace
+
+    pedidos = []
+
+    def handler(request):
+        pedidos.append(request)
+        return httpx.Response(status, json=body)
+
+    monkeypatch.setattr(auth_repo, "iniciar_sesion", _INICIAR_SESION_REAL)
+    monkeypatch.setattr(
+        auth_repo,
+        "get_settings",
+        lambda: SimpleNamespace(supabase_url="http://auth.test", supabase_anon_key="aaa.bbb.ccc"),
+    )
+    monkeypatch.setattr(
+        auth_repo,
+        "build_resilient_httpx_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return pedidos
+
+
+@pytest.mark.parametrize("status,body", [(400, _BAD), (429, _RL)])
+def test_login_password_vacia_401_identico_sin_llamar_a_auth(estado, monkeypatch, status, body):
+    """S1, S8: password vacía nunca llega a Auth y da el mismo 401 para todo username."""
+    pedidos = _gotrue_real(monkeypatch, status=status, body=body)
+    cliente = _cliente(estado)
+    respuestas = [
+        cliente.post("/auth/login", json={"username": u, "password": ""}) for u in _USERNAMES_PARIDAD
+    ]
+    assert [(r.status_code, r.json()) for r in respuestas] == [
+        (401, {"detail": MENSAJE_LOGIN})
+    ] * len(_USERNAMES_PARIDAD)
+    assert pedidos == []
+
+
+@pytest.mark.parametrize("password", ["x12345678", " "])
+def test_login_429_real_identico_para_todo_username(estado, monkeypatch, password):
+    """S1, S8: con el cliente gotrue real, un 429 de Auth da el mismo 429 para todo username."""
+    pedidos = _gotrue_real(monkeypatch, status=429, body=_RL)
+    cliente = _cliente(estado)
+    respuestas = [
+        cliente.post("/auth/login", json={"username": u, "password": password}) for u in _USERNAMES_PARIDAD
+    ]
+    assert [(r.status_code, r.json()) for r in respuestas] == [
+        (429, {"detail": MENSAJE_RATE_LIMIT})
+    ] * len(_USERNAMES_PARIDAD)
+    assert len(pedidos) == len(_USERNAMES_PARIDAD)
+
+
+def test_cambiar_password_actual_vacia_da_422_sin_cambios(estado, monkeypatch):
+    """S3, S8: password actual vacía da 422 sin llamar a Auth ni tocar el perfil."""
+    pedidos = _gotrue_real(monkeypatch, status=429, body=_RL)
+    respuesta = _cliente(estado, sub="id-jperez").post(
+        "/auth/cambiar-password", json={"password_actual": "", "password_nueva": "definitiva8"}
+    )
+    assert (respuesta.status_code, respuesta.json()) == (422, {"detail": "La contraseña actual es incorrecta"})
+    assert pedidos == []
+    _sin_cambios(estado)
