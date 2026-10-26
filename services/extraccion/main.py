@@ -157,7 +157,7 @@ def _procesar_response(context: dict, status_code: int = 200) -> JSONResponse:
     ver odd/tasks/extraccion-multi-tenant.md). `extraction_id` se incluye acá
     porque el 409 de duplicado lo necesita — el frontend lo lee del body."""
     payload = {"ok": status_code < 400}
-    for key in ("resultado", "error", "tipo", "extraction_id"):
+    for key in ("resultado", "error", "tipo", "extraction_id", "aviso"):
         if key in context:
             payload[key] = context[key]
     return JSONResponse(payload, status_code=status_code)
@@ -187,34 +187,59 @@ def _limpiar_archivos_temporales(destino: Path, tmp_dir: Path) -> None:
 # RUTAS
 # ======================
 
+# presupuestador-v1 T1b (L12): una directa sin instrucciones propias usa las de
+# licitación del cliente (mismo documento, mismo robot) y se le avisa al usuario.
+_FORMATO_RESPALDO = {"cotizacion": "licitacion"}
+_AVISO_FORMATO_RESPALDO = (
+    "Este cliente no tiene instrucciones de formato para directas; "
+    "se usaron las de licitación."
+)
+
+
+async def _buscar_formato(client, *, cliente_id: str, doc_type: str) -> tuple[str, str] | None:
+    """(formato_id, instrucciones_prompt) activo para cliente+doc_type, o None."""
+    respuesta = await asyncio.to_thread(
+        lambda: client.table("cliente_formato_documentos")
+        .select("id, instrucciones_prompt")
+        .eq("cliente_id", cliente_id)
+        .eq("doc_type", doc_type)
+        .eq("activo", True)
+        .limit(1)
+        .execute()
+    )
+    if respuesta.data and respuesta.data[0].get("instrucciones_prompt"):
+        fila = respuesta.data[0]
+        return fila["id"], fila["instrucciones_prompt"]
+    return None
+
+
 async def _resolver_formato_prompt(
     client, *, cliente_id: str, doc_type: str
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
     """§8: si hay instrucciones cargadas para este cliente+doc_type, las devuelve para
-    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt) — ambos None si no
-    hay nada configurado o la consulta falla (nunca bloquea la carga del documento)."""
+    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt, aviso) — los dos
+    primeros None si no hay nada configurado o la consulta falla (nunca bloquea la carga
+    del documento). `aviso` solo viene cuando se usó el formato de respaldo
+    (`_FORMATO_RESPALDO`)."""
     if client is None or not cliente_id:
-        return None, None
+        return None, None, None
 
     try:
-        respuesta = await asyncio.to_thread(
-            lambda: client.table("cliente_formato_documentos")
-            .select("id, instrucciones_prompt")
-            .eq("cliente_id", cliente_id)
-            .eq("doc_type", doc_type)
-            .eq("activo", True)
-            .limit(1)
-            .execute()
-        )
-        if respuesta.data and respuesta.data[0].get("instrucciones_prompt"):
-            fila = respuesta.data[0]
-            return fila["id"], fila["instrucciones_prompt"]
+        formato = await _buscar_formato(client, cliente_id=cliente_id, doc_type=doc_type)
+        if formato is not None:
+            return formato[0], formato[1], None
+
+        respaldo = _FORMATO_RESPALDO.get(doc_type)
+        if respaldo is not None:
+            formato = await _buscar_formato(client, cliente_id=cliente_id, doc_type=respaldo)
+            if formato is not None:
+                return formato[0], formato[1], _AVISO_FORMATO_RESPALDO
     except Exception as exc:
         logger.warning(
             "_resolver_formato_prompt: error consultando cliente_formato_documentos — %s", exc
         )
 
-    return None, None
+    return None, None, None
 
 
 def _validar_grupo_id(grupo_id: str) -> str | None:
@@ -545,7 +570,7 @@ async def procesar(
         doc_type = "cotizacion"
     else:
         doc_type = "licitacion"
-    formato_id, instrucciones_prompt = await _resolver_formato_prompt(
+    formato_id, instrucciones_prompt, aviso_formato = await _resolver_formato_prompt(
         get_client(), cliente_id=cliente_id, doc_type=doc_type
     )
 
@@ -629,10 +654,10 @@ async def procesar(
         grupo_id=grupo_id_validado,
     )
 
-    return _procesar_response(
-        {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None},
-        status_code=202,
-    )
+    respuesta = {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None}
+    if aviso_formato:
+        respuesta["aviso"] = aviso_formato
+    return _procesar_response(respuesta, status_code=202)
 
 
 @app.get("/api/documentos")

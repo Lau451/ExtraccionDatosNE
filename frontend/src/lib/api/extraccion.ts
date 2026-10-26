@@ -42,6 +42,9 @@ export interface ProcesarResultado {
   // que el frontend pueda referenciarla (p.ej. el link a "Ver extracción
   // existente" en un 409 reusa el mismo campo del body de error).
   extraction_id?: string | null
+  // presupuestador-v1 T1b: non-blocking warning, e.g. a directa that used the
+  // client's licitación prompt format because it has none of its own.
+  aviso?: string
 }
 
 export function listarClientes(): Promise<Cliente[]> {

@@ -21,17 +21,22 @@ const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
   { value: 'ordenes', label: 'Orden de compra' },
 ]
 
+const ACCEPT_BASE = '.pdf,.jpg,.jpeg,.png,.xls,.xlsx'
+
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string> = {
-  cotizaciones: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
-  licitaciones: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
-  ordenes: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
-  comparativas: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm',
+  cotizaciones: ACCEPT_BASE,
+  licitaciones: ACCEPT_BASE,
+  ordenes: ACCEPT_BASE,
+  comparativas: `${ACCEPT_BASE},.ods,.html,.htm`,
 }
 
 interface ResultadoPorArchivo {
   archivo: string
   ok: boolean
   error?: string
+  /** Backend warning that does not block the upload (e.g. a directa that
+   * fell back to the client's licitación prompt format). */
+  aviso?: string
   /** 409 de duplicado: id de la extracción ya existente (misma droguería)
    * para ofrecer ir directo a ella en vez de solo mostrar el error. */
   extractionIdExistente?: string
@@ -69,6 +74,7 @@ async function procesarMultiple(
         archivo: archivo.name,
         ok: resultado.error === undefined,
         error: resultado.error,
+        aviso: resultado.aviso,
       })
     } catch (error) {
       resultados.push({
@@ -83,7 +89,9 @@ async function procesarMultiple(
 }
 
 export function FormCard() {
-  const [tipo, setTipo] = useState<TipoDocumento>('licitaciones')
+  // presupuestador-v1 T1b: no default -- the user always picks the type, so a
+  // directa is never uploaded as a licitación by accident.
+  const [tipo, setTipo] = useState<TipoDocumento | null>(null)
   const [archivos, setArchivos] = useState<File[]>([])
   const [clienteId, setClienteId] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -95,6 +103,7 @@ export function FormCard() {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      if (tipo === null) throw new Error('Falta elegir el tipo de documento')
       if (archivos.length === 0) throw new Error('Falta seleccionar un archivo')
       const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
       return { resultados }
@@ -117,8 +126,8 @@ export function FormCard() {
   })
 
   function handleFiles(fileList: FileList | null) {
-    // 'ordenes' es el único tipo con carga múltiple (D13) -- para los otros
-    // dos, aunque el usuario seleccione varios, solo se toma el primero.
+    // 'ordenes' es el único tipo con carga múltiple (D13) -- para los demás,
+    // aunque el usuario seleccione varios, solo se toma el primero.
     const lista = fileList ? Array.from(fileList) : []
     setArchivos(tipo === 'ordenes' ? lista : lista.slice(0, 1))
     mutation.reset()
@@ -138,6 +147,7 @@ export function FormCard() {
           <button
             key={option.value}
             type="button"
+            aria-pressed={tipo === option.value}
             onClick={() => cambiarTipo(option.value)}
             className={clsx(
               'flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1',
@@ -167,22 +177,26 @@ export function FormCard() {
           onDrop={(event) => {
             event.preventDefault()
             setIsDragging(false)
-            handleFiles(event.dataTransfer.files)
+            if (tipo !== null) handleFiles(event.dataTransfer.files)
           }}
           className={clsx(
-            'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors',
-            isDragging ? 'border-accent bg-accent/5' : 'border-slate-300',
+            'flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors',
+            tipo === null ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+            isDragging && tipo !== null ? 'border-accent bg-accent/5' : 'border-slate-300',
           )}
         >
           <input
             ref={fileInputRef}
             type="file"
             hidden
+            disabled={tipo === null}
             multiple={tipo === 'ordenes'}
-            accept={ACCEPT_POR_TIPO[tipo]}
+            accept={tipo === null ? undefined : ACCEPT_POR_TIPO[tipo]}
             onChange={(event) => handleFiles(event.target.files)}
           />
-          {archivos.length > 0 ? (
+          {tipo === null ? (
+            <p className="text-sm font-medium text-slate-500">Elegí el tipo de documento para continuar</p>
+          ) : archivos.length > 0 ? (
             <p className="text-sm font-medium text-slate-900">
               {archivos.length === 1
                 ? archivos[0].name
@@ -225,6 +239,7 @@ export function FormCard() {
             {mutation.data?.resultados.map((resultado) => (
               <li key={resultado.archivo} className={resultado.ok ? 'text-emerald-600' : 'text-red-600'}>
                 {resultado.archivo}: {resultado.ok ? 'Recibido — procesando en segundo plano' : resultado.error}
+                {resultado.aviso && <p className="text-amber-700">{resultado.aviso}</p>}
                 {resultado.extractionIdExistente && (
                   <button
                     type="button"
@@ -247,7 +262,7 @@ export function FormCard() {
 
         <button
           type="submit"
-          disabled={archivos.length === 0 || mutation.isPending}
+          disabled={tipo === null || archivos.length === 0 || mutation.isPending}
           className="w-full cursor-pointer rounded-md bg-navy py-2.5 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {mutation.isPending ? 'Enviando…' : 'Procesar archivo(s)'}

@@ -18,7 +18,7 @@ export function CargaDocumentos(): JSX.Element
 type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | 'ordenes'
 // re-exportado desde lib/api/extraccion.ts, no redeclarado acá
 
-const TIPO_OPTIONS: { value: TipoDocumento; label: string; disabled?: boolean }[]
+const TIPO_OPTIONS: { value: TipoDocumento; label: string }[]
 // FormCard.tsx:6-10 (no exportado, constante de módulo)
 
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string>
@@ -26,7 +26,7 @@ const ACCEPT_POR_TIPO: Record<TipoDocumento, string>
 
 export function FormCard(): JSX.Element
 // FormCard.tsx:18-149
-// Sin props. Estado interno: tipo, archivo, clienteId, isDragging (useState);
+// Sin props. Estado interno: tipo (TipoDocumento | null, sin default -- T1b), archivos, clienteId, isDragging (useState);
 // fileInputRef (useRef<HTMLInputElement>); queryClient (useQueryClient).
 // Queries/mutations internas (no expuestas):
 //   clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })       (:26)
@@ -140,7 +140,13 @@ export interface ProcesarPayload {
 }
 // extraccion.ts:20-25
 
-export interface ProcesarResultado { ok: boolean; tipo: string; error?: string }
+export interface ProcesarResultado {
+  ok: boolean
+  tipo: string
+  error?: string
+  extraction_id?: string | null
+  aviso?: string // advertencia no bloqueante (directa que usó el formato de licitación)
+}
 // extraccion.ts:27-31
 
 export function listarClientes(): Promise<Cliente[]>

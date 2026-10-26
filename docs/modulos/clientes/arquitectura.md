@@ -91,6 +91,9 @@ cliente_formato_documentos (tabla Supabase compartida)
 services/extraccion/main.py:_resolver_formato_prompt (líneas 122-149)
       │  SELECT id, instrucciones_prompt WHERE cliente_id=? AND doc_type=? AND activo=True
       │  (línea 137)
+      │  Directa (doc_type='cotizacion') sin formato propio: reintenta con
+      │  doc_type='licitacion' y POST /procesar devuelve `aviso` en el 202
+      │  (presupuestador-v1 T1b)
       ▼
 Prompt de Gemini enriquecido con instrucciones_prompt del cliente
 ```

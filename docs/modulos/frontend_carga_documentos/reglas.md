@@ -7,15 +7,20 @@ se infla la lista con comportamiento genérico de HTML/React que no sea una deci
 
 - **Regla**: el toggle de tipo de documento ofrece 4 opciones (`TIPO_OPTIONS`, `FormCard.tsx`):
   "1 · Directa" (`'cotizaciones'`), "2 · Licitación" (`'licitaciones'`), "Comparativa"
-  (`'comparativas'`) y "Orden de compra" (`'ordenes'`). El default sigue siendo `'licitaciones'`.
+  (`'comparativas'`) y "Orden de compra" (`'ordenes'`). No hay tipo preseleccionado
+  (presupuestador-v1 T1b): hasta que el usuario elige uno, el área de archivo está deshabilitada,
+  muestra "Elegí el tipo de documento para continuar" y "Procesar" no se puede usar.
 - **Directa vs. licitación** (presupuestador-v1 T1): las directas trabajan con stock y las
   licitaciones no, así que la clase se decide al subir. `POST /procesar` mapea `tipo=cotizaciones`
   a `document_type='cotizacion'` y `tipo=licitaciones` a `'licitacion'`
   (`services/extraccion/main.py`); ambos usan el mismo robot genérico. Al validar, el
   `ProcesoComercialSelector` deriva `clase` de ese `document_type`, y el listado de validación
   muestra la cotización como "Directa".
-- **Formato por cliente**: `cliente_formato_documentos` se busca por `doc_type` exacto, así que una
-  directa solo usa instrucciones guardadas como `cotizacion`.
+- **Formato por cliente**: `cliente_formato_documentos` se busca primero por el `doc_type` exacto.
+  Si una directa no tiene instrucciones guardadas como `cotizacion`, usa las de `licitacion` del
+  mismo cliente y `POST /procesar` devuelve un `aviso` ("Este cliente no tiene instrucciones de
+  formato para directas; se usaron las de licitación."), que la carga muestra junto a la
+  confirmación del archivo. Sin formato de ningún tipo no hay aviso.
 - [IMPLEMENTADO]
 
 ### RN-CARGADOCUMENTOS-002 — Extensiones de archivo aceptadas, distintas por tipo de documento
@@ -28,7 +33,7 @@ se infla la lista con comportamiento genérico de HTML/React que no sea una deci
   | `cotizaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` (mismo set que `licitaciones`) |
   | `licitaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
   | `ordenes` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
-  | `comparativas` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm` (agrega `.ods`, `.html`, `.htm` respecto a los otros dos) |
+  | `comparativas` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm` (agrega `.ods`, `.html`, `.htm` respecto al resto) |
 
 - **Consecuencia**: el atributo `accept` de HTML es solo una sugerencia al selector de archivos del
   sistema operativo/navegador — no bloquea de forma confiable un archivo de otra extensión
