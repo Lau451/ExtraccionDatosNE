@@ -16,7 +16,7 @@ First in-house version of the presupuestador: upload a file, verify the extracti
 
 - [x] T1 (S2) Upload asks for class 1 Directa / 2 Licitación and sends `cotizacion` / `licitacion` so the proceso comercial gets the right `clase`. Route: inline (backend `/procesar` + `persistent_output` + FormCard). Commit: 7d15aa6 (backend 1316 passed, frontend 653 passed, tsc -b and oxlint clean).
 - [x] T1b (S2, L11, L12) Follow-ups to T1: no preselected upload type; directa falls back to the client's licitación prompt format with a warning; fix the T1 review advisories (L10). Route: inline. Commit: 58d592b (independent verify unavailable, see L13; native review approved, see L15).
-- [ ] T1c (L15, L16) Close the T1b review advisories: tests and docs only. Route: inline. Commit: —
+- [x] T1c (L15, L16) Close the T1b review advisories: tests and docs only. Route: inline. Commit: e0fa6a5 (backend 1334 passed, frontend 659 passed, tsc -b and oxlint clean).
 - [ ] T2 (S1, S3) Verify the existing `validar-extraccion` flow end to end with a real file of each class; fix gaps. Route: TBD. Commit: —
 - [ ] T3 (S4) Matching screen per proceso: renglones, `estado_matching`, candidates, confirm / sin match (backend exists; likely needs a "renglones with candidates" endpoint). Route: TBD. Commit: —
 - [ ] T4 (S7) Pricing fixed margin 30%: "margin only" mode on `reglas_pricing` that skips market price (additive migration) + default 30% rule per droguería. Route: TBD. Commit: —
