@@ -62,7 +62,7 @@ defecto (D4) — a diferencia de `cliente_contactos.activo` arriba.
 | `cliente_id` | FK a `clientes`. Parte de la clave `UNIQUE(cliente_id, doc_type)` (RN-CLIENTES-003) usada para decidir si `upsert_formato_documento` actualiza o crea (`service.py:50-66`). |
 | `drogueria_id` | FK a `droguerias`. Escrita solo al crear (`service.py:62`), no en el `campos` reutilizado por el update (`service.py:41-48`). |
 | `doc_type` | `DocType` (`Literal`, `models.py:6`). Segunda parte de la clave `UNIQUE(cliente_id, doc_type)`. |
-| `descripcion_estructura`, `instrucciones_prompt` | Nullable. `instrucciones_prompt` es el campo que **lee directo `services/extraccion/main.py`** (`_resolver_formato_prompt`, líneas 122-149) para enriquecer el prompt de Gemini — ver [`arquitectura.md`](./arquitectura.md). |
+| `descripcion_estructura`, `instrucciones_prompt` | Nullable. `instrucciones_prompt` es el campo que **lee directo `services/extraccion/main.py`** (`_resolver_formato_prompt` / `_buscar_formato`) para enriquecer el prompt de Gemini — ver [`arquitectura.md`](./arquitectura.md). |
 | `archivo_ejemplo_path`, `archivo_ejemplo_nombre` | Nullable. |
 | `activo` | BOOLEAN, default `True` en `ClienteFormatoDocumentoUpsert` (`models.py:88`). Este módulo la escribe pero no la filtra en ningún query propio; **sí la filtra `services/extraccion/main.py:137`** (`.eq("activo", True)`) — el efecto de este campo vive fuera de este módulo. |
 | `actualizado_por` | Escrita en cada upsert con el `usuario_id` del solicitante (`service.py:47`). |

@@ -1453,39 +1453,42 @@ class TestLifespanArrancaYCancelaElSweepPeriodico:
 # presupuestador-v1 T1 — clase del proceso elegida al subir (Directa / Licitación)
 # ---------------------------------------------------------------------------
 
+def _mockear_pipeline_procesar(mocker, tmp_path):
+    """Mockea todo /procesar alrededor del formato del cliente: sin duplicado,
+    sesión y fila 'processing' creadas, robot genérico con CSV y persistencia."""
+    mocker.patch("services.extraccion.main.calcular_sha256", return_value="a" * 64)
+    mocker.patch(
+        "services.extraccion.main.buscar_duplicado_con_lock",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    return {
+        "crear_sesion": mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ),
+        "crear_extraction_processing": mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ),
+        "procesar_archivo": mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            return_value=str(_mock_csv_output(tmp_path)),
+        ),
+        "schedule_persist_output": mocker.patch(
+            "services.extraccion.main.schedule_persist_output",
+            new_callable=AsyncMock,
+        ),
+    }
+
+
 class TestProcesarClaseDirectaLicitacion:
     """S2: al subir se elige 1 Directa (tipo="cotizaciones") o 2 Licitación
     (tipo="licitaciones"). La directa se guarda como document_type="cotizacion"
     para que validar-extraccion cree el proceso con clase='cotizacion'; ambas
     usan el mismo robot genérico (no hay extractor propio de cotización)."""
-
-    def _mockear_pipeline(self, mocker, tmp_path):
-        mocker.patch("services.extraccion.main.calcular_sha256", return_value="a" * 64)
-        mocker.patch(
-            "services.extraccion.main.buscar_duplicado_con_lock",
-            new_callable=AsyncMock,
-            return_value=None,
-        )
-        return {
-            "crear_sesion": mocker.patch(
-                "services.extraccion.main.crear_sesion",
-                new_callable=AsyncMock,
-                return_value=uuid.uuid4(),
-            ),
-            "crear_extraction_processing": mocker.patch(
-                "services.extraccion.main.crear_extraction_processing",
-                new_callable=AsyncMock,
-                return_value=uuid.uuid4(),
-            ),
-            "procesar_archivo": mocker.patch(
-                "services.extraccion.main.procesar_archivo",
-                return_value=str(_mock_csv_output(tmp_path)),
-            ),
-            "schedule_persist_output": mocker.patch(
-                "services.extraccion.main.schedule_persist_output",
-                new_callable=AsyncMock,
-            ),
-        }
 
     @pytest.mark.parametrize(
         ("tipo", "doc_type_esperado"),
@@ -1494,7 +1497,7 @@ class TestProcesarClaseDirectaLicitacion:
     def test_tipo_define_el_document_type_y_usa_el_robot_generico(
         self, client, headers_json, pdf_bytes, tmp_path, mocker, tipo, doc_type_esperado
     ):
-        mocks = self._mockear_pipeline(mocker, tmp_path)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
 
         response = client.post(
             "/procesar",
@@ -1515,7 +1518,7 @@ class TestProcesarClaseDirectaLicitacion:
 
     @pytest.mark.parametrize("tipo", ["cotizaciones", "licitaciones"])
     @pytest.mark.parametrize("extension", [".ods", ".html", ".htm", ".txt"])
-    def test_directa_rechaza_las_mismas_extensiones_que_licitacion(
+    def test_directa_y_licitacion_rechazan_las_extensiones_no_permitidas(
         self, client, headers_json, mocker, tipo, extension
     ):
         mock_sesion = mocker.patch(
@@ -1553,7 +1556,7 @@ class TestProcesarClaseDirectaLicitacion:
     def test_directa_acepta_las_mismas_extensiones_que_licitacion(
         self, client, headers_json, tmp_path, mocker, extension
     ):
-        mocks = self._mockear_pipeline(mocker, tmp_path)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
 
         response = client.post(
             "/procesar",
@@ -1570,8 +1573,9 @@ class _FakeFormatosClient:
     """Fake de Supabase solo para `cliente_formato_documentos`: devuelve la fila
     cargada para el (cliente_id, doc_type) consultado, o ninguna."""
 
-    def __init__(self, formatos: dict[str, dict]):
+    def __init__(self, formatos: dict[str, dict], fallar_en: str | None = None):
         self.formatos = formatos
+        self.fallar_en = fallar_en
         self.consultas: list[str] = []
 
     def table(self, nombre):
@@ -1592,6 +1596,8 @@ class _FakeFormatosClient:
 
             def execute(self):
                 fake.consultas.append(filtros["doc_type"])
+                if filtros["doc_type"] == fake.fallar_en:
+                    raise RuntimeError("Supabase no disponible")
                 fila = fake.formatos.get(filtros["doc_type"])
                 return MagicMock(data=[fila] if fila else [])
 
@@ -1612,7 +1618,7 @@ class TestProcesarFormatoClienteDirecta:
     def _subir(self, client, headers_json, pdf_bytes, tmp_path, mocker, *, tipo, formatos):
         fake = _FakeFormatosClient(formatos)
         mocker.patch("services.extraccion.main.get_client", return_value=fake)
-        mocks = TestProcesarClaseDirectaLicitacion()._mockear_pipeline(mocker, tmp_path)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
         response = client.post(
             "/procesar",
             data={"tipo": tipo, "cliente_id": "cliente-1"},
@@ -1684,3 +1690,29 @@ class TestProcesarFormatoClienteDirecta:
         assert "aviso" not in response.json()
         assert fake.consultas == ["licitacion"]
         assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-lic"
+        assert (
+            mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"]
+            == "Columnas de licitación"
+        )
+
+    def test_error_al_buscar_el_respaldo_no_bloquea_la_carga_ni_avisa(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        """Si la consulta del formato de licitación falla, la directa se procesa
+        igual, sin formato y sin aviso (el formato nunca bloquea la carga)."""
+        fake = _FakeFormatosClient({}, fallar_en="licitacion")
+        mocker.patch("services.extraccion.main.get_client", return_value=fake)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "cotizaciones", "cliente_id": "cliente-1"},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert "aviso" not in response.json()
+        assert fake.consultas == ["cotizacion", "licitacion"]
+        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] is None
+        assert mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"] is None

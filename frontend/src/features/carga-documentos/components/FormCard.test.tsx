@@ -360,6 +360,29 @@ describe('FormCard — el tipo se elige siempre (presupuestador-v1 T1b)', () => 
     expect(screen.getByRole('button', { name: /procesar/i })).toBeDisabled()
   })
 
+  it('arrastrar un archivo sin elegir tipo no lo carga', () => {
+    renderConQueryClient(<FormCard />)
+    const zona = screen.getByText('Elegí el tipo de documento para continuar').closest('label') as HTMLElement
+
+    fireEvent.drop(zona, { dataTransfer: { files: [archivo('a.pdf')] } })
+
+    expect(screen.queryByText('a.pdf')).not.toBeInTheDocument()
+    expect(screen.getByText('Elegí el tipo de documento para continuar')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /procesar/i })).toBeDisabled()
+    expect(procesarDocumento).not.toHaveBeenCalled()
+  })
+
+  it('arrastrar un archivo después de elegir tipo sí lo carga', () => {
+    renderConQueryClient(<FormCard />)
+    elegirTipo('2 · Licitación')
+    const zona = screen.getByText('Seleccionar archivo').closest('label') as HTMLElement
+
+    fireEvent.drop(zona, { dataTransfer: { files: [archivo('a.pdf')] } })
+
+    expect(screen.getByText('a.pdf')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /procesar/i })).toBeEnabled()
+  })
+
   it('al elegir un tipo queda marcado y habilita la carga', () => {
     const { container } = renderConQueryClient(<FormCard />)
     elegirTipo('1 · Directa')

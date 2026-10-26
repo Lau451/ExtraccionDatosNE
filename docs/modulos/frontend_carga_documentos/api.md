@@ -121,24 +121,29 @@ export type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | '
 export interface Cliente { id: string; nombre: string }
 // extraccion.ts:5-8
 
+export type EstadoExtraccion = 'processing' | 'completed' | 'failed' | 'partial'
+// extraccion.ts:11
+
 export interface DocumentoReciente {
   id: string
   source_filename: string
-  document_type: 'licitacion' | 'comparativa'
+  document_type: 'licitacion' | 'cotizacion' | 'comparativa' | 'orden_compra'
   row_count: number
-  status: string
+  status: EstadoExtraccion
+  error_msg: string | null
   created_at: string
   proceso_comercial: { id: string; nombre: string } | null
 }
-// extraccion.ts:10-18
+// extraccion.ts:13-25
 
 export interface ProcesarPayload {
   archivo: File
   tipo: TipoDocumento
   licitacionId?: string   // nunca lo envía FormCard.tsx — ver flujo.md
   clienteId?: string
+  grupoId?: string        // solo tipo 'ordenes' con N>1 archivos (D13)
 }
-// extraccion.ts:20-25
+// extraccion.ts:27-35
 
 export interface ProcesarResultado {
   ok: boolean
@@ -147,17 +152,17 @@ export interface ProcesarResultado {
   extraction_id?: string | null
   aviso?: string // advertencia no bloqueante (directa que usó el formato de licitación)
 }
-// extraccion.ts:27-31
+// extraccion.ts:37-48
 
 export function listarClientes(): Promise<Cliente[]>
-// extraccion.ts:33-35 — GET /api/clientes
+// extraccion.ts:50-52 — GET /api/clientes
 
 export function listarDocumentosRecientes(tipo = ''): Promise<{ documentos: DocumentoReciente[] }>
-// extraccion.ts:37-40 — GET /api/documentos[?tipo=...]. FormCard/RecentCard siempre lo llaman
+// extraccion.ts:54-57 — GET /api/documentos[?tipo=...]. FormCard/RecentCard siempre lo llaman
 // sin argumento (RecentCard.tsx:14), así que `tipo` nunca se usa en este módulo hoy.
 
 export function procesarDocumento(payload: ProcesarPayload): Promise<ProcesarResultado>
-// extraccion.ts:42-58 — POST /procesar (multipart/form-data)
+// extraccion.ts:59-77 — POST /procesar (multipart/form-data)
 ```
 
 ## `lib/api/procesosComerciales.ts`
