@@ -15,7 +15,7 @@ export function CargaDocumentos(): JSX.Element
 ## `features/carga-documentos/components/FormCard.tsx`
 
 ```typescript
-type TipoDocumento = 'licitaciones' | 'comparativas' | 'ordenes'
+type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | 'ordenes'
 // re-exportado desde lib/api/extraccion.ts, no redeclarado acá
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string; disabled?: boolean }[]
@@ -115,7 +115,7 @@ export async function extraccionFetch<T>(path: string, init?: RequestInit): Prom
 ## `lib/api/extraccion.ts`
 
 ```typescript
-export type TipoDocumento = 'licitaciones' | 'comparativas' | 'ordenes'
+export type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | 'ordenes'
 // extraccion.ts:3
 
 export interface Cliente { id: string; nombre: string }

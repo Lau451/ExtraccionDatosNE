@@ -3,20 +3,19 @@
 Numeración RN-CARGADOCUMENTOS-NNN. Se documentan solo las reglas verificadas contra el código; no
 se infla la lista con comportamiento genérico de HTML/React que no sea una decisión del módulo.
 
-### RN-CARGADOCUMENTOS-001 — Tres tipos de documento, uno deshabilitado sin pipeline
+### RN-CARGADOCUMENTOS-001 — Cuatro tipos de documento; la clase del proceso se elige al subir
 
-- **Regla**: el toggle de tipo de documento ofrece 3 opciones (`TIPO_OPTIONS`, `FormCard.tsx:6-10`):
-  "Licitación / Directa" (`'licitaciones'`), "Comparativa" (`'comparativas'`) y "Orden de compra"
-  (`'ordenes'`). La tercera se renderiza con `disabled: true`, `title="Próximamente"` y un badge
-  visual "Próximamente" (`FormCard.tsx:52-53`, `:65-69`); el `onClick` que cambia `tipo` no se
-  ejecuta en un botón `disabled`, así que `tipo` nunca puede tomar el valor `'ordenes'` desde la UI.
-- **Motivo confirmado en el proposal del change**: no hay pipeline de extracción implementado para
-  ese tipo — `openspec/changes/carga-documentos/proposal.md:68-70` cita explícitamente que se
-  confirmó leyendo `services/extraccion/main.py` que no existe una rama `tipo == "ordenes"`. El
-  backend además rechaza (422) ese valor fail-fast como defensa en profundidad
-  (`openspec/changes/carga-documentos/spec.md:53-54`, `:96-101` — fuera del alcance de archivos de
-  esta documentación, ver [`../extraccion_api/`](../extraccion_api/) para el detalle del lado
-  backend).
+- **Regla**: el toggle de tipo de documento ofrece 4 opciones (`TIPO_OPTIONS`, `FormCard.tsx`):
+  "1 · Directa" (`'cotizaciones'`), "2 · Licitación" (`'licitaciones'`), "Comparativa"
+  (`'comparativas'`) y "Orden de compra" (`'ordenes'`). El default sigue siendo `'licitaciones'`.
+- **Directa vs. licitación** (presupuestador-v1 T1): las directas trabajan con stock y las
+  licitaciones no, así que la clase se decide al subir. `POST /procesar` mapea `tipo=cotizaciones`
+  a `document_type='cotizacion'` y `tipo=licitaciones` a `'licitacion'`
+  (`services/extraccion/main.py`); ambos usan el mismo robot genérico. Al validar, el
+  `ProcesoComercialSelector` deriva `clase` de ese `document_type`, y el listado de validación
+  muestra la cotización como "Directa".
+- **Formato por cliente**: `cliente_formato_documentos` se busca por `doc_type` exacto, así que una
+  directa solo usa instrucciones guardadas como `cotizacion`.
 - [IMPLEMENTADO]
 
 ### RN-CARGADOCUMENTOS-002 — Extensiones de archivo aceptadas, distintas por tipo de documento
@@ -26,8 +25,9 @@ se infla la lista con comportamiento genérico de HTML/React que no sea una deci
 
   | Tipo | Extensiones aceptadas |
   |---|---|
+  | `cotizaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` (mismo set que `licitaciones`) |
   | `licitaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
-  | `ordenes` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` (mismo set que `licitaciones`, aunque el tipo esté deshabilitado — ver RN-CARGADOCUMENTOS-001) |
+  | `ordenes` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
   | `comparativas` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm` (agrega `.ods`, `.html`, `.htm` respecto a los otros dos) |
 
 - **Consecuencia**: el atributo `accept` de HTML es solo una sugerencia al selector de archivos del

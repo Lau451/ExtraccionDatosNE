@@ -307,3 +307,36 @@ describe('FormCard — confirmación asincrónica, sin auto-navegación (carga-a
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['documentos-recientes'] }))
   })
 })
+
+describe('FormCard — clase del proceso al subir (presupuestador-v1 T1)', () => {
+  it('ofrece "1 · Directa" y "2 · Licitación" como tipos separados', () => {
+    renderConQueryClient(<FormCard />)
+
+    expect(screen.getByRole('button', { name: '1 · Directa' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2 · Licitación' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /licitación \/ directa/i })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['1 · Directa', 'cotizaciones'],
+    ['2 · Licitación', 'licitaciones'],
+  ])('con "%s" se envía tipo="%s" con un solo archivo', async (label, tipoEsperado) => {
+    vi.mocked(procesarDocumento).mockResolvedValue({ ok: true, tipo: tipoEsperado })
+
+    const { container } = renderConQueryClient(<FormCard />)
+    fireEvent.click(screen.getByRole('button', { name: label }))
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(input.multiple).toBe(false)
+    expect(input.accept).toBe('.pdf,.jpg,.jpeg,.png,.xls,.xlsx')
+    fireEvent.change(input, { target: { files: [archivo('a.pdf'), archivo('b.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await waitFor(() => expect(procesarDocumento).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(procesarDocumento).mock.calls[0][0]).toMatchObject({
+      tipo: tipoEsperado,
+      grupoId: undefined,
+    })
+    expect(vi.mocked(procesarDocumento).mock.calls[0][0].archivo.name).toBe('a.pdf')
+  })
+})

@@ -1447,3 +1447,101 @@ class TestLifespanArrancaYCancelaElSweepPeriodico:
             assert not tareas_creadas[0].done()
 
         assert tareas_creadas[0].cancelled()
+
+
+# ---------------------------------------------------------------------------
+# presupuestador-v1 T1 — clase del proceso elegida al subir (Directa / Licitación)
+# ---------------------------------------------------------------------------
+
+class TestProcesarClaseDirectaLicitacion:
+    """S2: al subir se elige 1 Directa (tipo="cotizaciones") o 2 Licitación
+    (tipo="licitaciones"). La directa se guarda como document_type="cotizacion"
+    para que validar-extraccion cree el proceso con clase='cotizacion'; ambas
+    usan el mismo robot genérico (no hay extractor propio de cotización)."""
+
+    def _mockear_pipeline(self, mocker, tmp_path):
+        mocker.patch("services.extraccion.main.calcular_sha256", return_value="a" * 64)
+        mocker.patch(
+            "services.extraccion.main.buscar_duplicado_con_lock",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+        return {
+            "crear_sesion": mocker.patch(
+                "services.extraccion.main.crear_sesion",
+                new_callable=AsyncMock,
+                return_value=uuid.uuid4(),
+            ),
+            "crear_extraction_processing": mocker.patch(
+                "services.extraccion.main.crear_extraction_processing",
+                new_callable=AsyncMock,
+                return_value=uuid.uuid4(),
+            ),
+            "procesar_archivo": mocker.patch(
+                "services.extraccion.main.procesar_archivo",
+                return_value=str(_mock_csv_output(tmp_path)),
+            ),
+            "schedule_persist_output": mocker.patch(
+                "services.extraccion.main.schedule_persist_output",
+                new_callable=AsyncMock,
+            ),
+        }
+
+    @pytest.mark.parametrize(
+        ("tipo", "doc_type_esperado"),
+        [("cotizaciones", "cotizacion"), ("licitaciones", "licitacion")],
+    )
+    def test_tipo_define_el_document_type_y_usa_el_robot_generico(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker, tipo, doc_type_esperado
+    ):
+        mocks = self._mockear_pipeline(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": tipo},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert response.json()["tipo"] == tipo
+        assert mocks["crear_sesion"].await_args.kwargs["doc_type"] == doc_type_esperado
+        assert (
+            mocks["crear_extraction_processing"].await_args.kwargs["document_type"]
+            == doc_type_esperado
+        )
+        mocks["procesar_archivo"].assert_called_once()
+        assert mocks["schedule_persist_output"].await_args.kwargs["doc_type"] == doc_type_esperado
+
+    def test_directa_rechaza_las_mismas_extensiones_que_licitacion(
+        self, client, headers_json, mocker
+    ):
+        mock_sesion = mocker.patch(
+            "services.extraccion.main.crear_sesion", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "cotizaciones"},
+            files={"archivo": ("documento.html", io.BytesIO(b"<html></html>"), "text/html")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 415
+        assert response.json()["error"] == "Tipo de archivo no permitido"
+        mock_sesion.assert_not_awaited()
+
+    def test_listar_documentos_filtra_por_cotizacion(self, client, mocker):
+        mock_qb = MagicMock()
+        mock_qb.select.return_value = mock_qb
+        mock_qb.eq.return_value = mock_qb
+        mock_qb.order.return_value = mock_qb
+        mock_qb.execute.return_value = MagicMock(data=[])
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_qb
+        mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
+
+        response = client.get("/api/documentos?tipo=cotizacion")
+
+        assert response.status_code == 200
+        mock_qb.eq.assert_any_call("document_type", "cotizacion")

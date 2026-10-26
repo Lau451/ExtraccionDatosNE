@@ -12,13 +12,17 @@ import {
 
 const RECIENTES_KEY = ['documentos-recientes']
 
+// presupuestador-v1 T1: the class is chosen at upload -- directas work with
+// stock, licitaciones do not. Both run the same extraction robot.
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
-  { value: 'licitaciones', label: 'Licitación / Directa' },
+  { value: 'cotizaciones', label: '1 · Directa' },
+  { value: 'licitaciones', label: '2 · Licitación' },
   { value: 'comparativas', label: 'Comparativa' },
   { value: 'ordenes', label: 'Orden de compra' },
 ]
 
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string> = {
+  cotizaciones: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
   licitaciones: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
   ordenes: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
   comparativas: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm',

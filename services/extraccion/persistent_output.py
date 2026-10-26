@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 # Umbral de filas que dispara un WARNING (el INSERT igualmente se ejecuta)
 _WARN_ROW_COUNT = 50_000
 
-# Tipos de documento con pipeline de extraccion real hoy. "cotizacion" es
-# manejado como "licitacion" por el robot generico (no tiene extractor propio).
-_DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion", "orden_compra"}
+# Tipos de documento con pipeline de extraccion real hoy. "cotizacion" (compra
+# directa) usa el mismo robot generico que "licitacion" (no tiene extractor propio).
+_DOC_TYPES_SOPORTADOS = {"comparativa", "licitacion", "cotizacion", "orden_compra"}
 
 
 def calcular_sha256(path: Path) -> str:
@@ -145,7 +145,7 @@ async def crear_extraction_processing(
 
     Args:
         drogueria_id:          droguería del usuario autenticado. Obligatorio.
-        document_type:         "comparativa" | "licitacion" | "orden_compra".
+        document_type:         "comparativa" | "licitacion" | "cotizacion" | "orden_compra".
         source_filename:       Nombre del archivo original subido.
         source_sha256:         SHA256 del archivo original.
         grupo_id:              UUID v4 ya validado (D13), solo si viene.
@@ -268,7 +268,7 @@ async def persistir_output_final(
                           DESPUÉS de crear la fila (entre el INSERT y este UPDATE),
                           no un `extraction_id` None de entrada.
         session_id:      Aceptado por compatibilidad, no se persiste (ver NOTA).
-        doc_type:        "comparativa" | "licitacion" | "orden_compra".
+        doc_type:        "comparativa" | "licitacion" | "cotizacion" | "orden_compra".
         rows:            Lista de dicts con los datos extraidos (leidos del CSV).
         csv_path:        Path al CSV generado en disco (source of truth).
         client_id:       Aceptado por compatibilidad, no se persiste (ver NOTA).

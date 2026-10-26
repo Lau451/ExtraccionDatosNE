@@ -538,6 +538,11 @@ async def procesar(
         doc_type = "comparativa"
     elif tipo == "ordenes":
         doc_type = "orden_compra"
+    elif tipo == "cotizaciones":
+        # presupuestador-v1 T1: una compra directa. Mismo robot genérico que una
+        # licitación; el document_type solo define la clase del proceso comercial
+        # al validar (las directas trabajan con stock, las licitaciones no).
+        doc_type = "cotizacion"
     else:
         doc_type = "licitacion"
     formato_id, instrucciones_prompt = await _resolver_formato_prompt(
@@ -648,7 +653,7 @@ async def listar_documentos(
             .eq("drogueria_id", drogueria_id)
             .order("created_at", desc=True)
         )
-        if tipo in ("comparativa", "licitacion"):
+        if tipo in ("comparativa", "licitacion", "cotizacion"):
             q = q.eq("document_type", tipo)
         return q.execute()
 

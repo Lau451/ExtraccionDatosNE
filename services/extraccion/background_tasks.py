@@ -69,7 +69,7 @@ async def _retry_persist(
                           correr el robot). None si la persistencia no estaba
                           disponible al crearla.
         session_id:      UUID de la sesion (puede ser None).
-        doc_type:        "comparativa" | "licitacion" | "orden_compra".
+        doc_type:        "comparativa" | "licitacion" | "cotizacion" | "orden_compra".
         rows:            Filas extraidas del CSV.
         csv_path:        Path al CSV en disco.
         client_id:       Identificador del cliente.
@@ -212,7 +212,7 @@ async def schedule_persist_output(
                           ver docstring).
         extraction_id:   UUID de la fila 'processing' a actualizar (puede ser None).
         session_id:      UUID de la sesion creada antes del robot (puede ser None).
-        doc_type:        Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
+        doc_type:        Tipo de documento: "comparativa" | "licitacion" | "cotizacion" | "orden_compra".
         rows:            Lista de dicts leidos del CSV generado.
         csv_path:        Path al CSV generado en disco.
         client_id:       Identificador del cliente/origen.
