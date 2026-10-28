@@ -74,8 +74,8 @@ export function RegistrarResultadoDialog({
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
+        <Dialog.Overlay className="fixed z-50 inset-0 bg-black/40" />
+        <Dialog.Content className="fixed z-50 top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-navy">{`Registrar resultado — ${codigo}`}</Dialog.Title>
           <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}>
             <label className="block text-sm text-slate-600">
