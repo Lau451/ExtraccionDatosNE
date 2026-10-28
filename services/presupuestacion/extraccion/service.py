@@ -1102,7 +1102,7 @@ def _crear_proceso_para_extraccion(
         raise ValidationError("Indicá un proceso comercial existente o los datos del nuevo, no ambos")
     if extraction["document_type"] not in _TIPOS_ITEMS_PROCESO:
         raise ValidationError("Solo una licitación o una directa crea su proceso comercial al validarse")
-    nombre_licitacion = (nuevo_proceso.nombre_licitacion or "").strip()
+    nombre_licitacion = (nuevo_proceso.nombre_licitacion or "").strip().upper()
     if nuevo_proceso.clase == "licitacion" and not nombre_licitacion:
         raise ValidationError("Falta el nombre de la licitación")
 

@@ -659,9 +659,10 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
     fireEvent.click(await screen.findByRole('button', { name: 'Licitación' }))
     await elegirCliente('C273', 'Hospital Sayago')
     fireEvent.change(screen.getByRole('textbox', { name: 'Nombre de la licitación' }), {
-      target: { value: '  LIC 14/2026 ' },
+      target: { value: '  lic 14/2026 ' },
     })
 
+    expect(screen.getByRole('textbox', { name: 'Nombre de la licitación' })).toHaveValue('  LIC 14/2026 ')
     expect(screen.getByText('Se va a crear el proceso: Hospital Sayago - LIC 14/2026')).toBeInTheDocument()
     expect(screen.queryByText(/^Elegí|^Escribí/)).not.toBeInTheDocument()
     expect(botonConfirmar()).toBeEnabled()

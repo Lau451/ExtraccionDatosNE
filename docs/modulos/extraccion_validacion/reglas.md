@@ -67,7 +67,7 @@ fallaría con el proceso ya creado. Aplica también a la ruta con proceso existe
 
 Si pasa, crea el proceso con `crear_proceso_comercial` (auditado como creación) con el
 cliente y la clase elegidos, y nombre `"<razón social> - <nombre de la licitación>"`
-(licitación) o `"<razón social> - <n>"` (directa, `n` = cantidad de procesos
+(licitación, el nombre siempre en mayúsculas) o `"<razón social> - <n>"` (directa, `n` = cantidad de procesos
 `cotizacion` del cliente, borrados incluidos, + 1). Después vincula la extracción y le
 pone `document_type` = la clase elegida, y materializa igual que RN-004. Dos directas
 validadas en simultáneo para el mismo cliente pueden repetir el número (no hay

@@ -93,7 +93,7 @@ def test_validar_licitacion_crea_el_proceso_con_cliente_y_nombre(
         usuario_id=seed_usuario_sistema["id"],
         proceso_comercial_id=None,
         nuevo_proceso=NuevoProcesoIn(
-            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion="  LIC 14/2026  "
+            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion="  lic 14/2026  "
         ),
     )
 
@@ -502,7 +502,7 @@ def test_reintento_de_licitacion_con_otro_nombre_renombra_el_proceso(
         usuario_id=seed_usuario_sistema["id"],
         proceso_comercial_id=None,
         nuevo_proceso=NuevoProcesoIn(
-            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion=" LIC 15/2026 "
+            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion=" lic 15/2026 "
         ),
     )
 

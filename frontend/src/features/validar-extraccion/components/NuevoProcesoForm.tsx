@@ -99,7 +99,7 @@ export function NuevoProcesoForm({
             <input
               id={nombreInputId}
               value={nombreLicitacion}
-              onChange={(event) => onNombreLicitacion(event.target.value)}
+              onChange={(event) => onNombreLicitacion(event.target.value.toUpperCase())}
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
