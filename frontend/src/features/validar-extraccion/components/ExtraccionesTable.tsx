@@ -143,7 +143,7 @@ function FilaExtraccion({ extraccion, tipoActivo, seleccionados, onAlternarSelec
       <td className="py-2">
         <span
           className={clsx(
-            'flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+            'flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
             meta.badgeClass,
           )}
         >
@@ -156,11 +156,13 @@ function FilaExtraccion({ extraccion, tipoActivo, seleccionados, onAlternarSelec
           <p className="mt-1 text-xs text-red-600">{extraccion.error_msg ?? 'No se pudo procesar el documento.'}</p>
         )}
       </td>
-      <td className="py-2 text-slate-600">{extraccion.row_count}</td>
-      <td className="py-2 text-slate-600">{extraccion.proceso_comercial_nombre ?? '—'}</td>
-      <td className="py-2 text-slate-600">{extraccion.subido_por_nombre ?? '—'}</td>
-      <td className="py-2 text-slate-500">{new Date(extraccion.created_at).toLocaleDateString('es-AR')}</td>
-      <td className="py-2 text-right">
+      <td className="py-2 text-right tabular-nums text-slate-600">{extraccion.row_count}</td>
+      <td className="max-w-sm py-2 text-slate-600">{extraccion.proceso_comercial_nombre ?? '—'}</td>
+      <td className="whitespace-nowrap py-2 text-slate-600">{extraccion.subido_por_nombre ?? '—'}</td>
+      <td className="whitespace-nowrap py-2 tabular-nums text-slate-500">
+        {new Date(extraccion.created_at).toLocaleDateString('es-AR')}
+      </td>
+      <td className="whitespace-nowrap py-2 text-right">
         <AccionCelda extraccion={extraccion} />
       </td>
     </tr>
@@ -280,11 +282,11 @@ function FilaGrupo({
             <span className="text-slate-400">—</span>
           )}
         </td>
+        <td className="py-2 text-right text-slate-400">—</td>
         <td className="py-2 text-slate-400">—</td>
         <td className="py-2 text-slate-400">—</td>
         <td className="py-2 text-slate-400">—</td>
-        <td className="py-2 text-slate-400">—</td>
-        <td className="py-2 text-right">
+        <td className="whitespace-nowrap py-2 text-right">
           {miembroValidable ? (
             <Link
               to="/validar-extraccion/$extractionId"
@@ -346,13 +348,16 @@ export function ExtraccionesTable({
   const entradas = construirEntradas(extracciones, extraccionesDelTipo ?? extracciones, gruposLocales)
 
   return (
-    <table className="w-full text-sm">
+    // Data cells get a right gutter: without it adjacent columns run together
+    // ("FilasProceso comercial", "28/10/2026Revisar"). The checkbox column
+    // (often empty) and the action column are left out.
+    <table className="w-full text-sm [&_td:not(:first-child):not(:last-child)]:pr-4 [&_th:not(:first-child):not(:last-child)]:pr-4">
       <thead>
         <tr className="border-b border-slate-200 text-left text-slate-500">
           <th className="py-2 font-medium" />
           <th className="py-2 font-medium">Documento</th>
           <th className="py-2 font-medium">Estado</th>
-          <th className="py-2 font-medium">Filas</th>
+          <th className="py-2 text-right font-medium">Filas</th>
           <th className="py-2 font-medium">Proceso comercial</th>
           <th className="py-2 font-medium">Cargado por</th>
           <th className="py-2 font-medium">Cargado</th>
