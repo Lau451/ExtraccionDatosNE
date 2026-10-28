@@ -157,7 +157,7 @@ def _procesar_response(context: dict, status_code: int = 200) -> JSONResponse:
     ver odd/tasks/extraccion-multi-tenant.md). `extraction_id` se incluye acá
     porque el 409 de duplicado lo necesita — el frontend lo lee del body."""
     payload = {"ok": status_code < 400}
-    for key in ("resultado", "error", "tipo", "extraction_id", "aviso"):
+    for key in ("resultado", "error", "tipo", "extraction_id"):
         if key in context:
             payload[key] = context[key]
     return JSONResponse(payload, status_code=status_code)
@@ -187,13 +187,9 @@ def _limpiar_archivos_temporales(destino: Path, tmp_dir: Path) -> None:
 # RUTAS
 # ======================
 
-# presupuestador-v1 T1b (L12): una directa sin instrucciones propias usa las de
-# licitación del cliente (mismo documento, mismo robot) y se le avisa al usuario.
-_FORMATO_RESPALDO = {"cotizacion": "licitacion"}
-_AVISO_FORMATO_RESPALDO = (
-    "Este cliente no tiene instrucciones de formato para directas; "
-    "se usaron las de licitación."
-)
+# presupuestador-v1 T2a (S9): licitaciones and directas use the generic prompt;
+# only these document types still look up the client's format.
+_DOC_TYPES_CON_FORMATO_CLIENTE = {"comparativa", "orden_compra"}
 
 
 async def _buscar_formato(client, *, cliente_id: str, doc_type: str) -> tuple[str, str] | None:
@@ -215,31 +211,24 @@ async def _buscar_formato(client, *, cliente_id: str, doc_type: str) -> tuple[st
 
 async def _resolver_formato_prompt(
     client, *, cliente_id: str, doc_type: str
-) -> tuple[str | None, str | None, str | None]:
+) -> tuple[str | None, str | None]:
     """§8: si hay instrucciones cargadas para este cliente+doc_type, las devuelve para
-    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt, aviso) — los dos
-    primeros None si no hay nada configurado o la consulta falla (nunca bloquea la carga
-    del documento). `aviso` solo viene cuando se usó el formato de respaldo
-    (`_FORMATO_RESPALDO`)."""
-    if client is None or not cliente_id:
-        return None, None, None
+    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt) — None, None si el
+    doc_type no usa formato de cliente, no hay nada configurado o la consulta falla
+    (nunca bloquea la carga del documento)."""
+    if client is None or not cliente_id or doc_type not in _DOC_TYPES_CON_FORMATO_CLIENTE:
+        return None, None
 
     try:
         formato = await _buscar_formato(client, cliente_id=cliente_id, doc_type=doc_type)
         if formato is not None:
-            return formato[0], formato[1], None
-
-        respaldo = _FORMATO_RESPALDO.get(doc_type)
-        if respaldo is not None:
-            formato = await _buscar_formato(client, cliente_id=cliente_id, doc_type=respaldo)
-            if formato is not None:
-                return formato[0], formato[1], _AVISO_FORMATO_RESPALDO
+            return formato
     except Exception as exc:
         logger.warning(
             "_resolver_formato_prompt: error consultando cliente_formato_documentos — %s", exc
         )
 
-    return None, None, None
+    return None, None
 
 
 def _validar_grupo_id(grupo_id: str) -> str | None:
@@ -563,14 +552,11 @@ async def procesar(
         doc_type = "comparativa"
     elif tipo == "ordenes":
         doc_type = "orden_compra"
-    elif tipo == "cotizaciones":
-        # presupuestador-v1 T1: una compra directa. Mismo robot genérico que una
-        # licitación; el document_type solo define la clase del proceso comercial
-        # al validar (las directas trabajan con stock, las licitaciones no).
-        doc_type = "cotizacion"
     else:
+        # presupuestador-v1 T2a (S2): a licitación or a directa -- the class is
+        # chosen at validation, which creates the proceso comercial.
         doc_type = "licitacion"
-    formato_id, instrucciones_prompt, aviso_formato = await _resolver_formato_prompt(
+    formato_id, instrucciones_prompt = await _resolver_formato_prompt(
         get_client(), cliente_id=cliente_id, doc_type=doc_type
     )
 
@@ -655,8 +641,6 @@ async def procesar(
     )
 
     respuesta = {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None}
-    if aviso_formato:
-        respuesta["aviso"] = aviso_formato
     return _procesar_response(respuesta, status_code=202)
 
 

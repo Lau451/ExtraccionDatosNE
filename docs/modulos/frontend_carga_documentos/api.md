@@ -15,7 +15,7 @@ export function CargaDocumentos(): JSX.Element
 ## `features/carga-documentos/components/FormCard.tsx`
 
 ```typescript
-type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | 'ordenes'
+type TipoDocumento = 'licitaciones' | 'comparativas' | 'ordenes'
 // re-exportado desde lib/api/extraccion.ts, no redeclarado acá
 
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[]
@@ -115,7 +115,7 @@ export async function extraccionFetch<T>(path: string, init?: RequestInit): Prom
 ## `lib/api/extraccion.ts`
 
 ```typescript
-export type TipoDocumento = 'cotizaciones' | 'licitaciones' | 'comparativas' | 'ordenes'
+export type TipoDocumento = 'licitaciones' | 'comparativas' | 'ordenes'
 // extraccion.ts:3
 
 export interface Cliente { id: string; nombre: string }
@@ -150,7 +150,6 @@ export interface ProcesarResultado {
   tipo: string
   error?: string
   extraction_id?: string | null
-  aviso?: string // advertencia no bloqueante (directa que usó el formato de licitación)
 }
 // extraccion.ts:37-48
 

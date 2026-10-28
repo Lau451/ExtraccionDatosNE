@@ -3,24 +3,21 @@
 Numeración RN-CARGADOCUMENTOS-NNN. Se documentan solo las reglas verificadas contra el código; no
 se infla la lista con comportamiento genérico de HTML/React que no sea una decisión del módulo.
 
-### RN-CARGADOCUMENTOS-001 — Cuatro tipos de documento; la clase del proceso se elige al subir
+### RN-CARGADOCUMENTOS-001 — Tres tipos de documento; licitación y directa se suben igual
 
-- **Regla**: el toggle de tipo de documento ofrece 4 opciones (`TIPO_OPTIONS`, `FormCard.tsx`):
-  "1 · Directa" (`'cotizaciones'`), "2 · Licitación" (`'licitaciones'`), "Comparativa"
-  (`'comparativas'`) y "Orden de compra" (`'ordenes'`). No hay tipo preseleccionado
-  (presupuestador-v1 T1b): hasta que el usuario elige uno, el área de archivo está deshabilitada,
-  muestra "Elegí el tipo de documento para continuar" y "Procesar" no se puede usar.
-- **Directa vs. licitación** (presupuestador-v1 T1): las directas trabajan con stock y las
-  licitaciones no, así que la clase se decide al subir. `POST /procesar` mapea `tipo=cotizaciones`
-  a `document_type='cotizacion'` y `tipo=licitaciones` a `'licitacion'`
-  (`services/extraccion/main.py`); ambos usan el mismo robot genérico. Al validar, el
-  `ProcesoComercialSelector` deriva `clase` de ese `document_type`, y el listado de validación
-  muestra la cotización como "Directa".
-- **Formato por cliente**: `cliente_formato_documentos` se busca primero por el `doc_type` exacto.
-  Si una directa no tiene instrucciones guardadas como `cotizacion`, usa las de `licitacion` del
-  mismo cliente y `POST /procesar` devuelve un `aviso` ("Este cliente no tiene instrucciones de
-  formato para directas; se usaron las de licitación."), que la carga muestra junto a la
-  confirmación del archivo. Sin formato de ningún tipo no hay aviso.
+- **Regla**: el toggle de tipo de documento ofrece 3 opciones (`TIPO_OPTIONS`, `FormCard.tsx`):
+  "Licitación / Directa" (`'licitaciones'`), "Comparativa" (`'comparativas'`) y "Orden de compra"
+  (`'ordenes'`). No hay tipo preseleccionado (presupuestador-v1 T1b): hasta que el usuario elige
+  uno, el área de archivo está deshabilitada, muestra "Elegí el tipo de documento para continuar"
+  y "Procesar" no se puede usar.
+- **Licitación o directa** (presupuestador-v1 T2a): la carga no elige la clase. `POST /procesar`
+  guarda todo `tipo` que no sea comparativa ni orden de compra como `document_type='licitacion'`
+  (`services/extraccion/main.py`), con el robot genérico. La clase (licitación o directa), el
+  cliente y el nombre del proceso comercial se eligen al validar. Las directas subidas antes con
+  `document_type='cotizacion'` siguen siendo válidas.
+- **Cliente**: el selector de cliente (opcional) solo aparece para comparativas y órdenes de
+  compra, donde elige el formato de prompt del cliente (`cliente_formato_documentos`). Licitaciones
+  y directas usan siempre el prompt genérico y no envían `cliente_id`.
 - [IMPLEMENTADO]
 
 ### RN-CARGADOCUMENTOS-002 — Extensiones de archivo aceptadas, distintas por tipo de documento
@@ -30,7 +27,6 @@ se infla la lista con comportamiento genérico de HTML/React que no sea una deci
 
   | Tipo | Extensiones aceptadas |
   |---|---|
-  | `cotizaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` (mismo set que `licitaciones`) |
   | `licitaciones` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
   | `ordenes` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx` |
   | `comparativas` | `.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm` (agrega `.ods`, `.html`, `.htm` respecto al resto) |

@@ -12,19 +12,25 @@ import {
 
 const RECIENTES_KEY = ['documentos-recientes']
 
-// presupuestador-v1 T1: the class is chosen at upload -- directas work with
-// stock, licitaciones do not. Both run the same extraction robot.
+// presupuestador-v1 T2a: a licitación and a directa are uploaded the same way;
+// the class (and the cliente) are chosen at validation, which creates the
+// proceso comercial.
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
-  { value: 'cotizaciones', label: '1 · Directa' },
-  { value: 'licitaciones', label: '2 · Licitación' },
+  { value: 'licitaciones', label: 'Licitación / Directa' },
   { value: 'comparativas', label: 'Comparativa' },
   { value: 'ordenes', label: 'Orden de compra' },
 ]
 
+// presupuestador-v1 T2a (S9): licitaciones and directas use the generic
+// prompt, so the cliente (only used to pick the client's prompt format) is
+// not asked for them.
+function pideCliente(tipo: TipoDocumento | null): boolean {
+  return tipo !== null && tipo !== 'licitaciones'
+}
+
 const ACCEPT_BASE = '.pdf,.jpg,.jpeg,.png,.xls,.xlsx'
 
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string> = {
-  cotizaciones: ACCEPT_BASE,
   licitaciones: ACCEPT_BASE,
   ordenes: ACCEPT_BASE,
   comparativas: `${ACCEPT_BASE},.ods,.html,.htm`,
@@ -34,9 +40,6 @@ interface ResultadoPorArchivo {
   archivo: string
   ok: boolean
   error?: string
-  /** Backend warning that does not block the upload (e.g. a directa that
-   * fell back to the client's licitación prompt format). */
-  aviso?: string
   /** 409 de duplicado: id de la extracción ya existente (misma droguería)
    * para ofrecer ir directo a ella en vez de solo mostrar el error. */
   extractionIdExistente?: string
@@ -74,7 +77,6 @@ async function procesarMultiple(
         archivo: archivo.name,
         ok: resultado.error === undefined,
         error: resultado.error,
-        aviso: resultado.aviso,
       })
     } catch (error) {
       resultados.push({
@@ -105,7 +107,11 @@ export function FormCard() {
     mutationFn: async () => {
       if (tipo === null) throw new Error('Falta elegir el tipo de documento')
       if (archivos.length === 0) throw new Error('Falta seleccionar un archivo')
-      const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
+      const resultados = await procesarMultiple(
+        archivos,
+        tipo,
+        pideCliente(tipo) ? clienteId || undefined : undefined,
+      )
       return { resultados }
     },
     // carga-asincrona T2 -- /procesar responde 202 apenas termina el upload
@@ -212,23 +218,25 @@ export function FormCard() {
           )}
         </label>
 
-        <div>
-          <span className="mb-1 block text-sm text-slate-600">
-            Cliente <span className="text-slate-400">(opcional)</span>
-          </span>
-          <select
-            value={clienteId}
-            onChange={(event) => setClienteId(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Sin cliente</option>
-            {clientesQuery.data?.map((cliente) => (
-              <option key={cliente.id} value={cliente.id}>
-                {cliente.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
+        {pideCliente(tipo) && (
+          <div>
+            <span className="mb-1 block text-sm text-slate-600">
+              Cliente <span className="text-slate-400">(opcional)</span>
+            </span>
+            <select
+              value={clienteId}
+              onChange={(event) => setClienteId(event.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">Sin cliente</option>
+              {clientesQuery.data?.map((cliente) => (
+                <option key={cliente.id} value={cliente.id}>
+                  {cliente.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {mutation.isError && (
           <p className="text-sm text-red-600">{(mutation.error as Error).message}</p>
@@ -239,7 +247,6 @@ export function FormCard() {
             {mutation.data?.resultados.map((resultado) => (
               <li key={resultado.archivo} className={resultado.ok ? 'text-emerald-600' : 'text-red-600'}>
                 {resultado.archivo}: {resultado.ok ? 'Recibido — procesando en segundo plano' : resultado.error}
-                {resultado.aviso && <p className="text-amber-700">{resultado.aviso}</p>}
                 {resultado.extractionIdExistente && (
                   <button
                     type="button"

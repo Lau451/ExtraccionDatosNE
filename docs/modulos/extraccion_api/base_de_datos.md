@@ -109,7 +109,8 @@ upload.
 
 ## `cliente_formato_documentos` (schema de `presupuestacion/`)
 
-Lectura únicamente, dentro de `main.py:_resolver_formato_prompt` (`:122-149`):
+Lectura únicamente, dentro de `main.py:_resolver_formato_prompt` (`:122-149`), solo para
+comparativas y órdenes de compra (presupuestador-v1 T2a):
 `id, instrucciones_prompt` filtrados por `cliente_id`, `doc_type` y `activo=True`
 (`main.py:133-138`). Nunca bloquea la carga si falla (`try/except` con `logger.warning`,
 `main.py:144-147`).

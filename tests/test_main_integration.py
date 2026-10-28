@@ -1484,42 +1484,36 @@ def _mockear_pipeline_procesar(mocker, tmp_path):
     }
 
 
-class TestProcesarClaseDirectaLicitacion:
-    """S2: al subir se elige 1 Directa (tipo="cotizaciones") o 2 Licitación
-    (tipo="licitaciones"). La directa se guarda como document_type="cotizacion"
-    para que validar-extraccion cree el proceso con clase='cotizacion'; ambas
-    usan el mismo robot genérico (no hay extractor propio de cotización)."""
+class TestProcesarLicitacionDirecta:
+    """presupuestador-v1 T2a (S2, S9): the upload no longer chooses the class --
+    a licitación or a directa is uploaded as one "Licitación / Directa" type,
+    stored as document_type="licitacion"; the class is picked at validation."""
 
-    @pytest.mark.parametrize(
-        ("tipo", "doc_type_esperado"),
-        [("cotizaciones", "cotizacion"), ("licitaciones", "licitacion")],
-    )
-    def test_tipo_define_el_document_type_y_usa_el_robot_generico(
-        self, client, headers_json, pdf_bytes, tmp_path, mocker, tipo, doc_type_esperado
+    def test_licitaciones_se_guarda_como_licitacion_con_el_robot_generico(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
     ):
         mocks = _mockear_pipeline_procesar(mocker, tmp_path)
 
         response = client.post(
             "/procesar",
-            data={"tipo": tipo},
+            data={"tipo": "licitaciones"},
             files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
             headers=headers_json,
         )
 
         assert response.status_code == 202
-        assert response.json()["tipo"] == tipo
-        assert mocks["crear_sesion"].await_args.kwargs["doc_type"] == doc_type_esperado
+        assert response.json()["tipo"] == "licitaciones"
+        assert mocks["crear_sesion"].await_args.kwargs["doc_type"] == "licitacion"
         assert (
             mocks["crear_extraction_processing"].await_args.kwargs["document_type"]
-            == doc_type_esperado
+            == "licitacion"
         )
         mocks["procesar_archivo"].assert_called_once()
-        assert mocks["schedule_persist_output"].await_args.kwargs["doc_type"] == doc_type_esperado
+        assert mocks["schedule_persist_output"].await_args.kwargs["doc_type"] == "licitacion"
 
-    @pytest.mark.parametrize("tipo", ["cotizaciones", "licitaciones"])
     @pytest.mark.parametrize("extension", [".ods", ".html", ".htm", ".txt"])
-    def test_directa_y_licitacion_rechazan_las_extensiones_no_permitidas(
-        self, client, headers_json, mocker, tipo, extension
+    def test_licitacion_rechaza_las_extensiones_no_permitidas(
+        self, client, headers_json, mocker, extension
     ):
         mock_sesion = mocker.patch(
             "services.extraccion.main.crear_sesion", new_callable=AsyncMock
@@ -1527,7 +1521,7 @@ class TestProcesarClaseDirectaLicitacion:
 
         response = client.post(
             "/procesar",
-            data={"tipo": tipo},
+            data={"tipo": "licitaciones"},
             files={"archivo": (f"documento{extension}", io.BytesIO(b"contenido"), "text/plain")},
             headers=headers_json,
         )
@@ -1536,7 +1530,25 @@ class TestProcesarClaseDirectaLicitacion:
         assert response.json()["error"] == "Tipo de archivo no permitido"
         mock_sesion.assert_not_awaited()
 
+    @pytest.mark.parametrize("extension", [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"])
+    def test_licitacion_acepta_sus_extensiones(
+        self, client, headers_json, tmp_path, mocker, extension
+    ):
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "licitaciones"},
+            files={"archivo": (f"documento{extension}", io.BytesIO(b"contenido"), "application/octet-stream")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        mocks["crear_extraction_processing"].assert_awaited_once()
+
     def test_listar_documentos_filtra_por_cotizacion(self, client, mocker):
+        """Directas validated before T2a keep document_type="cotizacion" and the
+        listing filter still accepts it."""
         mock_qb = MagicMock()
         mock_qb.select.return_value = mock_qb
         mock_qb.eq.return_value = mock_qb
@@ -1552,30 +1564,12 @@ class TestProcesarClaseDirectaLicitacion:
         mock_qb.eq.assert_any_call("document_type", "cotizacion")
 
 
-    @pytest.mark.parametrize("extension", [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"])
-    def test_directa_acepta_las_mismas_extensiones_que_licitacion(
-        self, client, headers_json, tmp_path, mocker, extension
-    ):
-        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
-
-        response = client.post(
-            "/procesar",
-            data={"tipo": "cotizaciones"},
-            files={"archivo": (f"documento{extension}", io.BytesIO(b"contenido"), "application/octet-stream")},
-            headers=headers_json,
-        )
-
-        assert response.status_code == 202
-        mocks["crear_extraction_processing"].assert_awaited_once()
-
-
 class _FakeFormatosClient:
     """Fake de Supabase solo para `cliente_formato_documentos`: devuelve la fila
     cargada para el (cliente_id, doc_type) consultado, o ninguna."""
 
-    def __init__(self, formatos: dict[str, dict], fallar_en: str | None = None):
+    def __init__(self, formatos: dict[str, dict]):
         self.formatos = formatos
-        self.fallar_en = fallar_en
         self.consultas: list[str] = []
 
     def table(self, nombre):
@@ -1596,123 +1590,62 @@ class _FakeFormatosClient:
 
             def execute(self):
                 fake.consultas.append(filtros["doc_type"])
-                if filtros["doc_type"] == fake.fallar_en:
-                    raise RuntimeError("Supabase no disponible")
                 fila = fake.formatos.get(filtros["doc_type"])
                 return MagicMock(data=[fila] if fila else [])
 
         return _Query()
 
 
-class TestProcesarFormatoClienteDirecta:
-    """presupuestador-v1 T1b (L12): una directa sin instrucciones de formato
-    propias usa las de licitación del cliente y la respuesta lo advierte."""
+class TestProcesarFormatoCliente:
+    """presupuestador-v1 T2a (S9): licitaciones and directas always use the
+    generic prompt; the client format (`cliente_formato_documentos`) stays only
+    for comparativas, left for a second stage."""
 
-    AVISO = (
-        "Este cliente no tiene instrucciones de formato para directas; "
-        "se usaron las de licitación."
-    )
     FORMATO_LICITACION = {"id": "fmt-lic", "instrucciones_prompt": "Columnas de licitación"}
-    FORMATO_DIRECTA = {"id": "fmt-dir", "instrucciones_prompt": "Columnas de directa"}
+    FORMATO_COMPARATIVA = {"id": "fmt-comp", "instrucciones_prompt": "Columnas de comparativa"}
 
-    def _subir(self, client, headers_json, pdf_bytes, tmp_path, mocker, *, tipo, formatos):
-        fake = _FakeFormatosClient(formatos)
-        mocker.patch("services.extraccion.main.get_client", return_value=fake)
-        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
-        response = client.post(
-            "/procesar",
-            data={"tipo": tipo, "cliente_id": "cliente-1"},
-            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
-            headers=headers_json,
-        )
-        return response, mocks, fake
-
-    def test_directa_sin_formato_propio_usa_el_de_licitacion_y_avisa(
+    def test_licitacion_ignora_el_formato_del_cliente(
         self, client, headers_json, pdf_bytes, tmp_path, mocker
     ):
-        response, mocks, fake = self._subir(
-            client, headers_json, pdf_bytes, tmp_path, mocker,
-            tipo="cotizaciones", formatos={"licitacion": self.FORMATO_LICITACION},
-        )
-
-        assert response.status_code == 202
-        assert response.json()["aviso"] == self.AVISO
-        assert fake.consultas == ["cotizacion", "licitacion"]
-        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-lic"
-        assert mocks["crear_sesion"].await_args.kwargs["doc_type"] == "cotizacion"
-        assert (
-            mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"]
-            == "Columnas de licitación"
-        )
-
-    def test_directa_con_formato_propio_lo_usa_sin_aviso(
-        self, client, headers_json, pdf_bytes, tmp_path, mocker
-    ):
-        response, mocks, fake = self._subir(
-            client, headers_json, pdf_bytes, tmp_path, mocker,
-            tipo="cotizaciones",
-            formatos={"cotizacion": self.FORMATO_DIRECTA, "licitacion": self.FORMATO_LICITACION},
-        )
-
-        assert response.status_code == 202
-        assert "aviso" not in response.json()
-        assert fake.consultas == ["cotizacion"]
-        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-dir"
-        assert (
-            mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"]
-            == "Columnas de directa"
-        )
-
-    def test_directa_sin_ningun_formato_no_avisa(
-        self, client, headers_json, pdf_bytes, tmp_path, mocker
-    ):
-        response, mocks, fake = self._subir(
-            client, headers_json, pdf_bytes, tmp_path, mocker,
-            tipo="cotizaciones", formatos={},
-        )
-
-        assert response.status_code == 202
-        assert "aviso" not in response.json()
-        assert fake.consultas == ["cotizacion", "licitacion"]
-        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] is None
-        assert mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"] is None
-
-    def test_licitacion_usa_su_formato_sin_aviso(
-        self, client, headers_json, pdf_bytes, tmp_path, mocker
-    ):
-        response, mocks, fake = self._subir(
-            client, headers_json, pdf_bytes, tmp_path, mocker,
-            tipo="licitaciones",
-            formatos={"cotizacion": self.FORMATO_DIRECTA, "licitacion": self.FORMATO_LICITACION},
-        )
-
-        assert response.status_code == 202
-        assert "aviso" not in response.json()
-        assert fake.consultas == ["licitacion"]
-        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-lic"
-        assert (
-            mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"]
-            == "Columnas de licitación"
-        )
-
-    def test_error_al_buscar_el_respaldo_no_bloquea_la_carga_ni_avisa(
-        self, client, headers_json, pdf_bytes, tmp_path, mocker
-    ):
-        """Si la consulta del formato de licitación falla, la directa se procesa
-        igual, sin formato y sin aviso (el formato nunca bloquea la carga)."""
-        fake = _FakeFormatosClient({}, fallar_en="licitacion")
+        fake = _FakeFormatosClient({"licitacion": self.FORMATO_LICITACION})
         mocker.patch("services.extraccion.main.get_client", return_value=fake)
         mocks = _mockear_pipeline_procesar(mocker, tmp_path)
 
         response = client.post(
             "/procesar",
-            data={"tipo": "cotizaciones", "cliente_id": "cliente-1"},
+            data={"tipo": "licitaciones", "cliente_id": "cliente-1"},
             files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
             headers=headers_json,
         )
 
         assert response.status_code == 202
         assert "aviso" not in response.json()
-        assert fake.consultas == ["cotizacion", "licitacion"]
+        assert fake.consultas == []
         assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] is None
         assert mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"] is None
+
+    def test_comparativa_sigue_usando_el_formato_del_cliente(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        fake = _FakeFormatosClient({"comparativa": self.FORMATO_COMPARATIVA})
+        mocker.patch("services.extraccion.main.get_client", return_value=fake)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+        mock_comparativa = mocker.patch(
+            "services.extraccion.main.procesar_comparativa",
+            return_value=str(_mock_csv_output(tmp_path)),
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "comparativas", "cliente_id": "cliente-1"},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert fake.consultas == ["comparativa"]
+        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-comp"
+        assert (
+            mock_comparativa.call_args.kwargs["instrucciones_extra"]
+            == "Columnas de comparativa"
+        )

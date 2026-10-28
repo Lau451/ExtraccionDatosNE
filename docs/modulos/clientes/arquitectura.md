@@ -92,10 +92,9 @@ services/extraccion/main.py:_resolver_formato_prompt
       │  _buscar_formato: SELECT id, instrucciones_prompt
       │    WHERE cliente_id=? AND doc_type=? AND activo=True
       │
-      │  Respaldo (presupuestador-v1 T1b, _FORMATO_RESPALDO): si una directa
-      │  (doc_type='cotizacion') no tiene formato propio, _resolver_formato_prompt
-      │  repite la búsqueda con doc_type='licitacion'; si la encuentra,
-      │  POST /procesar devuelve `aviso` en el 202
+      │  Solo para comparativa y orden_compra (_DOC_TYPES_CON_FORMATO_CLIENTE,
+      │  presupuestador-v1 T2a): licitaciones y directas usan siempre el
+      │  prompt genérico, sin consultar la tabla
       ▼
 Prompt de Gemini enriquecido con instrucciones_prompt del cliente
 ```

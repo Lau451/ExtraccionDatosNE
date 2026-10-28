@@ -107,9 +107,8 @@ cliente_id=cliente_id)` (`router.py:97`, `service.py:166-167`,
 procesar un documento, `services/extraccion/main.py` llama a `_resolver_formato_prompt`,
 que (vía `_buscar_formato`) hace `SELECT id, instrucciones_prompt FROM
 cliente_formato_documentos WHERE cliente_id=? AND doc_type=? AND activo=True LIMIT 1`.
-Si una directa (`doc_type='cotizacion'`) no tiene formato propio, repite la búsqueda con
-`doc_type='licitacion'` y `POST /procesar` devuelve `aviso` en el 202 (presupuestador-v1
-T1b). Si hay `instrucciones_prompt`, se inyecta al prompt de Gemini — el
+Solo consulta para `doc_type` comparativa u orden de compra; licitaciones y directas usan
+siempre el prompt genérico (presupuestador-v1 T2a). Si hay `instrucciones_prompt`, se inyecta al prompt de Gemini — el
 contenido que un usuario carga por `POST /clientes/{id}/formato-documentos` termina
 influyendo directamente en el texto que la IA recibe al extraer datos de un documento
 de ese cliente. Ver [`arquitectura.md`](./arquitectura.md) para el diagrama completo.

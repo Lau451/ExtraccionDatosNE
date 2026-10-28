@@ -65,8 +65,9 @@ Sin embargo hay dos formas de acoplamiento a nivel de tabla que no pasan por est
   directo (`.eq("activo", True)`, línea 47) para poblar el selector de cliente del
   formulario de carga; `services/extraccion/main.py` (`_resolver_formato_prompt` /
   `_buscar_formato`) lee `cliente_formato_documentos` directo (`.eq("activo", True)`)
-  para inyectar `instrucciones_prompt` al prompt de Gemini al procesar un
-  documento. Este módulo controla indirectamente qué le dice el prompt de extracción a
+  para inyectar `instrucciones_prompt` al prompt de Gemini al procesar una
+  comparativa o una orden de compra (licitaciones y directas usan el prompt genérico,
+  presupuestador-v1 T2a). Este módulo controla indirectamente qué le dice el prompt de extracción a
   la IA — ver [`arquitectura.md`](./arquitectura.md) para el diagrama.
 
 Se descartó `procesos_comerciales_client.py` como consumidor: 0 matches en el grep de
