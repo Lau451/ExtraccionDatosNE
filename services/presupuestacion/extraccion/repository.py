@@ -47,6 +47,14 @@ def buscar_cliente_con_razon_social(client: Client, *, cliente_id: str) -> dict[
     return resultado.data[0] if resultado.data else None
 
 
+def renombrar_proceso_comercial(
+    client: Client, *, proceso_comercial_id: str, nombre: str, usuario_id: str
+) -> None:
+    client.table("procesos_comerciales").update(
+        {"nombre": nombre, "updated_by": usuario_id}
+    ).eq("id", proceso_comercial_id).execute()
+
+
 def contar_procesos_de_cliente(client: Client, *, cliente_id: str, clase: str) -> int:
     """Every proceso of the cliente and class, soft-deleted included, so a
     directa number is never reused."""

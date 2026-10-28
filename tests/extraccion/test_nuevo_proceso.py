@@ -475,3 +475,38 @@ def test_orden_compra_no_acepta_un_proceso_nuevo(monkeypatch):
         )
 
     client.table.assert_not_called()
+
+
+@pytest.mark.integration
+def test_reintento_de_licitacion_con_otro_nombre_renombra_el_proceso(
+    service_client, seed_drogueria, seed_cliente_factory, seed_extraction_result_factory,
+    seed_usuario_sistema, procesos_por_cliente,
+):
+    cliente = seed_cliente_factory("Hospital Sayago")
+    procesos = procesos_por_cliente(cliente["cliente_id"])
+    previo = service_client.table("procesos_comerciales").insert(
+        {
+            "drogueria_id": seed_drogueria["id"],
+            "cliente_id": cliente["cliente_id"],
+            "clase": "licitacion",
+            "nombre": "Hospital Sayago - LIC 14/2026",
+        }
+    ).execute().data[0]
+    extraction = seed_extraction_result_factory(
+        "licitacion", filas=FILAS, columnas=COLUMNAS, proceso_comercial_id=previo["id"]
+    )
+
+    validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        nuevo_proceso=NuevoProcesoIn(
+            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion=" LIC 15/2026 "
+        ),
+    )
+
+    [proceso] = procesos()
+    assert proceso["id"] == previo["id"]
+    assert proceso["nombre"] == "Hospital Sayago - LIC 15/2026"
+    assert _extraccion(service_client, extraction["id"])["validado"] is True

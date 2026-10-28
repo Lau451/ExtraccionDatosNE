@@ -1117,7 +1117,8 @@ def _crear_proceso_para_extraccion(
 
     # A failure after the proceso was created (e.g. while materializing) leaves
     # the extraction linked but not validated. Confirming again with the same
-    # cliente and class reuses that proceso; anything else is a conflict.
+    # cliente and class reuses that proceso (a licitación takes the name sent
+    # now, the user may have fixed it); anything else is a conflict.
     vinculado_id = extraction.get("proceso_comercial_id")
     if vinculado_id is not None:
         vinculado = repo.buscar_proceso_comercial(client, proceso_comercial_id=vinculado_id)
@@ -1127,6 +1128,13 @@ def _crear_proceso_para_extraccion(
             or vinculado["clase"] != nuevo_proceso.clase
         ):
             raise ConflictError("Esta extracción ya está vinculada a un proceso comercial")
+        if nuevo_proceso.clase == "licitacion":
+            repo.renombrar_proceso_comercial(
+                client,
+                proceso_comercial_id=vinculado_id,
+                nombre=f"{razon_social} - {nombre_licitacion}",
+                usuario_id=usuario_id,
+            )
         repo.actualizar_extraction_result(
             client, extraction_id=extraction["id"], campos={"document_type": nuevo_proceso.clase}
         )

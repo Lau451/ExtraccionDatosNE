@@ -55,7 +55,8 @@ body, `_crear_proceso_para_extraccion` (`service.py`) valida todo antes de escri
    existe o no pertenece a esta droguería")`.
 5. Extracción ya vinculada a un proceso: si es del **mismo cliente y la misma clase**
    (un intento anterior creó el proceso y falló después, p. ej. al materializar) se
-   reutiliza ese proceso y se sigue validando; si no →
+   reutiliza ese proceso y se sigue validando; una licitación lo renombra con el
+   nombre enviado en este intento; si no →
    `ConflictError("Esta extracción ya está vinculada a un proceso comercial")`.
 
 Además, antes de cualquier escritura, `_validar_filas_override` rechaza renglones
