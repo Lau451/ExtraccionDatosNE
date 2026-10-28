@@ -49,12 +49,20 @@ body, `_crear_proceso_para_extraccion` (`service.py`) valida todo antes de escri
 2. Extracción que no es licitación/cotización (p. ej. comparativa) →
    `ValidationError("Solo una licitación o una directa crea su proceso comercial al
    validarse")`.
-3. Extracción ya vinculada a un proceso → `ConflictError("Esta extracción ya está
-   vinculada a un proceso comercial")`.
-4. Licitación sin nombre (vacío o solo espacios) → `ValidationError("Falta el nombre
+3. Licitación sin nombre (vacío o solo espacios) → `ValidationError("Falta el nombre
    de la licitación")`.
-5. Cliente inexistente o de otra droguería → `ValidationError("El cliente indicado no
+4. Cliente inexistente o de otra droguería → `ValidationError("El cliente indicado no
    existe o no pertenece a esta droguería")`.
+5. Extracción ya vinculada a un proceso: si es del **mismo cliente y la misma clase**
+   (un intento anterior creó el proceso y falló después, p. ej. al materializar) se
+   reutiliza ese proceso y se sigue validando; si no →
+   `ConflictError("Esta extracción ya está vinculada a un proceso comercial")`.
+
+Además, antes de cualquier escritura, `_validar_filas_override` rechaza renglones
+repetidos de licitación/directa (`ValidationError("El renglón N está repetido")`):
+`items_proceso` tiene `UNIQUE (proceso_comercial_id, numero_renglon)` y el insert
+fallaría con el proceso ya creado. Aplica también a la ruta con proceso existente.
+`nuevo_proceso` en una orden de compra se rechaza con el mismo error del punto 2.
 
 Si pasa, crea el proceso con `crear_proceso_comercial` (auditado como creación) con el
 cliente y la clase elegidos, y nombre `"<razón social> - <nombre de la licitación>"`

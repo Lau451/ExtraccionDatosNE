@@ -370,3 +370,108 @@ def test_el_body_rechaza_un_proceso_nuevo_invalido(nuevo_proceso):
 
     with pytest.raises(PydanticValidationError):
         ValidarExtraccionRequest.model_validate({"nuevo_proceso": nuevo_proceso})
+
+
+@pytest.mark.integration
+def test_reintento_tras_una_falla_reusa_el_proceso_ya_vinculado(
+    service_client, seed_drogueria, seed_cliente_factory, seed_extraction_result_factory,
+    seed_usuario_sistema, procesos_por_cliente,
+):
+    """A failure after the proceso was created leaves the extraction linked but
+    not validated; confirming again with the same cliente and class reuses that
+    proceso instead of answering a conflict (verify finding on fcfbd42)."""
+    cliente = seed_cliente_factory("Hospital Sayago")
+    procesos = procesos_por_cliente(cliente["cliente_id"])
+    previo = service_client.table("procesos_comerciales").insert(
+        {
+            "drogueria_id": seed_drogueria["id"],
+            "cliente_id": cliente["cliente_id"],
+            "clase": "licitacion",
+            "nombre": "Hospital Sayago - LIC 14/2026",
+        }
+    ).execute().data[0]
+    extraction = seed_extraction_result_factory(
+        "licitacion", filas=FILAS, columnas=COLUMNAS, proceso_comercial_id=previo["id"]
+    )
+
+    resultado = validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=None,
+        nuevo_proceso=NuevoProcesoIn(
+            clase="licitacion", cliente_id=cliente["cliente_id"], nombre_licitacion="LIC 14/2026"
+        ),
+    )
+
+    assert [proceso["id"] for proceso in procesos()] == [previo["id"]]
+    assert resultado.proceso_comercial_id == previo["id"]
+    assert resultado.filas_creadas == 2
+    assert _extraccion(service_client, extraction["id"]) == {
+        "validado": True,
+        "proceso_comercial_id": previo["id"],
+        "document_type": "licitacion",
+    }
+
+
+@pytest.mark.integration
+def test_renglones_repetidos_se_rechazan_antes_de_crear_el_proceso(
+    service_client, seed_cliente_factory, seed_extraction_result_factory, seed_usuario_sistema,
+    procesos_por_cliente,
+):
+    cliente = seed_cliente_factory("Hospital Sayago")
+    procesos = procesos_por_cliente(cliente["cliente_id"])
+    extraction = seed_extraction_result_factory("licitacion", filas=FILAS, columnas=COLUMNAS)
+
+    with pytest.raises(ValidationError, match="^El renglón 1 está repetido$"):
+        validar_extraccion(
+            service_client,
+            extraction_id=extraction["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            proceso_comercial_id=None,
+            filas_override=[
+                {"item": "1", "cantidad": "10", "descripcion": "Ibuprofeno 600mg x30"},
+                {"item": " 1", "cantidad": "5", "descripcion": "Gasa estéril x10"},
+            ],
+            nuevo_proceso=NuevoProcesoIn(clase="cotizacion", cliente_id=cliente["cliente_id"]),
+        )
+
+    assert procesos() == []
+    assert _extraccion(service_client, extraction["id"]) == {
+        "validado": False,
+        "proceso_comercial_id": None,
+        "document_type": "licitacion",
+    }
+
+
+def test_orden_compra_no_acepta_un_proceso_nuevo(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from services.presupuestacion.extraccion import repository as repo
+
+    monkeypatch.setattr(
+        repo,
+        "buscar_extraction_result",
+        lambda client, *, extraction_id: {
+            "id": extraction_id,
+            "drogueria_id": "drog-1",
+            "document_type": "orden_compra",
+            "status": "completed",
+            "validado": False,
+        },
+    )
+    client = MagicMock()
+
+    with pytest.raises(
+        ValidationError,
+        match="^Solo una licitación o una directa crea su proceso comercial al validarse$",
+    ):
+        validar_extraccion(
+            client,
+            extraction_id="oc-1",
+            usuario_id="usuario-1",
+            proceso_comercial_id=None,
+            nuevo_proceso=NuevoProcesoIn(clase="cotizacion", cliente_id="cli-1"),
+        )
+
+    client.table.assert_not_called()
