@@ -63,8 +63,9 @@ para el spec/design completos.
 texto anterior de esta sección especulaba con un "mecanismo todavía sin definir" entre
 ambos; quedó resuelto (y esa relación descartada) al construir el flujo real:
 `ValidarExtraccionDetalle` arma el body de `POST .../validar`: para una
-licitación/directa, `nuevo_proceso` desde `NuevoProcesoForm.tsx` (tipo, cliente y nombre
-de la licitación; el backend crea el proceso, presupuestador-v1 T2b); para una
+licitación/directa, `nuevo_proceso` desde `NuevoProcesoForm.tsx` (tipo, cliente buscado por
+razón social, CUIT o código con `ClienteBuscador.tsx` sobre `GET /terceros`, y nombre de la
+licitación; el backend crea el proceso, presupuestador-v1 T2b); para una
 comparativa, `proceso_comercial_id` elegido en `ProcesoComercialSelector.tsx` (vía
 `listarProcesosComerciales`) — el `PATCH` de `services/extraccion` nunca se invoca desde este
 flujo. Además, ese `PATCH` está **deprecado y confirmado roto** contra el schema real

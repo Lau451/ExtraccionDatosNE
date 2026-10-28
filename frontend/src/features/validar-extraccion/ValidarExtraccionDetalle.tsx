@@ -9,6 +9,7 @@ import {
   type ValidarExtraccionPayload,
 } from '@/lib/api/extracciones'
 import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
+import type { Tercero } from '@/lib/api/terceros'
 import { CabeceraOrdenCompra, type CabeceraOrdenCompraValores } from './components/CabeceraOrdenCompra'
 import { ConfirmarValidacionDialog } from './components/ConfirmarValidacionDialog'
 import { DocumentoDemasiadoGrande } from './components/DocumentoDemasiadoGrande'
@@ -63,7 +64,7 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   // presupuestador-v1 T2b (S2, S8) -- a licitación/directa creates its proceso
   // comercial on validation instead of joining an existing one.
   const [claseNueva, setClaseNueva] = useState<ClaseProceso | null>(null)
-  const [clienteNuevoId, setClienteNuevoId] = useState('')
+  const [clienteNuevo, setClienteNuevo] = useState<Tercero | null>(null)
   const [nombreLicitacion, setNombreLicitacion] = useState('')
 
   const bloqueadoPorHint = rowCountHint > MAX_FILAS_EDITABLES
@@ -209,7 +210,7 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   function motivoSinConfirmar(): string | null {
     if (creaProceso) {
       if (claseNueva === null) return 'Elegí si es una licitación o una directa'
-      if (!clienteNuevoId) return 'Elegí el cliente'
+      if (clienteNuevo === null) return 'Elegí el cliente'
       if (claseNueva === 'licitacion' && !nombreLicitacion.trim()) {
         return 'Escribí el nombre de la licitación'
       }
@@ -221,6 +222,7 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   }
 
   function construirNuevoProceso() {
+    const clienteNuevoId = clienteNuevo?.id ?? ''
     return claseNueva === 'licitacion'
       ? { clase: claseNueva, cliente_id: clienteNuevoId, nombre_licitacion: nombreLicitacion.trim() }
       : { clase: 'cotizacion' as const, cliente_id: clienteNuevoId }
@@ -267,8 +269,8 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         <NuevoProcesoForm
           clase={claseNueva}
           onClase={setClaseNueva}
-          clienteId={clienteNuevoId}
-          onClienteId={setClienteNuevoId}
+          cliente={clienteNuevo}
+          onCliente={setClienteNuevo}
           nombreLicitacion={nombreLicitacion}
           onNombreLicitacion={setNombreLicitacion}
         />

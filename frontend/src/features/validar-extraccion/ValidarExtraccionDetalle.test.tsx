@@ -21,11 +21,43 @@ vi.mock('@/lib/api/procesosComerciales', () => ({
   crearProcesoComercial: vi.fn(),
 }))
 
-vi.mock('@/lib/api/extraccion', () => ({
-  listarClientes: vi.fn().mockResolvedValue([
-    { id: 'cli-1', nombre: 'Hospital Sayago' },
-    { id: 'cli-2', nombre: 'Clínica Norte' },
-  ]),
+const { tercerosMock } = vi.hoisted(() => {
+  const tercero = (id: string, razon_social: string, cuit: string, codigo_interno: string) => ({
+    id,
+    drogueria_id: 'drog-1',
+    codigo_interno,
+    razon_social,
+    nombre_fantasia: null,
+    cuit,
+    email: null,
+    telefono: null,
+    sitio_web: null,
+    notas: null,
+    activo: true,
+    tiene_rol_cliente: true,
+    tiene_rol_proveedor: false,
+  })
+  return {
+    tercerosMock: [
+      tercero('cli-1', 'Hospital Sayago', '30-11111111-1', 'C273'),
+      tercero('cli-2', 'Clínica Norte', '30-22222222-2', 'C100'),
+    ],
+  }
+})
+
+// presupuestador-v1 T2b: the cliente is picked with ClienteBuscador
+// (GET /terceros by razón social, CUIT or código). The fake filters by `q`.
+vi.mock('@/lib/api/terceros', () => ({
+  listarTerceros: vi.fn(async ({ q }: { q: string }) => ({
+    items: tercerosMock.filter((tercero) =>
+      [tercero.razon_social, tercero.cuit, tercero.codigo_interno].some((campo) =>
+        campo.toLowerCase().includes(q.toLowerCase()),
+      ),
+    ),
+    total: 0,
+    page: 1,
+    page_size: 20,
+  })),
 }))
 
 // Los 3 componentes de Phases 6/7 ya tienen su propio contrato probado
@@ -140,6 +172,7 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
 
 import { obtenerFilasExtraccion, validarExtraccion } from '@/lib/api/extracciones'
 import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
+import { listarTerceros } from '@/lib/api/terceros'
 
 function renderConQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -580,10 +613,11 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
     return screen.getByRole('button', { name: /^confirmar validación$/i })
   }
 
-  async function elegirCliente(nombre: string) {
-    const select = screen.getByRole('combobox', { name: 'Cliente' })
-    await within(select).findByRole('option', { name: nombre })
-    fireEvent.change(select, { target: { value: nombre === 'Hospital Sayago' ? 'cli-1' : 'cli-2' } })
+  async function elegirCliente(busqueda: string, nombre: string) {
+    fireEvent.change(screen.getByPlaceholderText('Buscá por razón social, CUIT o código'), {
+      target: { value: busqueda },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${nombre}`) }))
   }
 
   it('pide tipo, cliente y nombre en vez de un proceso existente, sin nada preseleccionado', async () => {
@@ -592,7 +626,7 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
 
     expect(await screen.findByRole('button', { name: 'Licitación' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Directa' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue('')
+    expect(screen.getByPlaceholderText('Buscá por razón social, CUIT o código')).toHaveValue('')
     expect(screen.queryByText('Proceso comercial')).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Nombre de la licitación' })).not.toBeInTheDocument()
     expect(botonConfirmar()).toBeDisabled()
@@ -607,7 +641,7 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
     expect(screen.getByText('Elegí el cliente')).toBeInTheDocument()
     expect(botonConfirmar()).toBeDisabled()
 
-    await elegirCliente('Hospital Sayago')
+    await elegirCliente('Sayago', 'Hospital Sayago')
     expect(screen.getByText('Escribí el nombre de la licitación')).toBeInTheDocument()
     expect(botonConfirmar()).toBeDisabled()
 
@@ -623,7 +657,7 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
     renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Licitación' }))
-    await elegirCliente('Hospital Sayago')
+    await elegirCliente('C273', 'Hospital Sayago')
     fireEvent.change(screen.getByRole('textbox', { name: 'Nombre de la licitación' }), {
       target: { value: '  LIC 14/2026 ' },
     })
@@ -655,7 +689,7 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
     expect(screen.getByRole('button', { name: 'Directa' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('textbox', { name: 'Nombre de la licitación' })).not.toBeInTheDocument()
     expect(screen.getByText('Elegí el cliente')).toBeInTheDocument()
-    await elegirCliente('Clínica Norte')
+    await elegirCliente('30-22222222', 'Clínica Norte')
 
     expect(
       screen.getByText('Se va a crear el proceso: Clínica Norte - (número siguiente de directa)'),
@@ -701,5 +735,57 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
       proceso_comercial_id: 'proc-1',
       filas: [{ renglon: '1', proveedor: 'Proveedor A', marca: '', precio: '10.00' }],
     })
+  })
+})
+
+describe('ValidarExtraccionDetalle — buscador de cliente (presupuestador-v1 T2b)', () => {
+  beforeEach(() => {
+    vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+      extraction_id: 'abc',
+      document_type: 'licitacion',
+      row_count: 1,
+      filas_leidas: 1,
+      editable: true,
+      columnas: ['item', 'cantidad', 'descripcion'],
+      filas: [{ item: '1', cantidad: '180', descripcion: 'Alcohol etílico 96° x 500 ml' }],
+    })
+  })
+
+  it.each([
+    ['código', 'C273'],
+    ['CUIT', '30-11111111'],
+    ['razón social', 'sayago'],
+  ])('busca el cliente por %s', async (_campo, busqueda) => {
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Directa' }))
+
+    fireEvent.change(screen.getByPlaceholderText('Buscá por razón social, CUIT o código'), {
+      target: { value: busqueda },
+    })
+
+    expect(
+      await screen.findByRole('button', { name: /^Hospital Sayago.*CUIT 30-11111111-1 · C273$/ }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Clínica Norte/ })).not.toBeInTheDocument()
+    expect(vi.mocked(listarTerceros)).toHaveBeenLastCalledWith({ q: busqueda, rol: 'todos', pageSize: 20 })
+  })
+
+  it('muestra el cliente elegido y permite cambiarlo', async () => {
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Directa' }))
+    fireEvent.change(screen.getByPlaceholderText('Buscá por razón social, CUIT o código'), {
+      target: { value: 'C273' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /^Hospital Sayago/ }))
+
+    expect(screen.getByText('Hospital Sayago · CUIT 30-11111111-1 · C273')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Buscá por razón social, CUIT o código')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^confirmar validación$/i })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar cliente' }))
+
+    expect(screen.getByPlaceholderText('Buscá por razón social, CUIT o código')).toHaveValue('')
+    expect(screen.getByText('Elegí el cliente')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^confirmar validación$/i })).toBeDisabled()
   })
 })

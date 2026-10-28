@@ -1,7 +1,7 @@
 import { useId } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { listarClientes } from '@/lib/api/extraccion'
+import type { Tercero } from '@/lib/api/terceros'
+import { ClienteBuscador } from './ClienteBuscador'
 
 export type ClaseProceso = 'licitacion' | 'cotizacion'
 
@@ -13,8 +13,10 @@ const CLASES: { value: ClaseProceso; label: string }[] = [
 interface Props {
   clase: ClaseProceso | null
   onClase: (clase: ClaseProceso) => void
-  clienteId: string
-  onClienteId: (clienteId: string) => void
+  /** The cliente chosen in the buscador (a tercero with the cliente role;
+   * `clientes` shares its id with `terceros`), or null. */
+  cliente: Tercero | null
+  onCliente: (cliente: Tercero | null) => void
   nombreLicitacion: string
   onNombreLicitacion: (nombre: string) => void
 }
@@ -26,24 +28,21 @@ interface Props {
 export function NuevoProcesoForm({
   clase,
   onClase,
-  clienteId,
-  onClienteId,
+  cliente,
+  onCliente,
   nombreLicitacion,
   onNombreLicitacion,
 }: Props) {
-  const clienteInputId = useId()
   const nombreInputId = useId()
-  const clientesQuery = useQuery({ queryKey: ['clientes'], queryFn: listarClientes })
-  const cliente = clientesQuery.data?.find((opcion) => opcion.id === clienteId)
   const nombre = nombreLicitacion.trim()
 
   const nombreProceso =
     clase === null || !cliente
       ? null
       : clase === 'cotizacion'
-        ? `${cliente.nombre} - (número siguiente de directa)`
+        ? `${cliente.razon_social} - (número siguiente de directa)`
         : nombre
-          ? `${cliente.nombre} - ${nombre}`
+          ? `${cliente.razon_social} - ${nombre}`
           : null
 
   return (
@@ -72,24 +71,24 @@ export function NuevoProcesoForm({
 
       <div className="flex flex-wrap gap-3">
         <div className="min-w-64 flex-1 text-sm">
-          <label htmlFor={clienteInputId} className="mb-1 block text-slate-600">
-            Cliente
-          </label>
-          <select
-            id={clienteInputId}
-            value={clienteId}
-            onChange={(event) => onClienteId(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="" disabled>
-              Seleccioná un cliente
-            </option>
-            {clientesQuery.data?.map((opcion) => (
-              <option key={opcion.id} value={opcion.id}>
-                {opcion.nombre}
-              </option>
-            ))}
-          </select>
+          <span className="mb-1 block text-slate-600">Cliente</span>
+          {cliente ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-300 px-3 py-2">
+              <span className="text-slate-900">
+                {cliente.razon_social} · CUIT {cliente.cuit ?? 'sin CUIT'} ·{' '}
+                {cliente.codigo_interno ?? 'sin código'}
+              </span>
+              <button
+                type="button"
+                onClick={() => onCliente(null)}
+                className="text-sm font-medium text-accent hover:underline"
+              >
+                Cambiar cliente
+              </button>
+            </div>
+          ) : (
+            <ClienteBuscador onSeleccionar={onCliente} />
+          )}
         </div>
 
         {clase === 'licitacion' && (
