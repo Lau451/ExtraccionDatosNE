@@ -5,8 +5,14 @@
 ```python
 DocumentType = Literal["comparativa", "licitacion", "cotizacion", "orden_compra"]
 
+class NuevoProcesoIn(BaseModel):  # presupuestador-v1 T2b, extra="forbid"
+    clase: Literal["licitacion", "cotizacion"]  # "cotizacion" = directa
+    cliente_id: str
+    nombre_licitacion: str | None = None  # obligatorio para licitación
+
 class ValidarExtraccionRequest(BaseModel):
     proceso_comercial_id: str | None = None
+    nuevo_proceso: NuevoProcesoIn | None = None  # licitación/directa: crea el proceso
 
 class ResultadoValidarExtraccion(BaseModel):
     extraction_id: str

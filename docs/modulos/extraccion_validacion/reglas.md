@@ -37,6 +37,34 @@ Si `extraction["validado"]` ya es `True`, `validar_extraccion` levanta
 materialización (`service.py:254-255`). Confirmado por test:
 `test_validar_ya_validada_levanta_conflict` (`tests/extraccion/test_service.py:61-84`).
 
+## RN-EXTRACCIONVALIDACION-004b — Una licitación o una directa crea su proceso al validarse [IMPLEMENTADO]
+
+presupuestador-v1 T2b (S2, S8): la carga ya no elige la clase; al validar una
+extracción `licitacion`/`cotizacion` el usuario elige el tipo (licitación o directa),
+el cliente (obligatorio) y, para una licitación, su nombre. Con `nuevo_proceso` en el
+body, `_crear_proceso_para_extraccion` (`service.py`) valida todo antes de escribir:
+
+1. `nuevo_proceso` junto con `proceso_comercial_id` → `ValidationError("Indicá un
+   proceso comercial existente o los datos del nuevo, no ambos")`.
+2. Extracción que no es licitación/cotización (p. ej. comparativa) →
+   `ValidationError("Solo una licitación o una directa crea su proceso comercial al
+   validarse")`.
+3. Extracción ya vinculada a un proceso → `ConflictError("Esta extracción ya está
+   vinculada a un proceso comercial")`.
+4. Licitación sin nombre (vacío o solo espacios) → `ValidationError("Falta el nombre
+   de la licitación")`.
+5. Cliente inexistente o de otra droguería → `ValidationError("El cliente indicado no
+   existe o no pertenece a esta droguería")`.
+
+Si pasa, crea el proceso con `crear_proceso_comercial` (auditado como creación) con el
+cliente y la clase elegidos, y nombre `"<razón social> - <nombre de la licitación>"`
+(licitación) o `"<razón social> - <n>"` (directa, `n` = cantidad de procesos
+`cotizacion` del cliente, borrados incluidos, + 1). Después vincula la extracción y le
+pone `document_type` = la clase elegida, y materializa igual que RN-004. Dos directas
+validadas en simultáneo para el mismo cliente pueden repetir el número (no hay
+restricción de unicidad sobre `nombre`). La comparativa sigue eligiendo un proceso
+existente (RN-004). Tests: `tests/extraccion/test_nuevo_proceso.py`.
+
 ## RN-EXTRACCIONVALIDACION-004 — Resolución de `proceso_comercial_id` [IMPLEMENTADO]
 
 `_resolver_proceso_comercial_id` (`service.py:29-58`) aplica, en orden:

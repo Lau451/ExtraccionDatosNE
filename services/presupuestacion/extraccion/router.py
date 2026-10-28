@@ -164,4 +164,5 @@ def validar_extraccion_endpoint(
         proceso_comercial_id=body.proceso_comercial_id,
         filas_override=filas_override,
         orden_compra=body.orden_compra,
+        nuevo_proceso=body.nuevo_proceso,
     )

@@ -106,8 +106,21 @@ class OrdenCompraOverride(BaseModel):
     filas: list[FilaOrdenCompraIn]
 
 
+class NuevoProcesoIn(BaseModel):
+    """presupuestador-v1 T2b (S2, S8): validating a licitación or a directa
+    starts its proceso comercial. `clase` is the class chosen at validation
+    ('cotizacion' = directa); `nombre_licitacion` is required for a licitación
+    and ignored for a directa, which is numbered per cliente."""
+
+    model_config = ConfigDict(extra="forbid")
+    clase: Literal["licitacion", "cotizacion"]
+    cliente_id: str
+    nombre_licitacion: str | None = None
+
+
 class ValidarExtraccionRequest(BaseModel):
     proceso_comercial_id: str | None = None
+    nuevo_proceso: NuevoProcesoIn | None = None
     # None  -> materializa desde el CSV (comportamiento actual, retrocompatible)
     # lista -> materializa desde acá; el CSV en disco NO se toca (D2)
     filas: list[FilaLicitacionIn] | list[FilaComparativaIn] | None = Field(default=None)

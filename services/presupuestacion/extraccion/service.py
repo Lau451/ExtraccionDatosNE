@@ -28,10 +28,13 @@ from services.presupuestacion.extraccion.models import (
     ExtraccionResumen,
     FilasExtraccionOut,
     MiembroGrupo,
+    NuevoProcesoIn,
     OrdenCompraOverride,
     ResultadoValidarExtraccion,
 )
 from services.presupuestacion.matching.service import procesar_matching_item
+from services.presupuestacion.procesos_comerciales.models import ProcesoComercialCreate
+from services.presupuestacion.procesos_comerciales.service import crear_proceso_comercial
 from services.presupuestacion.notificaciones.service import crear_notificacion
 
 logger = logging.getLogger(__name__)
@@ -1071,6 +1074,64 @@ def _resolver_proceso_comercial_id(
     return proceso_comercial_id
 
 
+def _crear_proceso_para_extraccion(
+    client: Client,
+    *,
+    extraction: dict[str, Any],
+    nuevo_proceso: NuevoProcesoIn,
+    proceso_comercial_id: str | None,
+    usuario_id: str,
+) -> str:
+    """presupuestador-v1 T2b (S2, S8): validating a licitación or a directa
+    starts its proceso comercial, always with a cliente. Named
+    "<cliente> - <nombre>" for a licitación and "<cliente> - <n>" for a
+    directa, `n` ascending per cliente. Every check runs before the first
+    write. The extraction takes the chosen class as its document_type."""
+    if proceso_comercial_id is not None:
+        raise ValidationError("Indicá un proceso comercial existente o los datos del nuevo, no ambos")
+    if extraction["document_type"] not in _TIPOS_ITEMS_PROCESO:
+        raise ValidationError("Solo una licitación o una directa crea su proceso comercial al validarse")
+    if extraction.get("proceso_comercial_id") is not None:
+        raise ConflictError("Esta extracción ya está vinculada a un proceso comercial")
+
+    nombre_licitacion = (nuevo_proceso.nombre_licitacion or "").strip()
+    if nuevo_proceso.clase == "licitacion" and not nombre_licitacion:
+        raise ValidationError("Falta el nombre de la licitación")
+
+    cliente = repo.buscar_cliente_con_razon_social(client, cliente_id=nuevo_proceso.cliente_id)
+    if (
+        cliente is None
+        or cliente["drogueria_id"] != extraction["drogueria_id"]
+        or not cliente.get("terceros")
+    ):
+        raise ValidationError("El cliente indicado no existe o no pertenece a esta droguería")
+    razon_social = cliente["terceros"]["razon_social"]
+
+    if nuevo_proceso.clase == "licitacion":
+        nombre = f"{razon_social} - {nombre_licitacion}"
+    else:
+        numero = repo.contar_procesos_de_cliente(
+            client, cliente_id=nuevo_proceso.cliente_id, clase="cotizacion"
+        ) + 1
+        nombre = f"{razon_social} - {numero}"
+
+    proceso = crear_proceso_comercial(
+        client,
+        drogueria_id=extraction["drogueria_id"],
+        body=ProcesoComercialCreate(
+            nombre=nombre, clase=nuevo_proceso.clase, cliente_id=nuevo_proceso.cliente_id
+        ),
+        usuario_id=usuario_id,
+    )
+    repo.actualizar_extraction_result(
+        client,
+        extraction_id=extraction["id"],
+        campos={"proceso_comercial_id": proceso["id"], "document_type": nuevo_proceso.clase},
+    )
+    extraction["document_type"] = nuevo_proceso.clase
+    return proceso["id"]
+
+
 def _materializar_licitacion(
     client: Client,
     *,
@@ -1274,6 +1335,7 @@ def validar_extraccion(
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
     orden_compra: OrdenCompraOverride | None = None,
+    nuevo_proceso: NuevoProcesoIn | None = None,
 ) -> ResultadoValidarExtraccion:
     extraction = repo.buscar_extraction_result(client, extraction_id=extraction_id)
     if extraction is None:
@@ -1308,9 +1370,18 @@ def validar_extraccion(
     # como estaba: sin proceso_comercial_id, sin items_proceso/comparativas.
     _validar_filas_override(filas_override, document_type=extraction["document_type"])
 
-    proceso_comercial_id_resuelto = _resolver_proceso_comercial_id(
-        client, extraction=extraction, proceso_comercial_id=proceso_comercial_id
-    )
+    if nuevo_proceso is not None:
+        proceso_comercial_id_resuelto = _crear_proceso_para_extraccion(
+            client,
+            extraction=extraction,
+            nuevo_proceso=nuevo_proceso,
+            proceso_comercial_id=proceso_comercial_id,
+            usuario_id=usuario_id,
+        )
+    else:
+        proceso_comercial_id_resuelto = _resolver_proceso_comercial_id(
+            client, extraction=extraction, proceso_comercial_id=proceso_comercial_id
+        )
     proceso = repo.buscar_proceso_comercial(
         client, proceso_comercial_id=proceso_comercial_id_resuelto
     )
@@ -1388,6 +1459,7 @@ def validar_extraccion_para_endpoint(
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
     orden_compra: OrdenCompraOverride | None = None,
+    nuevo_proceso: NuevoProcesoIn | None = None,
 ) -> ResultadoValidarExtraccion:
     """Corre con service_role: materializar toca items_proceso/comparativas/ofertas_items/
     notificaciones y dispara matching — mismo criterio que pricing/matching/presupuestos,
@@ -1399,4 +1471,5 @@ def validar_extraccion_para_endpoint(
         proceso_comercial_id=proceso_comercial_id,
         filas_override=filas_override,
         orden_compra=orden_compra,
+        nuevo_proceso=nuevo_proceso,
     )
