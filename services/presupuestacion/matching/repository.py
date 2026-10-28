@@ -49,10 +49,36 @@ def listar_productos_activos(client: Client, *, drogueria_id: str) -> list[dict[
     return resultado.data
 
 
-def marcar_alias_usado(client: Client, *, alias_id: str, veces_usado: int) -> None:
+# Descripciones per alias lookup: they travel in the query string, and a long
+# licitación would otherwise build a URL PostgREST rejects.
+_ALIAS_POR_CONSULTA = 50
+
+
+def listar_alias_vigentes(
+    client: Client, *, cliente_id: str, descripciones_normalizadas: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Vigente aliases of the cliente for the given descripciones, keyed by
+    descripcion_normalizada."""
+    unicas = list(dict.fromkeys(descripciones_normalizadas))
+    alias_por_descripcion: dict[str, dict[str, Any]] = {}
+    for inicio in range(0, len(unicas), _ALIAS_POR_CONSULTA):
+        resultado = (
+            client.table("cliente_producto_alias")
+            .select("*")
+            .eq("cliente_id", cliente_id)
+            .in_("descripcion_normalizada", unicas[inicio : inicio + _ALIAS_POR_CONSULTA])
+            .eq("vigente", True)
+            .execute()
+        )
+        for alias in resultado.data:
+            alias_por_descripcion.setdefault(alias["descripcion_normalizada"], alias)
+    return alias_por_descripcion
+
+
+def marcar_alias_usado(client: Client, *, alias_id: str, veces_usado: int, usos: int = 1) -> None:
     client.table("cliente_producto_alias").update(
         {
-            "veces_usado": veces_usado + 1,
+            "veces_usado": veces_usado + usos,
             "ultimo_uso_at": datetime.now(timezone.utc).isoformat(),
         }
     ).eq("id", alias_id).execute()

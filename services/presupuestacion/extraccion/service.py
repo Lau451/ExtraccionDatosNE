@@ -32,7 +32,7 @@ from services.presupuestacion.extraccion.models import (
     OrdenCompraOverride,
     ResultadoValidarExtraccion,
 )
-from services.presupuestacion.matching.service import procesar_matching_item
+from services.presupuestacion.matching.service import procesar_matching_items
 from services.presupuestacion.procesos_comerciales.models import ProcesoComercialCreate
 from services.presupuestacion.procesos_comerciales.service import crear_proceso_comercial
 from services.presupuestacion.notificaciones.service import crear_notificacion
@@ -1194,10 +1194,9 @@ def _materializar_licitacion(
 
     items_creados = repo.insertar_items_proceso(client, filas_items)
 
-    for item in items_creados:
-        procesar_matching_item(
-            client, item=item, drogueria_id=drogueria_id, cliente_id=cliente_id
-        )
+    procesar_matching_items(
+        client, items=items_creados, drogueria_id=drogueria_id, cliente_id=cliente_id
+    )
 
     return len(items_creados)
 

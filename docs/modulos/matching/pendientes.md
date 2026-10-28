@@ -34,6 +34,15 @@ llama en un `for` por cada `item_proceso` creado en `_materializar_licitacion`
 (`extraccion/service.py:88-91`) — una licitación de N renglones sin alias dispara N
 `SELECT`es completos de `productos` y N pasadas de fuzzy sobre todo el catálogo.
 
+> **Resuelto en parte (2026-10-28):** `_materializar_licitacion` ahora llama a
+> `procesar_matching_items` con todos los renglones juntos. Así, el catálogo se trae
+> **una sola vez** por validación, los alias vigentes salen de una sola consulta (en
+> tandas de 50 descripciones) y los `matching_candidatos` entran en un único `INSERT`.
+> Antes, cada renglón hacía 4 requests seguidas a Supabase (~1 s), y una licitación
+> de 16 renglones tardaba ~17 s en validar. Ahora queda 1 `PATCH items_proceso` por
+> renglón. Sigue pendiente lo que se describe más abajo: el fuzzy recorre todo el
+> catálogo en Python, sin ningún prefiltrado en la base.
+
 **Qué tan grave es, matizado**:
 
 - **No hay ningún límite implícito en el código.** No se encontró paginación,
