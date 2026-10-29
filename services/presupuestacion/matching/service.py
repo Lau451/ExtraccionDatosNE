@@ -57,8 +57,9 @@ class MatchingResuelto:
     candidatos: list[CandidatoMatching]
 
     def campos(self) -> dict[str, Any]:
-        """items_proceso columns this outcome sets. The fuzzy path leaves
-        producto_id/alias_id untouched, as it always did."""
+        """items_proceso columns this outcome sets. The fuzzy path does not
+        include producto_id/alias_id: an update leaves them as they are, and
+        an insert has to set them (to None) itself."""
         campos: dict[str, Any] = {
             "descripcion_normalizada": self.descripcion_normalizada,
             "estado_matching": self.estado_matching,
@@ -196,6 +197,7 @@ def procesar_matching_items(
         resueltos=resueltos,
         drogueria_id=drogueria_id,
     )
+
 
 def _upsert_alias(
     client: Client,
