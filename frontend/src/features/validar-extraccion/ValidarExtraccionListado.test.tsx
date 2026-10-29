@@ -325,18 +325,57 @@ describe('ValidarExtraccionListado (T2) — acciones por fila', () => {
     expect(screen.queryByRole('link', { name: /matching/i })).not.toBeInTheDocument()
   })
 
-  it('una licitación validada es informativa: badge "Validada" sin ninguna acción', async () => {
+  it('una licitación validada con proceso muestra el link al matching del proceso (presupuestador-v1 T3)', async () => {
     const licitacionValidada: ExtraccionResumen = {
       ...LICITACION_1,
       id: 'ex-lici-validada',
       validado: true,
       source_filename: 'lici-validada.pdf',
+      proceso_comercial_id: 'proc-9',
     }
     mockListarExtracciones([LICITACION_1, licitacionValidada])
     renderConQueryClient(<ValidarExtraccionListado />)
     await waitFor(() => expect(screen.getByText('lici-validada.pdf')).toBeInTheDocument())
 
     const fila = screen.getByText('lici-validada.pdf').closest('tr') as HTMLElement
+    expect(within(fila).getByText('Validada')).toBeInTheDocument()
+    expect(within(fila).getByRole('link', { name: 'Matching' })).toHaveAttribute(
+      'href',
+      '/procesos-comerciales/proc-9/matching',
+    )
+  })
+
+  it('una licitación validada sin proceso no muestra un link roto', async () => {
+    const licitacionValidada: ExtraccionResumen = {
+      ...LICITACION_1,
+      id: 'ex-lici-validada',
+      validado: true,
+      source_filename: 'lici-validada.pdf',
+      proceso_comercial_id: null,
+    }
+    mockListarExtracciones([licitacionValidada])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await waitFor(() => expect(screen.getByText('lici-validada.pdf')).toBeInTheDocument())
+
+    const fila = screen.getByText('lici-validada.pdf').closest('tr') as HTMLElement
+    expect(within(fila).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('una comparativa validada sigue siendo informativa: sin ninguna acción', async () => {
+    const comparativaValidada: ExtraccionResumen = {
+      ...LICITACION_1,
+      id: 'ex-comp-validada',
+      document_type: 'comparativa',
+      validado: true,
+      source_filename: 'comp-validada.pdf',
+      proceso_comercial_id: 'proc-9',
+    }
+    mockListarExtracciones([comparativaValidada])
+    renderConQueryClient(<ValidarExtraccionListado />)
+    await irATab(/comparativa/i)
+    await waitFor(() => expect(screen.getByText('comp-validada.pdf')).toBeInTheDocument())
+
+    const fila = screen.getByText('comp-validada.pdf').closest('tr') as HTMLElement
     expect(within(fila).getByText('Validada')).toBeInTheDocument()
     expect(within(fila).queryByRole('link')).not.toBeInTheDocument()
   })

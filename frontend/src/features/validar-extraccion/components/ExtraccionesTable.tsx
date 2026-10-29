@@ -70,9 +70,10 @@ function construirEntradas(
 }
 
 /** T2 -- celda de acción por fila: "Revisar" para procesado/procesado con
- * advertencias (cualquier tipo); "Matching" solo para una OC ya validada con
- * `orden_compra_id` resuelto (D11); sin acción para procesando/error, y para
- * una fila validada sin OC resuelta o que no es orden_compra (informativa). */
+ * advertencias (cualquier tipo); "Matching" para una OC ya validada con
+ * `orden_compra_id` resuelto (D11) y para una licitación/directa ya validada
+ * con su proceso (presupuestador-v1 T3: matching con el catálogo); sin acción
+ * para procesando/error, y para el resto de las validadas (informativa). */
 function AccionCelda({ extraccion }: { extraccion: ExtraccionResumen }) {
   const estado = estadoDerivadoDe(extraccion)
 
@@ -94,6 +95,20 @@ function AccionCelda({ extraccion }: { extraccion: ExtraccionResumen }) {
       <Link
         to="/ordenes-compra/$ordenCompraId/matching"
         params={{ ordenCompraId: extraccion.orden_compra_id }}
+        className="text-sm font-medium text-accent hover:underline"
+      >
+        Matching
+      </Link>
+    )
+  }
+
+  const esLicitacionODirecta =
+    extraccion.document_type === 'licitacion' || extraccion.document_type === 'cotizacion'
+  if (estado === 'validada' && esLicitacionODirecta && extraccion.proceso_comercial_id) {
+    return (
+      <Link
+        to="/procesos-comerciales/$procesoId/matching"
+        params={{ procesoId: extraccion.proceso_comercial_id }}
         className="text-sm font-medium text-accent hover:underline"
       >
         Matching
