@@ -81,6 +81,12 @@ La pantalla de matching por proceso (presupuestador-v1 T3b), en
   ya resuelto.
 - `POST /items/{item_id}/sin-match` marca el renglón sin producto.
 
-Después de cada decisión la pantalla vuelve a pedir el proceso completo. `GET
+Después de cada decisión la pantalla vuelve a pedir el proceso completo.
+
+Se llega a la pantalla de dos formas (T3c): al confirmar la validación de una
+licitación o una directa, `ValidarExtraccionDetalle` navega al matching del proceso
+recién creado (una comparativa sigue volviendo al listado de extracciones); y desde el
+menú "Matching de catálogo" (`/matching`), que lista con `GET /matching/procesos` los
+procesos con renglones `pendiente` o `sugerido`. `GET
 /matching/pendientes` sigue sin consumidor de UI. Los endpoints de la pantalla tienen
 tests HTTP en `tests/matching/test_router.py`.

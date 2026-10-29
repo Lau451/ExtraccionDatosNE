@@ -2,15 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { confirmarMatching, marcarSinMatch, obtenerMatchingProceso } from '@/lib/api/matching'
 import { RenglonMatchingFila } from './components/RenglonMatchingFila'
-
-const CLASE_LEGIBLE: Record<string, string> = {
-  licitacion: 'Licitación',
-  cotizacion: 'Directa',
-}
-
-function contar(cantidad: number, singular: string, plural: string): string {
-  return `${cantidad} ${cantidad === 1 ? singular : plural}`
-}
+import { CLASE_LEGIBLE, contar } from './textos'
 
 interface Props {
   procesoId: string

@@ -5,6 +5,7 @@ import { COMPROMISOS_READ_ROLES } from '@/features/compromisos/roles'
 import { USUARIOS_ROLES } from '@/features/gestion-usuarios/roles'
 import { PCP_READ_ROLES, puedeRol } from '@/features/pcp/roles'
 import { PRESUPUESTOS_LEGACY_IMPORT_ROLES } from '@/features/presupuestos-import/roles'
+import { MATCHING_ROLES } from '@/features/proceso-matching/roles'
 import { VALIDAR_EXTRACCION_ROLES } from '@/features/validar-extraccion/roles'
 
 interface NavItem {
@@ -49,6 +50,9 @@ export function Sidebar() {
     ...(puedeRol(perfil?.rol, VALIDAR_EXTRACCION_ROLES)
       ? [{ label: 'Validar extracción', to: '/validar-extraccion' }]
       : []),
+    // presupuestador-v1 T3c: procesos with renglones still to match against
+    // the catalog; same roles as the matching endpoints.
+    ...(puedeRol(perfil?.rol, MATCHING_ROLES) ? [{ label: 'Matching de catálogo', to: '/matching' }] : []),
     ...NAV_ITEMS,
     // Mismos roles que el endpoint de importación legacy (spec S6: solo admin).
     ...(puedeRol(perfil?.rol, PRESUPUESTOS_LEGACY_IMPORT_ROLES)

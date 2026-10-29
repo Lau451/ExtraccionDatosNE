@@ -14,6 +14,7 @@ import { Route as CambiarPasswordRouteImport } from './routes/cambiar-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
 import { Route as AuthenticatedCompromisosRouteImport } from './routes/_authenticated.compromisos'
+import { Route as AuthenticatedMatchingRouteImport } from './routes/_authenticated.matching'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
@@ -63,6 +64,11 @@ const AuthenticatedCompromisosRoute =
     path: '/compromisos',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedMatchingRoute = AuthenticatedMatchingRouteImport.update({
+  id: '/matching',
+  path: '/matching',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
@@ -200,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
+  '/matching': typeof AuthenticatedMatchingRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
+  '/matching': typeof AuthenticatedMatchingRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/_authenticated/compromisos': typeof AuthenticatedCompromisosRoute
+  '/_authenticated/matching': typeof AuthenticatedMatchingRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -288,6 +297,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/compromisos'
+    | '/matching'
     | '/mi-cuenta'
     | '/pcp'
     | '/productos'
@@ -316,6 +326,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/compromisos'
+    | '/matching'
     | '/mi-cuenta'
     | '/'
     | '/admin/usuarios'
@@ -343,6 +354,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/_authenticated/compromisos'
+    | '/_authenticated/matching'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/pcp'
     | '/_authenticated/productos'
@@ -410,6 +422,13 @@ declare module '@tanstack/react-router' {
       path: '/compromisos'
       fullPath: '/compromisos'
       preLoaderRoute: typeof AuthenticatedCompromisosRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/matching': {
+      id: '/_authenticated/matching'
+      path: '/matching'
+      fullPath: '/matching'
+      preLoaderRoute: typeof AuthenticatedMatchingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/mi-cuenta': {
@@ -644,6 +663,7 @@ const AuthenticatedTercerosRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedCompromisosRoute: typeof AuthenticatedCompromisosRoute
+  AuthenticatedMatchingRoute: typeof AuthenticatedMatchingRoute
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
   AuthenticatedPcpRoute: typeof AuthenticatedPcpRouteWithChildren
   AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
@@ -662,6 +682,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCompromisosRoute: AuthenticatedCompromisosRoute,
+  AuthenticatedMatchingRoute: AuthenticatedMatchingRoute,
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
   AuthenticatedPcpRoute: AuthenticatedPcpRouteWithChildren,
   AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,

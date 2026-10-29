@@ -102,6 +102,18 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         })
         return
       }
+      // presupuestador-v1 S1: a validated licitación/directa goes on to the
+      // catalog matching of the proceso it just created. A comparativa keeps
+      // going back to the listado.
+      const esLicitacionODirecta =
+        resultado.document_type === 'licitacion' || resultado.document_type === 'cotizacion'
+      if (esLicitacionODirecta && resultado.proceso_comercial_id) {
+        navigate({
+          to: '/procesos-comerciales/$procesoId/matching',
+          params: { procesoId: resultado.proceso_comercial_id },
+        })
+        return
+      }
       navigate({ to: '/validar-extraccion' })
     },
   })

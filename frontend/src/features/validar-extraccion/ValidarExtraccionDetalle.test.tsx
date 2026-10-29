@@ -737,6 +737,67 @@ describe('ValidarExtraccionDetalle — licitación/directa crea su proceso (pres
       filas: [{ renglon: '1', proveedor: 'Proveedor A', marca: '', precio: '10.00' }],
     })
   })
+
+  function resultadoValidacion(documentType: 'licitacion' | 'cotizacion' | 'comparativa') {
+    return {
+      extraction_id: 'abc',
+      document_type: documentType,
+      proceso_comercial_id: 'proc-9',
+      filas_creadas: 1,
+      comparativa_id: documentType === 'comparativa' ? 'comp-1' : null,
+      reemplazo_version_anterior: false,
+      orden_compra_id: null,
+      entregas_creadas: 0,
+      renglones_sin_producto: 0,
+      extracciones_validadas: 1,
+    }
+  }
+
+  it.each(['licitacion', 'cotizacion'] as const)(
+    '%s: al confirmar abre el matching del proceso creado (presupuestador-v1 T3c)',
+    async (documentType) => {
+      mockFilasLicitacion()
+      vi.mocked(validarExtraccion).mockResolvedValueOnce(resultadoValidacion(documentType))
+      renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Directa' }))
+      await elegirCliente('30-22222222', 'Clínica Norte')
+      await abrirYConfirmarDialogo()
+
+      await waitFor(() =>
+        expect(navigateMock).toHaveBeenCalledWith({
+          to: '/procesos-comerciales/$procesoId/matching',
+          params: { procesoId: 'proc-9' },
+        }),
+      )
+      expect(navigateMock).not.toHaveBeenCalledWith({ to: '/validar-extraccion' })
+    },
+  )
+
+  it('la comparativa sigue volviendo al listado al confirmar', async () => {
+    vi.mocked(listarProcesosComerciales).mockResolvedValue([
+      { id: 'proc-9', nombre: 'Hospital Sayago - LIC 14/2026', clase: 'licitacion', estado: 'abierto' },
+    ])
+    vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+      extraction_id: 'abc',
+      document_type: 'comparativa',
+      row_count: 1,
+      filas_leidas: 1,
+      editable: true,
+      columnas: ['renglon', 'proveedor', 'precio'],
+      filas: [{ renglon: '1', proveedor: 'Proveedor A', precio: '10.00' }],
+    })
+    vi.mocked(validarExtraccion).mockResolvedValueOnce(resultadoValidacion('comparativa'))
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    const selector = (await screen.findAllByRole('combobox'))[0]
+    await within(selector).findByRole('option', { name: 'Hospital Sayago - LIC 14/2026' })
+    fireEvent.change(selector, { target: { value: 'proc-9' } })
+    await abrirYConfirmarDialogo()
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/validar-extraccion' }))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('ValidarExtraccionDetalle — buscador de cliente (presupuestador-v1 T2b)', () => {
