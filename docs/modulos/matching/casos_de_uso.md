@@ -69,15 +69,18 @@ todo `services/presupuestacion/` es `extraccion/service.py:15,88-91`
 [`../extraccion_validacion/arquitectura.md`](../extraccion_validacion/arquitectura.md#dependencia-hacia-matching)
 para el mismo hallazgo documentado desde el lado del módulo consumidor.
 
-## Quién consume los 3 endpoints HTTP
+## Quién consume los endpoints HTTP
 
-**Ningún frontend los consume todavía.** Grep de `"confirmar-matching"`, `"sin-match"`
-y `"matching/pendientes"` sobre `frontend/` en esta sesión no tuvo resultados — el
-directorio `frontend/` existe (`frontend/PROGRESS.md`, `frontend/README.md`) pero no
-se encontró ningún llamador HTTP de estos 3 endpoints dentro del repositorio. Igual
-que documenta [`../extraccion_validacion/casos_de_uso.md`](../extraccion_validacion/casos_de_uso.md)
-para `POST /extracciones/{id}/validar`: el backend existe y está probado por
-integración (`tests/matching/test_service.py`, 11 tests sobre `service.py`
-directamente), pero no tiene consumidor de UI confirmado en esta sesión. No se
-verificó `router.py` con ningún test dentro de `tests/matching/` — ver
-[`pendientes.md`](./pendientes.md).
+La pantalla de matching por proceso (presupuestador-v1 T3b), en
+`frontend/src/routes/_authenticated.procesos-comerciales.$procesoId.matching.tsx`
+(`features/proceso-matching/`, cliente `frontend/src/lib/api/matching.ts`):
+
+- `GET /procesos-comerciales/{id}/matching` carga todos los renglones del proceso.
+- `POST /items/{item_id}/confirmar-matching` confirma la sugerencia, otro candidato o
+  un producto buscado en el catálogo (`GET /productos?q=`), también sobre un renglón
+  ya resuelto.
+- `POST /items/{item_id}/sin-match` marca el renglón sin producto.
+
+Después de cada decisión la pantalla vuelve a pedir el proceso completo. `GET
+/matching/pendientes` sigue sin consumidor de UI. Los endpoints de la pantalla tienen
+tests HTTP en `tests/matching/test_router.py`.

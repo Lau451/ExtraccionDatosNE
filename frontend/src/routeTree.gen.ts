@@ -35,6 +35,7 @@ import { Route as AuthenticatedOrdenesCompraOrdenCompraIdIndexRouteImport } from
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.entregas'
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.matching'
 import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
+import { Route as AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport } from './routes/_authenticated.procesos-comerciales.$procesoId.matching'
 import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -181,6 +182,12 @@ const AuthenticatedPcpConsultasConsultaIdRoute =
     path: '/consultas/$consultaId',
     getParentRoute: () => AuthenticatedPcpRoute,
   } as any)
+const AuthenticatedProcesosComercialesProcesoIdMatchingRoute =
+  AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport.update({
+    id: '/procesos-comerciales/$procesoId/matching',
+    path: '/procesos-comerciales/$procesoId/matching',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
   AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport.update({
     id: '/renglones/$renglonId',
@@ -213,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -238,6 +246,7 @@ export interface FileRoutesByTo {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/ordenes-compra/$ordenCompraId': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -268,6 +277,7 @@ export interface FileRoutesById {
   '/_authenticated/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/_authenticated/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/procesos-comerciales/$procesoId/matching'
     | '/ordenes-compra/$ordenCompraId/'
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/procesos-comerciales/$procesoId/matching'
     | '/ordenes-compra/$ordenCompraId'
     | '/pcp/$pcpId/renglones/$renglonId'
   id:
@@ -352,6 +364,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
     | '/_authenticated/ordenes-compra/$ordenCompraId/matching'
     | '/_authenticated/pcp/consultas/$consultaId'
+    | '/_authenticated/procesos-comerciales/$procesoId/matching'
     | '/_authenticated/ordenes-compra/$ordenCompraId/'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
@@ -546,6 +559,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPcpConsultasConsultaIdRouteImport
       parentRoute: typeof AuthenticatedPcpRoute
     }
+    '/_authenticated/procesos-comerciales/$procesoId/matching': {
+      id: '/_authenticated/procesos-comerciales/$procesoId/matching'
+      path: '/procesos-comerciales/$procesoId/matching'
+      fullPath: '/procesos-comerciales/$procesoId/matching'
+      preLoaderRoute: typeof AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/pcp/$pcpId/renglones/$renglonId': {
       id: '/_authenticated/pcp/$pcpId/renglones/$renglonId'
       path: '/renglones/$renglonId'
@@ -636,6 +656,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
   AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
+  AuthenticatedProcesosComercialesProcesoIdMatchingRoute: typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
 }
 
@@ -658,6 +679,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute,
+  AuthenticatedProcesosComercialesProcesoIdMatchingRoute:
+    AuthenticatedProcesosComercialesProcesoIdMatchingRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute,
 }
