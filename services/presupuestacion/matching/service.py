@@ -9,7 +9,14 @@ from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import NotFoundError
 from services.presupuestacion.core.texto import normalizar_descripcion
 from services.presupuestacion.matching import repository as repo
-from services.presupuestacion.matching.models import CandidatoMatching, ResultadoMatchingItem
+from services.presupuestacion.matching.models import (
+    CandidatoMatching,
+    CandidatoRenglon,
+    MatchingProceso,
+    ProcesoConMatchingPendiente,
+    RenglonMatching,
+    ResultadoMatchingItem,
+)
 
 _UMBRAL_SUGERIDO = Decimal("70")
 _TOP_K = 5
@@ -284,16 +291,21 @@ def marcar_sin_match(client: Client, *, item_proceso_id: str) -> ResultadoMatchi
     if item is None:
         raise NotFoundError("No se encontró el renglón")
 
+    # The alias that matched this renglón points to the wrong producto: left
+    # vigente, the next licitación of the cliente would match it automatically.
+    if item.get("alias_id"):
+        repo.invalidar_alias(client, alias_id=item["alias_id"])
+    repo.desmarcar_candidatos(client, item_proceso_id=item_proceso_id)
     repo.actualizar_item_matching(
         client,
         item_proceso_id=item_proceso_id,
-        campos={"producto_id": None, "estado_matching": "sin_match"},
+        campos={"producto_id": None, "alias_id": None, "estado_matching": "sin_match"},
     )
 
     return ResultadoMatchingItem(
         item_proceso_id=item_proceso_id,
         producto_id=None,
-        alias_id=item.get("alias_id"),
+        alias_id=None,
         estado_matching="sin_match",
         confianza_matching=None,
         candidatos=[],
@@ -316,3 +328,85 @@ def confirmar_matching_para_endpoint(
 
 def marcar_sin_match_para_endpoint(*, item_proceso_id: str) -> ResultadoMatchingItem:
     return marcar_sin_match(get_service_client(), item_proceso_id=item_proceso_id)
+
+
+def _decimal_2(valor: Any) -> Decimal | None:
+    """PostgREST returns NUMERIC(_,2) columns as JSON numbers (92.00 -> 92.0);
+    the API keeps the column's two decimals."""
+    if valor is None:
+        return None
+    return Decimal(str(valor)).quantize(Decimal("0.01"))
+
+
+def obtener_matching_proceso(
+    client: Client, *, proceso_comercial_id: str, drogueria_id: str | None
+) -> MatchingProceso:
+    """Every renglón of the proceso with its matching, best candidato first.
+    `drogueria_id` None means any droguería (superadmin). A proceso of another
+    droguería is reported as not found, without confirming it exists."""
+    proceso = repo.buscar_proceso_para_matching(client, proceso_comercial_id=proceso_comercial_id)
+    if proceso is None or (drogueria_id is not None and proceso["drogueria_id"] != drogueria_id):
+        raise NotFoundError("No se encontró el proceso comercial")
+
+    renglones = [
+        RenglonMatching(
+            item_proceso_id=fila["id"],
+            numero_renglon=fila["numero_renglon"],
+            descripcion=fila["descripcion"],
+            cantidad=_decimal_2(fila["cantidad"]),
+            estado_matching=fila["estado_matching"],
+            confianza_matching=_decimal_2(fila["confianza_matching"]),
+            producto=fila["producto"],
+            candidatos=sorted(
+                (
+                    CandidatoRenglon(
+                        producto=candidato["producto"],
+                        confianza=_decimal_2(candidato["confianza"]),
+                        metodo=candidato["metodo"],
+                        elegido=candidato["elegido"],
+                    )
+                    for candidato in fila["candidatos"]
+                ),
+                key=lambda candidato: candidato.confianza,
+                reverse=True,
+            ),
+        )
+        for fila in repo.listar_renglones_con_matching(
+            client, proceso_comercial_id=proceso_comercial_id
+        )
+    ]
+    cliente = (
+        repo.buscar_razon_social(client, tercero_id=proceso["cliente_id"])
+        if proceso["cliente_id"]
+        else None
+    )
+    return MatchingProceso(
+        proceso_comercial_id=proceso["id"],
+        nombre=proceso["nombre"],
+        clase=proceso["clase"],
+        cliente=cliente,
+        renglones=renglones,
+    )
+
+
+def listar_procesos_con_matching_pendiente(client: Client) -> list[ProcesoConMatchingPendiente]:
+    """Procesos with renglones still pendiente or sugerido, in the view's order
+    (closest vencimiento first)."""
+    por_proceso: dict[str, ProcesoConMatchingPendiente] = {}
+    for fila in repo.listar_matching_pendiente(client):
+        proceso = por_proceso.setdefault(
+            fila["proceso_comercial_id"],
+            ProcesoConMatchingPendiente(
+                proceso_comercial_id=fila["proceso_comercial_id"],
+                proceso=fila["proceso"],
+                clase=fila["clase"],
+                cliente=fila["cliente"],
+                pendientes=0,
+                sugeridos=0,
+            ),
+        )
+        if fila["estado_matching"] == "sugerido":
+            proceso.sugeridos += 1
+        else:
+            proceso.pendientes += 1
+    return list(por_proceso.values())

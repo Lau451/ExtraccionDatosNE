@@ -86,6 +86,28 @@ Funciones públicas:
 | `POST /items/{item_id}/confirmar-matching` | `confirmar_matching_endpoint` | `40-50` |
 | `POST /items/{item_id}/sin-match` | `sin_match_endpoint` | `53-60` |
 | `GET /matching/pendientes` | `listar_pendientes_endpoint` | `63-69` |
+| `GET /matching/procesos` | `listar_procesos_pendientes_endpoint` | — |
+| `GET /procesos-comerciales/{proceso_id}/matching` | `obtener_matching_proceso_endpoint` | — |
+
+**Pantalla de matching por proceso** (presupuestador-v1 T3a). Mismos roles que el
+resto del módulo (`_ROLES_MATCHING`); las lecturas usan el cliente del usuario (RLS).
+
+- `GET /procesos-comerciales/{proceso_id}/matching` → `MatchingProceso`: nombre,
+  clase y cliente del proceso, y **todos** sus renglones ordenados por
+  `numero_renglon` (también `automatico`, `confirmado` y `sin_match`), cada uno con
+  su `producto` elegido (`id`, `nombre`, `codigo_interno`) y sus `candidatos`
+  (producto, `confianza`, `metodo`, `elegido`) del mejor al peor. Un proceso de
+  otra droguería responde 404 "No se encontró el proceso comercial", igual que uno
+  inexistente. Es una sola consulta embebida de PostgREST
+  (`repository.listar_renglones_con_matching`).
+- `GET /matching/procesos` → `list[ProcesoConMatchingPendiente]`: los procesos con
+  renglones `pendiente` o `sugerido`, con cuántos de cada uno, en el orden de
+  `v_matching_pendiente` (vencimiento más cercano primero).
+
+Un renglón ya resuelto se puede volver a decidir: `confirmar-matching` deja un solo
+candidato `elegido` (desmarca el anterior), y `sin-match` invalida el alias que había
+matcheado el renglón y deja `alias_id` en `NULL`, para que la próxima licitación del
+cliente no vuelva a matchearlo solo con el producto equivocado.
 
 `router = APIRouter()` (`router.py:17`), sin prefijo propio — se monta tal cual en
 `main.py:43`. Función privada: `_validar_item_de_la_drogueria` (`router.py:22-37`).

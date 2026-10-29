@@ -120,10 +120,69 @@ def insertar_candidatos(client: Client, filas: list[dict[str, Any]]) -> None:
         client.table("matching_candidatos").insert(filas).execute()
 
 
+def desmarcar_candidatos(client: Client, *, item_proceso_id: str) -> None:
+    client.table("matching_candidatos").update({"elegido": False}).eq(
+        "item_proceso_id", item_proceso_id
+    ).eq("elegido", True).execute()
+
+
 def marcar_candidato_elegido(client: Client, *, item_proceso_id: str, producto_id: str) -> None:
+    """Leaves `producto_id` as the only elegido candidato of the item: a
+    renglón can be re-chosen, so a previous choice is cleared first."""
+    desmarcar_candidatos(client, item_proceso_id=item_proceso_id)
     client.table("matching_candidatos").update({"elegido": True}).eq(
         "item_proceso_id", item_proceso_id
     ).eq("producto_id", producto_id).execute()
+
+
+def buscar_proceso_para_matching(
+    client: Client, *, proceso_comercial_id: str
+) -> dict[str, Any] | None:
+    resultado = (
+        client.table("procesos_comerciales")
+        .select("id, drogueria_id, cliente_id, nombre, clase")
+        .eq("id", proceso_comercial_id)
+        .is_("deleted_at", None)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def buscar_razon_social(client: Client, *, tercero_id: str) -> str | None:
+    resultado = (
+        client.table("terceros").select("razon_social").eq("id", tercero_id).limit(1).execute()
+    )
+    return resultado.data[0]["razon_social"] if resultado.data else None
+
+
+_PRODUCTO_RESUMEN = "id, nombre, codigo_interno"
+
+
+def listar_renglones_con_matching(
+    client: Client, *, proceso_comercial_id: str
+) -> list[dict[str, Any]]:
+    """The proceso's items with their chosen producto and their candidatos
+    (with producto) in one request. The FK names are explicit because
+    matching_candidatos has two FKs to items_proceso (fk_mc_item and the
+    composite fk_mc_item_drog), which PostgREST cannot pick between."""
+    resultado = (
+        client.table("items_proceso")
+        .select(
+            "id, numero_renglon, descripcion, cantidad, estado_matching, confianza_matching, "
+            f"producto:productos!fk_ip_prod({_PRODUCTO_RESUMEN}), "
+            "candidatos:matching_candidatos!fk_mc_item(confianza, metodo, elegido, "
+            f"producto:productos!fk_mc_prod({_PRODUCTO_RESUMEN}))"
+        )
+        .eq("proceso_comercial_id", proceso_comercial_id)
+        .order("numero_renglon")
+        .execute()
+    )
+    return resultado.data
+
+
+def listar_matching_pendiente(client: Client) -> list[dict[str, Any]]:
+    return client.table("v_matching_pendiente").select("*").execute().data
 
 
 def actualizar_item_matching(

@@ -1,6 +1,40 @@
+import secrets
 import uuid
 
 import pytest
+
+from services.shared.config import get_settings
+
+
+@pytest.fixture
+def crear_usuario_con_token(service_client):
+    """Local copy of tests/oc_presupuesto/conftest.py::crear_usuario_con_token: a
+    real JWT so the router tests go through `Depends(require_roles(...))` over a
+    full HTTP cycle (a sibling tree's conftest.py is not visible here)."""
+    from supabase import create_client
+
+    creados: list[str] = []
+
+    def _crear(*, rol: str, drogueria_id: str | None) -> tuple[str, str]:
+        settings = get_settings()
+        email = f"matching-router-test-{uuid.uuid4()}@seed.local"
+        password = secrets.token_urlsafe(24)
+        auth_response = service_client.auth.admin.create_user(
+            {"email": email, "password": password, "email_confirm": True}
+        )
+        usuario_id = auth_response.user.id
+        creados.append(usuario_id)
+        service_client.table("usuarios").insert(
+            {"id": usuario_id, "drogueria_id": drogueria_id, "rol": rol, "nombre": "Router test"}
+        ).execute()
+
+        cliente_temporal = create_client(settings.supabase_url, settings.supabase_anon_key)
+        sesion = cliente_temporal.auth.sign_in_with_password({"email": email, "password": password})
+        return usuario_id, sesion.session.access_token
+
+    yield _crear
+    for usuario_id in creados:
+        service_client.auth.admin.delete_user(usuario_id)
 
 
 @pytest.fixture

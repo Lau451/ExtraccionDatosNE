@@ -432,3 +432,109 @@ def test_marcar_sin_match_deja_item_sin_producto(
     )
     assert item_actualizado["estado_matching"] == "sin_match"
     assert item_actualizado["producto_id"] is None
+
+
+def _candidatos_elegidos(service_client, item_proceso_id: str) -> dict[str, bool]:
+    filas = (
+        service_client.table("matching_candidatos")
+        .select("producto_id, elegido")
+        .eq("item_proceso_id", item_proceso_id)
+        .execute()
+        .data
+    )
+    return {fila["producto_id"]: fila["elegido"] for fila in filas}
+
+
+@pytest.mark.integration
+def test_confirmar_matching_reelegido_deja_un_solo_candidato_elegido(
+    service_client,
+    seed_drogueria,
+    seed_item_sin_producto,
+    seed_producto_con_nombre,
+    seed_usuario_sistema,
+    limpiar_matching,
+):
+    limpiar_matching["items"].append(seed_item_sin_producto["id"])
+    primero = seed_producto_con_nombre("Ibuprofeno 600mg x30 primero")
+    segundo = seed_producto_con_nombre("Ibuprofeno 600mg x30 segundo")
+    service_client.table("matching_candidatos").insert(
+        [
+            {
+                "item_proceso_id": seed_item_sin_producto["id"],
+                "drogueria_id": seed_drogueria["id"],
+                "producto_id": producto["id"],
+                "confianza": confianza,
+                "metodo": "fuzzy",
+            }
+            for producto, confianza in ((primero, "90.00"), (segundo, "80.00"))
+        ]
+    ).execute()
+
+    for producto in (primero, segundo):
+        resultado = confirmar_matching(
+            service_client,
+            item_proceso_id=seed_item_sin_producto["id"],
+            producto_id=producto["id"],
+            usuario_id=seed_usuario_sistema["id"],
+        )
+        limpiar_matching["alias"].append(resultado.alias_id)
+
+    assert resultado.producto_id == segundo["id"]
+    assert _candidatos_elegidos(service_client, seed_item_sin_producto["id"]) == {
+        primero["id"]: False,
+        segundo["id"]: True,
+    }
+
+
+@pytest.mark.integration
+def test_marcar_sin_match_invalida_el_alias_del_renglon(
+    service_client,
+    seed_drogueria,
+    seed_item_sin_producto,
+    seed_alias,
+    limpiar_matching,
+):
+    # A renglón matched by the cliente's alias that the user rejects: the alias
+    # is wrong, so the next licitación must not match it automatically again.
+    limpiar_matching["items"].append(seed_item_sin_producto["id"])
+    service_client.table("items_proceso").update(
+        {
+            "producto_id": seed_alias["producto_id"],
+            "alias_id": seed_alias["id"],
+            "estado_matching": "automatico",
+        }
+    ).eq("id", seed_item_sin_producto["id"]).execute()
+    service_client.table("matching_candidatos").insert(
+        {
+            "item_proceso_id": seed_item_sin_producto["id"],
+            "drogueria_id": seed_drogueria["id"],
+            "producto_id": seed_alias["producto_id"],
+            "confianza": "95.00",
+            "metodo": "fuzzy",
+            "elegido": True,
+        }
+    ).execute()
+
+    resultado = marcar_sin_match(service_client, item_proceso_id=seed_item_sin_producto["id"])
+
+    assert resultado.estado_matching == "sin_match"
+    assert resultado.alias_id is None
+    item = (
+        service_client.table("items_proceso")
+        .select("producto_id, alias_id, estado_matching")
+        .eq("id", seed_item_sin_producto["id"])
+        .execute()
+        .data[0]
+    )
+    assert item == {"producto_id": None, "alias_id": None, "estado_matching": "sin_match"}
+    alias = (
+        service_client.table("cliente_producto_alias")
+        .select("vigente")
+        .eq("id", seed_alias["id"])
+        .execute()
+        .data[0]
+    )
+    assert alias["vigente"] is False
+    assert _candidatos_elegidos(service_client, seed_item_sin_producto["id"]) == {
+        seed_alias["producto_id"]: False
+    }
