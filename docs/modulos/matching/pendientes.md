@@ -39,8 +39,11 @@ llama en un `for` por cada `item_proceso` creado en `_materializar_licitacion`
 > **una sola vez** por validación, los alias vigentes salen de una sola consulta (en
 > tandas de 50 descripciones) y los `matching_candidatos` entran en un único `INSERT`.
 > Antes, cada renglón hacía 4 requests seguidas a Supabase (~1 s), y una licitación
-> de 16 renglones tardaba ~17 s en validar. Ahora queda 1 `PATCH items_proceso` por
-> renglón. Sigue pendiente lo que se describe más abajo: el fuzzy recorre todo el
+> de 16 renglones tardaba ~17 s en validar. Además, el matching se resuelve
+> (`resolver_matching`) **antes** del `INSERT` de `items_proceso`: cada renglón se
+> escribe una sola vez, ya con su resultado, y no queda ningún `PATCH` por renglón.
+> Una validación hace un número fijo de requests, sin importar cuántos renglones
+> tenga. Sigue pendiente lo que se describe más abajo: el fuzzy recorre todo el
 > catálogo en Python, sin ningún prefiltrado en la base.
 
 **Qué tan grave es, matizado**:

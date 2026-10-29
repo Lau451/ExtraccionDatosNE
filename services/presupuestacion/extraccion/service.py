@@ -32,7 +32,7 @@ from services.presupuestacion.extraccion.models import (
     OrdenCompraOverride,
     ResultadoValidarExtraccion,
 )
-from services.presupuestacion.matching.service import procesar_matching_items
+from services.presupuestacion.matching.service import registrar_matching, resolver_matching
 from services.presupuestacion.procesos_comerciales.models import ProcesoComercialCreate
 from services.presupuestacion.procesos_comerciales.service import crear_proceso_comercial
 from services.presupuestacion.notificaciones.service import crear_notificacion
@@ -1192,10 +1192,28 @@ def _materializar_licitacion(
             }
         )
 
+    # The matching is resolved from the descripciones before the insert, so each
+    # item is written once with its outcome instead of inserted and then updated
+    # one by one (one round trip per renglón).
+    resueltos = resolver_matching(
+        client,
+        descripciones=[fila["descripcion"] for fila in filas_items],
+        drogueria_id=drogueria_id,
+        cliente_id=cliente_id,
+    )
+    for fila, resuelto in zip(filas_items, resueltos):
+        fila.update({"producto_id": None, "alias_id": None, **resuelto.campos()})
+
     items_creados = repo.insertar_items_proceso(client, filas_items)
 
-    procesar_matching_items(
-        client, items=items_creados, drogueria_id=drogueria_id, cliente_id=cliente_id
+    # The insert's returned order is not guaranteed; numero_renglon is unique per
+    # proceso (uq_items_proceso), so it pairs each created item with its matching.
+    id_por_renglon = {item["numero_renglon"]: item["id"] for item in items_creados}
+    registrar_matching(
+        client,
+        item_ids=[id_por_renglon[fila["numero_renglon"]] for fila in filas_items],
+        resueltos=resueltos,
+        drogueria_id=drogueria_id,
     )
 
     return len(items_creados)

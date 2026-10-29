@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -44,42 +45,60 @@ def procesar_matching_item(
     )[0]
 
 
-def procesar_matching_items(
-    client: Client, *, items: list[dict[str, Any]], drogueria_id: str, cliente_id: str | None
-) -> list[ResultadoMatchingItem]:
-    """Matches a batch of items_proceso (a licitación's renglones) against the
-    cliente's aliases and the catalog. The catalog, the alias lookup and the
-    candidatos insert run once for the whole batch: per item they cost ~1 s of
-    round trips each, which made validating a licitación grow linearly with its
-    renglones. Only the per-item update stays per item. Results keep `items`
-    order."""
-    if not items:
-        return []
+@dataclass
+class MatchingResuelto:
+    """Matching outcome for one descripción, computed before the item is
+    written (see `resolver_matching`)."""
 
-    descripciones = [normalizar_descripcion(item["descripcion"]) for item in items]
+    descripcion_normalizada: str
+    estado_matching: str
+    confianza_matching: Decimal | None
+    alias: dict[str, Any] | None
+    candidatos: list[CandidatoMatching]
+
+    def campos(self) -> dict[str, Any]:
+        """items_proceso columns this outcome sets. The fuzzy path leaves
+        producto_id/alias_id untouched, as it always did."""
+        campos: dict[str, Any] = {
+            "descripcion_normalizada": self.descripcion_normalizada,
+            "estado_matching": self.estado_matching,
+            "confianza_matching": (
+                str(self.confianza_matching) if self.confianza_matching is not None else None
+            ),
+        }
+        if self.alias is not None:
+            campos["producto_id"] = self.alias["producto_id"]
+            campos["alias_id"] = self.alias["id"]
+        return campos
+
+
+def resolver_matching(
+    client: Client, *, descripciones: list[str], drogueria_id: str, cliente_id: str | None
+) -> list[MatchingResuelto]:
+    """Resolves the matching of a batch of descripciones against the cliente's
+    aliases and the catalog, without writing anything. The catalog and the alias
+    lookup run once for the whole batch. Results keep `descripciones` order."""
+    normalizadas = [normalizar_descripcion(descripcion) for descripcion in descripciones]
     alias_por_descripcion = (
         repo.listar_alias_vigentes(
-            client, cliente_id=cliente_id, descripciones_normalizadas=descripciones
+            client, cliente_id=cliente_id, descripciones_normalizadas=normalizadas
         )
-        if cliente_id is not None
+        if cliente_id is not None and normalizadas
         else {}
     )
 
     choices: dict[str, str] | None = None
-    usos_por_alias: dict[str, int] = {}
-    filas_candidatos: list[dict[str, Any]] = []
-    resultados: list[ResultadoMatchingItem] = []
-
-    for item, descripcion_normalizada in zip(items, descripciones):
+    resueltos: list[MatchingResuelto] = []
+    for descripcion_normalizada in normalizadas:
         alias = alias_por_descripcion.get(descripcion_normalizada)
         if alias is not None:
-            usos_por_alias[alias["id"]] = usos_por_alias.get(alias["id"], 0) + 1
-            resultados.append(
-                _aplicar_alias(
-                    client,
-                    item_proceso_id=item["id"],
+            resueltos.append(
+                MatchingResuelto(
                     descripcion_normalizada=descripcion_normalizada,
+                    estado_matching="automatico",
+                    confianza_matching=None,
                     alias=alias,
+                    candidatos=[],
                 )
             )
             continue
@@ -88,92 +107,95 @@ def procesar_matching_items(
             productos = repo.listar_productos_activos(client, drogueria_id=drogueria_id)
             choices = {p["id"]: normalizar_descripcion(p["nombre"]) for p in productos}
         candidatos = _generar_candidatos(choices, descripcion_normalizada=descripcion_normalizada)
+        mejor_confianza = max((c.confianza for c in candidatos), default=None)
+        resueltos.append(
+            MatchingResuelto(
+                descripcion_normalizada=descripcion_normalizada,
+                estado_matching=(
+                    "sugerido"
+                    if mejor_confianza is not None and mejor_confianza >= _UMBRAL_SUGERIDO
+                    else "pendiente"
+                ),
+                confianza_matching=mejor_confianza,
+                alias=None,
+                candidatos=candidatos,
+            )
+        )
+    return resueltos
+
+
+def registrar_matching(
+    client: Client,
+    *,
+    item_ids: list[str],
+    resueltos: list[MatchingResuelto],
+    drogueria_id: str,
+) -> list[ResultadoMatchingItem]:
+    """Stores what `resolver_matching` decided once the items exist: every
+    candidato in one insert, and one use per item on each alias. `item_ids`
+    pairs with `resueltos` by position."""
+    filas_candidatos: list[dict[str, Any]] = []
+    usos_por_alias: dict[str, tuple[dict[str, Any], int]] = {}
+    resultados: list[ResultadoMatchingItem] = []
+
+    for item_proceso_id, resuelto in zip(item_ids, resueltos, strict=True):
+        if resuelto.alias is not None:
+            alias, usos = usos_por_alias.get(resuelto.alias["id"], (resuelto.alias, 0))
+            usos_por_alias[alias["id"]] = (alias, usos + 1)
         filas_candidatos.extend(
             {
-                "item_proceso_id": item["id"],
+                "item_proceso_id": item_proceso_id,
                 "drogueria_id": drogueria_id,
                 "producto_id": c.producto_id,
                 "confianza": str(c.confianza),
                 "metodo": c.metodo,
                 "detalle_scoring": c.detalle_scoring,
             }
-            for c in candidatos
+            for c in resuelto.candidatos
         )
         resultados.append(
-            _aplicar_candidatos(
-                client,
-                item_proceso_id=item["id"],
-                descripcion_normalizada=descripcion_normalizada,
-                candidatos=candidatos,
+            ResultadoMatchingItem(
+                item_proceso_id=item_proceso_id,
+                producto_id=resuelto.alias["producto_id"] if resuelto.alias else None,
+                alias_id=resuelto.alias["id"] if resuelto.alias else None,
+                estado_matching=resuelto.estado_matching,
+                confianza_matching=resuelto.confianza_matching,
+                candidatos=resuelto.candidatos,
             )
         )
 
     repo.insertar_candidatos(client, filas_candidatos)
-    for alias in alias_por_descripcion.values():
-        usos = usos_por_alias.get(alias["id"], 0)
-        if usos:
-            repo.marcar_alias_usado(
-                client, alias_id=alias["id"], veces_usado=alias["veces_usado"], usos=usos
-            )
-
+    for alias, usos in usos_por_alias.values():
+        repo.marcar_alias_usado(
+            client, alias_id=alias["id"], veces_usado=alias["veces_usado"], usos=usos
+        )
     return resultados
 
 
-def _aplicar_alias(
-    client: Client, *, item_proceso_id: str, descripcion_normalizada: str, alias: dict[str, Any]
-) -> ResultadoMatchingItem:
-    repo.actualizar_item_matching(
+def procesar_matching_items(
+    client: Client, *, items: list[dict[str, Any]], drogueria_id: str, cliente_id: str | None
+) -> list[ResultadoMatchingItem]:
+    """Matches items_proceso that already exist: resolves the batch, updates
+    each item and stores candidatos and alias uses. A licitación being validated
+    uses `resolver_matching` before inserting its items instead, so it needs no
+    per-item update (see `extraccion.service._materializar_licitacion`)."""
+    if not items:
+        return []
+
+    resueltos = resolver_matching(
         client,
-        item_proceso_id=item_proceso_id,
-        campos={
-            "descripcion_normalizada": descripcion_normalizada,
-            "producto_id": alias["producto_id"],
-            "alias_id": alias["id"],
-            "estado_matching": "automatico",
-            "confianza_matching": None,
-        },
+        descripciones=[item["descripcion"] for item in items],
+        drogueria_id=drogueria_id,
+        cliente_id=cliente_id,
     )
-    return ResultadoMatchingItem(
-        item_proceso_id=item_proceso_id,
-        producto_id=alias["producto_id"],
-        alias_id=alias["id"],
-        estado_matching="automatico",
-        confianza_matching=None,
-        candidatos=[],
-    )
-
-
-def _aplicar_candidatos(
-    client: Client,
-    *,
-    item_proceso_id: str,
-    descripcion_normalizada: str,
-    candidatos: list[CandidatoMatching],
-) -> ResultadoMatchingItem:
-    mejor_confianza = max((c.confianza for c in candidatos), default=None)
-    estado = (
-        "sugerido" if mejor_confianza is not None and mejor_confianza >= _UMBRAL_SUGERIDO else "pendiente"
-    )
-
-    repo.actualizar_item_matching(
+    for item, resuelto in zip(items, resueltos):
+        repo.actualizar_item_matching(client, item_proceso_id=item["id"], campos=resuelto.campos())
+    return registrar_matching(
         client,
-        item_proceso_id=item_proceso_id,
-        campos={
-            "descripcion_normalizada": descripcion_normalizada,
-            "estado_matching": estado,
-            "confianza_matching": str(mejor_confianza) if mejor_confianza is not None else None,
-        },
+        item_ids=[item["id"] for item in items],
+        resueltos=resueltos,
+        drogueria_id=drogueria_id,
     )
-
-    return ResultadoMatchingItem(
-        item_proceso_id=item_proceso_id,
-        producto_id=None,
-        alias_id=None,
-        estado_matching=estado,
-        confianza_matching=mejor_confianza,
-        candidatos=candidatos,
-    )
-
 
 def _upsert_alias(
     client: Client,

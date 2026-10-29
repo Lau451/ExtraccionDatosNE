@@ -399,6 +399,63 @@ def test_filas_a_materializar_con_override_no_lee_el_csv():
 
 
 @pytest.mark.integration
+def test_validar_licitacion_inserta_los_items_con_el_matching_ya_resuelto(
+    service_client, monkeypatch, seed_drogueria, seed_producto_factory, seed_proceso_comercial,
+    seed_extraction_result_factory, seed_usuario_sistema,
+):
+    """The matching is resolved before the items_proceso insert: no per-item
+    update runs, and each renglón keeps its own candidatos."""
+    from services.presupuestacion.matching import repository as matching_repo
+
+    producto = seed_producto_factory("Amoxicilina 500mg x16")
+    actualizaciones = []
+    monkeypatch.setattr(
+        matching_repo, "actualizar_item_matching", lambda *a, **k: actualizaciones.append(k)
+    )
+    extraction = seed_extraction_result_factory(
+        "licitacion",
+        filas=[
+            {"item": "7", "cantidad": "10", "descripcion": "Jeringa descartable 5ml", "origen": "pliego"},
+            {"item": "3", "cantidad": "5", "descripcion": "Amoxicilina 500mg x16", "origen": "pliego"},
+        ],
+        columnas=["item", "cantidad", "descripcion", "origen"],
+    )
+
+    validar_extraccion(
+        service_client,
+        extraction_id=extraction["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        proceso_comercial_id=seed_proceso_comercial["id"],
+    )
+
+    assert actualizaciones == []
+    items = {
+        item["numero_renglon"]: item
+        for item in service_client.table("items_proceso")
+        .select("id, numero_renglon, estado_matching, confianza_matching, descripcion_normalizada")
+        .eq("extraction_id", extraction["id"])
+        .execute()
+        .data
+    }
+    assert items[3]["estado_matching"] == "sugerido"
+    assert Decimal(str(items[3]["confianza_matching"])) >= Decimal("70")
+    assert items[3]["descripcion_normalizada"] == "AMOXICILINA 500MG X16"
+    candidatos = (
+        service_client.table("matching_candidatos")
+        .select("item_proceso_id, producto_id, confianza")
+        .in_("item_proceso_id", [items[3]["id"], items[7]["id"]])
+        .execute()
+        .data
+    )
+    mejor_del_3 = max(
+        (c for c in candidatos if c["item_proceso_id"] == items[3]["id"]),
+        key=lambda c: Decimal(str(c["confianza"])),
+    )
+    assert mejor_del_3["producto_id"] == producto["id"]
+    assert Decimal(str(mejor_del_3["confianza"])) == Decimal(str(items[3]["confianza_matching"]))
+
+
+@pytest.mark.integration
 def test_validar_licitacion_crea_items_proceso(
     service_client, seed_drogueria, seed_proceso_comercial, seed_extraction_result_factory,
     seed_usuario_sistema,
