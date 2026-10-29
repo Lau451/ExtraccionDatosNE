@@ -98,11 +98,13 @@ resto del módulo (`_ROLES_MATCHING`); las lecturas usan el cliente del usuario 
   su `producto` elegido (`id`, `nombre`, `codigo_interno`) y sus `candidatos`
   (producto, `confianza`, `metodo`, `elegido`) del mejor al peor. Un proceso de
   otra droguería responde 404 "No se encontró el proceso comercial", igual que uno
-  inexistente. Es una sola consulta embebida de PostgREST
+  inexistente o borrado; un id que no es UUID responde 422. Es una sola consulta embebida de PostgREST
   (`repository.listar_renglones_con_matching`).
 - `GET /matching/procesos` → `list[ProcesoConMatchingPendiente]`: los procesos con
   renglones `pendiente` o `sugerido`, con cuántos de cada uno, en el orden de
-  `v_matching_pendiente` (vencimiento más cercano primero).
+  `v_matching_pendiente`: primero los procesos sin vencimiento (todas las directas),
+  después por vencimiento más cercano. La vista no filtra `deleted_at`, así que un
+  proceso borrado a mano en la base todavía aparece acá (ver `pendientes.md`).
 
 Un renglón ya resuelto se puede volver a decidir: `confirmar-matching` deja un solo
 candidato `elegido` (desmarca el anterior), y `sin-match` invalida el alias que había

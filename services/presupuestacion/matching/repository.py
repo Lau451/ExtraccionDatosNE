@@ -164,8 +164,8 @@ def listar_renglones_con_matching(
 ) -> list[dict[str, Any]]:
     """The proceso's items with their chosen producto and their candidatos
     (with producto) in one request. The FK names are explicit because
-    matching_candidatos has two FKs to items_proceso (fk_mc_item and the
-    composite fk_mc_item_drog), which PostgREST cannot pick between."""
+    matching_candidatos has two FKs to items_proceso (fk_mc_item and
+    fk_mc_item_drog), which PostgREST cannot pick between."""
     resultado = (
         client.table("items_proceso")
         .select(

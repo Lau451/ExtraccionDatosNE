@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from supabase import Client
 
@@ -83,12 +85,13 @@ def listar_procesos_pendientes_endpoint(
 
 @router.get("/procesos-comerciales/{proceso_id}/matching", response_model=MatchingProceso)
 def obtener_matching_proceso_endpoint(
-    proceso_id: str,
+    # UUID: a malformed id is a 422 here instead of a PostgREST error (500).
+    proceso_id: UUID,
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
     user_client: Client = Depends(get_user_client),
 ) -> MatchingProceso:
     return obtener_matching_proceso(
         user_client,
-        proceso_comercial_id=proceso_id,
+        proceso_comercial_id=str(proceso_id),
         drogueria_id=None if usuario.rol == "superadmin" else usuario.drogueria_id,
     )

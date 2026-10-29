@@ -149,14 +149,28 @@ elegido si no hubo candidatos), pero no hay ningún test en
 tests de confirmación que verifican `matching_candidatos` siembran una fila de
 candidato de antemano). Ver [`api.md`](./api.md).
 
-## P3 — `marcar_sin_match` no limpia `alias_id` (RN-MATCHING-007)
+## ~~P3 — `marcar_sin_match` no limpia `alias_id` (RN-MATCHING-007)~~ — resuelto
 
-Un renglón que pasa de `automatico`/`confirmado` (con `alias_id` seteado) a
-`sin_match` conserva el `alias_id` viejo en la fila de `items_proceso`, aunque
-`producto_id` quede `NULL`. No se encontró ningún consumidor de `items_proceso.alias_id`
-fuera de este módulo en esta sesión que dependa de que ese campo sea coherente con
-`estado_matching`, por lo que el impacto funcional confirmado es bajo — se deja
-como hallazgo de consistencia de datos, no de comportamiento observable roto.
+> **Resuelto en presupuestador-v1 T3a (`d020d04`)**: `marcar_sin_match` invalida el
+> alias que había matcheado el renglón, deja `alias_id` y `producto_id` en `NULL` y
+> desmarca los candidatos elegidos (`test_marcar_sin_match_invalida_el_alias_del_renglon`).
+
+## P3 — Otros renglones conservan un alias rechazado
+
+Al marcar `sin_match` un renglón se invalida su alias, pero los renglones de **otros**
+procesos del mismo cliente que ya se habían matcheado con ese alias quedan como
+estaban (`automatico`, con el producto y el `alias_id` ahora no vigente). La FK no se
+rompe (invalidar es un `UPDATE`) y cada uno se puede re-elegir desde su pantalla de
+matching. Propagar el rechazo a esos renglones es una decisión de producto pendiente.
+
+## P3 — `v_matching_pendiente` no filtra procesos borrados
+
+La vista (`supabase/migrations/0008_terceros_modelo.sql:388-407`) no filtra
+`procesos_comerciales.deleted_at`: un proceso borrado lógicamente con renglones
+pendientes sigue apareciendo en `GET /matching/procesos` (y en `/matching/pendientes`),
+pero su detalle responde 404. Hoy nada en `services/` borra lógicamente un proceso,
+así que solo pasa con una edición directa en la base. El arreglo es una migración
+que redefina la vista, y la base es compartida con el servidor de la empresa.
 
 ## P3 — Validación de tenant duplicada entre routers (mismo patrón ya señalado en otros módulos)
 
@@ -170,6 +184,11 @@ de tenant cambiara (por ejemplo, permitir acceso cross-droguería a un rol nuevo
 habría que tocar N implementaciones independientes de forma consistente.
 
 ## P3 — Ningún test cubre `router.py` directamente
+
+> **Parcialmente resuelto en presupuestador-v1 T3a**: `tests/matching/test_router.py`
+> ejercita por HTTP (`TestClient` + JWT real) `GET /procesos-comerciales/{id}/matching`
+> (roles, otra droguería, id inválido) y `GET /matching/procesos`. Los `POST` de
+> confirmar y sin match y `GET /matching/pendientes` siguen sin test HTTP.
 
 Los 11 tests de `tests/matching/test_service.py` llaman a `procesar_matching_item`,
 `confirmar_matching` y `marcar_sin_match` (el service) directamente con

@@ -193,6 +193,18 @@ def test_matching_de_proceso_de_otra_drogueria_da_404(
 
 
 @pytest.mark.integration
+def test_matching_de_proceso_con_id_invalido_da_422(seed_drogueria, crear_usuario_con_token):
+    # A non-UUID id used to reach PostgREST and come back as a 500.
+    _, token = crear_usuario_con_token(rol="comercial", drogueria_id=seed_drogueria["id"])
+
+    respuesta = _cliente_de_prueba().get(
+        "/procesos-comerciales/abc/matching", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert respuesta.status_code == 422
+
+
+@pytest.mark.integration
 def test_matching_procesos_lista_los_procesos_con_renglones_sin_resolver(
     seed_drogueria, proceso_con_renglones, crear_usuario_con_token
 ):
