@@ -236,6 +236,7 @@ def leer_filas_extraccion(
             orden_compra_id=_resolver_orden_compra_id(
                 client, extraction_id=extraction["id"], miembros=miembros
             ),
+            proceso_comercial_id=extraction.get("proceso_comercial_id"),
         )
 
     columnas, filas_completas = _leer_filas_csv_con_columnas(extraction["csv_disk_path"])
@@ -259,6 +260,7 @@ def leer_filas_extraccion(
         # por consistencia con la rama orden_compra, mismo criterio que
         # listar_extracciones (D11).
         orden_compra_id=_resolver_orden_compra_id(client, extraction_id=extraction["id"]),
+        proceso_comercial_id=extraction.get("proceso_comercial_id"),
     )
 
 

@@ -563,7 +563,7 @@ describe('ValidarExtraccionDetalle — extracción ya validada (T2)', () => {
     expect(screen.queryByRole('button', { name: /agregar fila/i })).not.toBeInTheDocument()
   })
 
-  it('validado=true sin orden_compra_id (licitación/comparativa): solo el aviso, sin botón de ir a la OC', async () => {
+  it('validado=true de una licitación: aviso + botón "Ir al matching" de su proceso (presupuestador-v1 T3)', async () => {
     vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
       extraction_id: 'abc',
       document_type: 'licitacion',
@@ -574,6 +574,7 @@ describe('ValidarExtraccionDetalle — extracción ya validada (T2)', () => {
       filas: [{ item: '1', descripcion: 'Test', cantidad: '1' }],
       validado: true,
       orden_compra_id: null,
+      proceso_comercial_id: 'proc-9',
     })
 
     renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
@@ -581,7 +582,34 @@ describe('ValidarExtraccionDetalle — extracción ya validada (T2)', () => {
     expect(await screen.findByText(/esta extracción ya fue validada/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ir a la orden de compra/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^confirmar validación$/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/proceso comercial/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al matching' }))
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/procesos-comerciales/$procesoId/matching',
+      params: { procesoId: 'proc-9' },
+    })
+  })
+
+  it('validado=true de una comparativa: solo el aviso, sin botón', async () => {
+    vi.mocked(obtenerFilasExtraccion).mockResolvedValue({
+      extraction_id: 'abc',
+      document_type: 'comparativa',
+      row_count: 1,
+      filas_leidas: 1,
+      editable: true,
+      columnas: ['renglon', 'proveedor', 'precio'],
+      filas: [{ renglon: '1', proveedor: 'Proveedor A', precio: '10.00' }],
+      validado: true,
+      orden_compra_id: null,
+      proceso_comercial_id: 'proc-9',
+    })
+
+    renderConQueryClient(<ValidarExtraccionDetalle extractionId="abc" rowCountHint={1} />)
+
+    expect(await screen.findByText(/esta extracción ya fue validada/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /ir a la orden de compra/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ir al matching' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^confirmar validación$/i })).not.toBeInTheDocument()
   })
 
   it('validado=false (u omitido, retrocompat) sigue mostrando el flujo normal de edición, sin el aviso', async () => {

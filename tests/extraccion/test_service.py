@@ -275,6 +275,30 @@ def test_leer_filas_extraccion_validado_true_sin_client_no_resuelve_orden_compra
     assert resultado.orden_compra_id is None
 
 
+def test_leer_filas_extraccion_expone_el_proceso_de_una_licitacion_validada(tmp_path):
+    # presupuestador-v1 T3: an already validated licitación/directa offers the
+    # way to its proceso's matching screen, so the screen needs the proceso id.
+    csv_path = _escribir_csv(
+        tmp_path,
+        columnas=["item", "cantidad", "descripcion"],
+        filas=[{"item": "1", "cantidad": "1", "descripcion": "Ibuprofeno"}],
+    )
+
+    resultado = leer_filas_extraccion(
+        {
+            "id": "extraction-validada",
+            "document_type": "licitacion",
+            "csv_disk_path": csv_path,
+            "row_count": 1,
+            "validado": True,
+            "status": "completed",
+            "proceso_comercial_id": "proc-1",
+        }
+    )
+
+    assert resultado.proceso_comercial_id == "proc-1"
+
+
 def test_leer_filas_extraccion_no_validada_expone_validado_false(tmp_path):
     csv_path = _escribir_csv(
         tmp_path,

@@ -161,10 +161,13 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   // ancla una vez, ck_oc_extraction_unica), pero mostrarla como pendiente
   // confunde. Corte temprano ANTES de armar el resto de la pantalla -- ningún
   // selector de cliente, cabecera editable, tabla ni "Confirmar validación" se
-  // renderiza en este caso (licitación/comparativa validadas: solo el aviso,
-  // nunca tienen OC).
+  // renderiza en este caso (licitación/directa validadas: el aviso y el link
+  // al matching de su proceso; comparativa: solo el aviso).
   if (filasQuery.data.validado) {
     const ordenCompraId = filasQuery.data.orden_compra_id
+    // presupuestador-v1 T3: a validated licitación/directa leads to the catalog
+    // matching of its proceso; a comparativa has nothing to match.
+    const procesoMatchingId = creaProceso ? filasQuery.data.proceso_comercial_id : null
     return (
       <div className="mx-auto max-w-2xl space-y-4 px-6 py-10">
         <h1 className="text-xl font-semibold text-slate-900">Validar extracción</h1>
@@ -183,6 +186,20 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
             className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
           >
             Ir a la orden de compra
+          </button>
+        )}
+        {procesoMatchingId && (
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/procesos-comerciales/$procesoId/matching',
+                params: { procesoId: procesoMatchingId },
+              })
+            }
+            className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
+          >
+            Ir al matching
           </button>
         )}
       </div>

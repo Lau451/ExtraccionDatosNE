@@ -763,6 +763,7 @@ def test_obtener_filas_extraccion_validada_sin_oc_expone_orden_compra_id_none(
         filas=[{"item": "1", "cantidad": "1", "descripcion": "Item de test", "origen": "x"}],
         columnas=["item", "cantidad", "descripcion", "origen"],
         validado=True,
+        proceso_comercial_id=seed_proceso_comercial["id"],
     )
 
     resultado = router.obtener_filas_extraccion_endpoint(
@@ -773,6 +774,8 @@ def test_obtener_filas_extraccion_validada_sin_oc_expone_orden_compra_id_none(
 
     assert resultado.validado is True
     assert resultado.orden_compra_id is None
+    # presupuestador-v1 T3: the screen offers the matching of this proceso.
+    assert resultado.proceso_comercial_id == seed_proceso_comercial["id"]
 
 
 @pytest.mark.integration

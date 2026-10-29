@@ -81,6 +81,9 @@ export interface FilasExtraccionOut {
   // (mismo backend lookup que ExtraccionResumen.orden_compra_id, D11/D13.1).
   // Licitación/comparativa validadas: siempre null (nunca tienen OC).
   orden_compra_id?: string | null
+  // presupuestador-v1 T3: proceso a validated licitación/directa created
+  // (`FilasExtraccionOut.proceso_comercial_id`); the screen offers its matching.
+  proceso_comercial_id?: string | null
 }
 
 /** Mismos nombres de columna que `services/presupuestacion/extraccion/models.py`

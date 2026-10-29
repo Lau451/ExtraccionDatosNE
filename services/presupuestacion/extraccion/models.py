@@ -217,6 +217,9 @@ class FilasExtraccionOut(BaseModel):
     # solo UNA fila del grupo multi-archivo (D13/D13.1).
     validado: bool
     orden_compra_id: str | None = None
+    # presupuestador-v1 T3: the proceso a validated licitación/directa created,
+    # so the screen can offer its matching. None until validated, and for an OC.
+    proceso_comercial_id: str | None = None
 
 
 # -- Resolución de cliente (D3 / D3.1 / D3.2, Phase 3) -----------------------
