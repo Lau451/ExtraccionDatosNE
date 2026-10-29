@@ -228,7 +228,7 @@ def main() -> None:
     print(f"Encoding:     {settings.oc_export_encoding}")
     # Releer decodificando con el mismo encoding verifica que el archivo es legible.
     with open(ruta, encoding=settings.oc_export_encoding, newline="") as f:
-        print(f"Filas leídas (sin encabezado): {sum(1 for _ in csv.reader(f)) - 1}")
+        print(f"Filas leídas (sin encabezado): {sum(1 for _ in csv.reader(f, delimiter=";")) - 1}")
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ _DOS_DECIMALES = Decimal("0.01")
 
 def _decimal(valor: Decimal) -> str:
     redondeado = valor.quantize(_DOS_DECIMALES, rounding=ROUND_HALF_UP)
-    return f"{redondeado:f}".replace(".", ",")
+    return f"{redondeado:f}"
 
 
 def _fecha(valor: date | None) -> str:

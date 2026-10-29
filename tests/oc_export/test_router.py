@@ -48,7 +48,7 @@ def test_comercial_exporta_y_queda_marcada(
     archivo = tmp_path / "oc" / cuerpo["archivo"]
     assert archivo.name.startswith(f"OC_{caso_exportable['codigo_cliente']}_")
     with open(archivo, encoding="cp1252", newline="") as f:
-        filas = list(csv.reader(f))
+        filas = list(csv.reader(f, delimiter=";"))
     assert len(filas) == 4  # encabezado + 3 filas renglón x entrega
     assert {fila[7] for fila in filas[1:]} == {"1", "2"}  # el renglón 3 (descartado) no sale
     assert filas[1][4] == caso_exportable["codigo_cliente"]

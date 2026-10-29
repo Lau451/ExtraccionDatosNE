@@ -59,14 +59,14 @@ def test_formato_de_valores():
     (fila,) = _filas()
     assert fila == [
         "oc-1", "4500-1", "3", "05/10/2026", "C01", "30-1", "Calle 1, CABA",
-        "1", "ART1", "Ibuprofeno 400mg, caja x 20", "1520,50", "1234,50",
-        "1", "15/10/2026", "10,00",
+        "1", "ART1", "Ibuprofeno 400mg, caja x 20", "1520.50", "1234.50",
+        "1", "15/10/2026", "10.00",
     ]
 
 
 def test_sin_separador_de_miles():
     (fila,) = _filas(renglones=[_renglon(1, precio_unitario=Decimal("1234567.891"))])
-    assert fila[11] == "1234567,89"
+    assert fila[11] == "1234567.89"
 
 
 def test_orden_por_renglon_y_luego_entrega():
@@ -99,10 +99,10 @@ def test_sin_entregas_no_hay_filas():
 
 
 def test_redondeo_half_up_no_bancario():
-    # 0.125 y 0.135 son exactos en Decimal: HALF_UP da 0,13 / 0,14; el redondeo
-    # bancario (HALF_EVEN) daría 0,12 / 0,14, así que 0.125 distingue ambos modos.
+    # 0.125 y 0.135 son exactos en Decimal: HALF_UP da 0.13 / 0.14; el redondeo
+    # bancario (HALF_EVEN) daría 0.12 / 0.14, así que 0.125 distingue ambos modos.
     (fila,) = _filas(
         renglones=[_renglon(1, cantidad=Decimal("0.125"), precio_unitario=Decimal("2.675"))]
     )
-    assert fila[10] == "0,13"
-    assert fila[11] == "2,68"
+    assert fila[10] == "0.13"
+    assert fila[11] == "2.68"
