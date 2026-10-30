@@ -61,7 +61,7 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
         htmlFor="matching-buscador"
         className="text-xs font-medium uppercase tracking-wide text-slate-500"
       >
-        Otro producto <span className="normal-case tracking-normal">· empezá a escribir</span>
+        Otro producto · empezá a escribir
       </label>
       <input
         id="matching-buscador"

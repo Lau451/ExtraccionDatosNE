@@ -149,7 +149,7 @@ function render() {
       <span class="conf"><span class="track"><span class="fill" style="width:${c[2]}%"></span></span>${c[2]}%</span>
       <span class="act">${r.p === i ? 'Elegido' : i === 0 && r.p == null ? 'Enter confirma' : ''}</span></button></li>`).join('')}</ul>`
       : '<p class="empty">El matching no encontró candidatos. Buscá en el catálogo.</p>'}
-    <div class="search"><label for="q" style="font-size:12px;font-weight:500;color:var(--slate-500);text-transform:uppercase;letter-spacing:.05em">Otro producto <kbd>/</kbd> o empezá a escribir</label>
+    <div class="search"><label for="q" style="font-size:12px;font-weight:500;color:var(--slate-500);text-transform:uppercase;letter-spacing:.05em">Otro producto · empezá a escribir</label>
       <input id="q" type="text" placeholder="Buscá en el catálogo por nombre o código"></div>
     <div class="actions"><button type="button" class="btn btn-secondary" id="sin">Sin match <kbd>Shift</kbd></button></div>
     <div class="keys"><span><kbd>↑</kbd> <kbd>↓</kbd> moverse</span><span><kbd>Enter</kbd> confirmar el mejor</span><span><kbd>1</kbd>–<kbd>5</kbd> elegir candidato</span><span><kbd>Shift</kbd> sin match</span><span>Escribir una letra busca en el catálogo</span><span><kbd>Tab</kbd> vuelve a los renglones</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer</span><span>Al decidir pasa solo al siguiente</span></div>`;
@@ -195,7 +195,6 @@ document.addEventListener('keydown', (ev) => {
   else if (ev.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); render(); ev.preventDefault(); }
   else if (ev.key === 'Enter' && r && r.c[0]) { decidir('confirmado', 0); ev.preventDefault(); }
   else if (/^[1-5]$/.test(ev.key) && r && r.c[+ev.key - 1]) decidir('confirmado', +ev.key - 1);
-  else if (ev.key === '/') { document.getElementById('q').focus(); ev.preventDefault(); }
 });
 render();
 </script>
