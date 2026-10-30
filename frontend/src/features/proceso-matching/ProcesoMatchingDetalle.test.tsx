@@ -250,11 +250,12 @@ describe('ProcesoMatchingDetalle', () => {
     expect(confirmarMatching).toHaveBeenCalledTimes(1)
   })
 
-  it('the search is labeled only Otro producto', async () => {
+  it('the search is labeled Catálogo and turns off the browser autocomplete', async () => {
     await abrir()
 
-    expect(within(panel()).getByText('Otro producto')).toBeInTheDocument()
-    expect(within(panel()).queryByText(/empezá a escribir/i)).not.toBeInTheDocument()
+    expect(within(panel()).getByText('Catálogo')).toBeInTheDocument()
+    expect(within(panel()).queryByText(/Otro producto|empezá a escribir/i)).not.toBeInTheDocument()
+    expect(buscador()).toHaveAttribute('autocomplete', 'off')
   })
 
   it('clicking a producto found in the catalog confirms it', async () => {

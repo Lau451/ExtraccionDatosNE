@@ -71,12 +71,14 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
         htmlFor="matching-buscador"
         className="text-xs font-medium uppercase tracking-wide text-slate-500"
       >
-        Otro producto
+        Catálogo
       </label>
       <input
         id="matching-buscador"
         ref={inputRef}
         type="text"
+        autoComplete="off"
+        spellCheck={false}
         value={texto}
         onChange={(event) => onTexto(event.target.value)}
         onKeyDown={alPresionarTecla}
