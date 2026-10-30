@@ -86,8 +86,8 @@ cola manejable solo con teclado: a la izquierda los renglones (filtros "Por reso
 "Todos", "Resueltos"), a la derecha los candidatos del renglón elegido, el buscador y
 "Sin match". Teclas: `Enter` confirma el mejor candidato, `1`-`5` otro candidato,
 `Shift` solo (al soltarlo) marca sin match, cualquier letra escribe en el buscador
-(ningún atajo usa letras), `Tab` vuelve del buscador a los renglones, `Enter` en el
-buscador confirma el primer resultado, las flechas cambian de renglón y `Ctrl+Z` vuelve
+(ningún atajo usa letras), `Tab` vuelve del buscador a los renglones, en el buscador
+las flechas recorren los resultados y `Enter` confirma el marcado, las flechas cambian de renglón y `Ctrl+Z` vuelve
 al último renglón decidido para re-elegirlo (no hay deshacer en el backend). Cada
 decisión se aplica en pantalla al instante y la cola pasa al siguiente renglón; si el
 backend la rechaza, ese renglón vuelve a como estaba y se muestra el error. La pantalla

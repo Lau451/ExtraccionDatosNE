@@ -19,10 +19,11 @@ interface Props {
 /** Catalog search for a renglón none of whose candidatos fits (S10). Searches
  * the server (`GET /productos?q=`, by nombre or código) instead of loading the
  * whole catalog; needs at least 2 characters. The text is owned by the screen,
- * which starts it with the letter typed anywhere on it (S11). Enter confirms
- * the first result. */
+ * which starts it with the letter typed anywhere on it (S11). The arrow keys
+ * move between the results and Enter confirms the marked one. */
 export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }: Props) {
   const [textoDebounced, setTextoDebounced] = useState(texto.trim())
+  const [marcado, setMarcado] = useState({ busqueda: '', indice: 0 })
 
   useEffect(() => {
     const id = setTimeout(() => setTextoDebounced(texto.trim()), DEBOUNCE_BUSQUEDA_MS)
@@ -45,13 +46,22 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
       }))
     : []
 
+  // A new search marks its first result again.
+  const indiceMarcado =
+    marcado.busqueda === textoDebounced ? Math.min(marcado.indice, Math.max(resultados.length - 1, 0)) : 0
+
   function alPresionarTecla(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Tab' && !event.shiftKey) {
       event.preventDefault()
       onSalir()
-    } else if (event.key === 'Enter' && resultados[0]) {
+    } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && resultados.length > 0) {
       event.preventDefault()
-      onElegir(resultados[0])
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      const indice = Math.min(Math.max(indiceMarcado + delta, 0), resultados.length - 1)
+      setMarcado({ busqueda: textoDebounced, indice })
+    } else if (event.key === 'Enter' && resultados[indiceMarcado]) {
+      event.preventDefault()
+      onElegir(resultados[indiceMarcado])
     }
   }
 
@@ -61,7 +71,7 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
         htmlFor="matching-buscador"
         className="text-xs font-medium uppercase tracking-wide text-slate-500"
       >
-        Otro producto · empezá a escribir
+        Otro producto
       </label>
       <input
         id="matching-buscador"
@@ -71,6 +81,8 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
         onChange={(event) => onTexto(event.target.value)}
         onKeyDown={alPresionarTecla}
         aria-label="Buscar otro producto en el catálogo"
+        aria-controls="matching-resultados"
+        aria-activedescendant={resultados[indiceMarcado] ? `resultado-${resultados[indiceMarcado].id}` : undefined}
         placeholder="Buscá en el catálogo por nombre o código"
         className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
@@ -82,23 +94,35 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
       )}
 
       {resultados.length > 0 && (
-        <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          {resultados.map((producto, indice) => (
-            <li key={producto.id}>
-              <button
-                type="button"
+        <ul
+          id="matching-resultados"
+          role="listbox"
+          aria-label="Resultados del catálogo"
+          className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white"
+        >
+          {resultados.map((producto, indice) => {
+            const estaMarcado = indice === indiceMarcado
+            return (
+              <li
+                key={producto.id}
+                id={`resultado-${producto.id}`}
+                role="option"
+                aria-selected={estaMarcado}
                 aria-label={`Confirmar ${producto.nombre} (${producto.codigo_interno})`}
                 onClick={() => onElegir(producto)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+                onMouseEnter={() => setMarcado({ busqueda: textoDebounced, indice })}
+                className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-2 text-sm ${
+                  estaMarcado ? 'bg-sky-50 shadow-[inset_3px_0_0_var(--color-accent)]' : ''
+                }`}
               >
                 <span>
                   <span className="font-medium text-slate-900">{producto.nombre}</span>
                   <span className="ml-2 font-mono text-xs text-slate-500">{producto.codigo_interno}</span>
                 </span>
-                {indice === 0 && <span className="text-xs text-slate-500">Enter confirma</span>}
-              </button>
-            </li>
-          ))}
+                {estaMarcado && <span className="text-xs text-slate-500">Enter confirma</span>}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

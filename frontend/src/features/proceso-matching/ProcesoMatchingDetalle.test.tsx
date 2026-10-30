@@ -221,11 +221,40 @@ describe('ProcesoMatchingDetalle', () => {
     fireEvent.click(opcion(3))
 
     fireEvent.change(buscador(), { target: { value: 'gasa' } })
-    await within(panel()).findByRole('button', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' })
+    await within(panel()).findByRole('option', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' })
     expect(listarProductos).toHaveBeenCalledWith({ q: 'gasa', pageSize: 10 })
 
     fireEvent.keyDown(buscador(), { key: 'Enter' })
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa'))
+  })
+
+  it('arrow keys move between the catalog results and Enter confirms the marked one', async () => {
+    const GASA_20 = { id: 'prod-gasa-20', nombre: 'Gasa estéril 20x20 x50', codigo_interno: 'GAS20' }
+    vi.mocked(listarProductos).mockResolvedValue({ items: [GASA, GASA_20], total: 2 } as never)
+    await abrir()
+    fireEvent.click(opcion(3))
+
+    fireEvent.change(buscador(), { target: { value: 'gasa' } })
+    const resultados = await within(panel()).findByRole('listbox', { name: 'Resultados del catálogo' })
+    expect(within(resultados).getByRole('option', { name: /Gasa estéril 10x10/ })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(buscador(), { key: 'ArrowDown' })
+    expect(within(resultados).getByRole('option', { name: /Gasa estéril 20x20/ })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(buscador(), { key: 'ArrowDown' })
+    fireEvent.keyDown(buscador(), { key: 'ArrowUp' })
+    fireEvent.keyDown(buscador(), { key: 'ArrowDown' })
+    expect(opcion(3)).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(buscador(), { key: 'Enter' })
+    await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa-20'))
+    expect(confirmarMatching).toHaveBeenCalledTimes(1)
+  })
+
+  it('the search is labeled only Otro producto', async () => {
+    await abrir()
+
+    expect(within(panel()).getByText('Otro producto')).toBeInTheDocument()
+    expect(within(panel()).queryByText(/empezá a escribir/i)).not.toBeInTheDocument()
   })
 
   it('clicking a producto found in the catalog confirms it', async () => {
@@ -235,7 +264,7 @@ describe('ProcesoMatchingDetalle', () => {
 
     fireEvent.change(buscador(), { target: { value: 'gasa' } })
     fireEvent.click(
-      await within(panel()).findByRole('button', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' }),
+      await within(panel()).findByRole('option', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' }),
     )
 
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa'))
