@@ -222,7 +222,7 @@ describe('ProcesoMatchingDetalle', () => {
 
     fireEvent.change(buscador(), { target: { value: 'gasa' } })
     await within(panel()).findByRole('option', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' })
-    expect(listarProductos).toHaveBeenCalledWith({ q: 'gasa', pageSize: 10 })
+    expect(listarProductos).toHaveBeenCalledWith({ q: 'gasa', pageSize: 1000 })
 
     fireEvent.keyDown(buscador(), { key: 'Enter' })
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa'))
@@ -248,6 +248,33 @@ describe('ProcesoMatchingDetalle', () => {
     fireEvent.keyDown(buscador(), { key: 'Enter' })
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa-20'))
     expect(confirmarMatching).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows every producto the search finds, beyond the first 10', async () => {
+    const muchos = Array.from({ length: 30 }, (_, i) => ({
+      id: `prod-${i}`,
+      nombre: `Gasa estéril ${i}`,
+      codigo_interno: `GAS${i}`,
+    }))
+    vi.mocked(listarProductos).mockResolvedValue({ items: muchos, total: 30 } as never)
+    await abrir()
+    fireEvent.click(opcion(3))
+
+    fireEvent.change(buscador(), { target: { value: 'gasa' } })
+    const resultados = await within(panel()).findByRole('listbox', { name: 'Resultados del catálogo' })
+
+    expect(within(resultados).getAllByRole('option')).toHaveLength(30)
+    expect(within(panel()).getByText('30 resultados')).toBeInTheDocument()
+  })
+
+  it('says how many it shows when the search finds more than it can list', async () => {
+    vi.mocked(listarProductos).mockResolvedValue({ items: [GASA], total: 1500 } as never)
+    await abrir()
+    fireEvent.click(opcion(3))
+
+    fireEvent.change(buscador(), { target: { value: 'ga' } })
+
+    expect(await within(panel()).findByText('Mostrando 1 de 1.500 resultados. Escribí más para afinar.')).toBeInTheDocument()
   })
 
   it('the search is labeled Catálogo and turns off the browser autocomplete', async () => {

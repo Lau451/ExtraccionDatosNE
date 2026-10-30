@@ -5,7 +5,9 @@ import { listarProductos } from '@/lib/api/productos'
 
 const DEBOUNCE_BUSQUEDA_MS = 300
 const Q_MINIMO = 2
-const RESULTADOS_MAXIMOS = 10
+// Every producto the search finds is listed so the user can scroll through
+// all of them; the cap only guards against a near-empty query (S11).
+const RESULTADOS_MAXIMOS = 1000
 
 interface Props {
   texto: string
@@ -45,6 +47,7 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
         codigo_interno: producto.codigo_interno,
       }))
     : []
+  const total = habilitada ? (data?.total ?? 0) : 0
 
   // A new search marks its first result again.
   const indiceMarcado =
@@ -96,11 +99,19 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
       )}
 
       {resultados.length > 0 && (
+        <p className="text-xs text-slate-500">
+          {total > resultados.length
+            ? `Mostrando ${resultados.length.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} resultados. Escribí más para afinar.`
+            : `${resultados.length.toLocaleString('es-AR')} ${resultados.length === 1 ? 'resultado' : 'resultados'}`}
+        </p>
+      )}
+
+      {resultados.length > 0 && (
         <ul
           id="matching-resultados"
           role="listbox"
           aria-label="Resultados del catálogo"
-          className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white"
+          className="max-h-80 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white"
         >
           {resultados.map((producto, indice) => {
             const estaMarcado = indice === indiceMarcado
@@ -110,6 +121,7 @@ export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }
                 id={`resultado-${producto.id}`}
                 role="option"
                 aria-selected={estaMarcado}
+                ref={estaMarcado ? (nodo) => nodo?.scrollIntoView?.({ block: 'nearest' }) : undefined}
                 aria-label={`Confirmar ${producto.nombre} (${producto.codigo_interno})`}
                 onClick={() => onElegir(producto)}
                 onMouseEnter={() => setMarcado({ busqueda: textoDebounced, indice })}
