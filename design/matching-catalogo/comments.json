@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "comments": [
+    {
+      "id": "ersvkffu",
+      "file": "01-cola-teclado.html",
+      "selector": "#sin",
+      "excerpt": "Sin match S",
+      "comment": "deberia ser otra tecla porque si escribe alguna palabra con s se activa",
+      "createdAt": "2026-10-30T14:32:11.864Z",
+      "status": "resolved",
+      "sentAt": "2026-10-30T14:32:11.874Z",
+      "resolvedAt": "2026-10-30T14:32:29.466Z"
+    }
+  ]
+}

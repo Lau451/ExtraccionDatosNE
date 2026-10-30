@@ -1,0 +1,10 @@
+{
+  "title": "Matching de catálogo",
+  "brief": "Redesign of the proceso comercial matching screen (renglones of a licitación/directa vs the catalog), prioritizing the speed of resolving every renglón: confirm a candidato, search the catalog, mark sin match, re-choose resolved ones.",
+  "feature": "odd/tasks/presupuestador-v1.md",
+  "artboards": [
+    { "file": "01-cola-teclado.html", "title": "Cola con teclado", "tradeoff": "Fastest one-by-one: keyboard-only (Enter, 1-5, Shift alone for sin match, letters go to the search, Tab back, Ctrl+Z) with auto-advance and the whole queue visible; less useful for accepting many good suggestions at once", "width": 1440, "height": 900 },
+    { "file": "02-planilla-masiva.html", "title": "Planilla con aceptación masiva", "tradeoff": "Fastest for bulk: every renglón in one dense table with its top candidato inline and a confidence threshold to confirm many in one click; risk of accepting wrong matches without looking, little room to compare candidatos", "width": 1440, "height": 900 },
+    { "file": "03-foco-comparacion.html", "title": "Foco con comparación", "tradeoff": "Most accurate decisions: one renglón at a time with matching words and differing numbers highlighted, plus a color map to jump; slower overview and no bulk actions", "width": 1440, "height": 900 }
+  ]
+}

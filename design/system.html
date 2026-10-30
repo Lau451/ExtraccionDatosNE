@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Design system — Droguería Nueva Era</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-700: #047857; --emerald-800: #065f46;
+    --red-50: #fef2f2; --red-200: #fecaca; --red-600: #dc2626; --red-700: #b91c1c;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: #fff; width: 1440px; }
+  main { padding: 40px 48px 64px; }
+  h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 12px; line-height: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); margin: 40px 0 12px; }
+  p.lead { margin: 0; font-size: 14px; color: var(--slate-600); }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .sw { border: 1px solid var(--slate-200); border-radius: 8px; overflow: hidden; font-size: 12px; }
+  .sw div:first-child { height: 56px; }
+  .sw div:last-child { padding: 8px; }
+  .sw b { display: block; font-weight: 500; }
+  .sw code { font-family: var(--font-mono); color: var(--slate-500); }
+  .type div { display: flex; gap: 24px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--slate-100); }
+  .type code { width: 160px; font-family: var(--font-mono); font-size: 12px; color: var(--slate-500); }
+  .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .space { background: var(--sky-200); height: 16px; }
+  .box { width: 96px; height: 64px; background: var(--slate-50); border: 1px solid var(--slate-200); display: grid; place-items: center; font-size: 12px; color: var(--slate-600); }
+  .btn { font: inherit; font-size: 14px; font-weight: 500; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input { font: inherit; font-size: 14px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 8px 12px; width: 320px; }
+  .badge { display: inline-flex; border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 500; box-shadow: inset 0 0 0 1px; }
+  .b-pend { background: var(--amber-50); color: var(--amber-800); box-shadow: inset 0 0 0 1px var(--amber-200); }
+  .b-sug { background: var(--sky-50); color: var(--sky-800); box-shadow: inset 0 0 0 1px var(--sky-200); }
+  .b-ok { background: var(--emerald-50); color: var(--emerald-800); box-shadow: inset 0 0 0 1px var(--emerald-200); }
+  .b-sin { background: var(--slate-100); color: var(--slate-700); box-shadow: inset 0 0 0 1px var(--slate-200); }
+  .alert { border: 1px solid var(--red-200); background: var(--red-50); color: var(--red-700); border-radius: 6px; padding: 12px; font-size: 14px; width: 480px; }
+  table { border-collapse: collapse; width: 720px; font-size: 14px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); padding: 0 16px 8px 0; border-bottom: 1px solid var(--slate-200); }
+  td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--slate-100); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .shell { display: flex; height: 220px; border: 1px solid var(--slate-200); border-radius: 8px; overflow: hidden; width: 720px; }
+  .shell aside { width: 256px; background: var(--navy); color: #f1f5f9; padding: 24px 12px; }
+  .shell aside .brand { font-size: 18px; font-weight: 600; padding: 0 12px 16px; }
+  .shell aside a { display: block; font-size: 14px; color: #e2e8f0; padding: 8px 12px; border-radius: 6px; text-decoration: none; }
+  .shell aside a.active { background: rgb(3 105 161 / .2); color: #fff; }
+  .shell section { flex: 1; padding: 24px; font-size: 14px; color: var(--slate-600); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Design system — Droguería Nueva Era</h1>
+  <p class="lead">Tokens captured from <code>frontend/src/index.css</code> and the Tailwind classes the app uses. See <code>design/system.md</code>.</p>
+
+  <h2>Brand</h2>
+  <div class="grid">
+    <div class="sw"><div style="background:var(--navy)"></div><div><b>navy</b><code>#0f172a</code></div></div>
+    <div class="sw"><div style="background:var(--accent)"></div><div><b>accent</b><code>#0369a1</code></div></div>
+  </div>
+
+  <h2>Neutrals (slate)</h2>
+  <div class="grid">
+    <div class="sw"><div style="background:var(--slate-50)"></div><div><b>slate-50</b><code>#f8fafc</code></div></div>
+    <div class="sw"><div style="background:var(--slate-100)"></div><div><b>slate-100</b><code>#f1f5f9</code></div></div>
+    <div class="sw"><div style="background:var(--slate-200)"></div><div><b>slate-200</b><code>#e2e8f0</code></div></div>
+    <div class="sw"><div style="background:var(--slate-300)"></div><div><b>slate-300</b><code>#cbd5e1</code></div></div>
+    <div class="sw"><div style="background:var(--slate-400)"></div><div><b>slate-400</b><code>#94a3b8</code></div></div>
+    <div class="sw"><div style="background:var(--slate-500)"></div><div><b>slate-500</b><code>#64748b</code></div></div>
+    <div class="sw"><div style="background:var(--slate-600)"></div><div><b>slate-600</b><code>#475569</code></div></div>
+    <div class="sw"><div style="background:var(--slate-700)"></div><div><b>slate-700</b><code>#334155</code></div></div>
+    <div class="sw"><div style="background:var(--slate-900)"></div><div><b>slate-900</b><code>#0f172a</code></div></div>
+  </div>
+
+  <h2>Status</h2>
+  <div class="grid">
+    <div class="sw"><div style="background:var(--amber-50)"></div><div><b>amber-50 / 800</b><code>pendiente</code></div></div>
+    <div class="sw"><div style="background:var(--sky-50)"></div><div><b>sky-50 / 800</b><code>sugerido</code></div></div>
+    <div class="sw"><div style="background:var(--emerald-50)"></div><div><b>emerald-50 / 800</b><code>resuelto</code></div></div>
+    <div class="sw"><div style="background:var(--emerald-700)"></div><div><b>emerald-700</b><code>#047857</code></div></div>
+    <div class="sw"><div style="background:var(--red-50)"></div><div><b>red-50 / 700</b><code>error</code></div></div>
+    <div class="sw"><div style="background:var(--red-600)"></div><div><b>red-600</b><code>#dc2626</code></div></div>
+  </div>
+
+  <h2>Typography</h2>
+  <div class="type">
+    <div><code>text-xl 600</code><span style="font-size:20px;line-height:28px;font-weight:600">Matching de C17_ACEL16</span></div>
+    <div><code>text-lg 600</code><span style="font-size:18px;line-height:28px;font-weight:600">Droguería Nueva Era</span></div>
+    <div><code>text-sm 400</code><span style="font-size:14px;line-height:20px">AMOXICILINA 500 MG COMPRIMIDOS x 1000</span></div>
+    <div><code>text-xs 500 upper</code><span style="font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--slate-500)">Renglón · Descripción · Cantidad</span></div>
+    <div><code>font-mono</code><span style="font-family:var(--font-mono);font-size:14px">AMX-500-C · 2.400</span></div>
+  </div>
+
+  <h2>Spacing · Radius · Shadow</h2>
+  <div class="row">
+    <div style="width:4px" class="space"></div><div style="width:8px" class="space"></div><div style="width:12px" class="space"></div>
+    <div style="width:16px" class="space"></div><div style="width:24px" class="space"></div><div style="width:40px" class="space"></div>
+    <span style="font-size:12px;color:var(--slate-500)">1 · 2 · 3 · 4 · 6 · 10 (×4 px)</span>
+  </div>
+  <div class="row" style="margin-top:16px">
+    <div class="box" style="border-radius:6px">md 6px</div>
+    <div class="box" style="border-radius:8px">lg 8px</div>
+    <div class="box" style="border-radius:12px">xl 12px</div>
+    <div class="box" style="border-radius:8px;box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1)">shadow-sm</div>
+    <div class="box" style="border-radius:12px;box-shadow:0 20px 25px -5px rgb(0 0 0/.1),0 8px 10px -6px rgb(0 0 0/.1)">shadow-xl</div>
+  </div>
+
+  <h2>Components</h2>
+  <div class="row">
+    <button class="btn btn-primary" type="button">Confirmar sugerencia</button>
+    <button class="btn btn-secondary" type="button">Elegir</button>
+    <button class="btn btn-primary" type="button" disabled style="opacity:.4">Guardando</button>
+    <input type="text" placeholder="Buscá en el catálogo por nombre o código" aria-label="Buscar producto">
+  </div>
+  <div class="row" style="margin-top:16px">
+    <span class="badge b-pend">Pendiente</span>
+    <span class="badge b-sug">Sugerido 84%</span>
+    <span class="badge b-ok">Automático</span>
+    <span class="badge b-ok">Confirmado</span>
+    <span class="badge b-sin">Sin match</span>
+  </div>
+  <div class="row" style="margin-top:16px">
+    <p class="alert" role="alert">No se pudo guardar el matching.</p>
+  </div>
+  <div class="row" style="margin-top:16px;align-items:flex-start">
+    <table>
+      <thead><tr><th>Renglón</th><th>Descripción</th><th class="num">Cantidad</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>AMOXICILINA 500 MG COMPRIMIDOS</td><td class="num">2.400</td><td><span class="badge b-sug">Sugerido 84%</span></td></tr>
+        <tr><td class="num">2</td><td>CLORURO DE SODIO 0,9% SOL. 500 ML</td><td class="num">1.200</td><td><span class="badge b-ok">Automático</span></td></tr>
+      </tbody>
+    </table>
+    <div class="shell">
+      <aside><div class="brand">Droguería Nueva Era</div><a href="#">Validar extracción</a><a class="active" href="#">Matching de catálogo</a><a href="#">Productos</a></aside>
+      <section>Content area on white</section>
+    </div>
+  </div>
+</main>
+</body>
+</html>
