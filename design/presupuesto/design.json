@@ -1,0 +1,10 @@
+{
+  "title": "Presupuesto",
+  "brief": "Presupuesto screen of a proceso comercial: the matched renglones volcados with the Progress presupuestador columns (renglón, descripción, cantidad, precio unitario, total, rentabilidad, costo). Until the pricing engine exists precio, total, costo and rentabilidad stay empty. Costo and rentabilidad are visible only to admin/gerencia.",
+  "feature": "odd/tasks/presupuestador-v1.md",
+  "artboards": [
+    { "file": "01-planilla-progress.html", "title": "Planilla tipo Progress", "tradeoff": "Familiar: the same columns as the Progress presupuestador in one dense table with totals at the bottom; while prices are missing most of the table is empty dashes", "width": 1440, "height": 900 },
+    { "file": "02-documento-cotizacion.html", "title": "Documento de cotización", "tradeoff": "Shows the presupuesto as the cliente will receive it plus a checklist of what is missing to present it; costo and rentabilidad live only in the side summary, less room for per-renglón analysis", "width": 1440, "height": 900 },
+    { "file": "03-revision-por-estado.html", "title": "Revisión por estado", "tradeoff": "Groups renglones by what they need (listos, sin precio, sin producto, excluidos) with the steps to presentation; best to see what is missing, worse to read the presupuesto top to bottom in renglón order", "width": 1440, "height": 900 }
+  ]
+}

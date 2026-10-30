@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Presupuesto — Planilla tipo Progress</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-800: #065f46;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: #fff; display: flex; height: 100vh; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  aside.nav { width: 256px; flex-shrink: 0; background: var(--navy); color: var(--slate-100); padding: 24px 12px; }
+  aside.nav .brand { font-size: 18px; font-weight: 600; padding: 0 12px 24px; }
+  aside.nav a { display: block; padding: 8px 12px; border-radius: 6px; font-size: 14px; color: var(--slate-200); text-decoration: none; }
+  aside.nav a[aria-current] { background: rgb(3 105 161 / .2); color: #fff; }
+  .app { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--slate-200); display: flex; align-items: center; gap: 16px; }
+  h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; }
+  .meta { font-size: 14px; color: var(--slate-600); }
+  .badge { display: inline-flex; border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .b-gen { background: var(--sky-50); color: var(--sky-800); box-shadow: inset 0 0 0 1px var(--sky-200); }
+  .b-warn { background: var(--amber-50); color: var(--amber-800); box-shadow: inset 0 0 0 1px var(--amber-200); }
+  .b-sin { background: var(--slate-100); color: var(--slate-700); box-shadow: inset 0 0 0 1px var(--slate-200); }
+  .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn { border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .seg { display: inline-flex; border: 1px solid var(--slate-300); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--slate-700); }
+  .seg button[aria-pressed="true"] { background: var(--navy); color: #fff; }
+  .notice { margin: 12px 24px 0; border: 1px solid var(--amber-200); background: var(--amber-50); color: var(--amber-800); border-radius: 6px; padding: 10px 12px; font-size: 14px; }
+  .wrap { flex: 1; overflow: auto; margin: 12px 24px 0; border: 1px solid var(--slate-200); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { position: sticky; top: 0; background: var(--slate-50); text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); padding: 10px 12px; border-bottom: 1px solid var(--slate-200); white-space: nowrap; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--slate-100); vertical-align: top; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .empty { color: var(--slate-400); }
+  .sub { display: block; font-size: 12px; color: var(--slate-500); }
+  .code { font-family: var(--font-mono); font-size: 12px; color: var(--slate-500); }
+  tr.off td { color: var(--slate-400); }
+  tr.off td .sub { color: var(--slate-400); }
+  .x { border: 1px solid var(--slate-300); background: #fff; color: var(--slate-700); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+  .costo { background: var(--slate-50); }
+  tfoot td { position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--slate-200); font-weight: 600; padding: 12px; }
+  footer.legend { padding: 10px 24px 14px; font-size: 12px; color: var(--slate-500); }
+</style>
+</head>
+<body>
+<aside class="nav" aria-label="Navegación principal">
+  <div class="brand">Droguería Nueva Era</div>
+  <a href="#">Validar extracción</a>
+  <a href="#">Matching de catálogo</a>
+  <a href="#" aria-current="page">Presupuestos</a>
+  <a href="#">Productos</a>
+</aside>
+<div class="app">
+  <header>
+    <div>
+      <h1>Presupuesto C17_ACEL16 <span class="badge b-gen">Generado</span></h1>
+      <div class="meta">Hospital Sayago · Licitación · 14 renglones · generado hoy 10:42</div>
+    </div>
+    <div class="right">
+      <span class="meta">Ver como</span>
+      <div class="seg" role="group" aria-label="Ver como">
+        <button type="button" data-rol="gerencia" aria-pressed="true">Gerencia</button>
+        <button type="button" data-rol="comercial" aria-pressed="false">Comercial</button>
+      </div>
+      <button type="button" class="btn btn-secondary">Volver al matching</button>
+      <button type="button" class="btn btn-primary" disabled title="Faltan precios en 12 renglones">Aprobar</button>
+    </div>
+  </header>
+  <p class="notice" role="status">Los precios todavía no se calculan: el motor de precios y los costos vienen después. Precio, total, costo y rentabilidad quedan vacíos.</p>
+  <div class="wrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot><tr id="foot"></tr></tfoot>
+    </table>
+  </div>
+  <footer class="legend">12 a cotizar · 1 excluido · 1 sin producto (no se cotiza) · Total —</footer>
+</div>
+<script>
+const R = [
+  [1, 'AMOXICILINA 500 MG COMPRIMIDOS', 'Amoxicilina 500 mg comp. x 1000', 'AMX500C', 2400],
+  [2, 'CLORURO DE SODIO 0,9% SOL. FISIOLOGICA X 500 ML', 'Solución fisiológica 0,9% 500 ml', 'SF500', 1200],
+  [3, 'IBUPROFENO 400 MG COMPRIMIDOS', 'Ibuprofeno 400 mg comp. x 500', 'IBU400', 3000],
+  [4, 'GUANTES DE LATEX ESTERIL TALLE 7', 'Guante de examinación látex talle M', 'GLX-M', 500, 'excluido'],
+  [5, 'JERINGA DESCARTABLE 5 ML C/AGUJA 21G', 'Jeringa 5 ml con aguja 21G x 1 1/2', 'JER5-21', 10000],
+  [6, 'ENOXAPARINA 40 MG JERINGA PRELLENADA', 'Enoxaparina 40 mg/0,4 ml jer. prellenada', 'ENX40', 300],
+  [7, 'OMEPRAZOL 20 MG CAPSULAS', 'Omeprazol 20 mg cáps. x 500', 'OMP20', 1800],
+  [8, 'CEFTRIAXONA 1 G FA IV', 'Ceftriaxona 1 g FA', 'CFX1G', 450],
+  [9, 'GASA ESTERIL 10X10 CM X 100 SOBRES', 'Gasa estéril 10x10 x100', 'GAS10', 200],
+  [10, 'PARACETAMOL 1 G/100 ML SOL. INYECTABLE', 'Paracetamol 1 g/100 ml sol. iny.', 'PCT1G-IV', 600],
+  [11, 'METFORMINA 850 MG COMPRIMIDOS', 'Metformina 850 mg comp. x 500', 'MTF850', 2000],
+  [12, 'CATETER IV 20G', null, null, 900, 'sin_match'],
+  [13, 'DEXAMETASONA 8 MG/2 ML AMPOLLA', 'Dexametasona 8 mg/2 ml amp. x 100', 'DXM8', 400],
+  [14, 'SALBUTAMOL AEROSOL 100 MCG', 'Salbutamol aerosol 100 mcg x 200 dosis', 'SLB100', 150],
+];
+let rol = 'gerencia';
+const vacio = '<span class="empty" aria-label="Sin dato">—</span>';
+function render() {
+  const g = rol === 'gerencia';
+  document.getElementById('head').innerHTML = `<th class="num">Renglón</th><th>Descripción del pliego</th><th>Producto</th><th class="num">Cant. solicitada</th><th class="num">Cant. ofertada</th><th class="num">Precio unitario</th><th class="num">Total</th>${g ? '<th class="num costo">Costo</th><th class="num costo">Rentabilidad</th>' : ''}<th><span style="position:absolute;left:-9999px">Acciones</span></th>`;
+  document.getElementById('rows').innerHTML = R.map(([n, d, p, c, q, e]) => {
+    const off = e === 'excluido' || e === 'sin_match';
+    return `<tr class="${off ? 'off' : ''}">
+      <td class="num">${n}</td><td>${d}</td>
+      <td>${p ? `${p}<span class="sub code">${c}</span>` : '<span class="badge b-sin">Sin producto</span>'}${e === 'excluido' ? '<span class="sub">Excluido: no lo trabajamos</span>' : ''}</td>
+      <td class="num">${q.toLocaleString('es-AR')}</td><td class="num">${off ? vacio : q.toLocaleString('es-AR')}</td>
+      <td class="num">${vacio}</td><td class="num">${vacio}</td>
+      ${g ? `<td class="num costo">${vacio}</td><td class="num costo">${vacio}</td>` : ''}
+      <td class="num">${e === 'sin_match' ? '' : `<button type="button" class="x">${e === 'excluido' ? 'Incluir' : 'Excluir'}</button>`}</td></tr>`;
+  }).join('');
+  document.getElementById('foot').innerHTML = `<td colspan="6">Total del presupuesto</td><td class="num">${vacio}</td>${g ? `<td class="num costo">${vacio}</td><td class="num costo">${vacio}</td>` : ''}<td></td>`;
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('.seg button'); if (!b) return;
+  rol = b.dataset.rol; document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); render();
+});
+render();
+</script>
+</body>
+</html>

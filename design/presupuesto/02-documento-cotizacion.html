@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Presupuesto — Documento de cotización</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-700: #047857; --emerald-800: #065f46;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: var(--slate-100); display: flex; height: 100vh; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  aside.nav { width: 256px; flex-shrink: 0; background: var(--navy); color: var(--slate-100); padding: 24px 12px; }
+  aside.nav .brand { font-size: 18px; font-weight: 600; padding: 0 12px 24px; }
+  aside.nav a { display: block; padding: 8px 12px; border-radius: 6px; font-size: 14px; color: var(--slate-200); text-decoration: none; }
+  aside.nav a[aria-current] { background: rgb(3 105 161 / .2); color: #fff; }
+  main { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; justify-content: center; }
+  .paper { width: 820px; background: #fff; border: 1px solid var(--slate-200); border-radius: 8px; box-shadow: 0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1); padding: 40px 48px; align-self: flex-start; }
+  .paper .top { display: flex; justify-content: space-between; border-bottom: 2px solid var(--navy); padding-bottom: 16px; }
+  .paper .brand { font-size: 18px; font-weight: 600; }
+  .paper .doc { text-align: right; font-size: 14px; color: var(--slate-600); }
+  .paper .doc b { display: block; font-size: 20px; color: var(--slate-900); }
+  .to { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; margin: 20px 0; font-size: 14px; }
+  .to dt { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); }
+  .to dd { margin: 2px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); padding: 8px 6px; border-bottom: 1px solid var(--slate-300); }
+  td { padding: 7px 6px; border-bottom: 1px solid var(--slate-100); vertical-align: top; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sub { display: block; font-size: 12px; color: var(--slate-500); }
+  .hole { display: inline-block; width: 64px; height: 12px; border-radius: 4px; background: repeating-linear-gradient(135deg, var(--slate-100) 0 6px, var(--slate-200) 6px 12px); vertical-align: middle; }
+  .total { display: flex; justify-content: flex-end; gap: 24px; margin-top: 16px; font-size: 16px; font-weight: 600; }
+  .omit { margin-top: 24px; font-size: 12px; color: var(--slate-500); border-top: 1px dashed var(--slate-300); padding-top: 12px; }
+  aside.side { width: 360px; flex-shrink: 0; background: #fff; border-left: 1px solid var(--slate-200); padding: 24px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+  h2 { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); margin: 0 0 8px; }
+  .badge { display: inline-flex; border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 500; }
+  .b-gen { background: var(--sky-50); color: var(--sky-800); box-shadow: inset 0 0 0 1px var(--sky-200); }
+  .check { list-style: none; margin: 0; padding: 0; font-size: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .check li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+  .ok { color: var(--emerald-700); font-weight: 600; }
+  .no { color: var(--amber-800); font-weight: 600; }
+  .check small { display: block; color: var(--slate-500); font-size: 12px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { border: 1px solid var(--slate-200); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--slate-500); }
+  .btn { border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 500; width: 100%; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .seg { display: inline-flex; border: 1px solid var(--slate-300); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--slate-700); }
+  .seg button[aria-pressed="true"] { background: var(--navy); color: #fff; }
+</style>
+</head>
+<body>
+<aside class="nav" aria-label="Navegación principal">
+  <div class="brand">Droguería Nueva Era</div>
+  <a href="#">Validar extracción</a>
+  <a href="#">Matching de catálogo</a>
+  <a href="#" aria-current="page">Presupuestos</a>
+  <a href="#">Productos</a>
+</aside>
+<main>
+  <article class="paper" aria-label="Vista previa del presupuesto">
+    <div class="top">
+      <div><div class="brand">Droguería Nueva Era</div><div class="sub">Vista previa · así se presenta al cliente</div></div>
+      <div class="doc"><b>Presupuesto</b>C17_ACEL16 · borrador</div>
+    </div>
+    <dl class="to">
+      <div><dt>Cliente</dt><dd>Hospital Sayago</dd></div>
+      <div><dt>Proceso</dt><dd>Licitación C17_ACEL16</dd></div>
+      <div><dt>Renglones cotizados</dt><dd>12 de 14</dd></div>
+      <div><dt>Mantenimiento de oferta</dt><dd><span class="hole" aria-label="Sin dato"></span></dd></div>
+    </dl>
+    <table>
+      <thead><tr><th class="num">Reng.</th><th>Descripción</th><th class="num">Cantidad</th><th class="num">Precio unit.</th><th class="num">Total</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="total"><span>Total</span><span class="hole" style="width:120px;height:16px" aria-label="Sin dato"></span></div>
+    <p class="omit">No se cotizan: renglón 4 (excluido) · renglón 12 CATETER IV 20G (sin producto en el catálogo).</p>
+  </article>
+</main>
+<aside class="side" aria-label="Estado del presupuesto">
+  <div style="display:flex;align-items:center;gap:8px"><span class="badge b-gen">Generado</span><span class="sub">hoy 10:42</span>
+    <div class="seg" role="group" aria-label="Ver como" style="margin-left:auto"><button type="button" data-rol="gerencia" aria-pressed="true">Gerencia</button><button type="button" data-rol="comercial" aria-pressed="false">Comercial</button></div></div>
+  <section>
+    <h2>Para poder presentar</h2>
+    <ul class="check">
+      <li><span class="ok" aria-hidden="true">✓</span><span>Renglones matcheados<small>13 de 14 con producto</small></span></li>
+      <li><span class="no" aria-hidden="true">!</span><span>Precios<small>12 renglones sin precio: el motor de precios viene después</small></span></li>
+      <li><span class="no" aria-hidden="true">!</span><span>Aprobación<small>Requiere precios</small></span></li>
+    </ul>
+  </section>
+  <section>
+    <h2>Resumen</h2>
+    <div class="stats" id="stats"></div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+    <button type="button" class="btn btn-secondary">Ver renglones y excluir</button>
+    <button type="button" class="btn btn-secondary">Volver al matching</button>
+    <button type="button" class="btn btn-primary" disabled>Aprobar presupuesto</button>
+  </section>
+</aside>
+<script>
+const R = [
+  [1, 'Amoxicilina 500 mg comp. x 1000', 'AMOXICILINA 500 MG COMPRIMIDOS', 2400],
+  [2, 'Solución fisiológica 0,9% 500 ml', 'CLORURO DE SODIO 0,9% SOL. FISIOLOGICA X 500 ML', 1200],
+  [3, 'Ibuprofeno 400 mg comp. x 500', 'IBUPROFENO 400 MG COMPRIMIDOS', 3000],
+  [5, 'Jeringa 5 ml con aguja 21G x 1 1/2', 'JERINGA DESCARTABLE 5 ML C/AGUJA 21G', 10000],
+  [6, 'Enoxaparina 40 mg/0,4 ml jer. prellenada', 'ENOXAPARINA 40 MG JERINGA PRELLENADA', 300],
+  [7, 'Omeprazol 20 mg cáps. x 500', 'OMEPRAZOL 20 MG CAPSULAS', 1800],
+  [8, 'Ceftriaxona 1 g FA', 'CEFTRIAXONA 1 G FA IV', 450],
+  [9, 'Gasa estéril 10x10 x100', 'GASA ESTERIL 10X10 CM X 100 SOBRES', 200],
+  [10, 'Paracetamol 1 g/100 ml sol. iny.', 'PARACETAMOL 1 G/100 ML SOL. INYECTABLE', 600],
+  [11, 'Metformina 850 mg comp. x 500', 'METFORMINA 850 MG COMPRIMIDOS', 2000],
+  [13, 'Dexametasona 8 mg/2 ml amp. x 100', 'DEXAMETASONA 8 MG/2 ML AMPOLLA', 400],
+  [14, 'Salbutamol aerosol 100 mcg x 200 dosis', 'SALBUTAMOL AEROSOL 100 MCG', 150],
+];
+const hole = '<span class="hole" aria-label="Sin dato"></span>';
+document.getElementById('rows').innerHTML = R.map(([n, p, d, q]) =>
+  `<tr><td class="num">${n}</td><td>${p}<span class="sub">${d}</span></td><td class="num">${q.toLocaleString('es-AR')}</td><td class="num">${hole}</td><td class="num">${hole}</td></tr>`).join('');
+function stats(rol) {
+  const base = [['12', 'A cotizar'], ['1', 'Excluido'], ['1', 'Sin producto'], ['—', 'Total']];
+  const g = rol === 'gerencia' ? [['—', 'Costo total'], ['—', 'Rentabilidad']] : [];
+  document.getElementById('stats').innerHTML = [...base, ...g].map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('.seg button'); if (!b) return;
+  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); stats(b.dataset.rol);
+});
+stats('gerencia');
+</script>
+</body>
+</html>

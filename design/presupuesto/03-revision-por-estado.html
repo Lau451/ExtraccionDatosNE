@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Presupuesto — Revisión por estado</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-700: #047857; --emerald-800: #065f46;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: var(--slate-50); display: flex; min-height: 100vh; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  aside.nav { width: 256px; flex-shrink: 0; background: var(--navy); color: var(--slate-100); padding: 24px 12px; }
+  aside.nav .brand { font-size: 18px; font-weight: 600; padding: 0 12px 24px; }
+  aside.nav a { display: block; padding: 8px 12px; border-radius: 6px; font-size: 14px; color: var(--slate-200); text-decoration: none; }
+  aside.nav a[aria-current] { background: rgb(3 105 161 / .2); color: #fff; }
+  main { flex: 1; padding: 24px 32px 48px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .head { display: flex; align-items: flex-start; gap: 16px; }
+  h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; }
+  .meta { font-size: 14px; color: var(--slate-600); }
+  .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn { border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .seg { display: inline-flex; border: 1px solid var(--slate-300); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--slate-700); }
+  .seg button[aria-pressed="true"] { background: var(--navy); color: #fff; }
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .steps li { background: #fff; border: 1px solid var(--slate-200); border-radius: 8px; padding: 12px 14px; font-size: 14px; }
+  .steps li b { display: block; font-weight: 600; }
+  .steps li span { font-size: 12px; color: var(--slate-500); }
+  .steps .done { border-color: var(--emerald-200); background: var(--emerald-50); }
+  .steps .done b { color: var(--emerald-800); }
+  .steps .now { border-color: var(--amber-200); background: var(--amber-50); }
+  .steps .now b { color: var(--amber-800); }
+  details { background: #fff; border: 1px solid var(--slate-200); border-radius: 8px; }
+  summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  summary::-webkit-details-marker { display: none; }
+  summary .count { font-variant-numeric: tabular-nums; }
+  summary .hint { font-weight: 400; color: var(--slate-500); font-size: 12px; margin-left: auto; }
+  .dot { width: 10px; height: 10px; border-radius: 9999px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); padding: 8px 16px; border-top: 1px solid var(--slate-200); border-bottom: 1px solid var(--slate-200); background: var(--slate-50); }
+  td { padding: 8px 16px; border-bottom: 1px solid var(--slate-100); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .empty { color: var(--slate-400); }
+  .sub { display: block; font-size: 12px; color: var(--slate-500); }
+  .x { border: 1px solid var(--slate-300); background: #fff; color: var(--slate-700); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+  .zero { padding: 12px 16px; font-size: 14px; color: var(--slate-500); border-top: 1px solid var(--slate-200); }
+</style>
+</head>
+<body>
+<aside class="nav" aria-label="Navegación principal">
+  <div class="brand">Droguería Nueva Era</div>
+  <a href="#">Validar extracción</a>
+  <a href="#">Matching de catálogo</a>
+  <a href="#" aria-current="page">Presupuestos</a>
+  <a href="#">Productos</a>
+</aside>
+<main>
+  <div class="head">
+    <div><h1>Presupuesto C17_ACEL16</h1><div class="meta">Hospital Sayago · Licitación · 14 renglones · generado hoy 10:42</div></div>
+    <div class="right">
+      <div class="seg" role="group" aria-label="Ver como"><button type="button" data-rol="gerencia" aria-pressed="true">Gerencia</button><button type="button" data-rol="comercial" aria-pressed="false">Comercial</button></div>
+      <button type="button" class="btn btn-secondary">Volver al matching</button>
+      <button type="button" class="btn btn-primary" disabled>Aprobar</button>
+    </div>
+  </div>
+  <ol class="steps" aria-label="Avance del presupuesto">
+    <li class="done"><b>1. Matching</b><span>13 de 14 con producto</span></li>
+    <li class="now" aria-current="step"><b>2. Precios</b><span>Pendiente: el motor de precios viene después</span></li>
+    <li><b>3. Aprobación</b><span>Requiere precios</span></li>
+    <li><b>4. Presentación</b><span>—</span></li>
+  </ol>
+  <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
+</main>
+<script>
+const R = [
+  [1, 'AMOXICILINA 500 MG COMPRIMIDOS', 'Amoxicilina 500 mg comp. x 1000', 2400, 'sin_precio'],
+  [2, 'CLORURO DE SODIO 0,9% SOL. FISIOLOGICA X 500 ML', 'Solución fisiológica 0,9% 500 ml', 1200, 'sin_precio'],
+  [3, 'IBUPROFENO 400 MG COMPRIMIDOS', 'Ibuprofeno 400 mg comp. x 500', 3000, 'sin_precio'],
+  [4, 'GUANTES DE LATEX ESTERIL TALLE 7', 'Guante de examinación látex talle M', 500, 'excluido'],
+  [5, 'JERINGA DESCARTABLE 5 ML C/AGUJA 21G', 'Jeringa 5 ml con aguja 21G x 1 1/2', 10000, 'sin_precio'],
+  [6, 'ENOXAPARINA 40 MG JERINGA PRELLENADA', 'Enoxaparina 40 mg/0,4 ml jer. prellenada', 300, 'sin_precio'],
+  [7, 'OMEPRAZOL 20 MG CAPSULAS', 'Omeprazol 20 mg cáps. x 500', 1800, 'sin_precio'],
+  [8, 'CEFTRIAXONA 1 G FA IV', 'Ceftriaxona 1 g FA', 450, 'sin_precio'],
+  [9, 'GASA ESTERIL 10X10 CM X 100 SOBRES', 'Gasa estéril 10x10 x100', 200, 'sin_precio'],
+  [10, 'PARACETAMOL 1 G/100 ML SOL. INYECTABLE', 'Paracetamol 1 g/100 ml sol. iny.', 600, 'sin_precio'],
+  [11, 'METFORMINA 850 MG COMPRIMIDOS', 'Metformina 850 mg comp. x 500', 2000, 'sin_precio'],
+  [12, 'CATETER IV 20G', null, 900, 'sin_producto'],
+  [13, 'DEXAMETASONA 8 MG/2 ML AMPOLLA', 'Dexametasona 8 mg/2 ml amp. x 100', 400, 'sin_precio'],
+  [14, 'SALBUTAMOL AEROSOL 100 MCG', 'Salbutamol aerosol 100 mcg x 200 dosis', 150, 'sin_precio'],
+];
+const GRUPOS = [
+  ['listo', 'Listos para presentar', 'var(--emerald-700)', 'Con producto y precio', true],
+  ['sin_precio', 'Sin precio', 'var(--amber-200)', 'Se completan con el motor de precios', true],
+  ['sin_producto', 'Sin producto', 'var(--slate-400)', 'No se cotizan; se corrigen en el matching', false],
+  ['excluido', 'Excluidos', 'var(--slate-300)', 'Decidiste no cotizarlos', false],
+];
+let rol = 'gerencia';
+const vacio = '<span class="empty" aria-label="Sin dato">—</span>';
+function render() {
+  const g = rol === 'gerencia';
+  document.getElementById('groups').innerHTML = GRUPOS.map(([k, t, c, h, open]) => {
+    const rs = R.filter((r) => r[4] === k);
+    const body = rs.length ? `<table><thead><tr><th class="num">Reng.</th><th>Descripción · producto</th><th class="num">Cantidad</th><th class="num">Precio unit.</th><th class="num">Total</th>${g ? '<th class="num">Costo</th><th class="num">Rentab.</th>' : ''}<th></th></tr></thead><tbody>${rs.map(([n, d, p, q]) =>
+      `<tr><td class="num">${n}</td><td>${d}<span class="sub">${p ?? 'Sin producto en el catálogo'}</span></td><td class="num">${q.toLocaleString('es-AR')}</td><td class="num">${vacio}</td><td class="num">${vacio}</td>${g ? `<td class="num">${vacio}</td><td class="num">${vacio}</td>` : ''}
+      <td class="num">${k === 'sin_producto' ? '<button type="button" class="x">Ir al matching</button>' : `<button type="button" class="x">${k === 'excluido' ? 'Incluir' : 'Excluir'}</button>`}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="zero">Ningún renglón todavía.</p>';
+    return `<details ${open ? 'open' : ''}><summary><span class="dot" style="background:${c}" aria-hidden="true"></span>${t} <span class="count">(${rs.length})</span><span class="hint">${h}</span></summary>${body}</details>`;
+  }).join('');
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('.seg button'); if (!b) return;
+  rol = b.dataset.rol; document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); render();
+});
+render();
+</script>
+</body>
+</html>
