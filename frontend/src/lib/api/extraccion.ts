@@ -13,7 +13,7 @@ export type EstadoExtraccion = 'processing' | 'completed' | 'failed' | 'partial'
 export interface DocumentoReciente {
   id: string
   source_filename: string
-  document_type: 'licitacion' | 'comparativa' | 'orden_compra'
+  document_type: 'licitacion' | 'cotizacion' | 'comparativa' | 'orden_compra'
   row_count: number
   status: EstadoExtraccion
   // Mensaje en español para el usuario cuando status='failed' (mapeo de

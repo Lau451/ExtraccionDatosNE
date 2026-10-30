@@ -88,9 +88,13 @@ cliente_formato_documentos (tabla Supabase compartida)
       │
       │  (sin ningún código Python compartido)
       ▼
-services/extraccion/main.py:_resolver_formato_prompt (líneas 122-149)
-      │  SELECT id, instrucciones_prompt WHERE cliente_id=? AND doc_type=? AND activo=True
-      │  (línea 137)
+services/extraccion/main.py:_resolver_formato_prompt
+      │  _buscar_formato: SELECT id, instrucciones_prompt
+      │    WHERE cliente_id=? AND doc_type=? AND activo=True
+      │
+      │  Solo para comparativa y orden_compra (_DOC_TYPES_CON_FORMATO_CLIENTE,
+      │  presupuestador-v1 T2a): licitaciones y directas usan siempre el
+      │  prompt genérico, sin consultar la tabla
       ▼
 Prompt de Gemini enriquecido con instrucciones_prompt del cliente
 ```

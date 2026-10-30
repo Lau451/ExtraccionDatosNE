@@ -82,3 +82,17 @@ describe('Sidebar: matriz de roles', () => {
     expect(screen.getByRole('link', { name: 'PCP' })).toBeTruthy()
   })
 })
+
+describe('Sidebar: Matching de catálogo (presupuestador-v1 T3c)', () => {
+  it.each<Rol>(['superadmin', 'admin', 'gerencia', 'lider_comercial', 'comercial'])('visible para %s', (rol) => {
+    rolActual.valor = rol
+    render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'Matching de catálogo' }).getAttribute('href')).toBe('/matching')
+  })
+
+  it('oculto para compras', () => {
+    rolActual.valor = 'compras'
+    render(<Sidebar />)
+    expect(screen.queryByText('Matching de catálogo')).toBeNull()
+  })
+})

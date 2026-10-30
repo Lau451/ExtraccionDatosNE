@@ -114,10 +114,11 @@ Ningún módulo de `presupuestacion/` **importa** `clientes/` salvo `main.py`
   /api/clientes` de `services/extraccion` consulta la tabla `clientes` directo
   (`.eq("activo", True)`, línea 47) para el selector de cliente en el formulario de
   carga de documentos.
-- `services/extraccion/main.py:122-149` (`_resolver_formato_prompt`), invocada desde
-  el flujo de `POST /procesar` (línea 221): consulta `cliente_formato_documentos`
-  directo (`.eq("activo", True)`, línea 137) para inyectar `instrucciones_prompt` al
-  prompt de Gemini.
+- `services/extraccion/main.py` (`_resolver_formato_prompt` / `_buscar_formato`),
+  invocada desde el flujo de `POST /procesar`: consulta `cliente_formato_documentos`
+  directo (`.eq("activo", True)`) para inyectar `instrucciones_prompt` al prompt de
+  Gemini. Solo aplica a comparativas y órdenes de compra: licitaciones y directas usan
+  siempre el prompt genérico (presupuestador-v1 T2a).
 - `services/presupuestacion/imports/repository.py:141-185`: CRUD directo sobre
   `clientes` para importación masiva por `codigo_interno`, dentro del propio backend
   de `presupuestacion/` pero sin pasar por `clientes/repository.py`.

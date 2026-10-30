@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Matching — Cola con teclado</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-700: #047857; --emerald-800: #065f46;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: #fff; display: flex; height: 100vh; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  aside.nav { width: 256px; flex-shrink: 0; background: var(--navy); color: var(--slate-100); padding: 24px 12px; }
+  aside.nav .brand { font-size: 18px; font-weight: 600; padding: 0 12px 24px; }
+  aside.nav a { display: block; padding: 8px 12px; border-radius: 6px; font-size: 14px; color: var(--slate-200); text-decoration: none; }
+  aside.nav a[aria-current] { background: rgb(3 105 161 / .2); color: #fff; }
+  .app { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  header.top { padding: 16px 24px; border-bottom: 1px solid var(--slate-200); display: flex; align-items: center; gap: 24px; }
+  header.top h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; }
+  header.top .meta { font-size: 14px; color: var(--slate-600); }
+  .progress { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--slate-600); }
+  .bar { width: 200px; height: 8px; border-radius: 9999px; background: var(--slate-100); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--emerald-700); transition: width .2s; }
+  .split { flex: 1; display: flex; min-height: 0; }
+  .queue { width: 440px; border-right: 1px solid var(--slate-200); display: flex; flex-direction: column; min-height: 0; }
+  .filters { display: flex; gap: 4px; padding: 12px 16px; border-bottom: 1px solid var(--slate-200); }
+  .filters button { border: 1px solid var(--slate-300); background: #fff; color: var(--slate-700); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; }
+  .filters button[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .list { overflow-y: auto; flex: 1; margin: 0; padding: 0; list-style: none; }
+  .list li { display: grid; grid-template-columns: 32px 1fr auto; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--slate-100); cursor: pointer; font-size: 14px; }
+  .list li[aria-selected="true"] { background: var(--sky-50); box-shadow: inset 3px 0 0 var(--accent); }
+  .list .n { font-variant-numeric: tabular-nums; color: var(--slate-500); font-size: 12px; }
+  .list .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list .p { display: block; font-size: 12px; color: var(--slate-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 8px; height: 8px; border-radius: 9999px; }
+  .badge { display: inline-flex; border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .e-pendiente { background: var(--amber-50); color: var(--amber-800); box-shadow: inset 0 0 0 1px var(--amber-200); }
+  .e-sugerido { background: var(--sky-50); color: var(--sky-800); box-shadow: inset 0 0 0 1px var(--sky-200); }
+  .e-automatico, .e-confirmado { background: var(--emerald-50); color: var(--emerald-800); box-shadow: inset 0 0 0 1px var(--emerald-200); }
+  .e-sin_match { background: var(--slate-100); color: var(--slate-700); box-shadow: inset 0 0 0 1px var(--slate-200); }
+  .panel { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 20px; }
+  .renglon-head .lbl { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); }
+  .renglon-head h2 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 4px 0 8px; }
+  .renglon-head .facts { display: flex; gap: 16px; font-size: 14px; color: var(--slate-600); align-items: center; }
+  .cands { list-style: none; margin: 0; padding: 0; border: 1px solid var(--slate-200); border-radius: 8px; overflow: hidden; }
+  .cands li + li { border-top: 1px solid var(--slate-100); }
+  .cand { width: 100%; display: grid; grid-template-columns: 28px 1fr 120px 100px; gap: 12px; align-items: center; padding: 12px 16px; background: #fff; border: 0; text-align: left; font-size: 14px; color: var(--slate-900); }
+  .cand:hover { background: var(--slate-50); }
+  .cand.top { background: var(--sky-50); }
+  .cand.elegido { background: var(--emerald-50); }
+  kbd { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--slate-300); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--slate-700); background: #fff; }
+  .cand .code { font-family: var(--font-mono); font-size: 12px; color: var(--slate-500); }
+  .conf { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--slate-600); }
+  .conf .track { flex: 1; height: 6px; border-radius: 9999px; background: var(--slate-100); }
+  .conf .fill { height: 100%; border-radius: 9999px; background: var(--accent); }
+  .act { font-size: 12px; color: var(--slate-500); text-align: right; }
+  .search { display: flex; flex-direction: column; gap: 8px; }
+  .search input { font: inherit; font-size: 14px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 8px 12px; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .btn { border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .keys { margin-top: auto; border-top: 1px solid var(--slate-200); padding-top: 12px; display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--slate-500); }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: #fff; font-size: 14px; padding: 10px 14px; border-radius: 6px; box-shadow: 0 20px 25px -5px rgb(0 0 0/.1),0 8px 10px -6px rgb(0 0 0/.1); opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .toast button { background: none; border: 0; color: var(--sky-200); font-weight: 500; margin-left: 12px; }
+  .empty { font-size: 14px; color: var(--slate-500); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<aside class="nav" aria-label="Navegación principal">
+  <div class="brand">Droguería Nueva Era</div>
+  <a href="#">Carga de documentos</a>
+  <a href="#">Validar extracción</a>
+  <a href="#" aria-current="page">Matching de catálogo</a>
+  <a href="#">Productos</a>
+  <a href="#">Terceros</a>
+</aside>
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>Matching de C17_ACEL16</h1>
+      <div class="meta">Hospital Sayago · Licitación · 14 renglones</div>
+    </div>
+    <div class="progress" aria-live="polite"><div class="bar"><span id="bar"></span></div><span id="prog"></span></div>
+  </header>
+  <div class="split">
+    <section class="queue" aria-label="Renglones">
+      <div class="filters" role="group" aria-label="Filtrar renglones">
+        <button type="button" data-f="abiertos" aria-pressed="true">Por resolver</button>
+        <button type="button" data-f="todos" aria-pressed="false">Todos</button>
+        <button type="button" data-f="resueltos" aria-pressed="false">Resueltos</button>
+      </div>
+      <ul class="list" id="list" role="listbox" aria-label="Renglones del proceso" tabindex="0"></ul>
+    </section>
+    <main class="panel" id="panel"></main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"><span id="toastMsg"></span><button type="button" id="undo">Deshacer (Ctrl+Z)</button></div>
+<script>
+const R = [
+  { n: 1, d: 'AMOXICILINA 500 MG COMPRIMIDOS', q: 2400, e: 'sugerido', c: [['Amoxicilina 500 mg comp. x 1000', 'AMX500C', 84], ['Amoxicilina 875 mg comp. x 14', 'AMX875C', 61], ['Amoxicilina + ác. clavulánico 500/125 mg', 'AMC500', 52]] },
+  { n: 2, d: 'CLORURO DE SODIO 0,9% SOL. FISIOLOGICA X 500 ML', q: 1200, e: 'automatico', p: 0, c: [['Solución fisiológica 0,9% 500 ml', 'SF500', 100]] },
+  { n: 3, d: 'IBUPROFENO 400 MG COMPRIMIDOS', q: 3000, e: 'sugerido', c: [['Ibuprofeno 400 mg comp. x 500', 'IBU400', 78], ['Ibuprofeno 600 mg comp. x 500', 'IBU600', 64]] },
+  { n: 4, d: 'GUANTES DE LATEX ESTERIL TALLE 7', q: 500, e: 'pendiente', c: [['Guante de examinación látex talle M', 'GLX-M', 41], ['Guante de nitrilo talle M', 'GNT-M', 38]] },
+  { n: 5, d: 'JERINGA DESCARTABLE 5 ML C/AGUJA 21G', q: 10000, e: 'sugerido', c: [['Jeringa 5 ml con aguja 21G x 1 1/2', 'JER5-21', 66], ['Jeringa 10 ml con aguja 21G', 'JER10-21', 55]] },
+  { n: 6, d: 'ENOXAPARINA 40 MG JERINGA PRELLENADA', q: 300, e: 'confirmado', p: 0, c: [['Enoxaparina 40 mg/0,4 ml jer. prellenada', 'ENX40', 88]] },
+  { n: 7, d: 'OMEPRAZOL 20 MG CAPSULAS', q: 1800, e: 'sugerido', c: [['Omeprazol 20 mg cáps. x 500', 'OMP20', 91], ['Omeprazol 40 mg FA IV', 'OMP40IV', 47]] },
+  { n: 8, d: 'CEFTRIAXONA 1 G FA IV', q: 450, e: 'sugerido', c: [['Ceftriaxona 1 g FA', 'CFX1G', 72], ['Cefalotina 1 g FA', 'CFL1G', 49]] },
+  { n: 9, d: 'GASA ESTERIL 10X10 CM X 100 SOBRES', q: 200, e: 'pendiente', c: [] },
+  { n: 10, d: 'PARACETAMOL 1 G/100 ML SOL. INYECTABLE', q: 600, e: 'sugerido', c: [['Paracetamol 1 g/100 ml sol. iny.', 'PCT1G-IV', 58], ['Paracetamol 500 mg comp. x 1000', 'PCT500', 44]] },
+  { n: 11, d: 'METFORMINA 850 MG COMPRIMIDOS', q: 2000, e: 'automatico', p: 0, c: [['Metformina 850 mg comp. x 500', 'MTF850', 100]] },
+  { n: 12, d: 'CATETER IV 20G', q: 900, e: 'sin_match', c: [['Catéter IV 22G', 'CAT22', 54]] },
+  { n: 13, d: 'DEXAMETASONA 8 MG/2 ML AMPOLLA', q: 400, e: 'sugerido', c: [['Dexametasona 8 mg/2 ml amp. x 100', 'DXM8', 63]] },
+  { n: 14, d: 'SALBUTAMOL AEROSOL 100 MCG', q: 150, e: 'pendiente', c: [['Salbutamol aerosol 100 mcg x 200 dosis', 'SLB100', 45]] },
+];
+const RESUELTO = ['automatico', 'confirmado', 'sin_match'];
+const ETQ = { pendiente: 'Pendiente', sugerido: 'Sugerido', automatico: 'Automático', confirmado: 'Confirmado', sin_match: 'Sin match' };
+let filtro = 'abiertos', sel = 0, ultimo = null;
+const fmt = (v) => v.toLocaleString('es-AR');
+const visibles = () => R.filter((r) => filtro === 'todos' || (filtro === 'abiertos') !== RESUELTO.includes(r.e));
+function etiqueta(r) { return r.e === 'sugerido' ? `Sugerido ${r.c[0][2]}%` : ETQ[r.e]; }
+function producto(r) { return r.p != null ? r.c[r.p][0] : r.e === 'sin_match' ? 'Sin producto' : r.c[0] ? r.c[0][0] + ' ?' : 'Sin candidatos'; }
+function render() {
+  const v = visibles();
+  sel = Math.min(sel, Math.max(v.length - 1, 0));
+  document.getElementById('list').innerHTML = v.map((r, i) =>
+    `<li role="option" aria-selected="${i === sel}" data-i="${i}"><span class="n">${r.n}</span><span><span class="d">${r.d}</span><span class="p">${producto(r)}</span></span><span class="badge e-${r.e}">${etiqueta(r)}</span></li>`).join('');
+  const hechos = R.filter((r) => RESUELTO.includes(r.e)).length;
+  document.getElementById('bar').style.width = `${(hechos / R.length) * 100}%`;
+  document.getElementById('prog').textContent = `${hechos} de ${R.length} resueltos`;
+  const r = v[sel], panel = document.getElementById('panel');
+  if (!r) { panel.innerHTML = '<p class="empty">No quedan renglones por resolver. Listo para presupuestar.</p>'; return; }
+  panel.innerHTML = `
+    <div class="renglon-head"><div class="lbl">Renglón ${r.n} de ${R.length}</div><h2>${r.d}</h2>
+      <div class="facts"><span>Cantidad <b>${fmt(r.q)}</b></span><span class="badge e-${r.e}">${etiqueta(r)}</span></div></div>
+    ${r.c.length ? `<ul class="cands" aria-label="Candidatos">${r.c.map((c, i) => `<li><button type="button" class="cand ${r.p === i ? 'elegido' : i === 0 && r.p == null ? 'top' : ''}" data-c="${i}">
+      <kbd>${i + 1}</kbd><span><b style="font-weight:500">${c[0]}</b> <span class="code">${c[1]}</span></span>
+      <span class="conf"><span class="track"><span class="fill" style="width:${c[2]}%"></span></span>${c[2]}%</span>
+      <span class="act">${r.p === i ? 'Elegido' : i === 0 && r.p == null ? 'Enter confirma' : ''}</span></button></li>`).join('')}</ul>`
+      : '<p class="empty">El matching no encontró candidatos. Buscá en el catálogo.</p>'}
+    <div class="search"><label for="q" style="font-size:12px;font-weight:500;color:var(--slate-500);text-transform:uppercase;letter-spacing:.05em">Otro producto · empezá a escribir</label>
+      <input id="q" type="text" placeholder="Buscá en el catálogo por nombre o código"></div>
+    <div class="actions"><button type="button" class="btn btn-secondary" id="sin">Sin match <kbd>Shift</kbd></button></div>
+    <div class="keys"><span><kbd>↑</kbd> <kbd>↓</kbd> moverse</span><span><kbd>Enter</kbd> confirmar el mejor</span><span><kbd>1</kbd>–<kbd>5</kbd> elegir candidato</span><span><kbd>Shift</kbd> sin match</span><span>Escribir una letra busca en el catálogo</span><span><kbd>Tab</kbd> vuelve a los renglones</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer</span><span>Al decidir pasa solo al siguiente</span></div>`;
+}
+function decidir(estado, p) {
+  const v = visibles(), r = v[sel]; if (!r) return;
+  ultimo = { r, e: r.e, p: r.p };
+  r.e = estado; r.p = p;
+  if (filtro === 'todos') sel = Math.min(sel + 1, v.length - 1);
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = `Renglón ${r.n}: ${estado === 'sin_match' ? 'sin match' : r.c[p][0]}`;
+  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2500);
+  render();
+}
+function deshacer() { if (!ultimo) return; ultimo.r.e = ultimo.e; ultimo.r.p = ultimo.p; ultimo = null; document.getElementById('toast').classList.remove('show'); render(); }
+document.addEventListener('click', (ev) => {
+  const li = ev.target.closest('#list li'); if (li) { sel = +li.dataset.i; render(); return; }
+  const c = ev.target.closest('.cand'); if (c) { decidir('confirmado', +c.dataset.c); return; }
+  if (ev.target.closest('#sin')) { decidir('sin_match', null); return; }
+  if (ev.target.closest('#undo')) { deshacer(); return; }
+  const f = ev.target.closest('.filters button');
+  if (f) { filtro = f.dataset.f; sel = 0; document.querySelectorAll('.filters button').forEach((b) => b.setAttribute('aria-pressed', b === f)); render(); }
+});
+// Shift alone marks sin match on release, so Shift+letter (capitals) and
+// Shift+Tab never trigger it.
+let shiftSolo = false;
+document.addEventListener('keyup', (ev) => {
+  if (ev.key === 'Shift' && shiftSolo && ev.target.tagName !== 'INPUT') decidir('sin_match', null);
+  if (ev.key === 'Shift') shiftSolo = false;
+});
+document.addEventListener('keydown', (ev) => {
+  shiftSolo = ev.key === 'Shift' && !ev.repeat;
+  if (ev.target.tagName === 'INPUT') {
+    if (ev.key === 'Tab') { ev.preventDefault(); document.getElementById('list').focus(); }
+    return;
+  }
+  const r = visibles()[sel];
+  // Shortcuts use no letters: typing a word always goes to the catalog search.
+  if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'z' || ev.key === 'Z')) { deshacer(); ev.preventDefault(); return; }
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (ev.key.length === 1 && /\p{L}/u.test(ev.key)) { document.getElementById('q').focus(); return; }
+  if (ev.key === 'ArrowDown') { sel = Math.min(sel + 1, visibles().length - 1); render(); ev.preventDefault(); }
+  else if (ev.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); render(); ev.preventDefault(); }
+  else if (ev.key === 'Enter' && r && r.c[0]) { decidir('confirmado', 0); ev.preventDefault(); }
+  else if (/^[1-5]$/.test(ev.key) && r && r.c[+ev.key - 1]) decidir('confirmado', +ev.key - 1);
+});
+render();
+</script>
+</body>
+</html>

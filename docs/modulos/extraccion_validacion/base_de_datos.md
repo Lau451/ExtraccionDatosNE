@@ -55,7 +55,7 @@ principal (`service.py:45,260-262`) — una para resolver/validar el
 | `descripcion` | `fila["descripcion"].strip()` del CSV (`service.py:73,80`). |
 | `descripcion_normalizada` | `normalizar_descripcion(descripcion)` (`core.texto`, `service.py:81`). |
 | `cantidad` | `fila["cantidad"].strip()` del CSV, como texto (`service.py:82`). |
-| `estado_matching`, `producto_id`, `alias_id`, `confianza_matching` | No se escriben en el `INSERT` de este módulo — los completa `matching.service.procesar_matching_item` inmediatamente después, por cada fila (`service.py:88-91`). |
+| `estado_matching`, `producto_id`, `alias_id`, `confianza_matching` | Se escriben en el mismo `INSERT`: `_materializar_licitacion` resuelve el matching de todos los renglones antes con `matching.service.resolver_matching`, y después del `INSERT` `registrar_matching` guarda los candidatos y los usos de alias. No hay `UPDATE` por renglón. |
 
 **Operaciones**:
 - `INSERT` — `insertar_items_proceso` (`repository.py:36-39`, batch), llamado en

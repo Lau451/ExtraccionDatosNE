@@ -9,9 +9,11 @@ import {
   type ValidarExtraccionPayload,
 } from '@/lib/api/extracciones'
 import { listarProcesosComerciales } from '@/lib/api/procesosComerciales'
+import type { Tercero } from '@/lib/api/terceros'
 import { CabeceraOrdenCompra, type CabeceraOrdenCompraValores } from './components/CabeceraOrdenCompra'
 import { ConfirmarValidacionDialog } from './components/ConfirmarValidacionDialog'
 import { DocumentoDemasiadoGrande } from './components/DocumentoDemasiadoGrande'
+import { NuevoProcesoForm, type ClaseProceso } from './components/NuevoProcesoForm'
 import { OrdenCompraSelector } from './components/OrdenCompraSelector'
 import { ProcesoComercialSelector } from './components/ProcesoComercialSelector'
 import { TablaEditable } from './components/TablaEditable'
@@ -59,6 +61,12 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   const [cabecera, setCabecera] = useState<CabeceraOrdenCompraValores | null>(null)
   const [cabeceraBloqueada, setCabeceraBloqueada] = useState(false)
 
+  // presupuestador-v1 T2b (S2, S8) -- a licitación/directa creates its proceso
+  // comercial on validation instead of joining an existing one.
+  const [claseNueva, setClaseNueva] = useState<ClaseProceso | null>(null)
+  const [clienteNuevo, setClienteNuevo] = useState<Tercero | null>(null)
+  const [nombreLicitacion, setNombreLicitacion] = useState('')
+
   const bloqueadoPorHint = rowCountHint > MAX_FILAS_EDITABLES
 
   const filasQuery = useQuery({
@@ -75,6 +83,8 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
 
   const hook = useFilasEditables(filasQuery.data?.document_type ?? '', filasQuery.data?.filas)
   const esOrdenCompra = filasQuery.data?.document_type === 'orden_compra'
+  const creaProceso =
+    filasQuery.data?.document_type === 'licitacion' || filasQuery.data?.document_type === 'cotizacion'
 
   const mutation = useMutation({
     mutationFn: (payload: ValidarExtraccionPayload) => validarExtraccion(extractionId, payload),
@@ -89,6 +99,18 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         navigate({
           to: '/ordenes-compra/$ordenCompraId/matching',
           params: { ordenCompraId: resultado.orden_compra_id },
+        })
+        return
+      }
+      // presupuestador-v1 S1: a validated licitación/directa goes on to the
+      // catalog matching of the proceso it just created. A comparativa keeps
+      // going back to the listado.
+      const esLicitacionODirecta =
+        resultado.document_type === 'licitacion' || resultado.document_type === 'cotizacion'
+      if (esLicitacionODirecta && resultado.proceso_comercial_id) {
+        navigate({
+          to: '/procesos-comerciales/$procesoId/matching',
+          params: { procesoId: resultado.proceso_comercial_id },
         })
         return
       }
@@ -139,10 +161,13 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
   // ancla una vez, ck_oc_extraction_unica), pero mostrarla como pendiente
   // confunde. Corte temprano ANTES de armar el resto de la pantalla -- ningún
   // selector de cliente, cabecera editable, tabla ni "Confirmar validación" se
-  // renderiza en este caso (licitación/comparativa validadas: solo el aviso,
-  // nunca tienen OC).
+  // renderiza en este caso (licitación/directa validadas: el aviso y el link
+  // al matching de su proceso; comparativa: solo el aviso).
   if (filasQuery.data.validado) {
     const ordenCompraId = filasQuery.data.orden_compra_id
+    // presupuestador-v1 T3: a validated licitación/directa leads to the catalog
+    // matching of its proceso; a comparativa has nothing to match.
+    const procesoMatchingId = creaProceso ? filasQuery.data.proceso_comercial_id : null
     return (
       <div className="mx-auto max-w-2xl space-y-4 px-6 py-10">
         <h1 className="text-xl font-semibold text-slate-900">Validar extracción</h1>
@@ -161,6 +186,20 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
             className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
           >
             Ir a la orden de compra
+          </button>
+        )}
+        {procesoMatchingId && (
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/procesos-comerciales/$procesoId/matching',
+                params: { procesoId: procesoMatchingId },
+              })
+            }
+            className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white"
+          >
+            Ir al matching
           </button>
         )}
       </div>
@@ -194,9 +233,34 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
     }
   }
 
+  /** What is still missing before confirming a licitación/directa or a
+   * comparativa (null when nothing is). The orden de compra keeps its own
+   * checks below. */
+  function motivoSinConfirmar(): string | null {
+    if (creaProceso) {
+      if (claseNueva === null) return 'Elegí si es una licitación o una directa'
+      if (clienteNuevo === null) return 'Elegí el cliente'
+      if (claseNueva === 'licitacion' && !nombreLicitacion.trim()) {
+        return 'Escribí el nombre de la licitación'
+      }
+    } else if (procesoComercialId === null) {
+      return 'Elegí el proceso comercial'
+    }
+    if (hook.tieneErrores) return 'Corregí las celdas marcadas'
+    return null
+  }
+
+  function construirNuevoProceso() {
+    const clienteNuevoId = clienteNuevo?.id ?? ''
+    return claseNueva === 'licitacion'
+      ? { clase: claseNueva, cliente_id: clienteNuevoId, nombre_licitacion: nombreLicitacion.trim() }
+      : { clase: 'cotizacion' as const, cliente_id: clienteNuevoId }
+  }
+
+  const motivo = esOrdenCompra ? null : motivoSinConfirmar()
   const puedeConfirmar = esOrdenCompra
     ? !hook.tieneErrores && clienteId !== null && !cabeceraBloqueada
-    : !hook.tieneErrores && procesoComercialId !== null
+    : motivo === null
 
   return (
     // T3: la tabla de orden_compra tiene 7+ columnas -- max-w-4xl la apretaba
@@ -230,6 +294,15 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
             }}
           />
         </>
+      ) : creaProceso ? (
+        <NuevoProcesoForm
+          clase={claseNueva}
+          onClase={setClaseNueva}
+          cliente={clienteNuevo}
+          onCliente={setClienteNuevo}
+          nombreLicitacion={nombreLicitacion}
+          onNombreLicitacion={setNombreLicitacion}
+        />
       ) : (
         <ProcesoComercialSelector
           documentType={filasQuery.data.document_type}
@@ -252,10 +325,12 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
       {/* T3: barra de acción sticky -- con tablas largas, "Confirmar
        * validación" quedaba fuera de vista sin scrollear hasta el final. */}
       <div className="sticky bottom-0 z-20 -mx-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
-        {mutation.isError && (
+        {mutation.isError ? (
           <p className="mr-auto text-sm text-red-600">
             {mutation.error instanceof Error ? mutation.error.message : 'No se pudo validar.'}
           </p>
+        ) : (
+          motivo && <p className="mr-auto text-sm text-slate-500">{motivo}</p>
         )}
 
         <button
@@ -279,10 +354,15 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
         onConfirm={() =>
           esOrdenCompra
             ? mutation.mutate({ orden_compra: construirOrdenCompraOverride() })
-            : mutation.mutate({
-                proceso_comercial_id: procesoComercialId,
-                filas: hook.filasParaEnviar() as unknown as FilaLicitacionIn[] | FilaComparativaIn[],
-              })
+            : creaProceso
+              ? mutation.mutate({
+                  nuevo_proceso: construirNuevoProceso(),
+                  filas: hook.filasParaEnviar() as unknown as FilaLicitacionIn[],
+                })
+              : mutation.mutate({
+                  proceso_comercial_id: procesoComercialId,
+                  filas: hook.filasParaEnviar() as unknown as FilaLicitacionIn[] | FilaComparativaIn[],
+                })
         }
       />
     </div>

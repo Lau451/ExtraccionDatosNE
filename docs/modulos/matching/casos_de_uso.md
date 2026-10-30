@@ -69,15 +69,34 @@ todo `services/presupuestacion/` es `extraccion/service.py:15,88-91`
 [`../extraccion_validacion/arquitectura.md`](../extraccion_validacion/arquitectura.md#dependencia-hacia-matching)
 para el mismo hallazgo documentado desde el lado del módulo consumidor.
 
-## Quién consume los 3 endpoints HTTP
+## Quién consume los endpoints HTTP
 
-**Ningún frontend los consume todavía.** Grep de `"confirmar-matching"`, `"sin-match"`
-y `"matching/pendientes"` sobre `frontend/` en esta sesión no tuvo resultados — el
-directorio `frontend/` existe (`frontend/PROGRESS.md`, `frontend/README.md`) pero no
-se encontró ningún llamador HTTP de estos 3 endpoints dentro del repositorio. Igual
-que documenta [`../extraccion_validacion/casos_de_uso.md`](../extraccion_validacion/casos_de_uso.md)
-para `POST /extracciones/{id}/validar`: el backend existe y está probado por
-integración (`tests/matching/test_service.py`, 11 tests sobre `service.py`
-directamente), pero no tiene consumidor de UI confirmado en esta sesión. No se
-verificó `router.py` con ningún test dentro de `tests/matching/` — ver
-[`pendientes.md`](./pendientes.md).
+La pantalla de matching por proceso (presupuestador-v1 T3b), en
+`frontend/src/routes/_authenticated.procesos-comerciales.$procesoId.matching.tsx`
+(`features/proceso-matching/`, cliente `frontend/src/lib/api/matching.ts`):
+
+- `GET /procesos-comerciales/{id}/matching` carga todos los renglones del proceso.
+- `POST /items/{item_id}/confirmar-matching` confirma la sugerencia, otro candidato o
+  un producto buscado en el catálogo (`GET /productos?q=`), también sobre un renglón
+  ya resuelto.
+- `POST /items/{item_id}/sin-match` marca el renglón sin producto.
+
+Desde T3d (diseño `design/matching-catalogo/01-cola-teclado.html`) la pantalla es una
+cola manejable solo con teclado: a la izquierda los renglones (filtros "Por resolver",
+"Todos", "Resueltos"), a la derecha los candidatos del renglón elegido, el buscador y
+"Sin match". Teclas: `Enter` confirma el mejor candidato, `1`-`5` otro candidato,
+`Shift` solo (al soltarlo) marca sin match, cualquier letra escribe en el buscador
+(ningún atajo usa letras), `Tab` vuelve del buscador a los renglones, en el buscador
+las flechas recorren los resultados y `Enter` confirma el marcado, las flechas cambian de renglón y `Ctrl+Z` vuelve
+al último renglón decidido para re-elegirlo (no hay deshacer en el backend). Cada
+decisión se aplica en pantalla al instante y la cola pasa al siguiente renglón; si el
+backend la rechaza, ese renglón vuelve a como estaba y se muestra el error. La pantalla
+vuelve a pedir el proceso completo cuando termina la última decisión en curso.
+
+Se llega a la pantalla de dos formas (T3c): al confirmar la validación de una
+licitación o una directa, `ValidarExtraccionDetalle` navega al matching del proceso
+recién creado (una comparativa sigue volviendo al listado de extracciones); y desde el
+menú "Matching de catálogo" (`/matching`), que lista con `GET /matching/procesos` los
+procesos con renglones `pendiente` o `sugerido`. `GET
+/matching/pendientes` sigue sin consumidor de UI. Los endpoints de la pantalla tienen
+tests HTTP en `tests/matching/test_router.py`.

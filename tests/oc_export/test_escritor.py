@@ -24,7 +24,7 @@ def _fila(descripcion="Ñandú áéíóú"):
 
 def _leer(path, encoding="cp1252"):
     with open(path, encoding=encoding, newline="") as f:
-        return list(csv.reader(f))
+        return list(csv.reader(f, delimiter=";"))
 
 
 def test_nombre_deterministico_con_timestamp_inyectado():
@@ -59,6 +59,21 @@ def test_escribe_cp1252_con_encabezado_y_acentos(tmp_path):
     filas = _leer(destino)
     assert filas[0] == ENCABEZADOS
     assert filas[1][9] == "Ñandú áéíóú"
+
+
+def test_campos_separados_por_punto_y_coma(tmp_path):
+    fila = _fila("Caja x 20")
+    fila[0] = "1520.50"
+    destino = escribir_csv([fila], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    lineas = destino.read_bytes().decode("cp1252").split("\r\n")
+    assert lineas[0] == ";".join(ENCABEZADOS)
+    assert lineas[1] == ";".join(fila)
+
+
+def test_punto_y_coma_y_comillas_hacen_roundtrip(tmp_path):
+    desc = 'Caja "x 20"; sin fraccionar'
+    destino = escribir_csv([_fila(desc)], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    assert _leer(destino)[1][9] == desc
 
 
 def test_coma_y_comillas_hacen_roundtrip(tmp_path):

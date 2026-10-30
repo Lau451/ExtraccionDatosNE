@@ -187,28 +187,42 @@ def _limpiar_archivos_temporales(destino: Path, tmp_dir: Path) -> None:
 # RUTAS
 # ======================
 
+# presupuestador-v1 T2a (S9): licitaciones and directas use the generic prompt;
+# only these document types still look up the client's format.
+_DOC_TYPES_CON_FORMATO_CLIENTE = {"comparativa", "orden_compra"}
+
+
+async def _buscar_formato(client, *, cliente_id: str, doc_type: str) -> tuple[str, str] | None:
+    """(formato_id, instrucciones_prompt) activo para cliente+doc_type, o None."""
+    respuesta = await asyncio.to_thread(
+        lambda: client.table("cliente_formato_documentos")
+        .select("id, instrucciones_prompt")
+        .eq("cliente_id", cliente_id)
+        .eq("doc_type", doc_type)
+        .eq("activo", True)
+        .limit(1)
+        .execute()
+    )
+    if respuesta.data and respuesta.data[0].get("instrucciones_prompt"):
+        fila = respuesta.data[0]
+        return fila["id"], fila["instrucciones_prompt"]
+    return None
+
+
 async def _resolver_formato_prompt(
     client, *, cliente_id: str, doc_type: str
 ) -> tuple[str | None, str | None]:
     """§8: si hay instrucciones cargadas para este cliente+doc_type, las devuelve para
-    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt) — ambos None si no
-    hay nada configurado o la consulta falla (nunca bloquea la carga del documento)."""
-    if client is None or not cliente_id:
+    inyectar al prompt de Gemini. (formato_id, instrucciones_prompt) — None, None si el
+    doc_type no usa formato de cliente, no hay nada configurado o la consulta falla
+    (nunca bloquea la carga del documento)."""
+    if client is None or not cliente_id or doc_type not in _DOC_TYPES_CON_FORMATO_CLIENTE:
         return None, None
 
     try:
-        respuesta = await asyncio.to_thread(
-            lambda: client.table("cliente_formato_documentos")
-            .select("id, instrucciones_prompt")
-            .eq("cliente_id", cliente_id)
-            .eq("doc_type", doc_type)
-            .eq("activo", True)
-            .limit(1)
-            .execute()
-        )
-        if respuesta.data and respuesta.data[0].get("instrucciones_prompt"):
-            fila = respuesta.data[0]
-            return fila["id"], fila["instrucciones_prompt"]
+        formato = await _buscar_formato(client, cliente_id=cliente_id, doc_type=doc_type)
+        if formato is not None:
+            return formato
     except Exception as exc:
         logger.warning(
             "_resolver_formato_prompt: error consultando cliente_formato_documentos — %s", exc
@@ -539,6 +553,8 @@ async def procesar(
     elif tipo == "ordenes":
         doc_type = "orden_compra"
     else:
+        # presupuestador-v1 T2a (S2): a licitación or a directa -- the class is
+        # chosen at validation, which creates the proceso comercial.
         doc_type = "licitacion"
     formato_id, instrucciones_prompt = await _resolver_formato_prompt(
         get_client(), cliente_id=cliente_id, doc_type=doc_type
@@ -624,10 +640,8 @@ async def procesar(
         grupo_id=grupo_id_validado,
     )
 
-    return _procesar_response(
-        {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None},
-        status_code=202,
-    )
+    respuesta = {"tipo": tipo, "extraction_id": str(extraction_id) if extraction_id else None}
+    return _procesar_response(respuesta, status_code=202)
 
 
 @app.get("/api/documentos")
@@ -648,7 +662,7 @@ async def listar_documentos(
             .eq("drogueria_id", drogueria_id)
             .order("created_at", desc=True)
         )
-        if tipo in ("comparativa", "licitacion"):
+        if tipo in ("comparativa", "licitacion", "cotizacion"):
             q = q.eq("document_type", tipo)
         return q.execute()
 

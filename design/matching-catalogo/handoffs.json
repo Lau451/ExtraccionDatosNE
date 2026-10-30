@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "chosen": "01-cola-teclado.html",
+  "handoffs": {
+    "01-cola-teclado.html": {
+      "status": "implemented",
+      "queued": false,
+      "sentAt": "2026-10-30T14:39:56.242Z",
+      "startedAt": "2026-10-30T14:40:20.524Z",
+      "implementedAt": "2026-10-30T14:45:45.896Z",
+      "feature": "odd/tasks/presupuestador-v1.md",
+      "note": "Commit 9354828. Screen: /procesos-comerciales/<id>/matching (via menu Matching de catálogo). Ctrl+Z goes back to the last decided renglón (no backend undo).",
+      "previewUrl": "http://localhost:5173/"
+    }
+  }
+}

@@ -12,15 +12,16 @@
   S2) es el mismo set: `superadmin` y `compras` reciben 403 — ver RN-EXTRACCIONVALIDACION-011.
 - **Path param**: `extraction_id: str` — el `id` de la fila de `extraction_results`
   a validar.
-- **Body**: `ValidarExtraccionRequest` (`models.py:8-9`) — un único campo opcional
-  `proceso_comercial_id: str | None`.
+- **Body**: `ValidarExtraccionRequest` (`models.py`) — `proceso_comercial_id: str | None`
+  (comparativa: proceso existente) o `nuevo_proceso` (licitación/directa: tipo, cliente y
+  nombre de la licitación; crea el proceso al validar, RN-EXTRACCIONVALIDACION-004b).
 - **Response**: `ResultadoValidarExtraccion` (`models.py:12-18`):
 
   | Campo | Descripción |
   |---|---|
   | `extraction_id` | Eco del `id` procesado. |
   | `document_type` | El tipo de documento de la extracción validada. |
-  | `proceso_comercial_id` | El resuelto (existente o recién vinculado). |
+  | `proceso_comercial_id` | El resuelto (existente, recién vinculado o recién creado). |
   | `filas_creadas` | Cantidad de `items_proceso` (licitación/cotización) u `ofertas_items` (comparativa) insertadas. |
   | `comparativa_id` | `None` salvo `document_type == "comparativa"`. |
   | `reemplazo_version_anterior` | `True` si se reemplazó una comparativa vigente previa; siempre `False` para licitación/cotización. |
@@ -44,8 +45,8 @@
 |---|---|---|
 | `NotFoundError` | 404 | Extracción inexistente (`router.py:29-30`); proceso comercial indicado inexistente (`service.py:46-47`); extracción inexistente re-chequeada dentro del service (`service.py:251-253`). |
 | `ForbiddenError` | 403 | Extracción de otra droguería, usuario no `superadmin` (`router.py:32-34`). |
-| `ConflictError` | 409 | Extracción ya validada (`service.py:254-255`); `proceso_comercial_id` indicado difiere del ya vinculado (`service.py:35-37`). |
-| `ValidationError` | 422 | Sin `proceso_comercial_id` y la extracción no tiene uno vinculado (`service.py:41-43`); proceso comercial de otra droguería (`service.py:49-51`); `document_type` sin materialización implementada (`service.py:286-289`). |
+| `ConflictError` | 409 | Extracción ya validada (`service.py:254-255`); `proceso_comercial_id` indicado difiere del ya vinculado (`service.py:35-37`); `nuevo_proceso` para una extracción ya vinculada (RN-004b). |
+| `ValidationError` | 422 | Sin `proceso_comercial_id` y la extracción no tiene uno vinculado (`service.py:41-43`); proceso comercial de otra droguería (`service.py:49-51`); `document_type` sin materialización implementada (`service.py:286-289`); `nuevo_proceso` inválido: junto con `proceso_comercial_id`, para una comparativa, licitación sin nombre o cliente ajeno (RN-004b). |
 
 ## Quién consume este endpoint
 
@@ -61,11 +62,12 @@ para el spec/design completos.
 (`services/extraccion/routers/extraction_results.py`) — ni funcional ni de código. El
 texto anterior de esta sección especulaba con un "mecanismo todavía sin definir" entre
 ambos; quedó resuelto (y esa relación descartada) al construir el flujo real:
-`ValidarExtraccionDetalle` resuelve `proceso_comercial_id` directamente contra
-`services/presupuestacion/procesos_comerciales/` (vía
-`ProcesoComercialSelector.tsx`/`NuevaLiciCotiDialog.tsx`, reusando
-`crearProcesoComercial`/`listarProcesosComerciales`) y lo manda en el body de
-`POST .../validar` — el `PATCH` de `services/extraccion` nunca se invoca desde este
+`ValidarExtraccionDetalle` arma el body de `POST .../validar`: para una
+licitación/directa, `nuevo_proceso` desde `NuevoProcesoForm.tsx` (tipo, cliente buscado por
+razón social, CUIT o código con `ClienteBuscador.tsx` sobre `GET /terceros`, y nombre de la
+licitación; el backend crea el proceso, presupuestador-v1 T2b); para una
+comparativa, `proceso_comercial_id` elegido en `ProcesoComercialSelector.tsx` (vía
+`listarProcesosComerciales`) — el `PATCH` de `services/extraccion` nunca se invoca desde este
 flujo. Además, ese `PATCH` está **deprecado y confirmado roto** contra el schema real
 (`extraction_results` no tiene columna `licitacion_id`) — ver
 [`extraccion_api/api.md`](../extraccion_api/api.md) y

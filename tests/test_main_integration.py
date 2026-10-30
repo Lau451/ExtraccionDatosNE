@@ -1447,3 +1447,205 @@ class TestLifespanArrancaYCancelaElSweepPeriodico:
             assert not tareas_creadas[0].done()
 
         assert tareas_creadas[0].cancelled()
+
+
+# ---------------------------------------------------------------------------
+# presupuestador-v1 T1 — clase del proceso elegida al subir (Directa / Licitación)
+# ---------------------------------------------------------------------------
+
+def _mockear_pipeline_procesar(mocker, tmp_path):
+    """Mockea todo /procesar alrededor del formato del cliente: sin duplicado,
+    sesión y fila 'processing' creadas, robot genérico con CSV y persistencia."""
+    mocker.patch("services.extraccion.main.calcular_sha256", return_value="a" * 64)
+    mocker.patch(
+        "services.extraccion.main.buscar_duplicado_con_lock",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    return {
+        "crear_sesion": mocker.patch(
+            "services.extraccion.main.crear_sesion",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ),
+        "crear_extraction_processing": mocker.patch(
+            "services.extraccion.main.crear_extraction_processing",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ),
+        "procesar_archivo": mocker.patch(
+            "services.extraccion.main.procesar_archivo",
+            return_value=str(_mock_csv_output(tmp_path)),
+        ),
+        "schedule_persist_output": mocker.patch(
+            "services.extraccion.main.schedule_persist_output",
+            new_callable=AsyncMock,
+        ),
+    }
+
+
+class TestProcesarLicitacionDirecta:
+    """presupuestador-v1 T2a (S2, S9): the upload no longer chooses the class --
+    a licitación or a directa is uploaded as one "Licitación / Directa" type,
+    stored as document_type="licitacion"; the class is picked at validation."""
+
+    def test_licitaciones_se_guarda_como_licitacion_con_el_robot_generico(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "licitaciones"},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert response.json()["tipo"] == "licitaciones"
+        assert mocks["crear_sesion"].await_args.kwargs["doc_type"] == "licitacion"
+        assert (
+            mocks["crear_extraction_processing"].await_args.kwargs["document_type"]
+            == "licitacion"
+        )
+        mocks["procesar_archivo"].assert_called_once()
+        assert mocks["schedule_persist_output"].await_args.kwargs["doc_type"] == "licitacion"
+
+    @pytest.mark.parametrize("extension", [".ods", ".html", ".htm", ".txt"])
+    def test_licitacion_rechaza_las_extensiones_no_permitidas(
+        self, client, headers_json, mocker, extension
+    ):
+        mock_sesion = mocker.patch(
+            "services.extraccion.main.crear_sesion", new_callable=AsyncMock
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "licitaciones"},
+            files={"archivo": (f"documento{extension}", io.BytesIO(b"contenido"), "text/plain")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 415
+        assert response.json()["error"] == "Tipo de archivo no permitido"
+        mock_sesion.assert_not_awaited()
+
+    @pytest.mark.parametrize("extension", [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx"])
+    def test_licitacion_acepta_sus_extensiones(
+        self, client, headers_json, tmp_path, mocker, extension
+    ):
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "licitaciones"},
+            files={"archivo": (f"documento{extension}", io.BytesIO(b"contenido"), "application/octet-stream")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        mocks["crear_extraction_processing"].assert_awaited_once()
+
+    def test_listar_documentos_filtra_por_cotizacion(self, client, mocker):
+        """Directas validated before T2a keep document_type="cotizacion" and the
+        listing filter still accepts it."""
+        mock_qb = MagicMock()
+        mock_qb.select.return_value = mock_qb
+        mock_qb.eq.return_value = mock_qb
+        mock_qb.order.return_value = mock_qb
+        mock_qb.execute.return_value = MagicMock(data=[])
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_qb
+        mocker.patch("services.extraccion.main.get_client", return_value=mock_client)
+
+        response = client.get("/api/documentos?tipo=cotizacion")
+
+        assert response.status_code == 200
+        mock_qb.eq.assert_any_call("document_type", "cotizacion")
+
+
+class _FakeFormatosClient:
+    """Fake de Supabase solo para `cliente_formato_documentos`: devuelve la fila
+    cargada para el (cliente_id, doc_type) consultado, o ninguna."""
+
+    def __init__(self, formatos: dict[str, dict]):
+        self.formatos = formatos
+        self.consultas: list[str] = []
+
+    def table(self, nombre):
+        assert nombre == "cliente_formato_documentos"
+        filtros: dict = {}
+        fake = self
+
+        class _Query:
+            def select(self, *_a, **_k):
+                return self
+
+            def eq(self, columna, valor):
+                filtros[columna] = valor
+                return self
+
+            def limit(self, *_a):
+                return self
+
+            def execute(self):
+                fake.consultas.append(filtros["doc_type"])
+                fila = fake.formatos.get(filtros["doc_type"])
+                return MagicMock(data=[fila] if fila else [])
+
+        return _Query()
+
+
+class TestProcesarFormatoCliente:
+    """presupuestador-v1 T2a (S9): licitaciones and directas always use the
+    generic prompt; the client format (`cliente_formato_documentos`) stays only
+    for comparativas, left for a second stage."""
+
+    FORMATO_LICITACION = {"id": "fmt-lic", "instrucciones_prompt": "Columnas de licitación"}
+    FORMATO_COMPARATIVA = {"id": "fmt-comp", "instrucciones_prompt": "Columnas de comparativa"}
+
+    def test_licitacion_ignora_el_formato_del_cliente(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        fake = _FakeFormatosClient({"licitacion": self.FORMATO_LICITACION})
+        mocker.patch("services.extraccion.main.get_client", return_value=fake)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "licitaciones", "cliente_id": "cliente-1"},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert "aviso" not in response.json()
+        assert fake.consultas == []
+        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] is None
+        assert mocks["procesar_archivo"].call_args.kwargs["instrucciones_extra"] is None
+
+    def test_comparativa_sigue_usando_el_formato_del_cliente(
+        self, client, headers_json, pdf_bytes, tmp_path, mocker
+    ):
+        fake = _FakeFormatosClient({"comparativa": self.FORMATO_COMPARATIVA})
+        mocker.patch("services.extraccion.main.get_client", return_value=fake)
+        mocks = _mockear_pipeline_procesar(mocker, tmp_path)
+        mock_comparativa = mocker.patch(
+            "services.extraccion.main.procesar_comparativa",
+            return_value=str(_mock_csv_output(tmp_path)),
+        )
+
+        response = client.post(
+            "/procesar",
+            data={"tipo": "comparativas", "cliente_id": "cliente-1"},
+            files={"archivo": ("documento.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            headers=headers_json,
+        )
+
+        assert response.status_code == 202
+        assert fake.consultas == ["comparativa"]
+        assert mocks["crear_sesion"].await_args.kwargs["formato_usado_id"] == "fmt-comp"
+        assert (
+            mock_comparativa.call_args.kwargs["instrucciones_extra"]
+            == "Columnas de comparativa"
+        )

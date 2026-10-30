@@ -45,8 +45,8 @@ export function AgruparConsultaDialog({
         <button type="button" className="min-h-10 rounded-md bg-navy px-4 text-sm font-semibold text-white active:scale-[0.96]">Agrupar consulta</button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
+        <Dialog.Overlay className="fixed z-50 inset-0 bg-black/40" />
+        <Dialog.Content className="fixed z-50 top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-navy">Agrupar consulta</Dialog.Title>
           <Dialog.Description className="mt-2 text-sm text-slate-600">
             Se agruparán {selecciones.length} selección(es) en una consulta por proveedor.

@@ -374,7 +374,7 @@ def test_renglon_descartado_se_excluye_de_d2_y_del_csv(esc):
     assert resultado.filas == 2
     (archivo,) = esc.archivos()
     filas = archivo.read_bytes().decode("cp1252").splitlines()
-    assert all(f.split(",")[7] == "1" for f in filas[1:])
+    assert all(f.split(";")[7] == "1" for f in filas[1:])
 
 
 def test_renglon_pendiente_de_matching_da_validation(esc):

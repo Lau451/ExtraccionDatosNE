@@ -53,7 +53,7 @@ def escribir_csv(
     try:
         with open(temporal, "w", encoding=encoding, errors="replace", newline="") as f:
             escritor = csv.writer(
-                f, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n"
+                f, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n"
             )
             escritor.writerow(ENCABEZADOS)
             escritor.writerows(filas)

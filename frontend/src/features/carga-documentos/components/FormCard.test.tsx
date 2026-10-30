@@ -15,7 +15,7 @@ vi.mock('@/lib/api/extraccion', () => ({
   procesarDocumento: vi.fn(),
 }))
 
-import { procesarDocumento } from '@/lib/api/extraccion'
+import { listarClientes, procesarDocumento } from '@/lib/api/extraccion'
 
 // Devuelve también el `queryClient` -- lo necesitan los tests de
 // invalidación (carga-asincrona T2: éxito invalida 'documentos-recientes'
@@ -35,6 +35,10 @@ beforeEach(() => {
   vi.mocked(procesarDocumento).mockReset()
 })
 
+function elegirTipo(label: string) {
+  fireEvent.click(screen.getByRole('button', { name: label }))
+}
+
 function abrirTabOrdenes() {
   fireEvent.click(screen.getByRole('button', { name: /orden de compra/i }))
 }
@@ -50,6 +54,7 @@ describe('FormCard — carga múltiple de órdenes de compra (D13)', () => {
 
   it('con tipo="licitaciones" el input NO es múltiple', () => {
     const { container } = renderConQueryClient(<FormCard />)
+    elegirTipo('Licitación / Directa')
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     expect(input.multiple).toBe(false)
@@ -281,7 +286,7 @@ describe('FormCard — confirmación asincrónica, sin auto-navegación (carga-a
     vi.mocked(procesarDocumento).mockResolvedValue({ ok: true, tipo: 'licitacion' })
 
     const { container } = renderConQueryClient(<FormCard />)
-    // tipo='licitaciones' es el default -- no hace falta abrirTabOrdenes().
+    elegirTipo('Licitación / Directa')
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(input, { target: { files: [archivo('a.pdf')] } })
@@ -299,11 +304,113 @@ describe('FormCard — confirmación asincrónica, sin auto-navegación (carga-a
 
     const { container, queryClient } = renderConQueryClient(<FormCard />)
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    elegirTipo('Licitación / Directa')
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(input, { target: { files: [archivo('a.pdf')] } })
     fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
 
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['documentos-recientes'] }))
+  })
+})
+
+describe('FormCard — un solo tipo "Licitación / Directa" (presupuestador-v1 T2a)', () => {
+  it('ofrece "Licitación / Directa", "Comparativa" y "Orden de compra", sin elegir la clase', () => {
+    renderConQueryClient(<FormCard />)
+
+    const tipos = screen.getAllByRole('button', { pressed: false }).map((boton) => boton.textContent)
+    expect(tipos).toEqual(['Licitación / Directa', 'Comparativa', 'Orden de compra'])
+    expect(screen.queryByRole('button', { name: '1 · Directa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '2 · Licitación' })).not.toBeInTheDocument()
+  })
+
+  it('con "Licitación / Directa" no pide cliente y envía tipo="licitaciones" con un solo archivo', async () => {
+    vi.mocked(procesarDocumento).mockResolvedValue({ ok: true, tipo: 'licitaciones' })
+
+    const { container } = renderConQueryClient(<FormCard />)
+    elegirTipo('Licitación / Directa')
+
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/cliente/i)).not.toBeInTheDocument()
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(input.multiple).toBe(false)
+    expect(input.accept).toBe('.pdf,.jpg,.jpeg,.png,.xls,.xlsx')
+    fireEvent.change(input, { target: { files: [archivo('a.pdf'), archivo('b.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await waitFor(() => expect(procesarDocumento).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(procesarDocumento).mock.calls[0][0]).toMatchObject({
+      tipo: 'licitaciones',
+      clienteId: undefined,
+      grupoId: undefined,
+    })
+    expect(vi.mocked(procesarDocumento).mock.calls[0][0].archivo.name).toBe('a.pdf')
+  })
+
+  it('la comparativa sigue ofreciendo el cliente y lo envía', async () => {
+    vi.mocked(listarClientes).mockResolvedValue([{ id: 'cli-1', nombre: 'Hospital Sayago' }])
+    vi.mocked(procesarDocumento).mockResolvedValue({ ok: true, tipo: 'comparativas' })
+
+    const { container } = renderConQueryClient(<FormCard />)
+    elegirTipo('Comparativa')
+    await screen.findByRole('option', { name: 'Hospital Sayago' })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cli-1' } })
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [archivo('c.pdf')] } })
+    fireEvent.click(screen.getByRole('button', { name: /procesar/i }))
+
+    await waitFor(() => expect(procesarDocumento).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(procesarDocumento).mock.calls[0][0]).toMatchObject({
+      tipo: 'comparativas',
+      clienteId: 'cli-1',
+    })
+  })
+})
+
+describe('FormCard — el tipo se elige siempre (presupuestador-v1 T1b)', () => {
+  it('sin elegir tipo no hay ninguno marcado y no se puede cargar ni procesar', () => {
+    const { container } = renderConQueryClient(<FormCard />)
+
+    for (const label of ['Licitación / Directa', 'Comparativa', 'Orden de compra']) {
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'false')
+    }
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(input).toBeDisabled()
+    expect(screen.getByText('Elegí el tipo de documento para continuar')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /procesar/i })).toBeDisabled()
+  })
+
+  it('arrastrar un archivo sin elegir tipo no lo carga', () => {
+    renderConQueryClient(<FormCard />)
+    const zona = screen.getByText('Elegí el tipo de documento para continuar').closest('label') as HTMLElement
+
+    fireEvent.drop(zona, { dataTransfer: { files: [archivo('a.pdf')] } })
+
+    expect(screen.queryByText('a.pdf')).not.toBeInTheDocument()
+    expect(screen.getByText('Elegí el tipo de documento para continuar')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /procesar/i })).toBeDisabled()
+    expect(procesarDocumento).not.toHaveBeenCalled()
+  })
+
+  it('arrastrar un archivo después de elegir tipo sí lo carga', () => {
+    renderConQueryClient(<FormCard />)
+    elegirTipo('Licitación / Directa')
+    const zona = screen.getByText('Seleccionar archivo').closest('label') as HTMLElement
+
+    fireEvent.drop(zona, { dataTransfer: { files: [archivo('a.pdf')] } })
+
+    expect(screen.getByText('a.pdf')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /procesar/i })).toBeEnabled()
+  })
+
+  it('al elegir un tipo queda marcado y habilita la carga', () => {
+    const { container } = renderConQueryClient(<FormCard />)
+    elegirTipo('Licitación / Directa')
+
+    expect(screen.getByRole('button', { name: 'Licitación / Directa' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Comparativa' })).toHaveAttribute('aria-pressed', 'false')
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(input).toBeEnabled()
+    expect(screen.queryByText('Elegí el tipo de documento para continuar')).not.toBeInTheDocument()
   })
 })

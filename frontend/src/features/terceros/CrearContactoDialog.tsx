@@ -106,8 +106,8 @@ export function CrearContactoDialog({
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+        <Dialog.Overlay className="fixed z-50 inset-0 bg-black/40" />
+        <Dialog.Content className="fixed z-50 top-1/2 left-1/2 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
           <Dialog.Title className="text-base font-semibold text-slate-900">
             {esEdicion ? 'Editar contacto' : 'Nuevo contacto'}
           </Dialog.Title>

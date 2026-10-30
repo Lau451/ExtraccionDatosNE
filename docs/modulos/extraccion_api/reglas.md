@@ -194,7 +194,8 @@ sesión.
 - **Descripción**: si existen instrucciones cargadas para el `cliente_id` + `doc_type` de
   la request, se resuelven y pasan como `instrucciones_extra` al pipeline de
   `extraccion_ia`. Si la consulta falla o no hay match, se sigue sin instrucciones.
-- **Condición**: cada request a `POST /procesar` con `cliente_id` no vacío.
+- **Condición**: cada request a `POST /procesar` de comparativa u orden de compra con
+  `cliente_id` no vacío (licitaciones y directas no consultan formato, presupuestador-v1 T2a).
 - **Resultado**: `_resolver_formato_prompt` (`main.py:122-149`) consulta
   `cliente_formato_documentos` filtrando por `cliente_id`, `doc_type` y `activo=True`;
   ante cualquier excepción, loguea `warning` y retorna `(None, None)` — nunca bloquea la

@@ -106,8 +106,21 @@ class OrdenCompraOverride(BaseModel):
     filas: list[FilaOrdenCompraIn]
 
 
+class NuevoProcesoIn(BaseModel):
+    """presupuestador-v1 T2b (S2, S8): validating a licitación or a directa
+    starts its proceso comercial. `clase` is the class chosen at validation
+    ('cotizacion' = directa); `nombre_licitacion` is required for a licitación
+    and ignored for a directa, which is numbered per cliente."""
+
+    model_config = ConfigDict(extra="forbid")
+    clase: Literal["licitacion", "cotizacion"]
+    cliente_id: str
+    nombre_licitacion: str | None = None
+
+
 class ValidarExtraccionRequest(BaseModel):
     proceso_comercial_id: str | None = None
+    nuevo_proceso: NuevoProcesoIn | None = None
     # None  -> materializa desde el CSV (comportamiento actual, retrocompatible)
     # lista -> materializa desde acá; el CSV en disco NO se toca (D2)
     filas: list[FilaLicitacionIn] | list[FilaComparativaIn] | None = Field(default=None)
@@ -204,6 +217,9 @@ class FilasExtraccionOut(BaseModel):
     # solo UNA fila del grupo multi-archivo (D13/D13.1).
     validado: bool
     orden_compra_id: str | None = None
+    # presupuestador-v1 T3: the proceso a validated licitación/directa created,
+    # so the screen can offer its matching. None until validated, and for an OC.
+    proceso_comercial_id: str | None = None
 
 
 # -- Resolución de cliente (D3 / D3.1 / D3.2, Phase 3) -----------------------

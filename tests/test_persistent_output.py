@@ -359,6 +359,31 @@ class TestPersistirOutputFinal:
         assert str(resultado) == extraction_uuid
 
     @pytest.mark.asyncio
+    async def test_persistir_output_final_acepta_cotizacion(
+        self, mock_supabase_client_update, tmp_path
+    ):
+        """presupuestador-v1 T1: una directa se sube como doc_type='cotizacion'
+        y se completa igual que una licitación (mismo robot genérico)."""
+        _, extraction_uuid = mock_supabase_client_update
+        csv_path = tmp_path / "resultado.csv"
+        csv_path.touch()
+
+        resultado = await persistent_output.persistir_output_final(
+            extraction_id=UUID(extraction_uuid),
+            session_id=UUID("12345678-1234-5678-1234-567812345678"),
+            doc_type="cotizacion",
+            rows=[{"renglon": "1", "descripcion": "IBUPROFENO 400"}],
+            csv_path=csv_path,
+            client_id="cliente_a",
+            source_filename="directa.pdf",
+            source_sha256="e" * 64,
+            drogueria_id="drogueria-1",
+        )
+
+        assert resultado is not None
+        assert str(resultado) == extraction_uuid
+
+    @pytest.mark.asyncio
     async def test_persistir_output_final_empty_rows(self, mock_supabase_client_update, tmp_path):
         """
         rows vacío → retorna None (UPDATE abortado, no se llama a Supabase).

@@ -40,7 +40,7 @@ async def crear_sesion(
                       persiste (esa columna no existe en el schema nuevo de
                       presupuestacion/ — mismo criterio que persistent_output.py).
         total_chunks: Número estimado de chunks (puede ser 0 si aún no se sabe).
-        doc_type:     Tipo de documento: "comparativa" | "licitacion" | "orden_compra".
+        doc_type:     Tipo de documento: "comparativa" | "licitacion" | "cotizacion" | "orden_compra".
         drogueria_id: droguería del usuario autenticado que subió el documento
                       (services.extraccion.auth.get_drogueria_id_actual). Obligatorio,
                       sin fallback -- ver migración 0027 / odd/tasks/extraccion-multi-tenant.md.

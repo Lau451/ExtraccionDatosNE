@@ -10,8 +10,8 @@ export function BlanquearPasswordDialog({ usuario, onClose }: { usuario: Usuario
   return (
     <Dialog.Root open={usuario !== null} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
+        <Dialog.Overlay className="fixed z-50 inset-0 bg-black/40" />
+        <Dialog.Content className="fixed z-50 top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl">
           {/* key: el formulario arranca vacío para cada usuario. */}
           {usuario && <FormularioBlanqueo key={usuario.id} usuario={usuario} onClose={onClose} />}
         </Dialog.Content>

@@ -39,3 +39,44 @@ class ItemMatchingPendiente(BaseModel):
     estado_matching: EstadoMatching
     confianza_matching: Decimal | None
     candidatos: int
+
+
+class ProductoResumen(BaseModel):
+    id: str
+    nombre: str
+    codigo_interno: str | None
+
+
+class CandidatoRenglon(BaseModel):
+    producto: ProductoResumen
+    confianza: Decimal
+    metodo: MetodoMatching
+    elegido: bool
+
+
+class RenglonMatching(BaseModel):
+    item_proceso_id: str
+    numero_renglon: int
+    descripcion: str
+    cantidad: Decimal
+    estado_matching: EstadoMatching
+    confianza_matching: Decimal | None
+    producto: ProductoResumen | None
+    candidatos: list[CandidatoRenglon]
+
+
+class MatchingProceso(BaseModel):
+    proceso_comercial_id: str
+    nombre: str
+    clase: str
+    cliente: str | None
+    renglones: list[RenglonMatching]
+
+
+class ProcesoConMatchingPendiente(BaseModel):
+    proceso_comercial_id: str
+    proceso: str
+    clase: str
+    cliente: str | None
+    pendientes: int
+    sugeridos: int

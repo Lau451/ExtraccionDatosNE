@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Matching — Planilla con aceptación masiva</title>
+<style>
+  :root {
+    --navy: #0f172a; --accent: #0369a1;
+    --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+    --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155; --slate-900: #0f172a;
+    --amber-50: #fffbeb; --amber-200: #fde68a; --amber-800: #92400e;
+    --sky-50: #f0f9ff; --sky-200: #bae6fd; --sky-800: #075985;
+    --emerald-50: #ecfdf5; --emerald-200: #a7f3d0; --emerald-700: #047857; --emerald-800: #065f46;
+    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--slate-900); background: #fff; display: flex; min-height: 100vh; }
+  button, select, input { font: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  aside.nav { width: 256px; flex-shrink: 0; background: var(--navy); color: var(--slate-100); padding: 24px 12px; }
+  aside.nav .brand { font-size: 18px; font-weight: 600; padding: 0 12px 24px; }
+  aside.nav a { display: block; padding: 8px 12px; border-radius: 6px; font-size: 14px; color: var(--slate-200); text-decoration: none; }
+  aside.nav a[aria-current] { background: rgb(3 105 161 / .2); color: #fff; }
+  main { flex: 1; padding: 32px 32px 96px; min-width: 0; }
+  h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; }
+  .meta { font-size: 14px; color: var(--slate-600); margin-top: 4px; }
+  .stats { display: flex; gap: 12px; margin: 20px 0 16px; }
+  .stat { border: 1px solid var(--slate-200); border-radius: 8px; padding: 10px 14px; min-width: 140px; background: #fff; text-align: left; color: var(--slate-900); }
+  .stat[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .stat b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--slate-500); }
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--slate-200); border-radius: 8px; background: var(--slate-50); margin-bottom: 12px; font-size: 14px; color: var(--slate-700); }
+  .toolbar input[type=range] { width: 160px; accent-color: var(--accent); }
+  .toolbar .val { font-variant-numeric: tabular-nums; font-weight: 600; width: 40px; }
+  .toolbar .search { margin-left: auto; border: 1px solid var(--slate-300); border-radius: 6px; padding: 6px 10px; font-size: 14px; width: 280px; background: #fff; }
+  .btn { border-radius: 6px; padding: 6px 12px; font-size: 14px; font-weight: 500; }
+  .btn-primary { background: var(--navy); color: #fff; border: 0; }
+  .btn-primary:disabled { opacity: .4; cursor: default; }
+  .btn-secondary { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--slate-500); padding: 8px; border-bottom: 1px solid var(--slate-200); position: sticky; top: 0; background: #fff; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--slate-100); vertical-align: middle; }
+  tr.checked td { background: var(--sky-50); }
+  tr.resuelto td { color: var(--slate-600); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .n { color: var(--slate-500); width: 40px; }
+  .desc { max-width: 340px; }
+  .badge { display: inline-flex; border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .e-pendiente { background: var(--amber-50); color: var(--amber-800); box-shadow: inset 0 0 0 1px var(--amber-200); }
+  .e-sugerido { background: var(--sky-50); color: var(--sky-800); box-shadow: inset 0 0 0 1px var(--sky-200); }
+  .e-automatico, .e-confirmado { background: var(--emerald-50); color: var(--emerald-800); box-shadow: inset 0 0 0 1px var(--emerald-200); }
+  .e-sin_match { background: var(--slate-100); color: var(--slate-700); box-shadow: inset 0 0 0 1px var(--slate-200); }
+  select.prod { width: 100%; max-width: 380px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 5px 8px; font-size: 14px; background: #fff; color: var(--slate-900); }
+  .conf { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--slate-600); width: 90px; }
+  .conf .track { flex: 1; height: 6px; background: var(--slate-100); border-radius: 9999px; }
+  .conf .fill { height: 100%; border-radius: 9999px; background: var(--accent); }
+  .ok { border: 1px solid var(--slate-300); background: #fff; border-radius: 6px; width: 32px; height: 28px; color: var(--emerald-700); font-weight: 600; }
+  .ok:hover { background: var(--emerald-50); }
+  .x { border: 1px solid var(--slate-300); background: #fff; border-radius: 6px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--slate-700); }
+  .bulk { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--navy); color: #fff; border-radius: 8px; padding: 10px 12px 10px 16px; display: flex; align-items: center; gap: 12px; font-size: 14px; box-shadow: 0 20px 25px -5px rgb(0 0 0/.1),0 8px 10px -6px rgb(0 0 0/.1); }
+  .bulk[hidden] { display: none; }
+  .bulk .btn-secondary { background: transparent; color: #fff; border-color: var(--slate-500); }
+  .bulk .btn-light { background: #fff; color: var(--navy); border: 0; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<aside class="nav" aria-label="Navegación principal">
+  <div class="brand">Droguería Nueva Era</div>
+  <a href="#">Carga de documentos</a>
+  <a href="#">Validar extracción</a>
+  <a href="#" aria-current="page">Matching de catálogo</a>
+  <a href="#">Productos</a>
+  <a href="#">Terceros</a>
+</aside>
+<main>
+  <h1>Matching de C17_ACEL16</h1>
+  <div class="meta">Hospital Sayago · Licitación · 14 renglones</div>
+
+  <div class="stats" role="group" aria-label="Filtrar por estado" id="stats"></div>
+
+  <div class="toolbar">
+    <label for="umbral">Seleccionar sugeridos con confianza ≥</label>
+    <input id="umbral" type="range" min="50" max="100" step="5" value="70">
+    <span class="val" id="umbralVal">70%</span>
+    <button type="button" class="btn btn-secondary" id="selUmbral">Seleccionar</button>
+    <input class="search" type="search" placeholder="Filtrar por descripción" aria-label="Filtrar renglones por descripción" id="filtro">
+  </div>
+
+  <table>
+    <thead><tr>
+      <th><input type="checkbox" id="all" aria-label="Seleccionar todos los visibles"></th>
+      <th class="num">#</th><th>Descripción del pliego</th><th class="num">Cantidad</th><th>Estado</th>
+      <th>Producto del catálogo</th><th>Confianza</th><th><span style="position:absolute;left:-9999px">Acciones</span></th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<div class="bulk" id="bulk" hidden role="region" aria-label="Acciones sobre la selección">
+  <span id="bulkMsg"></span>
+  <button type="button" class="btn btn-light" id="bulkOk">Confirmar sugerencias</button>
+  <button type="button" class="btn btn-secondary" id="bulkSin">Sin match</button>
+  <button type="button" class="btn btn-secondary" id="bulkClear">Cancelar</button>
+</div>
+<script>
+const R = [
+  { n: 1, d: 'AMOXICILINA 500 MG COMPRIMIDOS', q: 2400, e: 'sugerido', c: [['Amoxicilina 500 mg comp. x 1000', 'AMX500C', 84], ['Amoxicilina 875 mg comp. x 14', 'AMX875C', 61], ['Amoxicilina + ác. clavulánico 500/125 mg', 'AMC500', 52]] },
+  { n: 2, d: 'CLORURO DE SODIO 0,9% SOL. FISIOLOGICA X 500 ML', q: 1200, e: 'automatico', p: 0, c: [['Solución fisiológica 0,9% 500 ml', 'SF500', 100]] },
+  { n: 3, d: 'IBUPROFENO 400 MG COMPRIMIDOS', q: 3000, e: 'sugerido', c: [['Ibuprofeno 400 mg comp. x 500', 'IBU400', 78], ['Ibuprofeno 600 mg comp. x 500', 'IBU600', 64]] },
+  { n: 4, d: 'GUANTES DE LATEX ESTERIL TALLE 7', q: 500, e: 'pendiente', c: [['Guante de examinación látex talle M', 'GLX-M', 41], ['Guante de nitrilo talle M', 'GNT-M', 38]] },
+  { n: 5, d: 'JERINGA DESCARTABLE 5 ML C/AGUJA 21G', q: 10000, e: 'sugerido', c: [['Jeringa 5 ml con aguja 21G x 1 1/2', 'JER5-21', 66], ['Jeringa 10 ml con aguja 21G', 'JER10-21', 55]] },
+  { n: 6, d: 'ENOXAPARINA 40 MG JERINGA PRELLENADA', q: 300, e: 'confirmado', p: 0, c: [['Enoxaparina 40 mg/0,4 ml jer. prellenada', 'ENX40', 88]] },
+  { n: 7, d: 'OMEPRAZOL 20 MG CAPSULAS', q: 1800, e: 'sugerido', c: [['Omeprazol 20 mg cáps. x 500', 'OMP20', 91], ['Omeprazol 40 mg FA IV', 'OMP40IV', 47]] },
+  { n: 8, d: 'CEFTRIAXONA 1 G FA IV', q: 450, e: 'sugerido', c: [['Ceftriaxona 1 g FA', 'CFX1G', 72], ['Cefalotina 1 g FA', 'CFL1G', 49]] },
+  { n: 9, d: 'GASA ESTERIL 10X10 CM X 100 SOBRES', q: 200, e: 'pendiente', c: [] },
+  { n: 10, d: 'PARACETAMOL 1 G/100 ML SOL. INYECTABLE', q: 600, e: 'sugerido', c: [['Paracetamol 1 g/100 ml sol. iny.', 'PCT1G-IV', 58], ['Paracetamol 500 mg comp. x 1000', 'PCT500', 44]] },
+  { n: 11, d: 'METFORMINA 850 MG COMPRIMIDOS', q: 2000, e: 'automatico', p: 0, c: [['Metformina 850 mg comp. x 500', 'MTF850', 100]] },
+  { n: 12, d: 'CATETER IV 20G', q: 900, e: 'sin_match', c: [['Catéter IV 22G', 'CAT22', 54]] },
+  { n: 13, d: 'DEXAMETASONA 8 MG/2 ML AMPOLLA', q: 400, e: 'sugerido', c: [['Dexametasona 8 mg/2 ml amp. x 100', 'DXM8', 63]] },
+  { n: 14, d: 'SALBUTAMOL AEROSOL 100 MCG', q: 150, e: 'pendiente', c: [['Salbutamol aerosol 100 mcg x 200 dosis', 'SLB100', 45]] },
+];
+const RESUELTO = ['automatico', 'confirmado', 'sin_match'];
+const ETQ = { pendiente: 'Pendiente', sugerido: 'Sugerido', automatico: 'Automático', confirmado: 'Confirmado', sin_match: 'Sin match' };
+let estadoFiltro = 'abiertos', texto = '';
+const sel = new Set();
+const STATS = [['abiertos', 'Por resolver'], ['sugerido', 'Sugeridos'], ['pendiente', 'Pendientes'], ['resueltos', 'Resueltos'], ['todos', 'Todos']];
+function cuenta(f) { return R.filter((r) => pasa(r, f)).length; }
+function pasa(r, f) {
+  if (f === 'todos') return true;
+  if (f === 'abiertos') return !RESUELTO.includes(r.e);
+  if (f === 'resueltos') return RESUELTO.includes(r.e);
+  return r.e === f;
+}
+const visibles = () => R.filter((r) => pasa(r, estadoFiltro) && r.d.toLowerCase().includes(texto));
+function render() {
+  document.getElementById('stats').innerHTML = STATS.map(([f, l]) =>
+    `<button type="button" class="stat" data-f="${f}" aria-pressed="${estadoFiltro === f}"><b>${cuenta(f)}</b><span>${l}</span></button>`).join('');
+  document.getElementById('rows').innerHTML = visibles().map((r) => {
+    const i = r.p ?? 0, c = r.c[i];
+    const opciones = r.c.map((x, k) => `<option value="${k}" ${k === i ? 'selected' : ''}>${x[0]} · ${x[1]} · ${x[2]}%</option>`).join('')
+      + '<option value="buscar">Buscar en el catálogo…</option>';
+    return `<tr class="${sel.has(r.n) ? 'checked' : ''} ${RESUELTO.includes(r.e) ? 'resuelto' : ''}">
+      <td><input type="checkbox" data-n="${r.n}" ${sel.has(r.n) ? 'checked' : ''} aria-label="Seleccionar renglón ${r.n}"></td>
+      <td class="num n">${r.n}</td><td class="desc">${r.d}</td><td class="num">${r.q.toLocaleString('es-AR')}</td>
+      <td><span class="badge e-${r.e}">${ETQ[r.e]}</span></td>
+      <td>${r.e === 'sin_match' ? '<span style="color:var(--slate-500)">Sin producto</span>' : r.c.length
+        ? `<select class="prod" data-n="${r.n}" aria-label="Producto para el renglón ${r.n}">${opciones}</select>`
+        : '<button type="button" class="x">Buscar en el catálogo</button>'}</td>
+      <td>${c && r.e !== 'sin_match' ? `<span class="conf"><span class="track"><span class="fill" style="width:${c[2]}%"></span></span>${c[2]}%</span>` : ''}</td>
+      <td style="white-space:nowrap">${RESUELTO.includes(r.e) ? '' : `${r.c.length ? `<button type="button" class="ok" data-ok="${r.n}" aria-label="Confirmar renglón ${r.n}">✓</button> ` : ''}<button type="button" class="x" data-sin="${r.n}">Sin match</button>`}</td>
+    </tr>`;
+  }).join('');
+  const bulk = document.getElementById('bulk');
+  bulk.hidden = sel.size === 0;
+  document.getElementById('bulkMsg').textContent = `${sel.size} renglón${sel.size === 1 ? '' : 'es'} seleccionado${sel.size === 1 ? '' : 's'}`;
+}
+const buscar = (n) => R.find((r) => r.n === n);
+function confirmar(n) { const r = buscar(n); if (r.c.length) { r.p = r.p ?? 0; r.e = 'confirmado'; } sel.delete(n); }
+document.addEventListener('click', (ev) => {
+  const s = ev.target.closest('.stat'); if (s) { estadoFiltro = s.dataset.f; render(); return; }
+  const ok = ev.target.closest('[data-ok]'); if (ok) { confirmar(+ok.dataset.ok); render(); return; }
+  const sin = ev.target.closest('[data-sin]'); if (sin) { const r = buscar(+sin.dataset.sin); r.e = 'sin_match'; r.p = null; sel.delete(r.n); render(); return; }
+  if (ev.target.id === 'selUmbral') { const u = +document.getElementById('umbral').value; R.forEach((r) => { if (r.e === 'sugerido' && r.c[0][2] >= u) sel.add(r.n); }); render(); }
+  if (ev.target.id === 'bulkOk') { [...sel].forEach(confirmar); render(); }
+  if (ev.target.id === 'bulkSin') { [...sel].forEach((n) => { const r = buscar(n); r.e = 'sin_match'; r.p = null; }); sel.clear(); render(); }
+  if (ev.target.id === 'bulkClear') { sel.clear(); render(); }
+});
+document.addEventListener('change', (ev) => {
+  if (ev.target.matches('#rows input[type=checkbox]')) { const n = +ev.target.dataset.n; ev.target.checked ? sel.add(n) : sel.delete(n); render(); }
+  if (ev.target.id === 'all') { visibles().forEach((r) => ev.target.checked ? sel.add(r.n) : sel.delete(r.n)); render(); }
+  if (ev.target.matches('select.prod') && ev.target.value !== 'buscar') { const r = buscar(+ev.target.dataset.n); r.p = +ev.target.value; r.e = 'confirmado'; render(); }
+});
+document.getElementById('umbral').addEventListener('input', (ev) => { document.getElementById('umbralVal').textContent = `${ev.target.value}%`; });
+document.getElementById('filtro').addEventListener('input', (ev) => { texto = ev.target.value.toLowerCase(); render(); });
+render();
+</script>
+</body>
+</html>

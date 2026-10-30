@@ -81,6 +81,9 @@ export interface FilasExtraccionOut {
   // (mismo backend lookup que ExtraccionResumen.orden_compra_id, D11/D13.1).
   // Licitación/comparativa validadas: siempre null (nunca tienen OC).
   orden_compra_id?: string | null
+  // presupuestador-v1 T3: proceso a validated licitación/directa created
+  // (`FilasExtraccionOut.proceso_comercial_id`); the screen offers its matching.
+  proceso_comercial_id?: string | null
 }
 
 /** Mismos nombres de columna que `services/presupuestacion/extraccion/models.py`
@@ -142,8 +145,18 @@ export interface OrdenCompraOverride {
   filas: FilaOrdenCompraIn[]
 }
 
+/** presupuestador-v1 T2b -- validating a licitación or a directa creates its
+ * proceso comercial. `clase` 'cotizacion' is a directa; `nombre_licitacion`
+ * only applies to a licitación (a directa is numbered per cliente). */
+export interface NuevoProcesoIn {
+  clase: 'licitacion' | 'cotizacion'
+  cliente_id: string
+  nombre_licitacion?: string
+}
+
 export interface ValidarExtraccionPayload {
   proceso_comercial_id?: string | null
+  nuevo_proceso?: NuevoProcesoIn
   // undefined/null -> materializa desde el CSV en disco (comportamiento retrocompatible, D2)
   filas?: FilaLicitacionIn[] | FilaComparativaIn[] | null
   orden_compra?: OrdenCompraOverride | null

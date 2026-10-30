@@ -14,6 +14,7 @@ import { Route as CambiarPasswordRouteImport } from './routes/cambiar-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated.index'
 import { Route as AuthenticatedCompromisosRouteImport } from './routes/_authenticated.compromisos'
+import { Route as AuthenticatedMatchingRouteImport } from './routes/_authenticated.matching'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated.mi-cuenta'
 import { Route as AuthenticatedPcpRouteImport } from './routes/_authenticated.pcp'
 import { Route as AuthenticatedProductosRouteImport } from './routes/_authenticated.productos'
@@ -35,6 +36,7 @@ import { Route as AuthenticatedOrdenesCompraOrdenCompraIdIndexRouteImport } from
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdEntregasRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.entregas'
 import { Route as AuthenticatedOrdenesCompraOrdenCompraIdMatchingRouteImport } from './routes/_authenticated.ordenes-compra.$ordenCompraId.matching'
 import { Route as AuthenticatedPcpConsultasConsultaIdRouteImport } from './routes/_authenticated.pcp.consultas.$consultaId'
+import { Route as AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport } from './routes/_authenticated.procesos-comerciales.$procesoId.matching'
 import { Route as AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport } from './routes/_authenticated.pcp.$pcpId.renglones.$renglonId'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -62,6 +64,11 @@ const AuthenticatedCompromisosRoute =
     path: '/compromisos',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedMatchingRoute = AuthenticatedMatchingRouteImport.update({
+  id: '/matching',
+  path: '/matching',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
@@ -181,6 +188,12 @@ const AuthenticatedPcpConsultasConsultaIdRoute =
     path: '/consultas/$consultaId',
     getParentRoute: () => AuthenticatedPcpRoute,
   } as any)
+const AuthenticatedProcesosComercialesProcesoIdMatchingRoute =
+  AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport.update({
+    id: '/procesos-comerciales/$procesoId/matching',
+    path: '/procesos-comerciales/$procesoId/matching',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPcpPcpIdRenglonesRenglonIdRoute =
   AuthenticatedPcpPcpIdRenglonesRenglonIdRouteImport.update({
     id: '/renglones/$renglonId',
@@ -193,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
+  '/matching': typeof AuthenticatedMatchingRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -213,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -220,6 +235,7 @@ export interface FileRoutesByTo {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/compromisos': typeof AuthenticatedCompromisosRoute
+  '/matching': typeof AuthenticatedMatchingRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
@@ -238,6 +254,7 @@ export interface FileRoutesByTo {
   '/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/ordenes-compra/$ordenCompraId': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -247,6 +264,7 @@ export interface FileRoutesById {
   '/cambiar-password': typeof CambiarPasswordRoute
   '/login': typeof LoginRoute
   '/_authenticated/compromisos': typeof AuthenticatedCompromisosRoute
+  '/_authenticated/matching': typeof AuthenticatedMatchingRoute
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/pcp': typeof AuthenticatedPcpRouteWithChildren
   '/_authenticated/productos': typeof AuthenticatedProductosRouteWithChildren
@@ -268,6 +286,7 @@ export interface FileRoutesById {
   '/_authenticated/ordenes-compra/$ordenCompraId/entregas': typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/matching': typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
   '/_authenticated/pcp/consultas/$consultaId': typeof AuthenticatedPcpConsultasConsultaIdRoute
+  '/_authenticated/procesos-comerciales/$procesoId/matching': typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   '/_authenticated/ordenes-compra/$ordenCompraId/': typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
   '/_authenticated/pcp/$pcpId/renglones/$renglonId': typeof AuthenticatedPcpPcpIdRenglonesRenglonIdRoute
 }
@@ -278,6 +297,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/compromisos'
+    | '/matching'
     | '/mi-cuenta'
     | '/pcp'
     | '/productos'
@@ -298,6 +318,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/procesos-comerciales/$procesoId/matching'
     | '/ordenes-compra/$ordenCompraId/'
     | '/pcp/$pcpId/renglones/$renglonId'
   fileRoutesByTo: FileRoutesByTo
@@ -305,6 +326,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/compromisos'
+    | '/matching'
     | '/mi-cuenta'
     | '/'
     | '/admin/usuarios'
@@ -323,6 +345,7 @@ export interface FileRouteTypes {
     | '/ordenes-compra/$ordenCompraId/entregas'
     | '/ordenes-compra/$ordenCompraId/matching'
     | '/pcp/consultas/$consultaId'
+    | '/procesos-comerciales/$procesoId/matching'
     | '/ordenes-compra/$ordenCompraId'
     | '/pcp/$pcpId/renglones/$renglonId'
   id:
@@ -331,6 +354,7 @@ export interface FileRouteTypes {
     | '/cambiar-password'
     | '/login'
     | '/_authenticated/compromisos'
+    | '/_authenticated/matching'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/pcp'
     | '/_authenticated/productos'
@@ -352,6 +376,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ordenes-compra/$ordenCompraId/entregas'
     | '/_authenticated/ordenes-compra/$ordenCompraId/matching'
     | '/_authenticated/pcp/consultas/$consultaId'
+    | '/_authenticated/procesos-comerciales/$procesoId/matching'
     | '/_authenticated/ordenes-compra/$ordenCompraId/'
     | '/_authenticated/pcp/$pcpId/renglones/$renglonId'
   fileRoutesById: FileRoutesById
@@ -397,6 +422,13 @@ declare module '@tanstack/react-router' {
       path: '/compromisos'
       fullPath: '/compromisos'
       preLoaderRoute: typeof AuthenticatedCompromisosRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/matching': {
+      id: '/_authenticated/matching'
+      path: '/matching'
+      fullPath: '/matching'
+      preLoaderRoute: typeof AuthenticatedMatchingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/mi-cuenta': {
@@ -546,6 +578,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPcpConsultasConsultaIdRouteImport
       parentRoute: typeof AuthenticatedPcpRoute
     }
+    '/_authenticated/procesos-comerciales/$procesoId/matching': {
+      id: '/_authenticated/procesos-comerciales/$procesoId/matching'
+      path: '/procesos-comerciales/$procesoId/matching'
+      fullPath: '/procesos-comerciales/$procesoId/matching'
+      preLoaderRoute: typeof AuthenticatedProcesosComercialesProcesoIdMatchingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/pcp/$pcpId/renglones/$renglonId': {
       id: '/_authenticated/pcp/$pcpId/renglones/$renglonId'
       path: '/renglones/$renglonId'
@@ -624,6 +663,7 @@ const AuthenticatedTercerosRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedCompromisosRoute: typeof AuthenticatedCompromisosRoute
+  AuthenticatedMatchingRoute: typeof AuthenticatedMatchingRoute
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
   AuthenticatedPcpRoute: typeof AuthenticatedPcpRouteWithChildren
   AuthenticatedProductosRoute: typeof AuthenticatedProductosRouteWithChildren
@@ -636,11 +676,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedValidarExtraccionIndexRoute: typeof AuthenticatedValidarExtraccionIndexRoute
   AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute
+  AuthenticatedProcesosComercialesProcesoIdMatchingRoute: typeof AuthenticatedProcesosComercialesProcesoIdMatchingRoute
   AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute: typeof AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCompromisosRoute: AuthenticatedCompromisosRoute,
+  AuthenticatedMatchingRoute: AuthenticatedMatchingRoute,
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
   AuthenticatedPcpRoute: AuthenticatedPcpRouteWithChildren,
   AuthenticatedProductosRoute: AuthenticatedProductosRouteWithChildren,
@@ -658,6 +700,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedOrdenesCompraOrdenCompraIdEntregasRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdMatchingRoute,
+  AuthenticatedProcesosComercialesProcesoIdMatchingRoute:
+    AuthenticatedProcesosComercialesProcesoIdMatchingRoute,
   AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute:
     AuthenticatedOrdenesCompraOrdenCompraIdIndexRoute,
 }

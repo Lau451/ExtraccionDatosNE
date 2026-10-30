@@ -28,10 +28,13 @@ from services.presupuestacion.extraccion.models import (
     ExtraccionResumen,
     FilasExtraccionOut,
     MiembroGrupo,
+    NuevoProcesoIn,
     OrdenCompraOverride,
     ResultadoValidarExtraccion,
 )
-from services.presupuestacion.matching.service import procesar_matching_item
+from services.presupuestacion.matching.service import registrar_matching, resolver_matching
+from services.presupuestacion.procesos_comerciales.models import ProcesoComercialCreate
+from services.presupuestacion.procesos_comerciales.service import crear_proceso_comercial
 from services.presupuestacion.notificaciones.service import crear_notificacion
 
 logger = logging.getLogger(__name__)
@@ -233,6 +236,7 @@ def leer_filas_extraccion(
             orden_compra_id=_resolver_orden_compra_id(
                 client, extraction_id=extraction["id"], miembros=miembros
             ),
+            proceso_comercial_id=extraction.get("proceso_comercial_id"),
         )
 
     columnas, filas_completas = _leer_filas_csv_con_columnas(extraction["csv_disk_path"])
@@ -256,6 +260,7 @@ def leer_filas_extraccion(
         # por consistencia con la rama orden_compra, mismo criterio que
         # listar_extracciones (D11).
         orden_compra_id=_resolver_orden_compra_id(client, extraction_id=extraction["id"]),
+        proceso_comercial_id=extraction.get("proceso_comercial_id"),
     )
 
 
@@ -1029,6 +1034,17 @@ def _validar_filas_override(
         extra = f" (y {len(errores) - 10} más)" if len(errores) > 10 else ""
         raise ValidationError(f"Filas con datos inválidos — {detalle}{extra}")
 
+    # presupuestador-v1 T2b: items_proceso is UNIQUE(proceso_comercial_id,
+    # numero_renglon) -- a repeated item would fail mid-validation, after the
+    # proceso was created and linked. Reject it here, before any write.
+    if not es_comparativa:
+        vistos: set[int] = set()
+        for fila in filas:
+            renglon = int(fila["item"].strip())
+            if renglon in vistos:
+                raise ValidationError(f"El renglón {renglon} está repetido")
+            vistos.add(renglon)
+
 
 def _filas_a_materializar(
     extraction: dict[str, Any], filas_override: list[dict[str, str]] | None
@@ -1071,6 +1087,87 @@ def _resolver_proceso_comercial_id(
     return proceso_comercial_id
 
 
+def _crear_proceso_para_extraccion(
+    client: Client,
+    *,
+    extraction: dict[str, Any],
+    nuevo_proceso: NuevoProcesoIn,
+    proceso_comercial_id: str | None,
+    usuario_id: str,
+) -> str:
+    """presupuestador-v1 T2b (S2, S8): validating a licitación or a directa
+    starts its proceso comercial, always with a cliente. Named
+    "<cliente> - <nombre>" for a licitación and "<cliente> - <n>" for a
+    directa, `n` ascending per cliente. Every check runs before the first
+    write. The extraction takes the chosen class as its document_type."""
+    if proceso_comercial_id is not None:
+        raise ValidationError("Indicá un proceso comercial existente o los datos del nuevo, no ambos")
+    if extraction["document_type"] not in _TIPOS_ITEMS_PROCESO:
+        raise ValidationError("Solo una licitación o una directa crea su proceso comercial al validarse")
+    nombre_licitacion = (nuevo_proceso.nombre_licitacion or "").strip().upper()
+    if nuevo_proceso.clase == "licitacion" and not nombre_licitacion:
+        raise ValidationError("Falta el nombre de la licitación")
+
+    cliente = repo.buscar_cliente_con_razon_social(client, cliente_id=nuevo_proceso.cliente_id)
+    if (
+        cliente is None
+        or cliente["drogueria_id"] != extraction["drogueria_id"]
+        or not cliente.get("terceros")
+    ):
+        raise ValidationError("El cliente indicado no existe o no pertenece a esta droguería")
+    razon_social = cliente["terceros"]["razon_social"]
+
+    # A failure after the proceso was created (e.g. while materializing) leaves
+    # the extraction linked but not validated. Confirming again with the same
+    # cliente and class reuses that proceso (a licitación takes the name sent
+    # now, the user may have fixed it); anything else is a conflict.
+    vinculado_id = extraction.get("proceso_comercial_id")
+    if vinculado_id is not None:
+        vinculado = repo.buscar_proceso_comercial(client, proceso_comercial_id=vinculado_id)
+        if (
+            vinculado is None
+            or vinculado["cliente_id"] != nuevo_proceso.cliente_id
+            or vinculado["clase"] != nuevo_proceso.clase
+        ):
+            raise ConflictError("Esta extracción ya está vinculada a un proceso comercial")
+        if nuevo_proceso.clase == "licitacion":
+            repo.renombrar_proceso_comercial(
+                client,
+                proceso_comercial_id=vinculado_id,
+                nombre=f"{razon_social} - {nombre_licitacion}",
+                usuario_id=usuario_id,
+            )
+        repo.actualizar_extraction_result(
+            client, extraction_id=extraction["id"], campos={"document_type": nuevo_proceso.clase}
+        )
+        extraction["document_type"] = nuevo_proceso.clase
+        return vinculado_id
+
+    if nuevo_proceso.clase == "licitacion":
+        nombre = f"{razon_social} - {nombre_licitacion}"
+    else:
+        numero = repo.contar_procesos_de_cliente(
+            client, cliente_id=nuevo_proceso.cliente_id, clase="cotizacion"
+        ) + 1
+        nombre = f"{razon_social} - {numero}"
+
+    proceso = crear_proceso_comercial(
+        client,
+        drogueria_id=extraction["drogueria_id"],
+        body=ProcesoComercialCreate(
+            nombre=nombre, clase=nuevo_proceso.clase, cliente_id=nuevo_proceso.cliente_id
+        ),
+        usuario_id=usuario_id,
+    )
+    repo.actualizar_extraction_result(
+        client,
+        extraction_id=extraction["id"],
+        campos={"proceso_comercial_id": proceso["id"], "document_type": nuevo_proceso.clase},
+    )
+    extraction["document_type"] = nuevo_proceso.clase
+    return proceso["id"]
+
+
 def _materializar_licitacion(
     client: Client,
     *,
@@ -1097,12 +1194,29 @@ def _materializar_licitacion(
             }
         )
 
+    # The matching is resolved from the descripciones before the insert, so each
+    # item is written once with its outcome instead of inserted and then updated
+    # one by one (one round trip per renglón).
+    resueltos = resolver_matching(
+        client,
+        descripciones=[fila["descripcion"] for fila in filas_items],
+        drogueria_id=drogueria_id,
+        cliente_id=cliente_id,
+    )
+    for fila, resuelto in zip(filas_items, resueltos):
+        fila.update({"producto_id": None, "alias_id": None, **resuelto.campos()})
+
     items_creados = repo.insertar_items_proceso(client, filas_items)
 
-    for item in items_creados:
-        procesar_matching_item(
-            client, item=item, drogueria_id=drogueria_id, cliente_id=cliente_id
-        )
+    # The insert's returned order is not guaranteed; numero_renglon is unique per
+    # proceso (uq_items_proceso), so it pairs each created item with its matching.
+    id_por_renglon = {item["numero_renglon"]: item["id"] for item in items_creados}
+    registrar_matching(
+        client,
+        item_ids=[id_por_renglon[fila["numero_renglon"]] for fila in filas_items],
+        resueltos=resueltos,
+        drogueria_id=drogueria_id,
+    )
 
     return len(items_creados)
 
@@ -1274,6 +1388,7 @@ def validar_extraccion(
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
     orden_compra: OrdenCompraOverride | None = None,
+    nuevo_proceso: NuevoProcesoIn | None = None,
 ) -> ResultadoValidarExtraccion:
     extraction = repo.buscar_extraction_result(client, extraction_id=extraction_id)
     if extraction is None:
@@ -1295,6 +1410,9 @@ def validar_extraccion(
             f"Esta extracción está en estado '{status_actual}' -- todavía no se puede validar"
         )
 
+    if nuevo_proceso is not None and extraction["document_type"] not in _TIPOS_ITEMS_PROCESO:
+        raise ValidationError("Solo una licitación o una directa crea su proceso comercial al validarse")
+
     # D13.1 -- orden_compra ancla por cliente_id, no por proceso_comercial_id:
     # saltea por completo _resolver_proceso_comercial_id (D4). _materializar_licitacion
     # NO se toca (D13.2): esta rama es enteramente nueva y separada.
@@ -1308,9 +1426,18 @@ def validar_extraccion(
     # como estaba: sin proceso_comercial_id, sin items_proceso/comparativas.
     _validar_filas_override(filas_override, document_type=extraction["document_type"])
 
-    proceso_comercial_id_resuelto = _resolver_proceso_comercial_id(
-        client, extraction=extraction, proceso_comercial_id=proceso_comercial_id
-    )
+    if nuevo_proceso is not None:
+        proceso_comercial_id_resuelto = _crear_proceso_para_extraccion(
+            client,
+            extraction=extraction,
+            nuevo_proceso=nuevo_proceso,
+            proceso_comercial_id=proceso_comercial_id,
+            usuario_id=usuario_id,
+        )
+    else:
+        proceso_comercial_id_resuelto = _resolver_proceso_comercial_id(
+            client, extraction=extraction, proceso_comercial_id=proceso_comercial_id
+        )
     proceso = repo.buscar_proceso_comercial(
         client, proceso_comercial_id=proceso_comercial_id_resuelto
     )
@@ -1388,6 +1515,7 @@ def validar_extraccion_para_endpoint(
     proceso_comercial_id: str | None,
     filas_override: list[dict[str, str]] | None = None,
     orden_compra: OrdenCompraOverride | None = None,
+    nuevo_proceso: NuevoProcesoIn | None = None,
 ) -> ResultadoValidarExtraccion:
     """Corre con service_role: materializar toca items_proceso/comparativas/ofertas_items/
     notificaciones y dispara matching — mismo criterio que pricing/matching/presupuestos,
@@ -1399,4 +1527,5 @@ def validar_extraccion_para_endpoint(
         proceso_comercial_id=proceso_comercial_id,
         filas_override=filas_override,
         orden_compra=orden_compra,
+        nuevo_proceso=nuevo_proceso,
     )

@@ -12,16 +12,28 @@ import {
 
 const RECIENTES_KEY = ['documentos-recientes']
 
+// presupuestador-v1 T2a: a licitación and a directa are uploaded the same way;
+// the class (and the cliente) are chosen at validation, which creates the
+// proceso comercial.
 const TIPO_OPTIONS: { value: TipoDocumento; label: string }[] = [
   { value: 'licitaciones', label: 'Licitación / Directa' },
   { value: 'comparativas', label: 'Comparativa' },
   { value: 'ordenes', label: 'Orden de compra' },
 ]
 
+// presupuestador-v1 T2a (S9): licitaciones and directas use the generic
+// prompt, so the cliente (only used to pick the client's prompt format) is
+// not asked for them.
+function pideCliente(tipo: TipoDocumento | null): boolean {
+  return tipo !== null && tipo !== 'licitaciones'
+}
+
+const ACCEPT_BASE = '.pdf,.jpg,.jpeg,.png,.xls,.xlsx'
+
 const ACCEPT_POR_TIPO: Record<TipoDocumento, string> = {
-  licitaciones: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
-  ordenes: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx',
-  comparativas: '.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.ods,.html,.htm',
+  licitaciones: ACCEPT_BASE,
+  ordenes: ACCEPT_BASE,
+  comparativas: `${ACCEPT_BASE},.ods,.html,.htm`,
 }
 
 interface ResultadoPorArchivo {
@@ -79,7 +91,9 @@ async function procesarMultiple(
 }
 
 export function FormCard() {
-  const [tipo, setTipo] = useState<TipoDocumento>('licitaciones')
+  // presupuestador-v1 T1b: no default -- the user always picks the type, so a
+  // directa is never uploaded as a licitación by accident.
+  const [tipo, setTipo] = useState<TipoDocumento | null>(null)
   const [archivos, setArchivos] = useState<File[]>([])
   const [clienteId, setClienteId] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -91,8 +105,13 @@ export function FormCard() {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      if (tipo === null) throw new Error('Falta elegir el tipo de documento')
       if (archivos.length === 0) throw new Error('Falta seleccionar un archivo')
-      const resultados = await procesarMultiple(archivos, tipo, clienteId || undefined)
+      const resultados = await procesarMultiple(
+        archivos,
+        tipo,
+        pideCliente(tipo) ? clienteId || undefined : undefined,
+      )
       return { resultados }
     },
     // carga-asincrona T2 -- /procesar responde 202 apenas termina el upload
@@ -113,8 +132,8 @@ export function FormCard() {
   })
 
   function handleFiles(fileList: FileList | null) {
-    // 'ordenes' es el único tipo con carga múltiple (D13) -- para los otros
-    // dos, aunque el usuario seleccione varios, solo se toma el primero.
+    // 'ordenes' es el único tipo con carga múltiple (D13) -- para los demás,
+    // aunque el usuario seleccione varios, solo se toma el primero.
     const lista = fileList ? Array.from(fileList) : []
     setArchivos(tipo === 'ordenes' ? lista : lista.slice(0, 1))
     mutation.reset()
@@ -134,6 +153,7 @@ export function FormCard() {
           <button
             key={option.value}
             type="button"
+            aria-pressed={tipo === option.value}
             onClick={() => cambiarTipo(option.value)}
             className={clsx(
               'flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1',
@@ -163,22 +183,26 @@ export function FormCard() {
           onDrop={(event) => {
             event.preventDefault()
             setIsDragging(false)
-            handleFiles(event.dataTransfer.files)
+            if (tipo !== null) handleFiles(event.dataTransfer.files)
           }}
           className={clsx(
-            'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors',
-            isDragging ? 'border-accent bg-accent/5' : 'border-slate-300',
+            'flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors',
+            tipo === null ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+            isDragging && tipo !== null ? 'border-accent bg-accent/5' : 'border-slate-300',
           )}
         >
           <input
             ref={fileInputRef}
             type="file"
             hidden
+            disabled={tipo === null}
             multiple={tipo === 'ordenes'}
-            accept={ACCEPT_POR_TIPO[tipo]}
+            accept={tipo === null ? undefined : ACCEPT_POR_TIPO[tipo]}
             onChange={(event) => handleFiles(event.target.files)}
           />
-          {archivos.length > 0 ? (
+          {tipo === null ? (
+            <p className="text-sm font-medium text-slate-500">Elegí el tipo de documento para continuar</p>
+          ) : archivos.length > 0 ? (
             <p className="text-sm font-medium text-slate-900">
               {archivos.length === 1
                 ? archivos[0].name
@@ -194,23 +218,25 @@ export function FormCard() {
           )}
         </label>
 
-        <div>
-          <span className="mb-1 block text-sm text-slate-600">
-            Cliente <span className="text-slate-400">(opcional)</span>
-          </span>
-          <select
-            value={clienteId}
-            onChange={(event) => setClienteId(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Sin cliente</option>
-            {clientesQuery.data?.map((cliente) => (
-              <option key={cliente.id} value={cliente.id}>
-                {cliente.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
+        {pideCliente(tipo) && (
+          <div>
+            <span className="mb-1 block text-sm text-slate-600">
+              Cliente <span className="text-slate-400">(opcional)</span>
+            </span>
+            <select
+              value={clienteId}
+              onChange={(event) => setClienteId(event.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">Sin cliente</option>
+              {clientesQuery.data?.map((cliente) => (
+                <option key={cliente.id} value={cliente.id}>
+                  {cliente.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {mutation.isError && (
           <p className="text-sm text-red-600">{(mutation.error as Error).message}</p>
@@ -243,7 +269,7 @@ export function FormCard() {
 
         <button
           type="submit"
-          disabled={archivos.length === 0 || mutation.isPending}
+          disabled={tipo === null || archivos.length === 0 || mutation.isPending}
           className="w-full cursor-pointer rounded-md bg-navy py-2.5 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {mutation.isPending ? 'Enviando…' : 'Procesar archivo(s)'}

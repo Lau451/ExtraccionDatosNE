@@ -34,6 +34,40 @@ def buscar_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> di
     return resultado.data[0] if resultado.data else None
 
 
+def buscar_cliente_con_razon_social(client: Client, *, cliente_id: str) -> dict[str, Any] | None:
+    """presupuestador-v1 T2b -- `clientes` shares its id with `terceros`, where
+    the razon_social lives."""
+    resultado = (
+        client.table("clientes")
+        .select("id, drogueria_id, terceros(razon_social)")
+        .eq("id", cliente_id)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def renombrar_proceso_comercial(
+    client: Client, *, proceso_comercial_id: str, nombre: str, usuario_id: str
+) -> None:
+    client.table("procesos_comerciales").update(
+        {"nombre": nombre, "updated_by": usuario_id}
+    ).eq("id", proceso_comercial_id).execute()
+
+
+def contar_procesos_de_cliente(client: Client, *, cliente_id: str, clase: str) -> int:
+    """Every proceso of the cliente and class, soft-deleted included, so a
+    directa number is never reused."""
+    resultado = (
+        client.table("procesos_comerciales")
+        .select("id", count="exact")
+        .eq("cliente_id", cliente_id)
+        .eq("clase", clase)
+        .execute()
+    )
+    return resultado.count or 0
+
+
 def _grupos_del_usuario(client: Client, *, subido_por: str) -> list[str]:
     """F4 (validar-extraccion-organizacion) -- grupos (D13/D13.1) a los que
     pertenece al menos una fila subida por `subido_por`, para que "Solo
