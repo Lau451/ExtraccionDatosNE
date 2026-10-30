@@ -25,6 +25,7 @@ function renderConQueryClient(ui: React.ReactElement) {
 const IBUPROFENO = { id: 'prod-ibu', nombre: 'Ibuprofeno 600mg x30', codigo_interno: 'IBU600' }
 const IBUPROFENO_400 = { id: 'prod-ibu-400', nombre: 'Ibuprofeno 400mg x20', codigo_interno: 'IBU400' }
 const AMOXICILINA = { id: 'prod-amox', nombre: 'Amoxicilina 500mg x16', codigo_interno: 'AMX500' }
+const GASA = { id: 'prod-gasa', nombre: 'Gasa estéril 10x10 x100', codigo_interno: 'GAS10' }
 
 function renglon(overrides: Partial<RenglonMatching> = {}): RenglonMatching {
   return {
@@ -74,8 +75,25 @@ const RENGLONES = [
   }),
 ]
 
-function fila(numero: number) {
-  return screen.getByRole('row', { name: new RegExp(`^Renglón ${numero}\\b`) })
+function cola() {
+  return screen.getByRole('listbox', { name: 'Renglones del proceso' })
+}
+
+function opcion(numero: number) {
+  return within(cola()).getByRole('option', { name: `Renglón ${numero}` })
+}
+
+function panel() {
+  return screen.getByRole('region', { name: 'Renglón elegido' })
+}
+
+function buscador() {
+  return screen.getByRole('textbox', { name: 'Buscar otro producto en el catálogo' })
+}
+
+async function abrir() {
+  renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
+  await screen.findByRole('heading', { name: /^Matching de/ })
 }
 
 beforeEach(() => {
@@ -86,102 +104,195 @@ beforeEach(() => {
 })
 
 describe('ProcesoMatchingDetalle', () => {
-  it('lists every renglón, including the automatic ones, with its estado and producto', async () => {
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
+  it('shows the header, the progress and the queue of renglones still to resolve', async () => {
+    await abrir()
 
     expect(
-      await screen.findByRole('heading', {
-        name: 'Matching de HOSPITAL SAN JOSE - LICITACION ACELERADA 16/26',
-      }),
+      screen.getByRole('heading', { name: 'Matching de HOSPITAL SAN JOSE - LICITACION ACELERADA 16/26' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Hospital San José · Licitación')).toBeInTheDocument()
-    expect(screen.getByText('1 pendiente · 1 sugerido · 1 resuelto')).toBeInTheDocument()
+    expect(screen.getByText('Hospital San José · Licitación · 3 renglones')).toBeInTheDocument()
+    expect(screen.getByText('1 de 3 resueltos')).toBeInTheDocument()
     expect(obtenerMatchingProceso).toHaveBeenCalledWith('proc-1')
 
-    expect(within(fila(1)).getByText('Sugerido 92%')).toBeInTheDocument()
-    expect(within(fila(1)).getByText('Ibuprofeno 600mg x30')).toBeInTheDocument()
-    expect(within(fila(2)).getByText('Automático')).toBeInTheDocument()
-    expect(within(fila(2)).getByText('Amoxicilina 500mg x16')).toBeInTheDocument()
-    expect(within(fila(3)).getByText('Pendiente')).toBeInTheDocument()
-    expect(within(fila(3)).getByText('Sin candidatos')).toBeInTheDocument()
+    expect(within(cola()).getAllByRole('option')).toHaveLength(2)
+    expect(within(opcion(1)).getByText('Sugerido 92%')).toBeInTheDocument()
+    expect(within(opcion(1)).getByText('Ibuprofeno 600mg x30')).toBeInTheDocument()
+    expect(within(opcion(3)).getByText('Pendiente')).toBeInTheDocument()
+    expect(within(opcion(3)).getByText('Sin candidatos')).toBeInTheDocument()
+    expect(opcion(1)).toHaveAttribute('aria-selected', 'true')
+    expect(within(panel()).getByRole('heading', { name: 'Ibuprofeno 600 mg comp x 30' })).toBeInTheDocument()
   })
 
-  it('confirms the best candidato of a sugerido renglón in one click and reloads', async () => {
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('shows the automatic renglones under Todos and Resueltos', async () => {
+    await abrir()
 
-    fireEvent.click(within(fila(1)).getByRole('button', { name: 'Confirmar sugerencia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Todos' }))
+    expect(within(cola()).getAllByRole('option')).toHaveLength(3)
+    expect(within(opcion(2)).getByText('Automático')).toBeInTheDocument()
+    expect(within(opcion(2)).getByText('Amoxicilina 500mg x16')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resueltos' }))
+    expect(within(cola()).getAllByRole('option')).toHaveLength(1)
+  })
+
+  it('Enter confirms the best candidato and moves on to the next renglón right away', async () => {
+    const confirmado = renglon({ estado_matching: 'confirmado', producto: IBUPROFENO })
+    vi.mocked(obtenerMatchingProceso)
+      .mockResolvedValueOnce(matching(RENGLONES))
+      .mockResolvedValue(matching([confirmado, RENGLONES[1], RENGLONES[2]]))
+    await abrir()
+
+    fireEvent.keyDown(document.body, { key: 'Enter' })
 
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-1', 'prod-ibu'))
+    expect(within(panel()).getByRole('heading', { name: 'Gasa estéril 10x10' })).toBeInTheDocument()
+    expect(within(cola()).queryByRole('option', { name: 'Renglón 1' })).not.toBeInTheDocument()
     await waitFor(() => expect(obtenerMatchingProceso).toHaveBeenCalledTimes(2))
   })
 
-  it('confirms another candidato of the renglón', async () => {
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('a number key confirms that candidato', async () => {
+    await abrir()
 
-    fireEvent.click(within(fila(1)).getByRole('button', { name: 'Elegir' }))
-    const panel = screen.getByRole('region', { name: 'Elegir producto para el renglón 1' })
+    fireEvent.keyDown(document.body, { key: '2' })
+
+    await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-1', 'prod-ibu-400'))
+  })
+
+  it('clicking a candidato confirms it', async () => {
+    await abrir()
+
     fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirmar Ibuprofeno 400mg x20 (IBU400) 71%' }),
+      within(panel()).getByRole('button', { name: 'Confirmar Ibuprofeno 400mg x20 (IBU400) 71%' }),
     )
 
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-1', 'prod-ibu-400'))
   })
 
-  it('confirms a producto found in the catalog when no candidato fits', async () => {
-    vi.mocked(listarProductos).mockResolvedValue({
-      items: [{ ...AMOXICILINA, id: 'prod-gasa', nombre: 'Gasa estéril 10x10 x100', codigo_interno: 'GAS10' }],
-      total: 1,
-    } as never)
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('Shift pressed alone marks the renglón sin match; Shift with another key does not', async () => {
+    await abrir()
 
-    fireEvent.click(within(fila(3)).getByRole('button', { name: 'Elegir' }))
-    const panel = screen.getByRole('region', { name: 'Elegir producto para el renglón 3' })
-    fireEvent.change(within(panel).getByPlaceholderText('Buscá en el catálogo por nombre o código'), {
-      target: { value: 'gasa' },
-    })
+    fireEvent.keyDown(document.body, { key: 'Shift', shiftKey: true })
+    fireEvent.keyDown(document.body, { key: 'A', shiftKey: true })
+    fireEvent.keyUp(document.body, { key: 'Shift' })
+    expect(marcarSinMatch).not.toHaveBeenCalled()
 
-    fireEvent.click(
-      await within(panel).findByRole('button', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' }),
-    )
+    fireEvent.keyDown(document.body, { key: 'Shift', shiftKey: true })
+    fireEvent.keyUp(document.body, { key: 'Shift' })
 
+    await waitFor(() => expect(marcarSinMatch).toHaveBeenCalledWith('item-1'))
+  })
+
+  it('the Sin match button marks the renglón sin match', async () => {
+    await abrir()
+
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Marcar sin match' }))
+
+    await waitFor(() => expect(marcarSinMatch).toHaveBeenCalledWith('item-1'))
+  })
+
+  it('typing a letter goes to the catalog search instead of triggering a shortcut', async () => {
+    await abrir()
+
+    fireEvent.keyDown(document.body, { key: 's' })
+
+    expect(buscador()).toHaveFocus()
+    expect(buscador()).toHaveValue('s')
+    expect(marcarSinMatch).not.toHaveBeenCalled()
+    expect(confirmarMatching).not.toHaveBeenCalled()
+  })
+
+  it('keys typed in the search never trigger shortcuts, and Tab goes back to the renglones', async () => {
+    await abrir()
+    buscador().focus()
+
+    fireEvent.keyDown(buscador(), { key: '1' })
+    fireEvent.keyDown(buscador(), { key: 'Shift', shiftKey: true })
+    fireEvent.keyUp(buscador(), { key: 'Shift' })
+    expect(confirmarMatching).not.toHaveBeenCalled()
+    expect(marcarSinMatch).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(buscador(), { key: 'Tab' })
+    expect(cola()).toHaveFocus()
+  })
+
+  it('confirms the first producto found in the catalog with Enter', async () => {
+    vi.mocked(listarProductos).mockResolvedValue({ items: [GASA], total: 1 } as never)
+    await abrir()
+    fireEvent.click(opcion(3))
+
+    fireEvent.change(buscador(), { target: { value: 'gasa' } })
+    await within(panel()).findByRole('button', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' })
     expect(listarProductos).toHaveBeenCalledWith({ q: 'gasa', pageSize: 10 })
+
+    fireEvent.keyDown(buscador(), { key: 'Enter' })
     await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa'))
   })
 
-  it('marks a renglón as sin match', async () => {
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('clicking a producto found in the catalog confirms it', async () => {
+    vi.mocked(listarProductos).mockResolvedValue({ items: [GASA], total: 1 } as never)
+    await abrir()
+    fireEvent.click(opcion(3))
 
-    fireEvent.click(within(fila(3)).getByRole('button', { name: 'Elegir' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Marcar sin match' }))
+    fireEvent.change(buscador(), { target: { value: 'gasa' } })
+    fireEvent.click(
+      await within(panel()).findByRole('button', { name: 'Confirmar Gasa estéril 10x10 x100 (GAS10)' }),
+    )
 
-    await waitFor(() => expect(marcarSinMatch).toHaveBeenCalledWith('item-3'))
+    await waitFor(() => expect(confirmarMatching).toHaveBeenCalledWith('item-3', 'prod-gasa'))
   })
 
-  it('lets a resolved renglón be changed', async () => {
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('arrow keys and clicks choose the renglón of the panel', async () => {
+    await abrir()
 
-    expect(within(fila(2)).queryByRole('button', { name: 'Elegir' })).not.toBeInTheDocument()
-    fireEvent.click(within(fila(2)).getByRole('button', { name: 'Cambiar' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Marcar sin match' }))
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' })
+    expect(opcion(3)).toHaveAttribute('aria-selected', 'true')
+    expect(within(panel()).getByRole('heading', { name: 'Gasa estéril 10x10' })).toBeInTheDocument()
+
+    fireEvent.keyDown(document.body, { key: 'ArrowUp' })
+    expect(opcion(1)).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(opcion(3))
+    expect(opcion(3)).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('a resolved renglón can be changed', async () => {
+    await abrir()
+    fireEvent.click(screen.getByRole('button', { name: 'Resueltos' }))
+    fireEvent.click(opcion(2))
+
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Marcar sin match' }))
 
     await waitFor(() => expect(marcarSinMatch).toHaveBeenCalledWith('item-2'))
   })
 
-  it('shows the error when a decision fails and keeps the renglón as it was', async () => {
-    vi.mocked(confirmarMatching).mockRejectedValue(new Error('El renglón no pertenece a tu droguería'))
-    renderConQueryClient(<ProcesoMatchingDetalle procesoId="proc-1" />)
-    await screen.findByRole('heading', { name: /^Matching de/ })
+  it('Ctrl+Z goes back to the last decided renglón', async () => {
+    await abrir()
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    await waitFor(() => expect(confirmarMatching).toHaveBeenCalled())
 
-    fireEvent.click(within(fila(1)).getByRole('button', { name: 'Confirmar sugerencia' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Renglón 1: Ibuprofeno 600mg x30')
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true })
+
+    expect(within(panel()).getByRole('heading', { name: 'Ibuprofeno 600 mg comp x 30' })).toBeInTheDocument()
+    expect(buscador()).not.toHaveFocus()
+  })
+
+  it('shows the error when a decision fails and puts the renglón back as it was', async () => {
+    vi.mocked(confirmarMatching).mockRejectedValue(new Error('El renglón no pertenece a tu droguería'))
+    await abrir()
+
+    fireEvent.keyDown(document.body, { key: 'Enter' })
 
     expect(await screen.findByRole('alert')).toHaveTextContent('El renglón no pertenece a tu droguería')
-    expect(within(fila(1)).getByText('Sugerido 92%')).toBeInTheDocument()
-    expect(obtenerMatchingProceso).toHaveBeenCalledTimes(1)
+    expect(within(opcion(1)).getByText('Sugerido 92%')).toBeInTheDocument()
+    expect(screen.getByText('1 de 3 resueltos')).toBeInTheDocument()
+  })
+
+  it('says so when no renglón is left to resolve', async () => {
+    vi.mocked(obtenerMatchingProceso).mockResolvedValue(matching([RENGLONES[1]]))
+    await abrir()
+
+    expect(screen.getByText('No quedan renglones por resolver.')).toBeInTheDocument()
   })
 
   it('shows the load error', async () => {

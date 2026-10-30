@@ -81,7 +81,17 @@ La pantalla de matching por proceso (presupuestador-v1 T3b), en
   ya resuelto.
 - `POST /items/{item_id}/sin-match` marca el renglón sin producto.
 
-Después de cada decisión la pantalla vuelve a pedir el proceso completo.
+Desde T3d (diseño `design/matching-catalogo/01-cola-teclado.html`) la pantalla es una
+cola manejable solo con teclado: a la izquierda los renglones (filtros "Por resolver",
+"Todos", "Resueltos"), a la derecha los candidatos del renglón elegido, el buscador y
+"Sin match". Teclas: `Enter` confirma el mejor candidato, `1`-`5` otro candidato,
+`Shift` solo (al soltarlo) marca sin match, cualquier letra escribe en el buscador
+(ningún atajo usa letras), `Tab` vuelve del buscador a los renglones, `Enter` en el
+buscador confirma el primer resultado, las flechas cambian de renglón y `Ctrl+Z` vuelve
+al último renglón decidido para re-elegirlo (no hay deshacer en el backend). Cada
+decisión se aplica en pantalla al instante y la cola pasa al siguiente renglón; si el
+backend la rechaza, ese renglón vuelve a como estaba y se muestra el error. La pantalla
+vuelve a pedir el proceso completo cuando termina la última decisión en curso.
 
 Se llega a la pantalla de dos formas (T3c): al confirmar la validación de una
 licitación o una directa, `ValidarExtraccionDetalle` navega al matching del proceso

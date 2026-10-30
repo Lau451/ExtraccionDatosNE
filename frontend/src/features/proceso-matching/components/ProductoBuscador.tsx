@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Ref } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ProductoResumen } from '@/lib/api/matching'
 import { listarProductos } from '@/lib/api/productos'
@@ -8,16 +8,21 @@ const Q_MINIMO = 2
 const RESULTADOS_MAXIMOS = 10
 
 interface Props {
-  disabled: boolean
+  texto: string
+  onTexto: (texto: string) => void
+  inputRef: Ref<HTMLInputElement>
   onElegir: (producto: ProductoResumen) => void
+  /** Tab leaves the search and goes back to the renglones (S11). */
+  onSalir: () => void
 }
 
 /** Catalog search for a renglón none of whose candidatos fits (S10). Searches
  * the server (`GET /productos?q=`, by nombre or código) instead of loading the
- * whole catalog; starts empty and needs at least 2 characters. */
-export function ProductoBuscador({ disabled, onElegir }: Props) {
-  const [texto, setTexto] = useState('')
-  const [textoDebounced, setTextoDebounced] = useState('')
+ * whole catalog; needs at least 2 characters. The text is owned by the screen,
+ * which starts it with the letter typed anywhere on it (S11). Enter confirms
+ * the first result. */
+export function ProductoBuscador({ texto, onTexto, inputRef, onElegir, onSalir }: Props) {
+  const [textoDebounced, setTextoDebounced] = useState(texto.trim())
 
   useEffect(() => {
     const id = setTimeout(() => setTextoDebounced(texto.trim()), DEBOUNCE_BUSQUEDA_MS)
@@ -32,16 +37,42 @@ export function ProductoBuscador({ disabled, onElegir }: Props) {
     enabled: habilitada,
   })
 
-  const resultados = data?.items ?? []
+  const resultados: ProductoResumen[] = habilitada
+    ? (data?.items ?? []).map((producto) => ({
+        id: producto.id,
+        nombre: producto.nombre,
+        codigo_interno: producto.codigo_interno,
+      }))
+    : []
+
+  function alPresionarTecla(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Tab' && !event.shiftKey) {
+      event.preventDefault()
+      onSalir()
+    } else if (event.key === 'Enter' && resultados[0]) {
+      event.preventDefault()
+      onElegir(resultados[0])
+    }
+  }
 
   return (
     <div className="space-y-2">
+      <label
+        htmlFor="matching-buscador"
+        className="text-xs font-medium uppercase tracking-wide text-slate-500"
+      >
+        Otro producto <span className="normal-case tracking-normal">· empezá a escribir</span>
+      </label>
       <input
+        id="matching-buscador"
+        ref={inputRef}
         type="text"
         value={texto}
-        onChange={(event) => setTexto(event.target.value)}
+        onChange={(event) => onTexto(event.target.value)}
+        onKeyDown={alPresionarTecla}
+        aria-label="Buscar otro producto en el catálogo"
         placeholder="Buscá en el catálogo por nombre o código"
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
 
       {habilitada && isPending && <p className="text-sm text-slate-500">Buscando…</p>}
@@ -51,27 +82,20 @@ export function ProductoBuscador({ disabled, onElegir }: Props) {
       )}
 
       {resultados.length > 0 && (
-        <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
-          {resultados.map((producto) => (
-            <li key={producto.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span>
-                <span className="font-medium text-slate-900">{producto.nombre}</span>
-                <span className="ml-2 text-slate-500">{producto.codigo_interno}</span>
-              </span>
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {resultados.map((producto, indice) => (
+            <li key={producto.id}>
               <button
                 type="button"
-                disabled={disabled}
                 aria-label={`Confirmar ${producto.nombre} (${producto.codigo_interno})`}
-                onClick={() =>
-                  onElegir({
-                    id: producto.id,
-                    nombre: producto.nombre,
-                    codigo_interno: producto.codigo_interno,
-                  })
-                }
-                className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                onClick={() => onElegir(producto)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
               >
-                Confirmar
+                <span>
+                  <span className="font-medium text-slate-900">{producto.nombre}</span>
+                  <span className="ml-2 font-mono text-xs text-slate-500">{producto.codigo_interno}</span>
+                </span>
+                {indice === 0 && <span className="text-xs text-slate-500">Enter confirma</span>}
               </button>
             </li>
           ))}
