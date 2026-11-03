@@ -15,11 +15,14 @@ class OcExport(BaseModel):
     version_numero: int
     fecha_emision: date | None = None
     direccion_entrega: str | None = None
+    codigo_postal_entrega: str | None = None
+    notas_entrega: str | None = None
 
 
 class RenglonExport(BaseModel):
     oc_item_id: str
     numero_renglon: int
+    numero_presupuesto: str | None = None
     codigo_articulo: str | None = None
     descripcion: str
     cantidad: Decimal

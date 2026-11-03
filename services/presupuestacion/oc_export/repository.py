@@ -16,7 +16,8 @@ def buscar_orden_compra(
         client.table("ordenes_compra")
         .select(
             "id, drogueria_id, cliente_id, numero_oc, estado, es_vigente, deleted_at, "
-            "version_numero, fecha_emision, direccion_entrega, "
+            "version_numero, fecha_emision, direccion_entrega, codigo_postal_entrega, "
+            "notas_entrega, "
             "exportado_at, exportado_por, archivo_exportado"
         )
         .eq("id", orden_compra_id)
@@ -60,6 +61,51 @@ def listar_codigos_productos(
         )
         codigos.update({fila["id"]: fila.get("codigo_interno") for fila in filas})
     return codigos
+
+
+def listar_numeros_presupuesto(
+    client: Client, *, presupuesto_item_ids: list[str], drogueria_id: str
+) -> dict[str, str]:
+    """`presupuesto_items.id` -> número de presupuesto en Progress
+    (`presupuesto_legacy_map.codigo_legacy` de su presupuesto). Los items cuyo presupuesto
+    no se importó de Progress no aparecen. `uq_prelm_codigo` no impide que un presupuesto
+    tenga más de un código: gana el primero importado."""
+    ids_unicos = list(dict.fromkeys(presupuesto_item_ids))
+    presupuesto_por_item: dict[str, str] = {}
+    for inicio in range(0, len(ids_unicos), _TAMANO_LOTE):
+        lote = ids_unicos[inicio : inicio + _TAMANO_LOTE]
+        filas = (
+            client.table("presupuesto_items")
+            .select("id, presupuesto_id")
+            .in_("id", lote)
+            .eq("drogueria_id", drogueria_id)
+            .execute()
+            .data
+        )
+        presupuesto_por_item.update({fila["id"]: fila["presupuesto_id"] for fila in filas})
+
+    presupuestos = list(dict.fromkeys(presupuesto_por_item.values()))
+    codigo_por_presupuesto: dict[str, str] = {}
+    for inicio in range(0, len(presupuestos), _TAMANO_LOTE):
+        lote = presupuestos[inicio : inicio + _TAMANO_LOTE]
+        filas = (
+            client.table("presupuesto_legacy_map")
+            .select("presupuesto_id, codigo_legacy")
+            .in_("presupuesto_id", lote)
+            .eq("drogueria_id", drogueria_id)
+            .order("importado_at")
+            .order("codigo_legacy")
+            .execute()
+            .data
+        )
+        for fila in filas:
+            codigo_por_presupuesto.setdefault(fila["presupuesto_id"], fila["codigo_legacy"])
+
+    return {
+        item_id: codigo_por_presupuesto[presupuesto_id]
+        for item_id, presupuesto_id in presupuesto_por_item.items()
+        if presupuesto_id in codigo_por_presupuesto
+    }
 
 
 def listar_entregas(

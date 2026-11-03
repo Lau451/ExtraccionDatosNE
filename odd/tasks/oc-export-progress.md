@@ -121,3 +121,10 @@ Export a planned purchase order (OC) with its delivery schedule as a CSV file in
   - Two warnings on the failure path of `generar_muestra.py`: ids were printed only after the export, and `--limpiar` deleted the user only when `exportado_por` was set. Both fixed in a follow-up commit: the OC id is printed before exporting, and `--limpiar` deletes every user of the synthetic droguería. Verified with a real round trip on a third disposable OC (`fae2a65e-…`): created, exported to a temp folder, cleaned; a read confirmed 0 OC, 0 droguería, 0 users left, and the kept sample is still exported.
   - Suggestion: the destructive guard has no test.
 - Follow-up review `review-e0120f2199c36922` on `c78137a..0b8c3fc`: approved and acknowledged (authority burned). Advisory, non-blocking, left open for this throwaway tooling: a warning at `generar_muestra.py:188-193` (the per-user delete loop in `--limpiar`) and two suggestions (`generar_muestra.py:188-190`, `odd/tasks/oc-export-progress.md:120-122`).
+
+## Column layout update (oc-export-direccion-presupuesto)
+
+The 15-column layout from the archived proposal was replaced by the 18-column order requested by Sistemas (`odd/tasks/oc-export-direccion-presupuesto.md`, S1-S3):
+`id_oc;numero_oc;numero_presupuesto;version;fecha_emision;codigo_cliente;cuit_cliente;direccion_entrega;codigo_postal_entrega;notas;numero_renglon;codigo_articulo;descripcion;cantidad_total;precio_unitario;numero_entrega;fecha_entrega;cantidad_entrega`.
+- `numero_presupuesto` is per line item: `oc_items.presupuesto_item_id → presupuesto_items.presupuesto_id → presupuesto_legacy_map.codigo_legacy` (first by `importado_at`, then `codigo_legacy`); empty when the presupuesto was not imported from Progress. It never blocks the export.
+- `codigo_postal_entrega` and `notas` come from `ordenes_compra.codigo_postal_entrega` and `ordenes_compra.notas_entrega` (not `ordenes_compra.notas`); `direccion_entrega` holds only street and number.

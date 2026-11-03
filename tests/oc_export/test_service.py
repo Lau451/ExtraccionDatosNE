@@ -35,6 +35,9 @@ def _oc(**kw):
         version_numero=1,
         fecha_emision="2026-10-05",
         direccion_entrega=None,
+        codigo_postal_entrega=None,
+        notas_entrega=None,
+        notas="nota interna que no se exporta",
         exportado_at=None,
         exportado_por=None,
         archivo_exportado=None,
@@ -72,6 +75,8 @@ class Escenario:
             dict(entrega_oc_id="e2", oc_item_id="i1", cantidad_planificada="6"),
         ]
         self.codigos_cliente = ["C01"]
+        self.numeros_presupuesto: dict[str, str] = {}
+        self.numeros_llamadas: list[dict] = []
         self.marcar = lambda **kw: "ok"
         self.plan_hash = "hash-plan-1"
         self.hash_llamadas: list[dict] = []
@@ -86,6 +91,7 @@ class Escenario:
         monkeypatch.setattr(repo, "listar_entregas", lambda c, **kw: self.entregas)
         monkeypatch.setattr(repo, "listar_entregas_items", lambda c, **kw: self.entregas_items)
         monkeypatch.setattr(repo, "listar_codigos_cliente", lambda c, **kw: self.codigos_cliente)
+        monkeypatch.setattr(repo, "listar_numeros_presupuesto", self._numeros_presupuesto)
         monkeypatch.setattr(repo, "buscar_cuit_tercero", lambda c, **kw: "30-11111111-1")
         monkeypatch.setattr(repo, "buscar_nombre_usuario", lambda c, **kw: "Ana")
         monkeypatch.setattr(repo, "marcar_exportada", self._marcar)
@@ -95,6 +101,10 @@ class Escenario:
     def _hash_plan(self, client, **kw):
         self.hash_llamadas.append(kw)
         return self.plan_hash
+
+    def _numeros_presupuesto(self, client, **kw):
+        self.numeros_llamadas.append(kw)
+        return self.numeros_presupuesto
 
     def _marcar(self, client, **kw):
         self.marcar_llamadas.append(kw)
@@ -108,6 +118,10 @@ class Escenario:
             usuario_id=USUARIO,
             settings=self.settings,
         )
+
+    def filas_csv(self):
+        (archivo,) = self.archivos()
+        return [f.split(";") for f in archivo.read_bytes().decode("cp1252").splitlines()]
 
     def archivos(self):
         carpeta = self.tmp_path / "oc"
@@ -149,6 +163,48 @@ def test_exporta_escribe_archivo_marca_y_audita(esc):
     kw = esc.auditoria.call_args.kwargs
     assert kw["entidad"] == "orden_compra" and kw["entidad_id"] == OC_ID
     assert kw["campo"] == "exportado_at" and kw["usuario_id"] == USUARIO
+
+
+# --- columnas de Sistemas (oc-export-direccion-presupuesto S1-S3) -----------
+
+
+def test_direccion_codigo_postal_y_notas_de_entrega_salen_de_la_oc(esc):
+    esc.oc = _oc(
+        direccion_entrega=" French 5090 ",
+        codigo_postal_entrega=" C1425 ",
+        notas_entrega=" Horario 8 a 14 ",
+    )
+    esc.exportar()
+    encabezado, *filas = esc.filas_csv()
+    assert encabezado[7:10] == ["direccion_entrega", "codigo_postal_entrega", "notas"]
+    assert all(f[7:10] == ["French 5090", "C1425", "Horario 8 a 14"] for f in filas)
+
+
+def test_notas_de_la_oc_no_se_exportan_y_sin_datos_de_entrega_quedan_vacias(esc):
+    esc.exportar()
+    _, *filas = esc.filas_csv()
+    assert all(f[7:10] == ["", "", ""] for f in filas)
+    assert all("nota interna" not in ";".join(f) for f in filas)
+
+
+def test_numero_presupuesto_por_renglon_desde_el_legacy_map(esc):
+    esc.items = [_item("i1", 1, presupuesto_item_id="pi-1"), _item("i2", 2, presupuesto_item_id="pi-2")]
+    esc.entregas_items.append(dict(entrega_oc_id="e1", oc_item_id="i2", cantidad_planificada="10"))
+    esc.numeros_presupuesto = {"pi-1": "P-777"}
+    esc.exportar()
+    encabezado, *filas = esc.filas_csv()
+    assert encabezado[2] == "numero_presupuesto"
+    assert [(f[10], f[2]) for f in filas] == [("1", "P-777"), ("1", "P-777"), ("2", "")]
+    (llamada,) = esc.numeros_llamadas
+    assert llamada == {"presupuesto_item_ids": ["pi-1", "pi-2"], "drogueria_id": DROG}
+
+
+def test_sin_numero_presupuesto_no_bloquea_la_exportacion(esc):
+    esc.numeros_presupuesto = {}
+    resultado = esc.exportar()
+    assert resultado.filas == 2
+    _, *filas = esc.filas_csv()
+    assert all(f[2] == "" for f in filas)
 
 
 # --- D8 / lookup ------------------------------------------------------------
@@ -374,7 +430,7 @@ def test_renglon_descartado_se_excluye_de_d2_y_del_csv(esc):
     assert resultado.filas == 2
     (archivo,) = esc.archivos()
     filas = archivo.read_bytes().decode("cp1252").splitlines()
-    assert all(f.split(";")[7] == "1" for f in filas[1:])
+    assert all(f.split(";")[10] == "1" for f in filas[1:])
 
 
 def test_renglon_pendiente_de_matching_da_validation(esc):
