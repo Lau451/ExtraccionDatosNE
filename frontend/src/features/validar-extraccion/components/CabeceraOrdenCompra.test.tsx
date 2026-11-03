@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CabeceraOrdenCompra } from './CabeceraOrdenCompra'
 
 /** Arnés mínimo (mismo patrón que OrdenCompraSelector.test.tsx): el botón
@@ -242,5 +242,67 @@ describe('CabeceraOrdenCompra — dirección de entrega es un valor único (T3b)
     fireEvent.change(campo, { target: { value: 'Línea 1\nLínea 2' } })
 
     expect(campo).toHaveValue('Línea 1\nLínea 2')
+  })
+})
+
+// oc-export-direccion-presupuesto T3 (S2): la dirección llega partida en calle y
+// número, código postal y notas; cada parte es editable y viaja en onCambio.
+describe('CabeceraOrdenCompra — dirección partida', () => {
+  const MIEMBRO_PARTIDO = {
+    ...MIEMBRO_A,
+    direccion_entrega: 'FRENCH 5090',
+    codigo_postal_entrega: '1425',
+    notas_entrega: 'Farmacia - Lunes a viernes 7 a 14 hs',
+  }
+
+  it('precarga código postal y notas de entrega y reporta sus ediciones vía onCambio', () => {
+    const onCambio = vi.fn()
+    render(<CabeceraOrdenCompra filas={[MIEMBRO_PARTIDO]} onCambio={onCambio} />)
+
+    expect(screen.getByLabelText(/dirección de entrega/i)).toHaveValue('FRENCH 5090')
+    expect(screen.getByLabelText(/código postal/i)).toHaveValue('1425')
+    expect(screen.getByLabelText(/notas de entrega/i)).toHaveValue(
+      'Farmacia - Lunes a viernes 7 a 14 hs',
+    )
+
+    fireEvent.change(screen.getByLabelText(/código postal/i), { target: { value: '1426' } })
+    fireEvent.change(screen.getByLabelText(/notas de entrega/i), {
+      target: { value: 'Depósito\nde 8 a 12' },
+    })
+
+    expect(onCambio).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        direccion_entrega: 'FRENCH 5090',
+        codigo_postal_entrega: '1426',
+        notas_entrega: 'Depósito, de 8 a 12',
+      }),
+      false,
+    )
+  })
+
+  it('desacuerdo en código postal o notas de entrega muestra aviso pero no bloquea', () => {
+    const onCambio = vi.fn()
+    render(
+      <CabeceraOrdenCompra
+        filas={[
+          MIEMBRO_PARTIDO,
+          { ...MIEMBRO_PARTIDO, _extraction_id: 'ext-b', codigo_postal_entrega: '1000', notas_entrega: 'Otra' },
+        ]}
+        onCambio={onCambio}
+      />,
+    )
+
+    const aviso = screen.getByText(/desacuerdo entre archivos del grupo/i)
+    expect(aviso).toHaveTextContent(/código postal/i)
+    expect(aviso).toHaveTextContent(/notas de entrega/i)
+    expect(onCambio).toHaveBeenLastCalledWith(expect.anything(), false)
+  })
+
+  it('una fila extraída antes del cambio, sin las partes nuevas, las deja vacías', () => {
+    const onCambio = vi.fn()
+    render(<CabeceraOrdenCompra filas={[MIEMBRO_A]} onCambio={onCambio} />)
+
+    expect(screen.getByLabelText(/código postal/i)).toHaveValue('')
+    expect(screen.getByLabelText(/notas de entrega/i)).toHaveValue('')
   })
 })

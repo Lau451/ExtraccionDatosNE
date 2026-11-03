@@ -89,6 +89,8 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
         numero_oc: string
         fecha_emision: string
         direccion_entrega: string
+        codigo_postal_entrega: string
+        notas_entrega: string
         observaciones: string
         cantidad_entregas: string
       },
@@ -104,6 +106,8 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
           numero_oc: 'OC-4471',
           fecha_emision: '12/09/2026',
           direccion_entrega: 'Av. Siempreviva 742',
+          codigo_postal_entrega: ' 1425 ',
+          notas_entrega: '',
           observaciones: '',
           cantidad_entregas: '1',
         },
@@ -122,6 +126,8 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
                 numero_oc: '',
                 fecha_emision: '',
                 direccion_entrega: '',
+                codigo_postal_entrega: '',
+                notas_entrega: '',
                 observaciones: '',
                 cantidad_entregas: '',
               },
@@ -139,6 +145,8 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
                 numero_oc: 'OC-4471',
                 fecha_emision: '12/09/2026',
                 direccion_entrega: 'Av. Siempreviva 742',
+                codigo_postal_entrega: '',
+                notas_entrega: '',
                 observaciones: '  Entrega parcial  ',
                 cantidad_entregas: '1',
               },
@@ -156,6 +164,8 @@ vi.mock('./components/CabeceraOrdenCompra', () => ({
                 numero_oc: 'OC-4471',
                 fecha_emision: '12/09/2026',
                 direccion_entrega: 'Av. Siempreviva 742',
+                codigo_postal_entrega: '',
+                notas_entrega: '',
                 observaciones: '',
                 cantidad_entregas: '3',
               },
@@ -351,6 +361,8 @@ describe('ValidarExtraccionDetalle — rama orden_compra (Phase 8)', () => {
       razon_social_extraida: 'HOSPITAL CENTRAL',
       fecha_emision: '2026-09-12', // D6: DD/MM/AAAA en el documento -> ISO para el backend
       direccion_entrega: 'Av. Siempreviva 742',
+      codigo_postal_entrega: '1425', // oc-export-direccion-presupuesto T3: trimeado
+      notas_entrega: null, // vacío -> null, igual que notas
       notas: null, // T2: sin observaciones cargadas (stub default '') -> null, no ''
       cantidad_entregas: '1', // oc-entregas-planificacion T2: default del stub al montar
     })

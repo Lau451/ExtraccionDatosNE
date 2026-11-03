@@ -5,7 +5,11 @@ import { useAutoGrowTextarea } from '../useAutoGrowTextarea'
 export interface CabeceraOrdenCompraValores {
   numero_oc: string
   fecha_emision: string
+  /** Solo calle y número desde oc-export-direccion-presupuesto (S2). */
   direccion_entrega: string
+  codigo_postal_entrega: string
+  /** Resto de la dirección de entrega (lugar, localidad, horario), una línea. */
+  notas_entrega: string
   /** T2: notas libres de la OC -- editable, precargada igual que el resto de
    * la cabecera. Viaja como `OrdenCompraOverride.notas` en
    * `construirOrdenCompraOverride()` (`ValidarExtraccionDetalle.tsx`). */
@@ -38,6 +42,8 @@ const CAMPOS_ADVERTENCIA: { campo: string; etiqueta: string }[] = [
   { campo: 'cuit_cliente', etiqueta: 'CUIT' },
   { campo: 'fecha_emision', etiqueta: 'Fecha de emisión' },
   { campo: 'direccion_entrega', etiqueta: 'Dirección de entrega' },
+  { campo: 'codigo_postal_entrega', etiqueta: 'Código postal' },
+  { campo: 'notas_entrega', etiqueta: 'Notas de entrega' },
   { campo: 'cantidad_entregas', etiqueta: 'Cantidad de entregas' },
   { campo: 'observaciones', etiqueta: 'Observaciones' }, // T2
 ]
@@ -123,6 +129,12 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   const [direccionEntrega, setDireccionEntrega] = useState(() =>
     valorMasFrecuente(representativas.map((fila) => fila.direccion_entrega ?? '')),
   )
+  const [codigoPostalEntrega, setCodigoPostalEntrega] = useState(() =>
+    valorMasFrecuente(representativas.map((fila) => fila.codigo_postal_entrega ?? '')),
+  )
+  const [notasEntrega, setNotasEntrega] = useState(() =>
+    valorMasFrecuente(representativas.map((fila) => fila.notas_entrega ?? '')),
+  )
   const [observaciones, setObservaciones] = useState(() =>
     valorMasFrecuente(representativas.map((fila) => fila.observaciones ?? '')),
   )
@@ -142,6 +154,7 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
   // mucho (direcciones largas, notas de varias líneas) -- auto-crecientes en
   // vez de un <input> de una sola línea que cortaba el valor.
   const direccionAutoGrow = useAutoGrowTextarea(direccionEntrega)
+  const notasEntregaAutoGrow = useAutoGrowTextarea(notasEntrega)
   const observacionesAutoGrow = useAutoGrowTextarea(observaciones)
 
   useEffect(() => {
@@ -150,21 +163,32 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
         numero_oc: numeroOc,
         fecha_emision: fechaEmision,
         direccion_entrega: direccionEntrega,
+        codigo_postal_entrega: codigoPostalEntrega,
+        notas_entrega: notasEntrega,
         observaciones,
         cantidad_entregas: cantidadEntregas,
       },
       bloqueado,
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numeroOc, fechaEmision, direccionEntrega, observaciones, cantidadEntregas, bloqueado])
+  }, [
+    numeroOc,
+    fechaEmision,
+    direccionEntrega,
+    codigoPostalEntrega,
+    notasEntrega,
+    observaciones,
+    cantidadEntregas,
+    bloqueado,
+  ])
 
   const advertencias = CAMPOS_ADVERTENCIA.filter(
     ({ campo }) => new Set(representativas.map((fila) => fila[campo] ?? '')).size > 1,
   )
 
   return (
-    // T3: grid responsive -- N° OC/fecha comparten fila (son cortos), dirección
-    // y observaciones ocupan el ancho completo (son los campos largos).
+    // T3: grid responsive -- N° OC/fecha y calle/código postal comparten fila (son
+    // cortos), notas de entrega y observaciones ocupan el ancho completo.
     <div className="grid gap-3 rounded-md border border-slate-200 p-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-numero-oc">
@@ -203,9 +227,9 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
         />
       </div>
 
-      <div className="sm:col-span-2">
+      <div>
         <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-direccion-entrega">
-          Dirección de entrega
+          Dirección de entrega (calle y número)
         </label>
         <textarea
           id="cabecera-direccion-entrega"
@@ -213,6 +237,35 @@ export function CabeceraOrdenCompra({ filas, onCambio }: Props) {
           value={direccionEntrega}
           onChange={(event) =>
             setDireccionEntrega(normalizarSaltosDeLineaDeDireccion(event.target.value))
+          }
+          onKeyDown={bloquearEnter}
+          rows={1}
+          className="w-full resize-none overflow-hidden rounded-md border border-slate-300 px-3 py-2 text-sm leading-normal"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-codigo-postal-entrega">
+          Código postal
+        </label>
+        <input
+          id="cabecera-codigo-postal-entrega"
+          value={codigoPostalEntrega}
+          onChange={(event) => setCodigoPostalEntrega(event.target.value)}
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-sm text-slate-600" htmlFor="cabecera-notas-entrega">
+          Notas de entrega (lugar, horario)
+        </label>
+        <textarea
+          id="cabecera-notas-entrega"
+          ref={notasEntregaAutoGrow.ref}
+          value={notasEntrega}
+          onChange={(event) =>
+            setNotasEntrega(normalizarSaltosDeLineaDeDireccion(event.target.value))
           }
           onKeyDown={bloquearEnter}
           rows={1}
