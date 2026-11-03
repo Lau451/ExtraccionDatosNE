@@ -12,7 +12,7 @@ Public API (misma firma y estructura que procesar_comparativa):
 CSV grammar (D6, openspec/changes/orden-compra/design.md § D6; observaciones/
 importe_total added later — see odd/tasks/oc-importe-observaciones.md):
   numero_oc;fecha_emision;cuit_cliente;razon_social_cliente;direccion_entrega;
-  cantidad_entregas;observaciones;numero_renglon;descripcion;cantidad;
+  codigo_postal_entrega;notas_entrega;cantidad_entregas;observaciones;numero_renglon;descripcion;cantidad;
   precio_unitario;importe_total;entregas
 
 Regla dura (C10, D6): `numero_renglon` NUNCA se fabrica. Si el documento no
@@ -58,6 +58,8 @@ _FIELDNAMES = [
     "cuit_cliente",
     "razon_social_cliente",
     "direccion_entrega",
+    "codigo_postal_entrega",
+    "notas_entrega",
     "cantidad_entregas",
     "observaciones",
     "numero_renglon",
@@ -83,7 +85,9 @@ Return ONLY valid JSON with this exact structure:
   "fecha_emision": "issue date normalized to DD/MM/AAAA, or empty string if not found",
   "cuit_cliente": "the customer's CUIT — digits ONLY, no dashes/dots/spaces (11 digits), or empty string if not found",
   "razon_social_cliente": "the customer's legal/business name as written, or empty string",
-  "direccion_entrega": "delivery address as written, or empty string — see FORMATTING RULES below",
+  "direccion_entrega": "street and number of the delivery address only (e.g. FRENCH 5090), or empty string — see FORMATTING RULES below",
+  "codigo_postal_entrega": "postal code of the delivery address, or empty string — see FORMATTING RULES below",
+  "notas_entrega": "the rest of the delivery address (place/department, locality, delivery schedule), or empty string — see FORMATTING RULES below",
   "cantidad_entregas": "how many deliveries the document declares in total (a plain number), or empty string if not stated",
   "observaciones": "free-text notes/remarks printed on the order that are NOT specific to a single line — general conditions, delivery instructions, stock notes, authorization notes, etc. (e.g. a field labeled 'Observación'/'Observaciones'/'Notas'/'Condiciones'). Empty string if the document has none. Faithful transcription of the document's content — never invent, summarize or drop information — see FORMATTING RULES below for spacing/accents/line-structure repair.",
   "renglones": [
@@ -126,15 +130,18 @@ RULE ABOUT LINE TOTAL (importe_total):
   document does not print an explicit total for that line — leave "importe_total" as an empty
   string instead.
 
-FORMATTING RULES FOR "direccion_entrega" AND "observaciones" (readability):
+FORMATTING RULES FOR THE DELIVERY ADDRESS FIELDS AND "observaciones" (readability):
 - Source text may come from OCR and have words glued together (e.g. "LugardeEntrega:HOSPITALPCIAL.SAYAGO",
   "FRENCH5090", "7A14HS"). Restore the missing spaces between words, numbers and punctuation so it reads naturally
   ("Lugar de Entrega: HOSPITAL PCIAL. SAYAGO", "FRENCH 5090", "7 a 14 hs"). Also restore obvious missing accents in
   Spanish words (e.g. "Dias" -> "Días", "Citese" -> "Cítese", "numero" -> "número"). Keep the original letter case of
   proper names, codes and CUITs; never change digits, names or meaning, never add or drop information.
-- "direccion_entrega": a single line. Street and number first, then place/department, locality if present, and
-  delivery schedule (horario) if the document states one for that address, separated by " - " (keeping the
-  document's wording and case). Locality and postal code belong here ONLY when they come from a field that
+- The delivery address is split in three fields, each a single line keeping the document's wording and case:
+  - "direccion_entrega": ONLY the street and number (e.g. "FRENCH 5090"). No place, locality, postal code or schedule.
+  - "codigo_postal_entrega": ONLY the postal code (e.g. "1425" or "C1425AAB"), without labels like "CP".
+  - "notas_entrega": everything else the document states for that address, in document order: place/department,
+    locality, and delivery schedule (horario) if stated, separated by " - ".
+  Locality and postal code belong to these fields ONLY when they come from a field that
   describes the DELIVERY address itself (e.g. a "Lugar de Entrega"/"Dirección de Entrega" block). NEVER take the
   locality or postal code from the document's issue place/date line (e.g. a header like "Lugar: <city>, <date>")
   or from the supplier's (our) own address block — those describe where the order was ISSUED or ADDRESSED TO, not
@@ -403,6 +410,10 @@ def _construir_filas(datos: dict[str, Any]) -> list[dict[str, str]]:
         "razon_social_cliente": str(datos.get("razon_social_cliente") or "").strip(),
         "direccion_entrega": _normalizar_direccion_entrega(
             str(datos.get("direccion_entrega") or "").strip()
+        ),
+        "codigo_postal_entrega": str(datos.get("codigo_postal_entrega") or "").strip(),
+        "notas_entrega": _normalizar_direccion_entrega(
+            str(datos.get("notas_entrega") or "").strip()
         ),
         "cantidad_entregas": str(datos.get("cantidad_entregas") or "").strip(),
         "observaciones": str(datos.get("observaciones") or "").strip(),

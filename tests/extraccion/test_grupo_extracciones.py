@@ -584,3 +584,29 @@ def test_agrupar_y_desagrupar_extracciones_en_vivo(
         .data
     )
     assert all(fila["grupo_id"] is None for fila in filas_finales)
+
+
+def test_conciliar_cabecera_concilia_codigo_postal_y_notas_de_entrega():
+    """oc-export-direccion-presupuesto T2 (S2): las partes nuevas de la dirección se
+    precargan con el valor más frecuente y advierten si difieren, igual que
+    direccion_entrega."""
+    filas_por_miembro = [
+        {**_fila_cabecera(), "codigo_postal_entrega": "1425", "notas_entrega": "Farmacia"},
+        {**_fila_cabecera(), "codigo_postal_entrega": "1425", "notas_entrega": "Depósito"},
+        {**_fila_cabecera(), "codigo_postal_entrega": "1425", "notas_entrega": "Farmacia"},
+    ]
+    cabecera, advertencias = service._conciliar_cabecera(filas_por_miembro)
+
+    assert cabecera["codigo_postal_entrega"] == "1425"
+    assert cabecera["notas_entrega"] == "Farmacia"
+    assert len(advertencias) == 1
+    assert "notas_entrega" in advertencias[0]
+
+
+def test_conciliar_cabecera_csv_viejo_sin_partes_de_direccion_no_advierte():
+    """Un CSV extraído antes de 0042 no trae las columnas nuevas: quedan vacías."""
+    cabecera, advertencias = service._conciliar_cabecera([_fila_cabecera(), _fila_cabecera()])
+
+    assert cabecera["codigo_postal_entrega"] == ""
+    assert cabecera["notas_entrega"] == ""
+    assert advertencias == []
