@@ -1,5 +1,6 @@
-# Escritura atómica del CSV de Progress (openspec/changes/oc-export-progress, D5).
-# Es la única pieza que conoce la carpeta y el encoding.
+# Escritura atómica de los CSV que salen hacia Progress
+# (openspec/changes/oc-export-progress, D5; docs/arquitectura/integracion-progress.md).
+# Es la única pieza que conoce la carpeta, el nombre y el encoding de los archivos.
 import csv
 import os
 import re
@@ -7,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from services.presupuestacion.oc_export.filas import ENCABEZADOS
 from services.shared.exceptions import ConflictError
 
 _ZONA = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -39,9 +39,14 @@ def construir_nombre(
 
 
 def escribir_csv(
-    filas: list[list[str]], *, carpeta: Path, nombre: str, encoding: str
+    encabezados: list[str],
+    filas: list[list[str]],
+    *,
+    carpeta: Path,
+    nombre: str,
+    encoding: str,
 ) -> Path:
-    """Escribe encabezados + `filas` en un temporal de la misma carpeta y lo renombra
+    """Escribe `encabezados` + `filas` en un temporal de la misma carpeta y lo renombra
     de forma atómica. Un carácter no representable en `encoding` sale como `?`.
     Nunca pisa un archivo existente (`ConflictError`); ante una falla borra el temporal."""
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -55,10 +60,15 @@ def escribir_csv(
             escritor = csv.writer(
                 f, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n"
             )
-            escritor.writerow(ENCABEZADOS)
+            escritor.writerow(encabezados)
             escritor.writerows(filas)
         os.replace(temporal, destino)
     except BaseException:
         temporal.unlink(missing_ok=True)
         raise
     return destino
+
+
+def borrar_archivo(ruta: Path) -> None:
+    """Compensación: borra un archivo ya escrito. No falla si ya no existe."""
+    ruta.unlink(missing_ok=True)

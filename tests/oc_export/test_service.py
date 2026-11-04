@@ -10,6 +10,7 @@ import pytest
 
 from services.presupuestacion.oc_export import repository as repo
 from services.presupuestacion.oc_export import service
+from services.presupuestacion.oc_export.filas import ENCABEZADOS
 from services.presupuestacion.oc_export.models import ResultadoExportacion
 from services.shared.exceptions import (
     ConflictError,
@@ -178,6 +179,12 @@ def test_direccion_codigo_postal_y_notas_de_entrega_salen_de_la_oc(esc):
     encabezado, *filas = esc.filas_csv()
     assert encabezado[7:10] == ["direccion_entrega", "codigo_postal_entrega", "notas"]
     assert all(f[7:10] == ["French 5090", "C1425", "Horario 8 a 14"] for f in filas)
+
+
+def test_el_encabezado_del_csv_son_las_columnas_de_la_oc(esc):
+    esc.exportar()
+    encabezado, *_ = esc.filas_csv()
+    assert encabezado == ENCABEZADOS
 
 
 def test_notas_de_la_oc_no_se_exportan_y_sin_datos_de_entrega_quedan_vacias(esc):

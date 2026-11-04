@@ -4,16 +4,18 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from services.presupuestacion.oc_export import escritor
-from services.presupuestacion.oc_export.escritor import (
+from services.integracion_progress.salida import escritor
+from services.integracion_progress.salida.escritor import (
+    borrar_archivo,
     carpeta_oc,
     construir_nombre,
     escribir_csv,
 )
-from services.presupuestacion.oc_export.filas import ENCABEZADOS
 from services.shared.exceptions import ConflictError
 
 _BA = ZoneInfo("America/Argentina/Buenos_Aires")
+# El escritor no conoce las columnas de ningún tipo: recibe los encabezados.
+ENCABEZADOS = [f"columna_{i}" for i in range(12)]
 
 
 def _fila(descripcion="Ñandú áéíóú"):
@@ -52,7 +54,7 @@ def test_carpeta_oc(tmp_path):
 
 def test_escribe_cp1252_con_encabezado_y_acentos(tmp_path):
     destino = escribir_csv(
-        [_fila()], carpeta=tmp_path / "oc", nombre="a.csv", encoding="cp1252"
+        ENCABEZADOS, [_fila()], carpeta=tmp_path / "oc", nombre="a.csv", encoding="cp1252"
     )
     assert destino == tmp_path / "oc" / "a.csv"
     assert b"\xd1and\xfa" in destino.read_bytes()
@@ -64,7 +66,7 @@ def test_escribe_cp1252_con_encabezado_y_acentos(tmp_path):
 def test_campos_separados_por_punto_y_coma(tmp_path):
     fila = _fila("Caja x 20")
     fila[0] = "1520.50"
-    destino = escribir_csv([fila], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    destino = escribir_csv(ENCABEZADOS, [fila], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     lineas = destino.read_bytes().decode("cp1252").split("\r\n")
     assert lineas[0] == ";".join(ENCABEZADOS)
     assert lineas[1] == ";".join(fila)
@@ -72,30 +74,30 @@ def test_campos_separados_por_punto_y_coma(tmp_path):
 
 def test_punto_y_coma_y_comillas_hacen_roundtrip(tmp_path):
     desc = 'Caja "x 20"; sin fraccionar'
-    destino = escribir_csv([_fila(desc)], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    destino = escribir_csv(ENCABEZADOS, [_fila(desc)], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert _leer(destino)[1][9] == desc
 
 
 def test_coma_y_comillas_hacen_roundtrip(tmp_path):
     desc = 'Caja "x 20", sin fraccionar'
-    destino = escribir_csv([_fila(desc)], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    destino = escribir_csv(ENCABEZADOS, [_fila(desc)], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert _leer(destino)[1][9] == desc
 
 
 def test_emoji_se_reemplaza_por_signo_de_pregunta(tmp_path):
-    destino = escribir_csv([_fila("Caja 😀")], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    destino = escribir_csv(ENCABEZADOS, [_fila("Caja 😀")], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert _leer(destino)[1][9] == "Caja ?"
 
 
 def test_fin_de_linea_crlf(tmp_path):
-    destino = escribir_csv([_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     datos = destino.read_bytes()
     assert datos.count(b"\r\n") == 2
     assert datos.replace(b"\r\n", b"").count(b"\n") == 0
 
 
 def test_sin_temporales_en_exito(tmp_path):
-    escribir_csv([_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
 
 
@@ -112,7 +114,7 @@ def test_sin_temporales_ni_final_si_falla_a_mitad(tmp_path, monkeypatch):
 
     monkeypatch.setattr(escritor.csv, "writer", _WriterRoto)
     with pytest.raises(RuntimeError):
-        escribir_csv([_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+        escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert list(tmp_path.iterdir()) == []
 
 
@@ -122,7 +124,7 @@ def test_sin_temporales_si_falla_el_renombrado(tmp_path, monkeypatch):
 
     monkeypatch.setattr(escritor.os, "replace", _roto)
     with pytest.raises(OSError):
-        escribir_csv([_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+        escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert list(tmp_path.iterdir()) == []
 
 
@@ -130,6 +132,13 @@ def test_no_pisa_archivo_existente(tmp_path):
     existente = tmp_path / "a.csv"
     existente.write_bytes(b"original")
     with pytest.raises(ConflictError):
-        escribir_csv([_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+        escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert existente.read_bytes() == b"original"
     assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+
+
+def test_borrar_archivo_borra_y_tolera_que_ya_no_exista(tmp_path):
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    borrar_archivo(destino)
+    assert list(tmp_path.iterdir()) == []
+    borrar_archivo(destino)
