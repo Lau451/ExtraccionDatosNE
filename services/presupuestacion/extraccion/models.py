@@ -96,6 +96,10 @@ class OrdenCompraOverride(BaseModel):
     razon_social_extraida: str | None = None
     fecha_emision: date | None = None
     direccion_entrega: str | None = None
+    # oc-export-direccion-presupuesto (0042): el resto de la dirección de entrega,
+    # partida al extraer. direccion_entrega queda con calle y número.
+    codigo_postal_entrega: str | None = None
+    notas_entrega: str | None = None
     notas: str | None = None
     # T2 (oc-entregas-planificacion) -- cantidad de entregas declarada por el
     # documento (robot_orden_compra.py:86), tal cual llega de la cabecera

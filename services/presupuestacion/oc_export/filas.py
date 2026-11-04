@@ -12,11 +12,14 @@ from services.presupuestacion.oc_export.models import (
 ENCABEZADOS: list[str] = [
     "id_oc",
     "numero_oc",
+    "numero_presupuesto",
     "version",
     "fecha_emision",
     "codigo_cliente",
     "cuit_cliente",
     "direccion_entrega",
+    "codigo_postal_entrega",
+    "notas",
     "numero_renglon",
     "codigo_articulo",
     "descripcion",
@@ -53,14 +56,17 @@ def construir_filas(
 ) -> list[list[str]]:
     """Una fila por renglón × entrega con cantidad planificada > 0, ordenadas por
     `numero_renglon` y luego `numero_entrega`. No incluye la fila de encabezados."""
-    cabecera = [
-        _texto(oc.id),
-        _texto(oc.numero_oc),
+    # `numero_presupuesto` es dato del renglón aunque su columna vaya entre `numero_oc`
+    # y `version`: cada renglón puede venir de un presupuesto distinto.
+    cabecera_id = [_texto(oc.id), _texto(oc.numero_oc)]
+    cabecera_resto = [
         str(oc.version_numero),
         _fecha(oc.fecha_emision),
         _texto(codigo_cliente),
         _texto(cuit_cliente),
         _texto(oc.direccion_entrega),
+        _texto(oc.codigo_postal_entrega),
+        _texto(oc.notas_entrega),
     ]
     entregas_por_item: dict[str, list[EntregaExport]] = {}
     for entrega in entregas:
@@ -80,7 +86,9 @@ def construir_filas(
             entregas_por_item.get(renglon.oc_item_id, []), key=lambda e: e.numero_entrega
         ):
             filas.append(
-                cabecera
+                cabecera_id
+                + [_texto(renglon.numero_presupuesto)]
+                + cabecera_resto
                 + datos_renglon
                 + [
                     str(entrega.numero_entrega),

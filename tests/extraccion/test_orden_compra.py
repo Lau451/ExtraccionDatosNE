@@ -459,3 +459,37 @@ def test_leer_filas_extraccion_orden_compra_agrupada_no_bloquea_por_numero_oc_di
     assert any(
         "orden de compra distintos" in advertencia for advertencia in resultado.advertencias_cabecera
     )
+
+
+# oc-export-direccion-presupuesto T2 (S2): la dirección de entrega llega partida
+# en tres campos y cada uno se persiste en su columna (migración 0042).
+def test_direccion_partida_se_persiste_en_sus_tres_columnas(monkeypatch):
+    ordenes_creadas = _preparar_mocks_materializacion_con_cabecera(monkeypatch)
+    override = OrdenCompraOverride(
+        numero_oc="OC-1",
+        cliente_id="cli-1",
+        direccion_entrega="FRENCH 5090",
+        codigo_postal_entrega="1425",
+        notas_entrega="Farmacia - Lunes a viernes 7 a 14 hs",
+        filas=[_fila()],
+    )
+
+    service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    assert ordenes_creadas[0]["direccion_entrega"] == "FRENCH 5090"
+    assert ordenes_creadas[0]["codigo_postal_entrega"] == "1425"
+    assert ordenes_creadas[0]["notas_entrega"] == "Farmacia - Lunes a viernes 7 a 14 hs"
+
+
+def test_direccion_partida_ausente_se_persiste_como_null(monkeypatch):
+    ordenes_creadas = _preparar_mocks_materializacion_con_cabecera(monkeypatch)
+    override = OrdenCompraOverride(numero_oc="OC-1", cliente_id="cli-1", filas=[_fila()])
+
+    service._materializar_orden_compra(
+        MagicMock(), extraction={"id": "ext-1"}, drogueria_id="d1", usuario_id="u1", override=override
+    )
+
+    assert ordenes_creadas[0]["codigo_postal_entrega"] is None
+    assert ordenes_creadas[0]["notas_entrega"] is None

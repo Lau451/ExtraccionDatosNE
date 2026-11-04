@@ -150,10 +150,17 @@ def _armar_renglones(
     ]
     if sin_codigo:
         errores.append(f"renglones cuyo producto no tiene código de artículo: {_lista(sin_codigo)}")
+    # Sin número de presupuesto (presupuesto no importado de Progress) la columna sale vacía.
+    numeros_presupuesto = repo.listar_numeros_presupuesto(
+        client,
+        presupuesto_item_ids=[i["presupuesto_item_id"] for i in items],
+        drogueria_id=drogueria_id,
+    )
     return [
         RenglonExport(
             oc_item_id=i["id"],
             numero_renglon=i["numero_renglon"],
+            numero_presupuesto=numeros_presupuesto.get(i["presupuesto_item_id"]),
             codigo_articulo=codigos.get(i.get("producto_id")),
             descripcion=i["descripcion"],
             cantidad=Decimal(str(i["cantidad"])),
@@ -268,6 +275,8 @@ def exportar_orden_compra(
             version_numero=oc["version_numero"],
             fecha_emision=oc.get("fecha_emision"),
             direccion_entrega=oc.get("direccion_entrega"),
+            codigo_postal_entrega=oc.get("codigo_postal_entrega"),
+            notas_entrega=oc.get("notas_entrega"),
         ),
         renglones,
         entregas_csv,

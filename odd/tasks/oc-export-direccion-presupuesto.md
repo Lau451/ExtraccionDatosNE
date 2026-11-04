@@ -1,0 +1,23 @@
+# Feature: OC Progress export — split delivery address + numero_presupuesto
+
+Sistemas (Progress side) asked for a new column layout in the OC export CSV: the delivery address split into street/number, postal code and notes, plus the Progress presupuesto number.
+Branch `feat/oc-export-direccion-presupuesto` from `dev` (6bf48bb).
+
+## Specs
+- S1 Column order (L1, verbatim from Sistemas): "Id_oc / OC cliente / numero_presupuesto (este no está) / version / fecha Emisión / CODIGO_CLIENTE / CUIT CLIENTE / DIRECCION ENTREGA (sólo el domicilio, calle y nro, x ej. FRENCH 5090) / CODIGO_POSTAL_ENTREGA (este no está) / notas (este no está, sería el resto de cosas que hoy tenes en dirección entrega, por ejemplo el horario) / renglon / articulo / descripción / cantidad-total / precio_unitario / nro entrega / fecha_entrega / cant-x_entrega". Existing header names are kept; new headers: `numero_presupuesto`, `codigo_postal_entrega`, `notas`.
+- S2 Address split (L1): "básicamente es cambiar la columna dirección de entrega dividiendo en 3, domiclio, código postal (que no figura) y notas para el resto". Decision L2: split at extraction time (Gemini returns three fields, the validator lets the user edit them, stored in new `ordenes_compra` columns `codigo_postal_entrega` and `notas_entrega`; `direccion_entrega` keeps only street and number).
+- S3 numero_presupuesto (L1): "agregar el número de presupuesto". Decision L3: "VOY A HACER QUE LO TRAIGA EL CSV DEL PRESUPUESTOQUE TRAEMOS DEL SISTEMA PROGRESS ASI QUE LO AGARRAMOS DE AHI" — taken per renglón from `oc_items.presupuesto_item_id → presupuesto_items.presupuesto_id → presupuesto_legacy_map.codigo_legacy`; empty when the presupuesto was not imported from Progress.
+
+## Tasks
+- T1 (S2) Migration 0042: `ordenes_compra.codigo_postal_entrega`, `ordenes_compra.notas_entrega` (nullable, additive) + down + docs/schema. Route: inline. Commit: deaa7fd [x] (structural; user applies it to the shared DB)
+- T2 (S2) Extraction: prompt + `_FIELDNAMES` + `_construir_filas` in `robot_orden_compra.py`; override model + materialization in `presupuestacion/extraccion`. Route: inline. Commit: 21e8937 [x] (RED 9 → GREEN, tests/test_robot_orden_compra.py + tests/extraccion 207 passed)
+- T3 (S2) Frontend validator: two new editable header fields wired to the override. Route: inline. Commit: ac5ba4a [x] (RED 4 → GREEN, vitest validar-extraccion 164 passed, tsc 0)
+- T4 (S1, S2, S3) Export: new columns and order in `oc_export` (models, repository, service, filas) + tests + docs. Route: worker (context backstop). Commit: 32ecc48 [x] (RED 10 failed/33 errors → GREEN; parent re-ran oc_export+robot+extraccion: 266 passed)
+
+## Log
+- L1 (user, relaying Sistemas): "Por las dudas te armo acá la secuencia de columnas como debería quedar (tomando lo que vos ya hiciste y lo que tenemos que modificar) Id_oc OC cliente numero_presupuesto (este no está) version fecha Emisión CODIGO_CLIENTE CUIT CLIENTE DIRECCION ENTREGA (sólo el domicilio, calle y nro, x ej. FRENCH 5090) CODIGO_POSTAL_ENTREGA (este no está) notas (este no está, sería el resto de cosas que hoy tenes en dirección entrega, por ejemplo el horario) renglon articulo (¿este es nuestro artículo o el de ellos? entiendo que nuestro porque salió del presupuesto... ¿o lo tengo que buscar por mapeador?) descripción cantidad-total precio_unitario (esto tiene iva incluído? es precio final) nro entrega fecha_entrega cant-x_entrega básicamente es cambiar la columna dirección de entrega dividiendo en 3, domiclio, código postal (que no figura) y notas para el resto, y agregar el número de presupuesto"
+- L2 (user): chose "Separarla al extraer" (Gemini returns three fields, migration).
+- L3 (user): "VOY A HACER QUE LO TRAIGA EL CSV DEL PRESUPUESTOQUE TRAEMOS DEL SISTEMA PROGRESS ASI QUE LO AGARRAMOS DE AHI" — parent found the existing legacy import (PR #55) already stores it in `presupuesto_legacy_map.codigo_legacy`. User approved starting (numero per renglón, empty when not from Progress).
+- L4 (parent): answers for Sistemas — articulo is our `productos.codigo_interno` (no mapeador); precio_unitario is transcribed from the client's OC as printed, IVA neither added nor removed.
+- L5 (parent): T4 by worker. Multiple legacy codes per presupuesto → first by importado_at, then codigo_legacy. Integration tests (-m integration) not run: they need migration 0042 on the TEST DB. Follow-ups: manual OC creation (`compras`) and `oc_resumen` do not expose the new address parts yet; archived openspec proposal still lists 15 columns.
+- L6 (parent): user applied 0042 to the shared DB (columns verified via information_schema). Integration tests `pytest tests/oc_export tests/extraccion -m integration`: 73 passed.

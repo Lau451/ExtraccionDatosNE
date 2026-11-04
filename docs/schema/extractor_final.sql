@@ -1042,6 +1042,8 @@ CREATE TABLE ordenes_compra (
     fecha_entrega_estimada  DATE            NULL,
     cantidad_entregas       INTEGER         NOT NULL DEFAULT 1,
     direccion_entrega       TEXT            NULL,
+    codigo_postal_entrega   TEXT            NULL,
+    notas_entrega           TEXT            NULL,
     notas                   TEXT            NULL,
     version_numero          INTEGER         NOT NULL DEFAULT 1,
     es_vigente              BOOLEAN         NOT NULL DEFAULT TRUE,
@@ -1083,6 +1085,12 @@ COMMENT ON COLUMN ordenes_compra.exportado_por IS
   'Usuario que ejecutó la exportación a Progress. NULL si la OC no se exportó (ck_oc_exportacion). Agregada en 0032.';
 COMMENT ON COLUMN ordenes_compra.archivo_exportado IS
   'Nombre del CSV generado en la carpeta de integración con Progress (OC_{cliente}_{numero_oc}_v{version}_{timestamp}.csv). NULL si la OC no se exportó (ck_oc_exportacion). Agregada en 0032.';
+COMMENT ON COLUMN ordenes_compra.direccion_entrega IS
+  'Domicilio de entrega: solo calle y número (ej. FRENCH 5090) desde 0042. Las OC anteriores a 0042 tienen la dirección completa.';
+COMMENT ON COLUMN ordenes_compra.codigo_postal_entrega IS
+  'Código postal de la dirección de entrega. NULL si el documento no lo trae. Agregada en 0042.';
+COMMENT ON COLUMN ordenes_compra.notas_entrega IS
+  'Resto de la dirección de entrega que no es calle, número ni código postal (lugar, sector, localidad, horario). Agregada en 0042.';
 
 CREATE TABLE oc_items (
     id                  UUID            NOT NULL DEFAULT gen_random_uuid(),

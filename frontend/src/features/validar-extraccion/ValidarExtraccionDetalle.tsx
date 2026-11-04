@@ -219,6 +219,8 @@ export function ValidarExtraccionDetalle({ extractionId, rowCountHint }: Props) 
       razon_social_extraida: razonSocialExtraida,
       fecha_emision: fechaCsvAIso(cabecera?.fecha_emision ?? ''),
       direccion_entrega: cabecera?.direccion_entrega || null,
+      codigo_postal_entrega: (cabecera?.codigo_postal_entrega ?? '').trim() || null,
+      notas_entrega: (cabecera?.notas_entrega ?? '').trim() || null,
       notas: (cabecera?.observaciones ?? '').trim() || null, // T2
       cantidad_entregas: (cabecera?.cantidad_entregas ?? '').trim() || null, // oc-entregas-planificacion T2
       filas: hook.filas

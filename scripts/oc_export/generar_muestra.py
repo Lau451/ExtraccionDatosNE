@@ -106,6 +106,12 @@ def crear_oc_muestra(client: Client) -> dict:
     oc = _insertar(client, "ordenes_compra", {
         "cliente_id": cliente["id"], "drogueria_id": did,
         "numero_oc": f"{_PREFIJO_OC}{sufijo}", "cantidad_entregas": len(_ENTREGAS),
+        "direccion_entrega": "FRENCH 5090", "codigo_postal_entrega": "C1425",
+        "notas_entrega": "Horario de recepción: lunes a viernes de 8 a 14",
+    })
+    # numero_presupuesto del CSV; se borra en cascada con el presupuesto.
+    _insertar(client, "presupuesto_legacy_map", {
+        "presupuesto_id": presupuesto["id"], "drogueria_id": did, "codigo_legacy": f"MUE{sufijo[:6]}",
     })
     items = []
     for n, (descripcion, cantidad, precio) in enumerate(_RENGLONES, start=1):

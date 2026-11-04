@@ -206,6 +206,39 @@ class TestConstruirFilas:
 
         assert filas[0]["direccion_entrega"] == "Av. Siempreviva 742"
 
+    def test_fieldnames_parte_la_direccion_en_domicilio_codigo_postal_y_notas(self):
+        """oc-export-direccion-presupuesto T2 (S2): las dos partes nuevas van justo
+        después de direccion_entrega."""
+        i = _FIELDNAMES.index("direccion_entrega")
+        assert _FIELDNAMES[i : i + 3] == ["direccion_entrega", "codigo_postal_entrega", "notas_entrega"]
+
+    def test_direccion_partida_se_extrae_y_se_repite_por_renglon(self):
+        datos = _datos_oc4471()
+        datos["direccion_entrega"] = "FRENCH 5090"
+        datos["codigo_postal_entrega"] = " 1425 "
+        datos["notas_entrega"] = "Farmacia - Lunes a viernes 7 a 14 hs"
+
+        filas = _construir_filas(datos)
+
+        for fila in filas:
+            assert fila["direccion_entrega"] == "FRENCH 5090"
+            assert fila["codigo_postal_entrega"] == "1425"
+            assert fila["notas_entrega"] == "Farmacia - Lunes a viernes 7 a 14 hs"
+
+    def test_partes_de_direccion_ausentes_dan_string_vacio(self):
+        filas = _construir_filas(_datos_oc4471())
+
+        assert filas[0]["codigo_postal_entrega"] == ""
+        assert filas[0]["notas_entrega"] == ""
+
+    def test_notas_entrega_normaliza_saltos_de_linea_a_coma(self):
+        datos = _datos_oc4471()
+        datos["notas_entrega"] = "Farmacia\nLunes a viernes 7 a 14 hs"
+
+        filas = _construir_filas(datos)
+
+        assert filas[0]["notas_entrega"] == "Farmacia, Lunes a viernes 7 a 14 hs"
+
     @pytest.mark.parametrize(
         ("crudo", "esperado"),
         [
@@ -273,6 +306,14 @@ class TestPromptFormatoLegibilidad:
         omitía siempre -- la regla explícita la recupera."""
         prompt = _sin_saltos_de_linea(_PROMPT)
         assert "take the street and number from that SAME institution's address" in prompt
+
+    def test_direccion_entrega_es_solo_calle_y_numero(self):
+        """oc-export-direccion-presupuesto S2: Sistemas pide "sólo el domicilio, calle y
+        nro, x ej. FRENCH 5090"; el código postal y el resto van en sus campos."""
+        prompt = _sin_saltos_de_linea(_PROMPT)
+        assert '"direccion_entrega": ONLY the street and number' in prompt
+        assert '"codigo_postal_entrega"' in prompt
+        assert '"notas_entrega"' in prompt
 
     def test_incluye_regla_de_un_remark_por_linea_en_observaciones(self):
         prompt = _sin_saltos_de_linea(_PROMPT)

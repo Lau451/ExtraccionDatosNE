@@ -15,7 +15,9 @@ def _oc(**kw):
         numero_oc="4500-1",
         version_numero=3,
         fecha_emision=date(2026, 10, 5),
-        direccion_entrega="  Calle 1, CABA ",
+        direccion_entrega="  French 5090 ",
+        codigo_postal_entrega=" C1425 ",
+        notas_entrega="  Horario 8 a 14, CABA ",
     )
     base.update(kw)
     return OcExport(**base)
@@ -25,6 +27,7 @@ def _renglon(n, item="i1", **kw):
     base = dict(
         oc_item_id=item,
         numero_renglon=n,
+        numero_presupuesto=" 12345 ",
         codigo_articulo="ART1",
         descripcion="  Ibuprofeno 400mg, caja x 20 ",
         cantidad=Decimal("1520.5"),
@@ -50,46 +53,76 @@ def _filas(oc=None, renglones=None, entregas=None, cuit="30-1"):
     )
 
 
-def test_encabezados_son_los_15_acordados():
-    assert len(ENCABEZADOS) == 15
-    assert ENCABEZADOS[0] == "id_oc" and ENCABEZADOS[-1] == "cantidad_entrega"
+def test_encabezados_en_el_orden_acordado_con_sistemas():
+    assert ENCABEZADOS == [
+        "id_oc",
+        "numero_oc",
+        "numero_presupuesto",
+        "version",
+        "fecha_emision",
+        "codigo_cliente",
+        "cuit_cliente",
+        "direccion_entrega",
+        "codigo_postal_entrega",
+        "notas",
+        "numero_renglon",
+        "codigo_articulo",
+        "descripcion",
+        "cantidad_total",
+        "precio_unitario",
+        "numero_entrega",
+        "fecha_entrega",
+        "cantidad_entrega",
+    ]
 
 
 def test_formato_de_valores():
     (fila,) = _filas()
     assert fila == [
-        "oc-1", "4500-1", "3", "05/10/2026", "C01", "30-1", "Calle 1, CABA",
+        "oc-1", "4500-1", "12345", "3", "05/10/2026", "C01", "30-1",
+        "French 5090", "C1425", "Horario 8 a 14, CABA",
         "1", "ART1", "Ibuprofeno 400mg, caja x 20", "1520.50", "1234.50",
         "1", "15/10/2026", "10.00",
     ]
+    assert len(fila) == len(ENCABEZADOS)
+
+
+def test_numero_presupuesto_es_por_renglon():
+    renglones = [_renglon(1, "i1", numero_presupuesto="111"), _renglon(2, "i2", numero_presupuesto=None)]
+    filas = _filas(renglones=renglones, entregas=[_entrega(1, "i1"), _entrega(1, "i2")])
+    assert [(f[10], f[2]) for f in filas] == [("1", "111"), ("2", "")]
 
 
 def test_sin_separador_de_miles():
     (fila,) = _filas(renglones=[_renglon(1, precio_unitario=Decimal("1234567.891"))])
-    assert fila[11] == "1234567.89"
+    assert fila[14] == "1234567.89"
 
 
 def test_orden_por_renglon_y_luego_entrega():
     renglones = [_renglon(2, "i2"), _renglon(1, "i1")]
     entregas = [_entrega(2, "i1"), _entrega(1, "i2"), _entrega(1, "i1"), _entrega(2, "i2")]
     filas = _filas(renglones=renglones, entregas=entregas)
-    assert [(f[7], f[12]) for f in filas] == [("1", "1"), ("1", "2"), ("2", "1"), ("2", "2")]
+    assert [(f[10], f[15]) for f in filas] == [("1", "1"), ("1", "2"), ("2", "1"), ("2", "2")]
 
 
 def test_entrega_con_cantidad_cero_se_omite():
     filas = _filas(entregas=[_entrega(1, cant="0"), _entrega(2, cant="5")])
-    assert len(filas) == 1 and filas[0][12] == "2"
+    assert len(filas) == 1 and filas[0][15] == "2"
 
 
 def test_cabecera_repetida_en_cada_fila():
     filas = _filas(entregas=[_entrega(1), _entrega(2)])
-    assert len(filas) == 2 and filas[0][:7] == filas[1][:7]
+    assert len(filas) == 2 and filas[0][:10] == filas[1][:10]
 
 
 def test_opcionales_null_quedan_vacios():
-    oc = _oc(fecha_emision=None, direccion_entrega=None)
-    (fila,) = _filas(oc=oc, cuit=None)
-    assert fila[3] == "" and fila[5] == "" and fila[6] == ""
+    oc = _oc(
+        fecha_emision=None, direccion_entrega=None, codigo_postal_entrega=None, notas_entrega=None
+    )
+    (fila,) = _filas(oc=oc, renglones=[_renglon(1, numero_presupuesto=None)], cuit=None)
+    assert fila[2] == ""  # numero_presupuesto
+    assert fila[4] == "" and fila[6] == ""  # fecha_emision, cuit_cliente
+    assert fila[7:10] == ["", "", ""]  # direccion, codigo postal, notas
 
 
 def test_sin_entregas_no_hay_filas():
@@ -104,5 +137,5 @@ def test_redondeo_half_up_no_bancario():
     (fila,) = _filas(
         renglones=[_renglon(1, cantidad=Decimal("0.125"), precio_unitario=Decimal("2.675"))]
     )
-    assert fila[10] == "0.13"
-    assert fila[11] == "2.68"
+    assert fila[13] == "0.13"
+    assert fila[14] == "2.68"

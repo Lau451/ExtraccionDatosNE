@@ -502,6 +502,8 @@ _CAMPOS_CABECERA_ADVERTENCIA = (
     "razon_social_cliente",
     "fecha_emision",
     "direccion_entrega",
+    "codigo_postal_entrega",
+    "notas_entrega",
     "cantidad_entregas",
 )
 
@@ -810,6 +812,8 @@ def _materializar_orden_compra(
         "items_cantidad": len(override.filas),
         "fecha_emision": override.fecha_emision.isoformat() if override.fecha_emision else None,
         "direccion_entrega": override.direccion_entrega,
+        "codigo_postal_entrega": override.codigo_postal_entrega,
+        "notas_entrega": override.notas_entrega,
         "notas": override.notas,
         "cantidad_entregas": _parsear_cantidad_entregas(override.cantidad_entregas),  # T2
     }

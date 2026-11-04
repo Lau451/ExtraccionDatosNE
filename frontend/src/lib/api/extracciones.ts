@@ -136,6 +136,9 @@ export interface OrdenCompraOverride {
   razon_social_extraida: string | null
   fecha_emision: string | null
   direccion_entrega: string | null
+  // oc-export-direccion-presupuesto: resto de la dirección, partida al extraer.
+  codigo_postal_entrega: string | null
+  notas_entrega: string | null
   notas: string | null
   // T2 (oc-entregas-planificacion): cantidad de entregas declarada por el
   // documento -- string sin validar, igual que el resto de la cabecera. El
