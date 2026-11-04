@@ -177,8 +177,7 @@ class StockOut(BaseModel):
 ## `productos/repository.py`
 
 Capa delgada de acceso a datos, sin lógica de negocio. Todas las funciones reciben
-`client: Client` explícito. Único import cruzado del módulo:
-`DEPOSITO_SENTINEL` de `services.presupuestacion.imports.service` (`repository.py:6`).
+`client: Client` explícito. `DEPOSITO_SENTINEL` viene de `services/productos/domain.py`.
 
 ```python
 # -- productos --

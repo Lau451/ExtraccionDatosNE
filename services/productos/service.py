@@ -4,8 +4,8 @@ from typing import Any
 
 from supabase import Client
 
-from services.presupuestacion.core.database import get_service_client
-from services.presupuestacion.core.exceptions import NotFoundError
+from services.shared.database import get_service_client
+from services.shared.exceptions import NotFoundError
 from services.productos import repository as repo
 from services.productos.domain import parsear_unidades_por_presentacion
 from services.productos.models import (

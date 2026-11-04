@@ -99,6 +99,11 @@ Numeración D-PRODUCTOS-NNN, verificada contra el código en esta sesión.
 
 ### D-PRODUCTOS-004 — Reutilizar `DEPOSITO_SENTINEL` de `imports/service.py` en vez de definirlo en Productos
 
+> **Reemplazada:** la constante ahora vive en `services/productos/domain.py` y es
+> `imports/service.py` quien la importa (X-ARQ-001,
+> [`../../arquitectura/mapa-modulos.md`](../../arquitectura/mapa-modulos.md)). Se
+> conserva el texto original como registro histórico.
+
 - **Decisión**: `repository.py:6` importa la constante `DEPOSITO_SENTINEL = "unico"`
   desde `services.presupuestacion.imports.service` (definida en
   `imports/service.py:18`) en vez de declarar su propia constante.

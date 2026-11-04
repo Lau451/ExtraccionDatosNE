@@ -67,7 +67,11 @@ ambos lados:
    ver [`arquitectura.md`](./arquitectura.md) y D-IMPORTS-003 en
    [`decisiones.md`](./decisiones.md).
 
-Además, `catalogo/repository.py:6` importa `DEPOSITO_SENTINEL` **desde este módulo**
+> **Actualización (X-ARQ-001):** el acoplamiento inverso descrito a continuación ya no
+> existe: `DEPOSITO_SENTINEL` vive en `services/productos/domain.py` e Imports lo importa
+> desde ahí.
+
+Antes, `catalogo/repository.py:6` importaba `DEPOSITO_SENTINEL` **desde este módulo**
 (`imports/service.py:18`) — el acoplamiento inverso: un módulo de soporte (Imports)
 define una constante de dominio que un módulo de negocio (Catálogo) consume. Ver
 [`arquitectura.md`](./arquitectura.md).
