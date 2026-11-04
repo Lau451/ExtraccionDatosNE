@@ -23,8 +23,8 @@ _ROUTER = f"{_PREFIJO}.router"
 _MAIN_PRESUPUESTACION = REPO_ROOT / "services" / "presupuestacion" / "main.py"
 
 # Fachadas públicas de los módulos dueños a los que integracion_progress entrega
-# lotes (por ejemplo `services.pcp.api`). Vacío hasta que exista el primer destino.
-_FACHADAS_DESTINO: set[str] = set()
+# lotes. `services.pcp.api` recibe el archivo de presupuestos (S5).
+_FACHADAS_DESTINO: set[str] = {"services.pcp.api"}
 
 
 def _modulos_importados(archivo: Path) -> list[str]:

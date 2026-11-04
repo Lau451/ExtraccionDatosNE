@@ -28,6 +28,7 @@ from services.presupuestacion.presupuestos.router import router as presupuestos_
 from services.presupuestacion.pricing.router import router as pricing_router
 from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
 from services.presupuestacion.usuarios.router import router as usuarios_router
+from services.integracion_progress.router import router as integracion_progress_router
 from services.pcp.router import router as pcp_router
 from services.productos.router import router as productos_router
 from services.terceros.router import router as terceros_router
@@ -74,3 +75,4 @@ app.include_router(oc_entregas_router, tags=["oc_entregas"])
 app.include_router(oc_export_router, tags=["oc_export"])
 app.include_router(oc_resumen_router, tags=["oc_resumen"])
 app.include_router(compromisos_router, tags=["compromisos"])
+app.include_router(integracion_progress_router, tags=["integracion_progress"])

@@ -1,70 +1,43 @@
-import { useRef, useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { importarPresupuestosLegacy } from '@/lib/api/pcp'
-import type { FilaImportPresupuestoLegacy } from '@/lib/api/pcp'
-import { parsearCsvPresupuestos, type ResultadoParseoCsvPresupuestos } from './parsearCsvPresupuestos'
+import { subirPresupuestosProgress } from '@/lib/api/integracionProgress'
 import { ImportarPresupuestosLegacyView } from './components/ImportarPresupuestosLegacyView'
 
-function contarPresupuestos(filas: FilaImportPresupuestoLegacy[]): number {
-  return new Set(filas.map((fila) => fila.numero_presupuesto)).size
-}
-
 /** Container de la pantalla de import (design "container-presentational
- * pattern"): lee el `File`, parsea el CSV en el browser con
- * `parsearCsvPresupuestos` (función pura) y solo llama a la API cuando el
- * parseo no tiene errores -- "nothing is sent if there are errors" (feature
- * doc Decisions). */
+ * pattern"): sube el archivo tal como lo exporta Progress y el backend lo
+ * decodifica, lo parsea y lo registra (odd/tasks/integracion-progress.md S4,
+ * S5). Si el parseo tiene errores, el backend rechaza el archivo entero y
+ * devuelve los errores por línea; si el mismo contenido ya se había recibido,
+ * responde `duplicado` sin importar nada. */
 export function ImportarPresupuestosLegacy() {
-  const [errorLectura, setErrorLectura] = useState<string | null>(null)
-  const [parseo, setParseo] = useState<ResultadoParseoCsvPresupuestos | null>(null)
+  const [archivo, setArchivo] = useState<File | null>(null)
   const mutation = useMutation({
-    mutationFn: (filas: FilaImportPresupuestoLegacy[]) => importarPresupuestosLegacy(filas),
+    mutationFn: (seleccionado: File) => subirPresupuestosProgress(seleccionado),
   })
-  /** Id monotónico de la última selección de archivo: si dos selecciones se
-   * disparan en sucesión rápida, la lectura (`archivo.text()`) de una puede
-   * resolver después que la de la otra ("stale read"). Se compara el id
-   * capturado contra el actual al reanudar tras el `await`; si no coinciden,
-   * la lectura quedó obsoleta y se descarta sin tocar el estado. */
-  const idUltimaSeleccionRef = useRef(0)
 
-  async function onSeleccionarArchivo(event: ChangeEvent<HTMLInputElement>) {
-    const archivo = event.target.files?.[0] ?? null
-    const idSeleccion = (idUltimaSeleccionRef.current += 1)
+  function onSeleccionarArchivo(event: ChangeEvent<HTMLInputElement>) {
     mutation.reset()
-    setParseo(null)
-    setErrorLectura(null)
-    if (!archivo) return
-    try {
-      const contenido = await archivo.text()
-      if (idUltimaSeleccionRef.current !== idSeleccion) return
-      setParseo(parsearCsvPresupuestos(contenido))
-    } catch {
-      if (idUltimaSeleccionRef.current !== idSeleccion) return
-      setErrorLectura('No se pudo leer el archivo seleccionado.')
-    }
+    setArchivo(event.target.files?.[0] ?? null)
   }
 
   function onImportar() {
-    if (!parseo || parseo.errores.length > 0 || parseo.filas.length === 0) return
-    mutation.mutate(parseo.filas)
+    if (!archivo) return
+    mutation.mutate(archivo)
   }
 
-  const vistaPrevia = parseo && parseo.errores.length === 0
-    ? { presupuestos: contarPresupuestos(parseo.filas), filas: parseo.filas.length }
-    : null
-  const puedeImportar = !!parseo && parseo.errores.length === 0 && parseo.filas.length > 0
+  const recepcion = mutation.data
+  const duplicado = recepcion?.estado === 'duplicado' ? { procesadoAt: recepcion.procesado_at } : null
 
   return (
     <ImportarPresupuestosLegacyView
       onSeleccionarArchivo={onSeleccionarArchivo}
-      errorLectura={errorLectura}
-      vistaPrevia={vistaPrevia}
-      erroresValidacion={parseo?.errores ?? []}
+      erroresValidacion={recepcion?.estado === 'error' ? recepcion.errores : []}
+      duplicado={duplicado}
       onImportar={onImportar}
-      puedeImportar={puedeImportar}
+      puedeImportar={!!archivo}
       importando={mutation.isPending}
       errorImportacion={mutation.isError ? mutation.error.message : null}
-      resultados={mutation.data ?? []}
+      resultados={recepcion?.estado === 'procesado' ? recepcion.resultados : []}
     />
   )
 }
