@@ -54,6 +54,13 @@ confirmó con el usuario (D8). La RPC `upsert_pcp_legacy` (0012_pcp_extras.sql)
 quedó sin usar; el flujo real vive en Python, igual que el resto de los
 submódulos de `services/pcp/`.
 
+> **Actualización (2026-11-04, `odd/tasks/integracion-progress.md`):** el archivo de
+> presupuestos de Progress ya no se parsea en el frontend. Entra por
+> `services/integracion_progress` (carga manual `POST /integracion-progress/presupuestos`
+> o recepción automática desde la carpeta), que lo registra, lo parsea y entrega las
+> filas a `importar_presupuesto_legacy` vía `services/pcp/api.py`. El endpoint
+> `POST /pcp/imports/presupuestos-legacy` sigue existiendo, pero la pantalla ya no lo usa.
+>
 > **Actualización (2026-09-24, `odd/tasks/presupuestos-legacy-import.md`):**
 > el diseño de placeholders de D8 quedó superado. Ahora hay dos imports
 > legados, con orden obligatorio:
