@@ -27,17 +27,36 @@ _MAIN_PRESUPUESTACION = REPO_ROOT / "services" / "presupuestacion" / "main.py"
 _FACHADAS_DESTINO: set[str] = {"services.pcp.api"}
 
 
-def _modulos_importados(archivo: Path) -> list[str]:
+def _paquete(archivo: Path) -> str:
+    """Paquete al que pertenece `archivo` (contra el que se resuelven sus imports
+    relativos), a partir de su ruta en el repo."""
+    partes = archivo.relative_to(REPO_ROOT).with_suffix("").parts
+    return ".".join(partes[:-1])
+
+
+def _absoluto(nodo: ast.ImportFrom, paquete: str) -> str:
+    if nodo.level == 0:
+        return nodo.module or ""
+    base = paquete.split(".")
+    base = base[: len(base) - (nodo.level - 1)]
+    return ".".join(base + ([nodo.module] if nodo.module else []))
+
+
+def _modulos_importados(archivo: Path, paquete: str | None = None) -> list[str]:
     arbol = ast.parse(archivo.read_text(encoding="utf-8"), filename=str(archivo))
+    paquete = _paquete(archivo) if paquete is None else paquete
     modulos: list[str] = []
     for nodo in ast.walk(arbol):
         if isinstance(nodo, ast.Import):
             modulos.extend(alias.name for alias in nodo.names)
-        elif isinstance(nodo, ast.ImportFrom) and nodo.module == _PREFIJO:
-            # `from services.integracion_progress import api` importa el submódulo `api`.
-            modulos.extend(f"{_PREFIJO}.{alias.name}" for alias in nodo.names)
-        elif isinstance(nodo, ast.ImportFrom) and nodo.module:
-            modulos.append(nodo.module)
+        elif isinstance(nodo, ast.ImportFrom):
+            modulo = _absoluto(nodo, paquete)
+            if modulo == _PREFIJO or (nodo.level and not nodo.module):
+                # `from services.integracion_progress import api` o `from . import api`
+                # importan el submódulo `api`.
+                modulos.extend(f"{modulo}.{alias.name}" for alias in nodo.names)
+            elif modulo:
+                modulos.append(modulo)
     return modulos
 
 
@@ -81,6 +100,34 @@ def test_integracion_progress_solo_importa_shared_y_fachadas_destino():
         "services/integracion_progress/** solo puede importar services.shared y "
         f"las fachadas destino {sorted(_FACHADAS_DESTINO)}: {ofensores}"
     )
+
+
+def test_los_imports_relativos_se_resuelven_contra_el_paquete(tmp_path):
+    # R3-001 (T1): `from ..pcp import x` y `from . import y` no se veían como
+    # `services.*` y pasaban el guard sin control.
+    archivo = tmp_path / "modulo.py"
+    archivo.write_text(
+        "from . import service\n"
+        "from .carpeta import escanear_carpeta\n"
+        "from ...pcp.imports import service as pcp_service\n"
+        "from services.shared import config\n",
+        encoding="utf-8",
+    )
+
+    modulos = _modulos_importados(archivo, paquete=f"{_PREFIJO}.recepcion")
+
+    assert modulos == [
+        f"{_PREFIJO}.recepcion.service",
+        f"{_PREFIJO}.recepcion.carpeta",
+        "services.pcp.imports",
+        "services.shared",
+    ]
+    assert not _permitido_desde_adentro("services.pcp.imports")
+
+
+def test_el_paquete_de_un_archivo_sale_de_su_ruta():
+    assert _paquete(ROOT / "recepcion" / "carpeta.py") == f"{_PREFIJO}.recepcion"
+    assert _paquete(ROOT / "recepcion" / "__init__.py") == f"{_PREFIJO}.recepcion"
 
 
 def test_afuera_solo_se_importa_la_fachada():
