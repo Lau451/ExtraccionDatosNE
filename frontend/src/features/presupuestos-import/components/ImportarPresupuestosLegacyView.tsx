@@ -4,7 +4,8 @@ import type { ImportPresupuestoLegacyResultado } from '@/lib/api/pcp'
 import { fechaLegible } from '@/lib/fechas'
 
 export interface ArchivoDuplicado {
-  /** Cuándo se procesó el archivo original; null si sigue en curso. */
+  /** Cuándo se procesó el archivo original; null si sigue en curso (el aviso
+   * no dice "ya fue procesado" porque todavía puede terminar en error). */
   procesadoAt: string | null
 }
 
@@ -51,8 +52,9 @@ export function ImportarPresupuestosLegacyView({
 
       {duplicado ? (
         <p role="status" className="mt-4 max-w-xl rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Este archivo ya fue procesado
-          {duplicado.procesadoAt ? ` el ${fechaLegible(duplicado.procesadoAt)}` : ''}.
+          {duplicado.procesadoAt
+            ? `Este archivo ya fue procesado el ${fechaLegible(duplicado.procesadoAt)}.`
+            : 'Este archivo ya se está procesando.'}
         </p>
       ) : null}
 

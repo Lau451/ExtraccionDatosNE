@@ -11,7 +11,8 @@ import pytest
 from services.integracion_progress.recepcion import service as recepcion
 from services.integracion_progress.registro import repository as repo
 from services.integracion_progress.tipos.presupuestos import destino
-from services.shared.exceptions import NotFoundError
+from services.integracion_progress.tipos.presupuestos import parser as parser_presupuestos
+from services.shared.exceptions import NotFoundError, ValidationError
 from tests.integracion_progress.registro.conftest import METODOS_REPOSITORIO, RepositorioFalso
 
 ENCABEZADO = (
@@ -231,3 +232,59 @@ def test_tipo_desconocido_es_value_error_sin_registrar(repo_falso, entrega):
 
     assert repo_falso.inserts == []
     assert entrega.llamadas == []
+
+
+# --- T7: observaciones de las revisiones de T3 y T4 (L11, L13) -------------------
+
+
+def test_excepcion_inesperada_del_parser_deja_el_registro_en_error(
+    repo_falso, entrega, monkeypatch, caplog
+):
+    # Sin esto el registro quedaba en 'recibido' una hora y la carpeta lo dejaba
+    # 'pendiente' en cada escaneo (R1 carpeta.py exception path, R4-stuck-recibido).
+    def parser_roto(contenido):
+        raise RuntimeError("bug del parser: detalle interno")
+
+    monkeypatch.setattr(parser_presupuestos, "parsear", parser_roto)
+
+    resultado = _recibir(CSV_VALIDO, nombre="roto.csv")
+
+    esperados = [{"linea": 0, "mensaje": "Error inesperado al leer el archivo"}]
+    assert resultado.estado == "error"
+    assert [e.model_dump() for e in resultado.errores] == esperados
+    assert resultado.resultados == []
+    assert resultado.registro.estado == "error"
+    assert resultado.registro.intentos == 1
+    (fila,) = repo_falso.filas.values()
+    assert fila["estado"] == "error"
+    assert fila["errores"] == esperados
+    assert entrega.llamadas == []
+    assert "roto.csv" in caplog.text
+    assert "detalle interno" in caplog.text
+
+
+def test_fila_que_no_cumple_el_modelo_de_pcp_es_error_de_validacion(repo_falso, monkeypatch):
+    # R3-003: destino.py validaba con pydantic y un ValidationError de pydantic salía
+    # como error inesperado (500 en la carga manual).
+    importados: list = []
+    monkeypatch.setattr(
+        destino, "importar_presupuesto_legacy", lambda *a, **k: importados.append(k) or []
+    )
+    filas = parser_presupuestos.parsear(CSV_VALIDO).filas
+    filas[1]["proceso_comercial"] = "9"
+    monkeypatch.setattr(
+        parser_presupuestos,
+        "parsear",
+        lambda contenido: parser_presupuestos.ResultadoParseo(filas=filas),
+    )
+
+    with pytest.raises(ValidationError) as error:
+        _recibir(CSV_VALIDO)
+
+    mensaje = "La fila 2 no tiene el formato que espera PCP (campo proceso_comercial)"
+    assert error.value.message == mensaje
+    assert importados == []
+    (fila,) = repo_falso.filas.values()
+    assert fila["estado"] == "error"
+    assert fila["intentos"] == 1
+    assert fila["errores"] == [{"linea": 0, "mensaje": mensaje}]

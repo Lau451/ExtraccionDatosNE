@@ -4,13 +4,14 @@
   tal como lo exporta Progress (multipart). Corre el mismo pipeline que la recepción
   automática desde la carpeta. Solo admin, mismo rol-set que
   POST /pcp/imports/presupuestos-legacy (ROLES_IMPORT_PRESUPUESTOS_LEGACY de PCP).
+  Un archivo de más de `TAMANO_MAXIMO_BYTES` se rechaza con 413 sin procesarlo.
 - GET /integracion-progress/archivos: registro de archivos del tenant. Lee con el
   user client para que aplique la política parch_sel (0043).
 """
 
 import ntpath
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from supabase import Client
 
 from services.integracion_progress.models import RecepcionPresupuestosOut
@@ -31,6 +32,19 @@ router = APIRouter()
 # Mismos roles que la política de lectura parch_sel de progress_archivos (0043, L7).
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "compras", "lider_comercial", "comercial")
 
+# Tope de la carga manual. Un export de presupuestos pesa unos pocos cientos de KB;
+# el tope evita leer a memoria un archivo arbitrariamente grande.
+TAMANO_MAXIMO_BYTES = 10 * 1024 * 1024
+_MENSAJE_DEMASIADO_GRANDE = "El archivo supera el tamaño máximo de 10 MB"
+
+
+def _leer_con_tope(archivo: UploadFile) -> bytes:
+    """Lee a lo sumo un byte más que el tope; si lo supera, 413."""
+    contenido = archivo.file.read(TAMANO_MAXIMO_BYTES + 1)
+    if len(contenido) > TAMANO_MAXIMO_BYTES:
+        raise HTTPException(status_code=413, detail=_MENSAJE_DEMASIADO_GRANDE)
+    return contenido
+
 
 def _drogueria(usuario: UsuarioPerfil) -> str:
     if usuario.drogueria_id is None:
@@ -43,13 +57,15 @@ def recibir_presupuestos_endpoint(
     archivo: UploadFile = File(...),
     usuario: UsuarioPerfil = Depends(require_roles(*ROLES_IMPORT_PRESUPUESTOS_LEGACY)),
 ) -> RecepcionPresupuestosOut:
+    drogueria_id = _drogueria(usuario)
+    contenido = _leer_con_tope(archivo)
     resultado = recepcion.recibir_archivo(
         get_service_client(),
-        drogueria_id=_drogueria(usuario),
+        drogueria_id=drogueria_id,
         tipo="presupuestos",
         # Algunos navegadores mandan la ruta completa (C:\fakepath\...).
         nombre_archivo=ntpath.basename(archivo.filename or ""),
-        contenido=archivo.file.read(),
+        contenido=contenido,
         origen="manual",
         usuario_id=usuario.id,
     )

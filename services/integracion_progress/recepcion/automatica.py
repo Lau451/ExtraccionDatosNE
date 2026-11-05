@@ -8,11 +8,14 @@ tenant (`progress_drogueria_id`). Cada tipo de archivo se lee de su subcarpeta
 El lifespan de la app de presupuestación corre `recepcion_periodica` como tarea de
 fondo: escanea al arrancar y después cada `progress_escaneo_intervalo_segundos`. El
 escaneo hace IO bloqueante y llamadas sincrónicas a Supabase, así que corre en un
-thread (`asyncio.to_thread`) para no frenar el event loop.
+thread (`asyncio.to_thread`) para no frenar el event loop. Ese thread no se puede
+cancelar: al apagar, la tarea le pide que pare (`detener`) y el escaneo termina
+después del archivo en curso en lugar de recorrer toda la carpeta.
 """
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -47,6 +50,7 @@ def motivo_apagada(settings: Settings) -> str | None:
 def escanear_si_configurado(
     settings: Settings,
     *,
+    detener: threading.Event | None = None,
     client_factory: Callable[[], Client] = get_service_client,
     escanear: Callable[..., list[ResultadoArchivo]] = carpeta.escanear_carpeta,
 ) -> list[ResultadoArchivo]:
@@ -65,6 +69,7 @@ def escanear_si_configurado(
                 tipo=tipo,
                 drogueria_id=settings.progress_drogueria_id,
                 usuario_id=settings.usuario_sistema_id,
+                detener=detener,
             )
         )
     return resultados
@@ -73,14 +78,14 @@ def escanear_si_configurado(
 async def recepcion_periodica(
     settings: Settings,
     *,
-    escanear: Callable[[Settings], object] = escanear_si_configurado,
+    escanear: Callable[..., object] = escanear_si_configurado,
     dormir: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Escanea al arrancar y después cada intervalo, hasta que se cancele la tarea.
     Apagada: loguea el motivo una vez y termina.
 
     Tolerante a fallos: una excepción en una iteración (ej. Supabase caído) se loguea
-    y el loop sigue en la próxima."""
+    y el loop sigue en la próxima. Al cancelarse le pide al escaneo en curso que pare."""
     motivo = motivo_apagada(settings)
     if motivo is not None:
         logger.info("Recepción automática de archivos de Progress apagada: %s", motivo)
@@ -91,13 +96,17 @@ async def recepcion_periodica(
         settings.progress_entrada_dir,
         intervalo,
     )
-    while True:
-        try:
-            await asyncio.to_thread(escanear, settings)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "Falló un escaneo de la carpeta de Progress, se reintenta en %ds", intervalo
-            )
-        await dormir(intervalo)
+    detener = threading.Event()
+    try:
+        while True:
+            try:
+                await asyncio.to_thread(escanear, settings, detener=detener)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Falló un escaneo de la carpeta de Progress, se reintenta en %ds", intervalo
+                )
+            await dormir(intervalo)
+    finally:
+        detener.set()

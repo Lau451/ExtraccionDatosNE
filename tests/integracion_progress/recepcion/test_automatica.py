@@ -8,6 +8,7 @@ import asyncio
 import functools
 import logging
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -41,9 +42,9 @@ class EscanearFalso:
         return []
 
 
-def _escanear_si_configurado(settings, escanear):
+def _escanear_si_configurado(settings, escanear, **kwargs):
     return automatica.escanear_si_configurado(
-        settings, client_factory=lambda: _CLIENTE, escanear=escanear
+        settings, client_factory=lambda: _CLIENTE, escanear=escanear, **kwargs
     )
 
 
@@ -98,9 +99,20 @@ def test_configurada_escanea_la_carpeta_del_tipo_con_tenant_y_usuario_de_sistema
             "tipo": "presupuestos",
             "drogueria_id": "drog-1",
             "usuario_id": "usuario-sistema",
+            "detener": None,
         }
     ]
     assert automatica.motivo_apagada(settings) is None
+
+
+def test_configurada_le_pasa_al_escaneo_el_pedido_de_detener(tmp_path):
+    escanear = EscanearFalso()
+    detener = threading.Event()
+    settings = _settings(progress_entrada_dir=str(tmp_path), progress_drogueria_id="drog-1")
+
+    _escanear_si_configurado(settings, escanear, detener=detener)
+
+    assert [llamada["detener"] for llamada in escanear.llamadas] == [detener]
 
 
 def _registro_en_error() -> RegistroArchivo:
@@ -153,7 +165,9 @@ def test_loop_apagado_loguea_un_info_con_el_motivo_y_termina(caplog):
 
     with caplog.at_level(logging.INFO, logger=automatica.logger.name):
         asyncio.run(
-            automatica.recepcion_periodica(_settings(), escanear=lambda s: escaneos.append(s))
+            automatica.recepcion_periodica(
+                _settings(), escanear=lambda s, **_: escaneos.append(s)
+            )
         )
 
     registros = [r for r in caplog.records if r.name == automatica.logger.name]
@@ -171,7 +185,7 @@ def test_loop_escanea_al_arrancar_y_cada_intervalo_tolerando_errores(caplog):
     )
     eventos: list = []
 
-    def escanear(s):
+    def escanear(s, **_):
         eventos.append("escaneo")
         if len(eventos) == 1:
             raise RuntimeError("supabase caído")
@@ -196,7 +210,9 @@ def test_loop_se_cancela_limpio_mientras_duerme():
 
     async def correr_y_cancelar():
         tarea = asyncio.create_task(
-            automatica.recepcion_periodica(settings, escanear=lambda s: escaneos.append(s))
+            automatica.recepcion_periodica(
+                settings, escanear=lambda s, **_: escaneos.append(s)
+            )
         )
         while not escaneos:
             await asyncio.sleep(0.01)
@@ -207,6 +223,32 @@ def test_loop_se_cancela_limpio_mientras_duerme():
     asyncio.run(correr_y_cancelar())
 
     assert escaneos == [settings]
+
+
+def test_cancelar_durante_un_escaneo_le_pide_al_thread_que_pare():
+    # R4: asyncio no puede cancelar el thread del escaneo; sin el pedido de detener,
+    # el apagado esperaba a que terminara la carpeta entera.
+    settings = _settings(progress_entrada_dir="C:/entrada", progress_drogueria_id="drog-1")
+    arranco = threading.Event()
+    vio_detener: list[bool] = []
+
+    def escanear(s, *, detener):
+        arranco.set()
+        vio_detener.append(detener.wait(timeout=5))
+
+    async def correr_y_cancelar():
+        tarea = asyncio.create_task(automatica.recepcion_periodica(settings, escanear=escanear))
+        for _ in range(500):
+            if arranco.is_set():
+                break
+            await asyncio.sleep(0.01)
+        tarea.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tarea
+
+    asyncio.run(correr_y_cancelar())
+
+    assert vio_detener == [True]
 
 
 def test_la_app_arranca_y_apaga_con_la_recepcion_apagada(monkeypatch):

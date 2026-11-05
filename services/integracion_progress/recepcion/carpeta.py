@@ -3,17 +3,23 @@
 
 Cada archivo completo de la carpeta del tipo pasa por el mismo pipeline que la carga
 manual (`service.recibir_archivo`) y después se mueve a `procesados/` (procesado o
-duplicado) o a `errores/` (error, o excepción del pipeline con el registro en
-`error`). Se deja en la carpeta, para el próximo escaneo, un duplicado que otro
-proceso todavía está procesando (registro en `recibido`), un archivo que no se pudo
-leer (bloqueado por quien lo escribe) y uno cuyo pipeline falló sin dejar el registro
-en `error` (ej. Supabase caído antes de registrarlo): así ningún archivo sale del
-circuito sin que el registro lo muestre. Nunca se borra ni se pisa un archivo: ante
+duplicado de un registro procesado) o a `errores/` (error, duplicado de un registro
+que quedó en `error`, o excepción del pipeline con el registro en `error`). Se deja
+en la carpeta, para el próximo escaneo, un duplicado que otro proceso todavía está
+procesando (registro en `recibido`), un archivo que no se pudo leer (bloqueado por
+quien lo escribe), uno que cambió mientras se leía y uno cuyo pipeline falló sin
+dejar el registro en `error` (ej. Supabase caído antes de registrarlo): así ningún
+archivo sale del circuito sin que el registro lo muestre. Nunca se borra ni se pisa un archivo: ante
 un nombre repetido en el destino se agrega un sufijo.
 
 Un archivo se considera completo si tiene al lado un marcador `<nombre>.ok`, o si no
-se modificó en los últimos `_EDAD_MINIMA_SEGUNDOS` (el `.ok` es opcional, ver el
-estándar de archivos en docs/arquitectura/integracion-progress.md).
+se modificó en los últimos `_EDAD_MINIMA_SEGUNDOS` y no cambia mientras se lee (el
+`.ok` es opcional, ver el estándar de archivos en
+docs/arquitectura/integracion-progress.md). Sin `.ok`, un escritor que se pausa más
+de `_EDAD_MINIMA_SEGUNDOS` y no escribe durante la lectura no se detecta.
+
+Apagado: `detener` (un `threading.Event`) corta el escaneo antes del próximo archivo;
+los que faltan quedan en la carpeta.
 
 Concurrencia: si dos procesos escanean la misma carpeta a la vez (varios workers de
 uvicorn), el UNIQUE del registro hace que el segundo reciba un duplicado, y el
@@ -23,6 +29,7 @@ archivo que el otro ya movió se ignora (no es un error).
 import logging
 import os
 import stat
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -143,7 +150,30 @@ def _mover(origen: Path, destino_dir: Path, ahora: datetime) -> Path | None:
             marcador.rename(_marcador(destino))
         except FileNotFoundError:
             pass
+        except OSError:
+            # El archivo ya se movió: el `.ok` huérfano queda en la carpeta (se ignora).
+            logger.warning(
+                "No se pudo mover el marcador %s junto con el archivo de Progress",
+                marcador,
+                exc_info=True,
+            )
         return destino
+
+
+def _huella(archivo: Path) -> tuple[int, int]:
+    datos = archivo.stat()
+    return datos.st_size, datos.st_mtime_ns
+
+
+def _leer_estable(archivo: Path) -> bytes | None:
+    """Contenido del archivo, o None si cambió mientras se leía (quien lo escribe
+    todavía no terminó). FileNotFoundError / OSError se propagan."""
+    antes = _huella(archivo)
+    contenido = archivo.read_bytes()
+    despues = _huella(archivo)
+    if antes != despues or len(contenido) != despues[0]:
+        return None
+    return contenido
 
 
 def escanear_carpeta(
@@ -156,9 +186,10 @@ def escanear_carpeta(
     ahora: datetime | None = None,
     recibir: Recibir = recibir_archivo,
     buscar: Buscar = buscar_entrada,
+    detener: threading.Event | None = None,
 ) -> list[ResultadoArchivo]:
     """Recibe cada archivo completo de `carpeta_tipo` y lo mueve según el resultado.
-    Un archivo que falla no corta el escaneo de los demás."""
+    Un archivo que falla no corta el escaneo de los demás; `detener` sí (apagado)."""
     ahora = ahora or datetime.now(timezone.utc)
     if not carpeta_tipo.is_dir():
         logger.warning("La carpeta de entrada de Progress %s no existe", carpeta_tipo)
@@ -166,17 +197,27 @@ def escanear_carpeta(
 
     resultados: list[ResultadoArchivo] = []
     for archivo in _candidatos(carpeta_tipo, ahora):
+        if detener is not None and detener.is_set():
+            logger.info("Escaneo de %s interrumpido por el apagado", carpeta_tipo)
+            break
         try:
-            contenido = archivo.read_bytes()
+            contenido = _leer_estable(archivo)
         except FileNotFoundError:
             continue
         except OSError:
             # Típicamente bloqueado por quien lo escribe: se reintenta en el próximo escaneo.
             logger.warning("No se pudo leer el archivo de Progress %s", archivo, exc_info=True)
             continue
+        if contenido is None:
+            logger.warning(
+                "El archivo de Progress %s cambió mientras se leía: queda para el próximo escaneo",
+                archivo,
+            )
+            continue
 
         registro_id: str | None = None
         en_curso = False
+        destino = None
         estado: EstadoArchivo
         try:
             recepcion = recibir(
@@ -188,9 +229,13 @@ def escanear_carpeta(
                 origen="carpeta",
                 usuario_id=usuario_id,
             )
-            estado: EstadoRecepcion = recepcion.estado
+            estado = recepcion.estado
             registro_id = recepcion.registro.id
             en_curso = estado == "duplicado" and recepcion.registro.estado == "recibido"
+            if estado == "duplicado" and recepcion.registro.estado == "error":
+                # Reclamo perdido contra un registro que el ganador volvió a cerrar en
+                # error: el contenido no se importó, no va a procesados/.
+                destino = _ERRORES
         except Exception:
             logger.exception("Falló la recepción del archivo de Progress %s", archivo)
             registro_error = _registro_en_error(
@@ -212,7 +257,8 @@ def escanear_carpeta(
             logger.info("El archivo de Progress %s se está procesando en otro proceso", archivo)
         else:
             try:
-                movido_a = _mover(archivo, carpeta_tipo / _DESTINO_POR_ESTADO[estado], ahora)
+                subcarpeta = destino or _DESTINO_POR_ESTADO[estado]
+                movido_a = _mover(archivo, carpeta_tipo / subcarpeta, ahora)
             except OSError:
                 logger.exception("No se pudo mover el archivo de Progress %s", archivo)
         resultados.append(

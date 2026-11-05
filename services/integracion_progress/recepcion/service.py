@@ -30,6 +30,7 @@ EstadoRecepcion = Literal["procesado", "duplicado", "error"]
 # Línea de los errores de entrega, que no son de una línea del archivo.
 _LINEA_ARCHIVO = 0
 _MENSAJE_INESPERADO = "Error inesperado al entregar el archivo"
+_MENSAJE_LECTURA_INESPERADA = "Error inesperado al leer el archivo"
 _MENSAJE_SIN_FILAS = "El archivo no tiene filas para importar"
 
 
@@ -44,7 +45,12 @@ class ResultadoRecepcion:
 def _rechazar(
     client: Client, registro_archivo: RegistroArchivo, errores: list[ErrorLinea]
 ) -> ResultadoRecepcion:
-    marcado = registro.marcar_error(client, registro_id=registro_archivo.id, errores=errores)
+    marcado = registro.marcar_error(
+        client,
+        drogueria_id=registro_archivo.drogueria_id,
+        registro_id=registro_archivo.id,
+        errores=errores,
+    )
     return ResultadoRecepcion(estado="error", registro=marcado, errores=errores)
 
 
@@ -61,7 +67,9 @@ def recibir_archivo(
     """Procesa un archivo recibido de Progress.
 
     - Mismo contenido ya recibido o procesado: `duplicado`, no entrega nada.
-    - Errores de parseo: `error` con los errores por línea, no entrega nada.
+    - Errores de parseo: `error` con los errores por línea, no entrega nada. Una
+      excepción inesperada del parser también es `error` (línea 0): el registro nunca
+      queda en `recibido` por un fallo de este proceso.
     - Si la entrega falla, el registro queda en `error` (reprocesable) y la
       excepción se propaga para que el endpoint responda con el mismo status y
       mensaje que el import directo de PCP.
@@ -80,7 +88,17 @@ def recibir_archivo(
     if es_duplicado:
         return ResultadoRecepcion(estado="duplicado", registro=registro_archivo)
 
-    parseo = parser.parsear(contenido)
+    try:
+        parseo = parser.parsear(contenido)
+    except Exception:
+        logger.exception(
+            "Falló la lectura del archivo %s (registro %s)", nombre_archivo, registro_archivo.id
+        )
+        return _rechazar(
+            client,
+            registro_archivo,
+            [ErrorLinea(linea=_LINEA_ARCHIVO, mensaje=_MENSAJE_LECTURA_INESPERADA)],
+        )
     if parseo.errores:
         return _rechazar(
             client, registro_archivo, [ErrorLinea.model_validate(e) for e in parseo.errores]
@@ -107,12 +125,13 @@ def recibir_archivo(
             )
         registro.marcar_error(
             client,
+            drogueria_id=drogueria_id,
             registro_id=registro_archivo.id,
             errores=[ErrorLinea(linea=_LINEA_ARCHIVO, mensaje=mensaje)],
         )
         raise
 
     procesado = registro.marcar_procesado(
-        client, registro_id=registro_archivo.id, filas=len(parseo.filas)
+        client, drogueria_id=drogueria_id, registro_id=registro_archivo.id, filas=len(parseo.filas)
     )
     return ResultadoRecepcion(estado="procesado", registro=procesado, resultados=resultados)

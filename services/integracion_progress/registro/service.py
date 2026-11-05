@@ -22,7 +22,12 @@ from services.integracion_progress.registro.models import (
     RegistroArchivo,
     Sentido,
 )
-from services.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from services.shared.exceptions import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    ValidationError,
+)
 
 _UNIQUE_VIOLATION = "23505"
 _ORIGENES = ("carpeta", "manual")
@@ -49,6 +54,24 @@ def _ahora() -> str:
 def _validar_texto(nombre: str, valor: str) -> None:
     if not valor or not valor.strip():
         raise ValidationError(f"'{nombre}' no puede estar vacío")
+
+
+def _validar_filas(filas: int | None) -> None:
+    if filas is not None and filas < 0:
+        raise ValidationError("'filas' no puede ser negativo")
+
+
+def _no_esta_en_curso(
+    client: Client, *, drogueria_id: str, registro_id: str
+) -> DomainError:
+    """Error para un cierre que no actualizó nada: el registro no existe en la
+    droguería o ya no está en 'recibido' (otro proceso lo cerró)."""
+    actual = repo.buscar_por_id(client, drogueria_id=drogueria_id, registro_id=registro_id)
+    if actual is None:
+        return NotFoundError(f"No se encontró el registro de archivo '{registro_id}'")
+    return ConflictError(
+        f"El registro de archivo '{registro_id}' no está en curso (estado {actual['estado']})"
+    )
 
 
 def _insertar_o_releer(
@@ -129,13 +152,14 @@ def registrar_entrada(
         return registro, True
     reclamado = repo.reclamar(
         client,
+        drogueria_id=drogueria_id,
         registro_id=registro.id,
         estado_esperado=registro.estado,
         updated_at_esperado=registro.updated_at,
     )
     if reclamado is not None:
         return RegistroArchivo.model_validate(reclamado), False
-    actual = repo.buscar_por_id(client, registro_id=registro.id)
+    actual = repo.buscar_por_id(client, drogueria_id=drogueria_id, registro_id=registro.id)
     if actual is None:
         raise ConflictError(
             f"El archivo '{nombre_archivo}' chocó con un registro que ya no existe"
@@ -177,6 +201,7 @@ def registrar_salida(
     devuelve ese registro sin escribir."""
     _validar_texto("tipo", tipo)
     _validar_texto("nombre_archivo", nombre_archivo)
+    _validar_filas(filas)
 
     sha256 = _sha256(contenido)
     existente = repo.buscar_por_contenido(
@@ -201,35 +226,51 @@ def registrar_salida(
     return RegistroArchivo.model_validate(existente)
 
 
-def marcar_procesado(client: Client, *, registro_id: str, filas: int) -> RegistroArchivo:
-    """Cierra el registro como 'procesado'. Limpia los errores del intento anterior;
-    `intentos` conserva cuántas veces falló antes."""
+def marcar_procesado(
+    client: Client, *, drogueria_id: str, registro_id: str, filas: int
+) -> RegistroArchivo:
+    """Cierra como 'procesado' un registro en curso ('recibido'). Limpia los errores
+    del intento anterior; `intentos` conserva cuántas veces falló antes. Un registro
+    que ya se cerró no se toca (ConflictError)."""
     if filas < 0:
         raise ValidationError("'filas' no puede ser negativo")
     fila = repo.actualizar(
         client,
+        drogueria_id=drogueria_id,
         registro_id=registro_id,
         campos={"estado": "procesado", "filas": filas, "errores": None, "procesado_at": _ahora()},
+        estado_esperado="recibido",
     )
     if fila is None:
-        raise NotFoundError(f"No se encontró el registro de archivo '{registro_id}'")
+        raise _no_esta_en_curso(client, drogueria_id=drogueria_id, registro_id=registro_id)
     return RegistroArchivo.model_validate(fila)
 
 
 def marcar_error(
-    client: Client, *, registro_id: str, errores: list[ErrorLinea | dict[str, Any]]
+    client: Client,
+    *,
+    drogueria_id: str,
+    registro_id: str,
+    errores: list[ErrorLinea | dict[str, Any]],
 ) -> RegistroArchivo:
-    """Marca el registro en 'error', guarda los errores por línea y suma un intento.
+    """Marca en 'error' un registro en curso ('recibido'), guarda los errores por
+    línea y suma un intento. Un registro que ya se cerró no se toca (ConflictError).
 
-    El incremento es un CAS sobre `intentos` (leer, actualizar solo si no cambió),
-    para que dos fallos concurrentes no pisen el conteo."""
+    El incremento es un CAS sobre `estado` e `intentos` (leer, actualizar solo si no
+    cambiaron), para que dos fallos concurrentes no pisen el conteo."""
     errores_json = [ErrorLinea.model_validate(e).model_dump() for e in errores]
     for _ in range(_REINTENTOS_CAS):
-        actual = repo.buscar_por_id(client, registro_id=registro_id)
+        actual = repo.buscar_por_id(client, drogueria_id=drogueria_id, registro_id=registro_id)
         if actual is None:
             raise NotFoundError(f"No se encontró el registro de archivo '{registro_id}'")
+        if actual["estado"] != "recibido":
+            raise ConflictError(
+                f"El registro de archivo '{registro_id}' no está en curso "
+                f"(estado {actual['estado']})"
+            )
         fila = repo.actualizar(
             client,
+            drogueria_id=drogueria_id,
             registro_id=registro_id,
             campos={
                 "estado": "error",
@@ -237,6 +278,7 @@ def marcar_error(
                 "intentos": actual["intentos"] + 1,
                 "procesado_at": None,
             },
+            estado_esperado="recibido",
             intentos_esperados=actual["intentos"],
         )
         if fila is not None:

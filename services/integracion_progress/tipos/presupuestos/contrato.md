@@ -13,10 +13,11 @@ todos los archivos están en
 | Tema | Regla |
 |------|-------|
 | Carpeta | `<carpeta de entrada>/presupuestos/`. En producción: `C:\SACPro\documentos_ia\entrada\presupuestos\` (configurable, `PROGRESS_ENTRADA_DIR`). |
-| Escritura | Escribir con un nombre que empiece con `.` o termine en `.tmp` y renombrar al terminar, o dejar al lado un `<nombre>.ok`. La plataforma ignora los archivos ocultos (nombre con `.` o atributo oculto de Windows), los `.tmp` y los modificados en los últimos 30 segundos. |
+| Escritura | Escribir con un nombre que empiece con `.` o termine en `.tmp` y renombrar al terminar, o dejar al lado un `<nombre>.ok`. La plataforma ignora los archivos ocultos (nombre con `.` o atributo oculto de Windows), los `.tmp`, los modificados en los últimos 30 segundos y los que cambian mientras los lee (los reintenta en la próxima revisión). Sin `.ok` ni renombrado, un archivo cuya escritura se pausa más de 30 segundos puede leerse incompleto. |
 | Nombre | Recomendado: `PRESUPUESTOS_<yyyyMMddHHmmss>.csv`. El nombre no se usa para identificar el contenido. |
-| Después de leerlo | La plataforma lo mueve a `procesados/` o a `errores/` dentro de la misma carpeta. Nunca lo borra. Si no lo puede leer (por ejemplo, porque sigue abierto por quien lo escribe) o no lo puede registrar, lo deja en la carpeta y lo reintenta en la próxima revisión. |
+| Después de leerlo | La plataforma lo mueve a `procesados/` o a `errores/` dentro de la misma carpeta (a `errores/` también un duplicado de un archivo que quedó con error). Nunca lo borra. Si no lo puede leer (por ejemplo, porque sigue abierto por quien lo escribe) o no lo puede registrar, lo deja en la carpeta y lo reintenta en la próxima revisión. |
 | Duplicados | Un archivo con exactamente el mismo contenido que otro ya recibido no se vuelve a procesar. |
+| Carga manual | También se puede subir desde la pantalla de importación (`POST /integracion-progress/presupuestos`). Tamaño máximo: 10 MB; un archivo más grande se rechaza con HTTP 413 y el mensaje "El archivo supera el tamaño máximo de 10 MB", sin registrarlo. |
 
 ## Formato
 

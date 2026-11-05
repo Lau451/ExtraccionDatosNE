@@ -5,6 +5,7 @@ corta el escaneo. Con `tmp_path` y un `recibir` falso en lugar del pipeline real
 import ctypes
 import os
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -93,7 +94,7 @@ class BuscarFalso:
         return self.registros.get(kwargs["contenido"])
 
 
-def _escanear(carpeta: Path, recibir, buscar=None) -> list:
+def _escanear(carpeta: Path, recibir, buscar=None, **kwargs) -> list:
     return escanear_carpeta(
         _CLIENTE,
         carpeta_tipo=carpeta,
@@ -103,6 +104,7 @@ def _escanear(carpeta: Path, recibir, buscar=None) -> list:
         ahora=AHORA,
         recibir=recibir,
         buscar=buscar or BuscarFalso(),
+        **kwargs,
     )
 
 
@@ -449,3 +451,99 @@ def test_duplicado_en_curso_queda_en_la_carpeta_para_el_proximo_escaneo(carpeta)
         ("PRESUPUESTOS_1.csv", "duplicado", None)
     ]
     assert _nombres(carpeta) == ["PRESUPUESTOS_1.csv"]
+
+
+# --- T7: observaciones de la revisión de T4 (L11) --------------------------------
+
+
+def test_duplicado_cuyo_registro_quedo_en_error_va_a_errores(carpeta):
+    # R4: este escaneo perdió el reclamo de un registro en error y el ganador lo volvió
+    # a cerrar en error. Moverlo a procesados/ escondería un archivo que no se importó.
+    _archivo(carpeta, "PRESUPUESTOS_1.csv", b"contenido-1")
+
+    def recibir(client, **kwargs):
+        return ResultadoRecepcion(
+            estado="duplicado", registro=_registro(kwargs["nombre_archivo"], "error")
+        )
+
+    resultados = _escanear(carpeta, recibir)
+
+    assert [(r.nombre_archivo, r.estado, r.registro_id, r.movido_a) for r in resultados] == [
+        (
+            "PRESUPUESTOS_1.csv",
+            "duplicado",
+            "reg-PRESUPUESTOS_1.csv",
+            carpeta / "errores" / "PRESUPUESTOS_1.csv",
+        )
+    ]
+    assert _nombres(carpeta) == ["errores"]
+    assert _nombres(carpeta / "errores") == ["PRESUPUESTOS_1.csv"]
+
+
+def test_si_no_se_puede_mover_el_ok_igual_informa_donde_quedo_el_archivo(
+    carpeta, monkeypatch, caplog
+):
+    # R3/R4: el archivo ya se movió; un fallo del `.ok` no puede informarlo como no movido.
+    _archivo(carpeta, "a.csv", b"contenido-a")
+    _archivo(carpeta, "a.csv.ok", b"")
+    renombrar_real = Path.rename
+
+    def renombrar(self, destino):
+        if self.name.endswith(".ok"):
+            raise PermissionError("marcador bloqueado")
+        return renombrar_real(self, destino)
+
+    monkeypatch.setattr(Path, "rename", renombrar)
+
+    resultados = _escanear(carpeta, RecibirFalso())
+
+    assert [(r.nombre_archivo, r.estado, r.movido_a) for r in resultados] == [
+        ("a.csv", "procesado", carpeta / "procesados" / "a.csv")
+    ]
+    assert _nombres(carpeta / "procesados") == ["a.csv"]
+    assert _nombres(carpeta) == ["a.csv.ok", "procesados"]
+    assert "a.csv.ok" in caplog.text
+    assert "No se pudo mover el archivo de Progress" not in caplog.text
+
+
+def test_archivo_que_cambia_mientras_se_lee_queda_para_el_proximo_escaneo(
+    carpeta, monkeypatch, caplog
+):
+    # R4: mtime viejo no prueba que esté completo; si el archivo crece mientras se lee,
+    # quien lo escribe todavía no terminó.
+    _archivo(carpeta, "a.csv", b"primera-mitad")
+    _archivo(carpeta, "b.csv", b"contenido-b")
+    leer_real = Path.read_bytes
+
+    def leer_mientras_escriben(self):
+        contenido = leer_real(self)
+        if self.name == "a.csv":
+            with open(self, "ab") as f:
+                f.write(b";segunda-mitad")
+        return contenido
+
+    monkeypatch.setattr(Path, "read_bytes", leer_mientras_escriben)
+    recibir = RecibirFalso()
+
+    resultados = _escanear(carpeta, recibir)
+
+    assert [(r.nombre_archivo, r.estado) for r in resultados] == [("b.csv", "procesado")]
+    assert [c["nombre_archivo"] for c in recibir.llamadas] == ["b.csv"]
+    assert _nombres(carpeta) == ["a.csv", "procesados"]
+    assert (carpeta / "a.csv").read_bytes() == b"primera-mitad;segunda-mitad"
+    assert "a.csv" in caplog.text
+
+
+def test_detener_corta_el_escaneo_antes_del_proximo_archivo(carpeta):
+    # R4 apagado: el escaneo corre en un thread que no se puede cancelar; el lifespan
+    # pide parar y el escaneo termina después del archivo en curso.
+    _archivo(carpeta, "a.csv", b"contenido-a")
+    _archivo(carpeta, "b.csv", b"contenido-b")
+    detener = threading.Event()
+    recibir = RecibirFalso(antes={"a.csv": detener.set})
+
+    resultados = _escanear(carpeta, recibir, detener=detener)
+
+    assert [(r.nombre_archivo, r.estado) for r in resultados] == [("a.csv", "procesado")]
+    assert [c["nombre_archivo"] for c in recibir.llamadas] == ["a.csv"]
+    assert _nombres(carpeta) == ["b.csv", "procesados"]

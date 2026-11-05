@@ -198,6 +198,48 @@ def test_sin_archivo_es_422(recepcion_falsa):
     assert falsa.llamadas == []
 
 
+def test_archivo_mas_grande_que_el_limite_es_413_y_no_se_procesa(recepcion_falsa):
+    # R1-unbounded-upload-read: el archivo se leía entero a memoria sin tope.
+    falsa = recepcion_falsa(ResultadoRecepcion(estado="duplicado", registro=_registro()))
+
+    respuesta = _subir(
+        _cliente_con_usuario("admin"), b"x" * (router_module.TAMANO_MAXIMO_BYTES + 1)
+    )
+
+    assert respuesta.status_code == 413
+    assert respuesta.json() == {"detail": "El archivo supera el tamaño máximo de 10 MB"}
+    assert falsa.llamadas == []
+
+
+def test_archivo_del_tamano_limite_se_procesa(recepcion_falsa):
+    falsa = recepcion_falsa(ResultadoRecepcion(estado="duplicado", registro=_registro()))
+    contenido = b"x" * router_module.TAMANO_MAXIMO_BYTES
+
+    respuesta = _subir(_cliente_con_usuario("admin"), contenido)
+
+    assert router_module.TAMANO_MAXIMO_BYTES == 10 * 1024 * 1024
+    assert respuesta.status_code == 200, respuesta.text
+    assert [len(llamada["contenido"]) for llamada in falsa.llamadas] == [len(contenido)]
+
+
+@pytest.mark.parametrize("metodo", ["subir", "listar"])
+def test_usuario_sin_drogueria_es_403(recepcion_falsa, metodo):
+    # R3-004: los dos endpoints exigen una droguería (un superadmin sin tenant no
+    # puede subir ni listar; el listado no es multi-tenant).
+    falsa = recepcion_falsa(ResultadoRecepcion(estado="duplicado", registro=_registro()))
+    rol = "admin" if metodo == "subir" else "superadmin"
+    cliente = _cliente_con_usuario(rol, drogueria_id=None)
+    cliente.app.dependency_overrides[router_module.get_user_client] = lambda: "user-client"
+
+    respuesta = (
+        _subir(cliente) if metodo == "subir" else cliente.get("/integracion-progress/archivos")
+    )
+
+    assert respuesta.status_code == 403
+    assert respuesta.json() == {"detail": "El usuario no tiene una droguería asignada"}
+    assert falsa.llamadas == []
+
+
 def test_listar_archivos_con_rol_sin_permiso_es_403():
     app = _app()
     app.dependency_overrides[get_current_user] = lambda: UsuarioPerfil(

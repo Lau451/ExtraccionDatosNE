@@ -1,8 +1,9 @@
 """Repository falso en memoria para los tests del registro de archivos.
 
-La tabla `progress_archivos` (migración 0043) todavía no está aplicada en la BD de
-test, así que el service se prueba contra este doble: reproduce el UNIQUE
-(drogueria_id, sentido, tipo, sha256) y el CAS por `intentos` de `actualizar`.
+El service se prueba contra este doble: reproduce el UNIQUE (drogueria_id, sentido,
+tipo, sha256), el filtro por droguería de las escrituras y los CAS por `estado`,
+`intentos` y `updated_at`. El CAS real de `reclamar` contra Postgres lo prueba
+test_repository.py (integración contra TEST).
 """
 
 import uuid
@@ -66,8 +67,12 @@ class RepositorioFalso:
                 return deepcopy(fila)
         return None
 
-    def buscar_por_id(self, client, *, registro_id):
+    def _fila_del_tenant(self, drogueria_id, registro_id):
         fila = self.filas.get(registro_id)
+        return fila if fila is not None and fila["drogueria_id"] == drogueria_id else None
+
+    def buscar_por_id(self, client, *, drogueria_id, registro_id):
+        fila = self._fila_del_tenant(drogueria_id, registro_id)
         return deepcopy(fila) if fila else None
 
     def insertar(self, client, fila):
@@ -79,12 +84,23 @@ class RepositorioFalso:
         self.inserts.append(deepcopy(fila))
         return self.sembrar(**fila)
 
-    def actualizar(self, client, *, registro_id, campos, intentos_esperados=None):
+    def actualizar(
+        self,
+        client,
+        *,
+        drogueria_id,
+        registro_id,
+        campos,
+        estado_esperado=None,
+        intentos_esperados=None,
+    ):
         if self.antes_de_actualizar:
             hook, self.antes_de_actualizar = self.antes_de_actualizar, None
             hook()
-        fila = self.filas.get(registro_id)
+        fila = self._fila_del_tenant(drogueria_id, registro_id)
         if fila is None:
+            return None
+        if estado_esperado is not None and fila["estado"] != estado_esperado:
             return None
         if intentos_esperados is not None and fila["intentos"] != intentos_esperados:
             return None
@@ -92,11 +108,13 @@ class RepositorioFalso:
         fila.update(deepcopy(campos))
         return deepcopy(fila)
 
-    def reclamar(self, client, *, registro_id, estado_esperado, updated_at_esperado):
+    def reclamar(
+        self, client, *, drogueria_id, registro_id, estado_esperado, updated_at_esperado
+    ):
         if self.antes_de_actualizar:
             hook, self.antes_de_actualizar = self.antes_de_actualizar, None
             hook()
-        fila = self.filas.get(registro_id)
+        fila = self._fila_del_tenant(drogueria_id, registro_id)
         if (
             fila is None
             or fila["estado"] != estado_esperado

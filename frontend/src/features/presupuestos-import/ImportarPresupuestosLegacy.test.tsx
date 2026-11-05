@@ -131,14 +131,16 @@ describe('ImportarPresupuestosLegacy', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
-  it('el aviso de duplicado no muestra fecha si el original sigue en curso', async () => {
+  it('si el original sigue en curso, avisa que se está procesando y no que ya se procesó', async () => {
     vi.mocked(subirPresupuestosProgress).mockResolvedValue(recepcion({ estado: 'duplicado', procesado_at: null }))
     renderPantalla()
 
     seleccionar(archivoCsv())
     fireEvent.click(screen.getByRole('button', { name: /importar/i }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/^Este archivo ya fue procesado\.$/)
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent(/^Este archivo ya se está procesando\.$/)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('elegir otro archivo limpia el resultado anterior', async () => {

@@ -12,7 +12,7 @@ from postgrest.exceptions import APIError
 
 from services.integracion_progress.registro import service
 from services.integracion_progress.registro.models import ErrorLinea
-from services.shared.exceptions import NotFoundError, ValidationError
+from services.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 CONTENIDO = "numero;cliente\n1;ACME\n".encode("utf-8")
 SHA = hashlib.sha256(CONTENIDO).hexdigest()
@@ -209,14 +209,26 @@ def test_entrada_invalida_no_escribe(repo_falso, campo, valor):
     assert repo_falso.inserts == []
 
 
+def _marcar_error(registro_id, errores, drogueria_id="drog-1"):
+    return service.marcar_error(
+        MagicMock(), drogueria_id=drogueria_id, registro_id=registro_id, errores=errores
+    )
+
+
+def _marcar_procesado(registro_id, filas, drogueria_id="drog-1"):
+    return service.marcar_procesado(
+        MagicMock(), drogueria_id=drogueria_id, registro_id=registro_id, filas=filas
+    )
+
+
 def test_marcar_error_incrementa_intentos_y_guarda_errores(repo_falso):
     existente = repo_falso.sembrar(sha256=SHA)
     errores = [ErrorLinea(linea=3, mensaje="Falta el cliente"), {"linea": 7, "mensaje": "Fecha inválida"}]
 
-    primero = service.marcar_error(MagicMock(), registro_id=existente["id"], errores=errores)
-    segundo = service.marcar_error(
-        MagicMock(), registro_id=existente["id"], errores=[{"linea": 1, "mensaje": "otra"}]
-    )
+    primero = _marcar_error(existente["id"], errores)
+    # Un reproceso lo vuelve a 'recibido' antes del segundo fallo.
+    repo_falso.filas[existente["id"]]["estado"] = "recibido"
+    segundo = _marcar_error(existente["id"], [{"linea": 1, "mensaje": "otra"}])
 
     assert primero.estado == "error"
     assert primero.intentos == 1
@@ -234,27 +246,30 @@ def test_marcar_error_incrementa_intentos_y_guarda_errores(repo_falso):
 
 
 def test_marcar_error_reintenta_si_otro_proceso_cambio_intentos(repo_falso):
-    existente = repo_falso.sembrar(sha256=SHA, estado="error", intentos=1)
+    existente = repo_falso.sembrar(sha256=SHA, estado="recibido", intentos=1)
 
     def otro_proceso_marca_error():
         repo_falso.filas[existente["id"]]["intentos"] = 2
 
     repo_falso.antes_de_actualizar = otro_proceso_marca_error
 
-    registro = service.marcar_error(MagicMock(), registro_id=existente["id"], errores=[])
+    registro = _marcar_error(existente["id"], [])
 
     assert registro.intentos == 3
 
 
 def test_marcar_error_de_registro_inexistente(repo_falso):
     with pytest.raises(NotFoundError):
-        service.marcar_error(MagicMock(), registro_id="no-existe", errores=[])
+        _marcar_error("no-existe", [])
 
 
 def test_marcar_procesado_guarda_filas_y_fecha(repo_falso):
-    existente = repo_falso.sembrar(sha256=SHA, estado="error", intentos=1, errores=[{"linea": 1, "mensaje": "x"}])
+    # Reproceso de un archivo que falló: reclamado, vuelve a 'recibido' con los errores viejos.
+    existente = repo_falso.sembrar(
+        sha256=SHA, estado="recibido", intentos=1, errores=[{"linea": 1, "mensaje": "x"}]
+    )
 
-    registro = service.marcar_procesado(MagicMock(), registro_id=existente["id"], filas=12)
+    registro = _marcar_procesado(existente["id"], 12)
 
     assert registro.estado == "procesado"
     assert registro.filas == 12
@@ -265,7 +280,7 @@ def test_marcar_procesado_guarda_filas_y_fecha(repo_falso):
 
 def test_marcar_procesado_de_registro_inexistente(repo_falso):
     with pytest.raises(NotFoundError):
-        service.marcar_procesado(MagicMock(), registro_id="no-existe", filas=0)
+        _marcar_procesado("no-existe", 0)
 
 
 def test_registrar_salida_queda_procesada_sin_origen(repo_falso):
@@ -325,3 +340,130 @@ def test_listar_pasa_filtros_y_paginacion(repo_falso):
 def test_listar_rechaza_paginacion_invalida(repo_falso, limit, offset):
     with pytest.raises(ValidationError):
         service.listar(MagicMock(), drogueria_id="drog-1", limit=limit, offset=offset)
+
+
+# --- T7: observaciones de la revisión de T2 (L13) ------------------------------
+
+
+@pytest.mark.parametrize("marcar", ["procesado", "error"])
+def test_cerrar_un_registro_de_otra_drogueria_no_lo_toca(repo_falso, marcar):
+    # R1-tenant-unscoped-mutations: las escrituras por id filtran también por droguería.
+    existente = repo_falso.sembrar(sha256=SHA, drogueria_id="drog-2")
+
+    with pytest.raises(NotFoundError) as error:
+        if marcar == "procesado":
+            _marcar_procesado(existente["id"], 3, drogueria_id="drog-1")
+        else:
+            _marcar_error(existente["id"], [], drogueria_id="drog-1")
+
+    assert error.value.message == f"No se encontró el registro de archivo '{existente['id']}'"
+    assert repo_falso.updates == []
+    assert repo_falso.filas[existente["id"]]["estado"] == "recibido"
+    assert repo_falso.filas[existente["id"]]["intentos"] == 0
+
+
+def test_reclamar_solo_ve_registros_de_la_propia_drogueria(repo_falso):
+    existente = repo_falso.sembrar(sha256=SHA, estado="error", drogueria_id="drog-2")
+
+    registro, es_duplicado = _registrar(drogueria_id="drog-1")
+
+    assert es_duplicado is False
+    assert registro.id != existente["id"]
+    assert registro.drogueria_id == "drog-1"
+    assert repo_falso.filas[existente["id"]]["estado"] == "error"
+    assert repo_falso.updates == []
+
+
+@pytest.mark.parametrize("estado", ["procesado", "error"])
+def test_marcar_procesado_solo_cierra_un_registro_en_curso(repo_falso, estado):
+    # R3-state-transition-unguarded: solo 'recibido' -> 'procesado'.
+    procesado_at = "2026-11-04T12:05:00+00:00" if estado == "procesado" else None
+    existente = repo_falso.sembrar(sha256=SHA, estado=estado, procesado_at=procesado_at, filas=4)
+
+    with pytest.raises(ConflictError) as error:
+        _marcar_procesado(existente["id"], 9)
+
+    assert error.value.message == (
+        f"El registro de archivo '{existente['id']}' no está en curso (estado {estado})"
+    )
+    assert repo_falso.updates == []
+    assert repo_falso.filas[existente["id"]]["estado"] == estado
+    assert repo_falso.filas[existente["id"]]["filas"] == 4
+
+
+@pytest.mark.parametrize("estado", ["procesado", "error"])
+def test_marcar_error_solo_cierra_un_registro_en_curso(repo_falso, estado):
+    # R4-no-state-guard-transitions: solo 'recibido' -> 'error'; un 'procesado' no se
+    # pisa y un 'error' no suma un intento que no ocurrió.
+    procesado_at = "2026-11-04T12:05:00+00:00" if estado == "procesado" else None
+    existente = repo_falso.sembrar(
+        sha256=SHA, estado=estado, procesado_at=procesado_at, intentos=1
+    )
+
+    with pytest.raises(ConflictError) as error:
+        _marcar_error(existente["id"], [{"linea": 1, "mensaje": "x"}])
+
+    assert error.value.message == (
+        f"El registro de archivo '{existente['id']}' no está en curso (estado {estado})"
+    )
+    assert repo_falso.updates == []
+    assert repo_falso.filas[existente["id"]]["estado"] == estado
+    assert repo_falso.filas[existente["id"]]["intentos"] == 1
+    assert repo_falso.filas[existente["id"]]["procesado_at"] == procesado_at
+
+
+def test_unique_sin_fila_visible_es_conflicto_y_no_inserta(repo_falso, monkeypatch):
+    # R3-conflict-paths-untested: 23505 y la ganadora ya no existe al releer.
+    def choca(client, fila):
+        raise APIError({"code": "23505", "message": "duplicate key uq_parch_contenido"})
+
+    monkeypatch.setattr(service.repo, "insertar", choca)
+
+    with pytest.raises(ConflictError) as error:
+        _registrar()
+
+    assert error.value.message == (
+        "El archivo 'PRESUPUESTOS_20261104120000.csv' chocó con un registro que ya no existe"
+    )
+    assert repo_falso.filas == {}
+    assert repo_falso.updates == []
+
+
+def test_reclamo_perdido_contra_un_registro_borrado_es_conflicto(repo_falso):
+    # R3-conflict-paths-untested: el reclamo falla porque la fila desapareció.
+    existente = repo_falso.sembrar(sha256=SHA, estado="error")
+
+    def otro_proceso_lo_borra():
+        del repo_falso.filas[existente["id"]]
+
+    repo_falso.antes_de_actualizar = otro_proceso_lo_borra
+
+    with pytest.raises(ConflictError) as error:
+        _registrar(nombre_archivo="REPROCESO.csv")
+
+    assert error.value.message == "El archivo 'REPROCESO.csv' chocó con un registro que ya no existe"
+    assert repo_falso.inserts == []
+    assert repo_falso.updates == []
+
+
+def test_registrar_salida_con_filas_negativas_no_escribe(repo_falso):
+    # R3-salida-filas-unvalidated: mismo criterio que marcar_procesado.
+    with pytest.raises(ValidationError) as error:
+        service.registrar_salida(
+            MagicMock(), drogueria_id="drog-1", tipo="oc", nombre_archivo="OC_1.csv",
+            contenido=b"OC;1\n", usuario_id="usuario-1", filas=-1,
+        )
+
+    assert error.value.message == "'filas' no puede ser negativo"
+    assert repo_falso.inserts == []
+    assert repo_falso.filas == {}
+
+
+def test_registrar_salida_guarda_las_filas(repo_falso):
+    registro = service.registrar_salida(
+        MagicMock(), drogueria_id="drog-1", tipo="oc", nombre_archivo="OC_1.csv",
+        contenido=b"OC;1\n", usuario_id="usuario-1", filas=0,
+    )
+
+    assert registro.filas == 0
+    assert repo_falso.inserts[0]["filas"] == 0
