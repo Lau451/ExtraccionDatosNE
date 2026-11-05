@@ -2,6 +2,7 @@
 # (openspec/changes/oc-export-progress, D5; docs/arquitectura/integracion-progress.md).
 # Es la única pieza que conoce la carpeta, el nombre y el encoding de los archivos.
 import csv
+import errno
 import os
 import re
 from datetime import datetime
@@ -38,6 +39,32 @@ def construir_nombre(
     )
 
 
+# Errores de os.link que significan "el sistema de archivos no tiene hard links".
+_SIN_HARD_LINKS = {errno.EPERM, errno.EXDEV, errno.EMLINK, getattr(errno, "ENOTSUP", -1)}
+
+
+def _publicar(temporal: Path, destino: Path) -> None:
+    """Renombra `temporal` a `destino` de forma atómica sin pisarlo nunca: si
+    `destino` ya existe lanza FileExistsError. En Windows `os.rename` ya falla si el
+    destino existe; en POSIX se usa un hard link (falla si existe) y se borra el
+    temporal. Sin hard links queda el chequeo previo + `os.replace`."""
+    if os.name == "nt":
+        os.rename(temporal, destino)
+        return
+    try:
+        os.link(temporal, destino)
+    except FileExistsError:
+        raise
+    except OSError as exc:
+        if exc.errno not in _SIN_HARD_LINKS:
+            raise
+        if destino.exists():
+            raise FileExistsError(errno.EEXIST, "destino existente", str(destino)) from None
+        os.replace(temporal, destino)
+        return
+    temporal.unlink()
+
+
 def escribir_csv(
     encabezados: list[str],
     filas: list[list[str]],
@@ -48,7 +75,8 @@ def escribir_csv(
 ) -> Path:
     """Escribe `encabezados` + `filas` en un temporal de la misma carpeta y lo renombra
     de forma atómica. Un carácter no representable en `encoding` sale como `?`.
-    Nunca pisa un archivo existente (`ConflictError`); ante una falla borra el temporal."""
+    Nunca pisa un archivo existente (`ConflictError`), tampoco uno que aparece mientras
+    escribe; ante una falla borra el temporal."""
     carpeta.mkdir(parents=True, exist_ok=True)
     destino = carpeta / nombre
     if destino.exists():
@@ -62,7 +90,10 @@ def escribir_csv(
             )
             escritor.writerow(encabezados)
             escritor.writerows(filas)
-        os.replace(temporal, destino)
+        _publicar(temporal, destino)
+    except FileExistsError:
+        temporal.unlink(missing_ok=True)
+        raise ConflictError(f"Ya existe el archivo {nombre}") from None
     except BaseException:
         temporal.unlink(missing_ok=True)
         raise

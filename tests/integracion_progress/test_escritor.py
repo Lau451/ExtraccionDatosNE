@@ -122,7 +122,8 @@ def test_sin_temporales_si_falla_el_renombrado(tmp_path, monkeypatch):
     def _roto(*a, **k):
         raise OSError("sin permiso")
 
-    monkeypatch.setattr(escritor.os, "replace", _roto)
+    for nombre in ("rename", "link", "replace"):
+        monkeypatch.setattr(escritor.os, nombre, _roto)
     with pytest.raises(OSError):
         escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert list(tmp_path.iterdir()) == []
@@ -134,6 +135,39 @@ def test_no_pisa_archivo_existente(tmp_path):
     with pytest.raises(ConflictError):
         escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
     assert existente.read_bytes() == b"original"
+    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+
+
+@pytest.mark.parametrize("sistema", ["nt", "posix"])
+def test_publica_sin_temporales_en_cada_sistema(tmp_path, monkeypatch, sistema):
+    # `posix` usa os.link + unlink (NTFS también tiene hard links, así corre en Windows).
+    monkeypatch.setattr(escritor.os, "name", sistema)
+
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+    assert _leer(destino)[1][9] == "Ñandú áéíóú"
+
+
+@pytest.mark.parametrize("sistema", ["nt", "posix"])
+def test_no_pisa_un_archivo_que_aparece_mientras_escribe(tmp_path, monkeypatch, sistema):
+    # R3-002 (T1): entre el chequeo de existencia y el renombrado otro proceso crea el
+    # mismo nombre; os.replace lo pisaba.
+    monkeypatch.setattr(escritor.os, "name", sistema)
+    existente = tmp_path / "a.csv"
+    writer_real = escritor.csv.writer
+
+    def writer_con_carrera(*args, **kwargs):
+        existente.write_bytes(b"del otro proceso")
+        return writer_real(*args, **kwargs)
+
+    monkeypatch.setattr(escritor.csv, "writer", writer_con_carrera)
+
+    with pytest.raises(ConflictError) as error:
+        escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert error.value.message == "Ya existe el archivo a.csv"
+    assert existente.read_bytes() == b"del otro proceso"
     assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
 
 
