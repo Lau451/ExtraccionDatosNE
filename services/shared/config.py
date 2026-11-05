@@ -1,9 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+_INTERVALO_ESCANEO_DEFAULT = 300
 
 
 class Settings(BaseSettings):
@@ -36,6 +38,29 @@ class Settings(BaseSettings):
     # para Progress. None => la exportación responde 503 (IntegracionNoConfigurada).
     progress_docs_dir: str | None = None
     oc_export_encoding: str = "cp1252"
+
+    # integracion-progress S4/L6: recepción automática desde la carpeta de entrada.
+    # Los archivos de tipo `presupuestos` se leen de <progress_entrada_dir>/presupuestos
+    # y se importan en el tenant `progress_drogueria_id` con el usuario de sistema.
+    # Sin carpeta o sin tenant la recepción automática queda apagada; un string
+    # vacío del entorno cuenta como no configurado.
+    progress_entrada_dir: str | None = None
+    progress_drogueria_id: str | None = None
+    progress_escaneo_intervalo_segundos: int = Field(default=_INTERVALO_ESCANEO_DEFAULT, ge=1)
+
+    @field_validator("progress_entrada_dir", "progress_drogueria_id", mode="before")
+    @classmethod
+    def _vacio_es_no_configurado(cls, valor: object) -> object:
+        if isinstance(valor, str) and not valor.strip():
+            return None
+        return valor
+
+    @field_validator("progress_escaneo_intervalo_segundos", mode="before")
+    @classmethod
+    def _intervalo_vacio_es_default(cls, valor: object) -> object:
+        if isinstance(valor, str) and not valor.strip():
+            return _INTERVALO_ESCANEO_DEFAULT
+        return valor
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -2,6 +2,7 @@
 # Todas las funciones esperan el SERVICE client: la tabla no tiene políticas de
 # escritura para authenticated. Las lecturas filtran explícitamente por
 # `drogueria_id` cuando el llamador la conoce.
+from datetime import datetime
 from typing import Any
 
 from supabase import Client
@@ -48,6 +49,27 @@ def actualizar(
     if intentos_esperados is not None:
         query = query.eq("intentos", intentos_esperados)
     resultado = query.execute()
+    return resultado.data[0] if resultado.data else None
+
+
+def reclamar(
+    client: Client,
+    *,
+    registro_id: str,
+    estado_esperado: str,
+    updated_at_esperado: datetime,
+) -> dict[str, Any] | None:
+    """CAS para reprocesar: vuelve el registro a 'recibido' solo si sigue en
+    `estado_esperado` con el mismo `updated_at` (el trigger lo renueva). Si otro
+    proceso ya lo reclamó, no actualiza nada y devuelve None."""
+    resultado = (
+        client.table(_TABLA)
+        .update({"estado": "recibido"})
+        .eq("id", registro_id)
+        .eq("estado", estado_esperado)
+        .eq("updated_at", updated_at_esperado.isoformat())
+        .execute()
+    )
     return resultado.data[0] if resultado.data else None
 
 

@@ -62,6 +62,15 @@ services:
       - PROGRESS_DOCS_DIR=C:/app/documentos_ia
       - OC_EXPORT_ENCODING=cp1252
 
+      # Recepción automática desde Progress (integracion-progress S4): el archivo de
+      # presupuestos se lee de <PROGRESS_ENTRADA_DIR>/presupuestos, es decir
+      # C:\SACPro\documentos_ia\entrada\presupuestos en el host (lo cubre el bind mount
+      # de abajo). La carpeta definitiva de Progress todavía no se conoce (L6).
+      # PROGRESS_DROGUERIA_ID es el tenant donde se importa; vacío deja la recepción
+      # automática apagada.
+      - PROGRESS_ENTRADA_DIR=C:/app/documentos_ia/entrada
+      - PROGRESS_DROGUERIA_ID=${PROGRESS_DROGUERIA_ID:-}
+
       # Opcional
       - PYTHONDONTWRITEBYTECODE=1
 

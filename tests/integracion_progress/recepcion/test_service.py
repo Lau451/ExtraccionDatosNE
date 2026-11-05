@@ -12,7 +12,7 @@ from services.integracion_progress.recepcion import service as recepcion
 from services.integracion_progress.registro import repository as repo
 from services.integracion_progress.tipos.presupuestos import destino
 from services.shared.exceptions import NotFoundError
-from tests.integracion_progress.registro.conftest import RepositorioFalso
+from tests.integracion_progress.registro.conftest import METODOS_REPOSITORIO, RepositorioFalso
 
 ENCABEZADO = (
     "codigo_cliente;razon_social_cliente;numero_presupuesto;renglon;"
@@ -65,7 +65,7 @@ class EntregaFalsa:
 @pytest.fixture
 def repo_falso(monkeypatch):
     falso = RepositorioFalso()
-    for nombre in ("buscar_por_contenido", "buscar_por_id", "insertar", "actualizar", "listar"):
+    for nombre in METODOS_REPOSITORIO:
         monkeypatch.setattr(repo, nombre, getattr(falso, nombre))
     return falso
 
@@ -131,8 +131,14 @@ def test_mismo_contenido_procesado_es_duplicado_y_no_importa_nada(repo_falso, en
 
 def test_contenido_en_curso_recibido_tambien_es_duplicado(repo_falso, entrega):
     import hashlib
+    from datetime import datetime, timezone
 
-    repo_falso.sembrar(sha256=hashlib.sha256(CSV_VALIDO).hexdigest(), estado="recibido")
+    # updated_at reciente: un 'recibido' de hace más de 15 minutos se reprocesa.
+    repo_falso.sembrar(
+        sha256=hashlib.sha256(CSV_VALIDO).hexdigest(),
+        estado="recibido",
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
     resultado = _recibir(CSV_VALIDO)
 

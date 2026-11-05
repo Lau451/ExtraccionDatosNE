@@ -8,7 +8,7 @@ fila ganadora tras el 23505.
 """
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from postgrest.exceptions import APIError
@@ -29,6 +29,13 @@ _ORIGENES = ("carpeta", "manual")
 _LIMITE_MAXIMO = 500
 # Reintentos del CAS por `intentos` de marcar_error antes de rendirse.
 _REINTENTOS_CAS = 3
+# Un registro que sigue en 'recibido' más de este tiempo sin actualizarse quedó
+# colgado (el proceso que lo estaba procesando murió): la próxima llegada del mismo
+# contenido lo reprocesa en lugar de reportarlo como duplicado. Procesar un archivo
+# normal tarda segundos; una hora deja margen para archivos grandes sin pisar a un
+# proceso vivo. Reprocesar reclama el registro con un CAS (`repo.reclamar`), así
+# que de dos llegadas simultáneas solo una lo reprocesa y la otra es duplicado.
+_RECIBIDO_COLGADO = timedelta(hours=1)
 
 
 def _sha256(contenido: bytes) -> str:
@@ -83,10 +90,13 @@ def registrar_entrada(
     """Registra un archivo recibido. Devuelve (registro, es_duplicado).
 
     - Contenido nuevo: inserta en estado 'recibido' (es_duplicado=False).
-    - Mismo contenido ya 'recibido' o 'procesado': lo devuelve con
+    - Mismo contenido ya 'procesado', o 'recibido' hace menos de
+      `_RECIBIDO_COLGADO` (otro proceso lo está procesando): lo devuelve con
       es_duplicado=True y no escribe nada.
-    - Mismo contenido en 'error': lo devuelve con es_duplicado=False para que el
-      llamador lo reprocese; tampoco escribe nada.
+    - Mismo contenido en 'error', o 'recibido' sin actualizarse desde hace más de
+      `_RECIBIDO_COLGADO`: lo reclama (vuelve a 'recibido', renovando updated_at)
+      y lo devuelve con es_duplicado=False para que el llamador lo reprocese. Si
+      otro proceso lo reclamó primero, devuelve el registro actual como duplicado.
     """
     if origen not in _ORIGENES:
         raise ValidationError(f"Origen inválido '{origen}': debe ser carpeta o manual")
@@ -115,7 +125,41 @@ def registrar_entrada(
             return RegistroArchivo.model_validate(existente), False
 
     registro = RegistroArchivo.model_validate(existente)
-    return registro, registro.estado != "error"
+    if not _reprocesable(registro):
+        return registro, True
+    reclamado = repo.reclamar(
+        client,
+        registro_id=registro.id,
+        estado_esperado=registro.estado,
+        updated_at_esperado=registro.updated_at,
+    )
+    if reclamado is not None:
+        return RegistroArchivo.model_validate(reclamado), False
+    actual = repo.buscar_por_id(client, registro_id=registro.id)
+    if actual is None:
+        raise ConflictError(
+            f"El archivo '{nombre_archivo}' chocó con un registro que ya no existe"
+        )
+    return RegistroArchivo.model_validate(actual), True
+
+
+def buscar_entrada(
+    client: Client, *, drogueria_id: str, tipo: str, contenido: bytes
+) -> RegistroArchivo | None:
+    """Registro de entrada de este contenido, o None si nunca se registró."""
+    fila = repo.buscar_por_contenido(
+        client, drogueria_id=drogueria_id, sentido="entrada", tipo=tipo, sha256=_sha256(contenido)
+    )
+    return RegistroArchivo.model_validate(fila) if fila else None
+
+
+def _reprocesable(registro: RegistroArchivo) -> bool:
+    if registro.estado == "error":
+        return True
+    return (
+        registro.estado == "recibido"
+        and datetime.now(timezone.utc) - registro.updated_at > _RECIBIDO_COLGADO
+    )
 
 
 def registrar_salida(

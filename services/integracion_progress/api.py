@@ -12,11 +12,21 @@ le delega a esta fachada la carpeta (`carpeta_oc`), el nombre (`construir_nombre
 la escritura (`escribir_csv`, que recibe encabezados + filas y no sabe nada de las
 columnas de una OC) y la compensación (`borrar_archivo`).
 
+Entrada (Progress → nosotros): `presupuestacion/main.py` corre
+`recepcion_automatica_periodica` en su lifespan (S4 automática); se apaga sola si
+falta la carpeta o el tenant.
+
 `tests/integracion_progress/test_dependencias.py` verifica con `ast` que este módulo
 solo importa `services.shared` (más las fachadas destino que se habiliten) y que
 fuera de él nadie importa otra cosa que `services.integracion_progress.api`.
 """
 
+from services.integracion_progress.recepcion.automatica import (
+    escanear_si_configurado as escanear_entrada_si_configurado,
+)
+from services.integracion_progress.recepcion.automatica import (
+    recepcion_periodica as recepcion_automatica_periodica,
+)
 from services.integracion_progress.salida.escritor import (
     borrar_archivo,
     carpeta_oc,
@@ -32,4 +42,7 @@ __all__ = [
     "construir_nombre_oc",
     "escribir_csv",
     "borrar_archivo",
+    # entrada — recepción automática desde la carpeta
+    "escanear_entrada_si_configurado",
+    "recepcion_automatica_periodica",
 ]

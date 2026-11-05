@@ -7,11 +7,23 @@ test, así que el service se prueba contra este doble: reproduce el UNIQUE
 
 import uuid
 from copy import deepcopy
+from datetime import datetime, timezone
 
 import pytest
 from postgrest.exceptions import APIError
 
 from services.integracion_progress.registro import repository as repo
+
+
+# Funciones de `repository` que reemplaza el doble (los fixtures las parchean todas).
+METODOS_REPOSITORIO = (
+    "buscar_por_contenido",
+    "buscar_por_id",
+    "insertar",
+    "actualizar",
+    "reclamar",
+    "listar",
+)
 
 
 class RepositorioFalso:
@@ -80,6 +92,23 @@ class RepositorioFalso:
         fila.update(deepcopy(campos))
         return deepcopy(fila)
 
+    def reclamar(self, client, *, registro_id, estado_esperado, updated_at_esperado):
+        if self.antes_de_actualizar:
+            hook, self.antes_de_actualizar = self.antes_de_actualizar, None
+            hook()
+        fila = self.filas.get(registro_id)
+        if (
+            fila is None
+            or fila["estado"] != estado_esperado
+            or datetime.fromisoformat(fila["updated_at"]) != updated_at_esperado
+        ):
+            return None
+        campos = {"estado": "recibido"}
+        self.updates.append((registro_id, deepcopy(campos)))
+        # El trigger trg_progress_archivos_updated_at renueva updated_at.
+        fila.update(campos, updated_at=datetime.now(timezone.utc).isoformat())
+        return deepcopy(fila)
+
     def listar(self, client, **kwargs):
         self.listar_kwargs = kwargs
         return [deepcopy(f) for f in self.filas.values()]
@@ -88,6 +117,6 @@ class RepositorioFalso:
 @pytest.fixture
 def repo_falso(monkeypatch):
     falso = RepositorioFalso()
-    for nombre in ("buscar_por_contenido", "buscar_por_id", "insertar", "actualizar", "listar"):
+    for nombre in METODOS_REPOSITORIO:
         monkeypatch.setattr(repo, nombre, getattr(falso, nombre))
     return falso

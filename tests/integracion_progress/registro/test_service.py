@@ -4,6 +4,7 @@ carrera de inserción y conteo de intentos. Unitarios con el repository falso de
 conftest.py."""
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -52,10 +53,17 @@ def test_archivo_nuevo_se_inserta_como_recibido(repo_falso):
     ]
 
 
+def _hace(minutos: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutos)).isoformat()
+
+
 @pytest.mark.parametrize("estado", ["procesado", "recibido"])
 def test_mismo_contenido_es_duplicado_y_no_escribe_nada(repo_falso, estado):
     procesado_at = "2026-11-04T12:05:00+00:00" if estado == "procesado" else None
-    existente = repo_falso.sembrar(sha256=SHA, estado=estado, procesado_at=procesado_at)
+    # updated_at reciente: un 'recibido' viejo se reprocesa (ver tests de abajo).
+    existente = repo_falso.sembrar(
+        sha256=SHA, estado=estado, procesado_at=procesado_at, updated_at=_hace(1)
+    )
 
     registro, es_duplicado = _registrar(nombre_archivo="OTRO_NOMBRE.csv", origen="manual")
 
@@ -85,19 +93,76 @@ def test_registro_en_error_se_devuelve_para_reprocesar(repo_falso):
 
     registro, es_duplicado = _registrar()
 
+    # Lo reclama volviéndolo a 'recibido' (CAS): un segundo proceso que llegue con el
+    # mismo contenido lo ve como en curso. Errores e intentos quedan hasta el cierre.
     assert es_duplicado is False
     assert registro.id == existente["id"]
-    assert registro.estado == "error"
+    assert registro.estado == "recibido"
+    assert registro.intentos == 1
     assert registro.errores == [ErrorLinea(linea=2, mensaje="x")]
     assert repo_falso.inserts == []
+    assert repo_falso.updates == [(existente["id"], {"estado": "recibido"})]
+
+
+def test_recibido_reciente_es_duplicado_porque_se_esta_procesando(repo_falso):
+    existente = repo_falso.sembrar(sha256=SHA, estado="recibido", updated_at=_hace(59))
+
+    registro, es_duplicado = _registrar()
+
+    assert es_duplicado is True
+    assert registro.id == existente["id"]
+    assert repo_falso.inserts == []
     assert repo_falso.updates == []
+
+
+def test_recibido_viejo_se_devuelve_para_reprocesar(repo_falso):
+    # Un 'recibido' que no avanzó en más de una hora quedó colgado por un crash.
+    existente = repo_falso.sembrar(sha256=SHA, estado="recibido", updated_at=_hace(61))
+
+    registro, es_duplicado = _registrar()
+
+    assert es_duplicado is False
+    assert registro.id == existente["id"]
+    assert registro.estado == "recibido"
+    assert registro.updated_at > datetime.now(timezone.utc) - timedelta(minutes=1)
+    assert repo_falso.inserts == []
+    assert repo_falso.updates == [(existente["id"], {"estado": "recibido"})]
+
+
+@pytest.mark.parametrize("estado", ["error", "recibido"])
+def test_si_otro_proceso_ya_reclamo_el_reproceso_es_duplicado(repo_falso, estado):
+    existente = repo_falso.sembrar(sha256=SHA, estado=estado, updated_at=_hace(61))
+
+    def otro_proceso_lo_reclamo():
+        repo_falso.filas[existente["id"]]["updated_at"] = _hace(0)
+        repo_falso.filas[existente["id"]]["estado"] = "recibido"
+
+    repo_falso.antes_de_actualizar = otro_proceso_lo_reclamo
+
+    registro, es_duplicado = _registrar()
+
+    assert es_duplicado is True
+    assert registro.id == existente["id"]
+    assert registro.estado == "recibido"
+    assert repo_falso.updates == []
+
+
+def test_carrera_que_relee_un_recibido_viejo_lo_devuelve_para_reprocesar(repo_falso):
+    def otro_proceso_dejo_un_recibido_colgado():
+        repo_falso.sembrar(sha256=SHA, estado="recibido", updated_at=_hace(90))
+
+    repo_falso.antes_de_insertar = otro_proceso_dejo_un_recibido_colgado
+
+    _, es_duplicado = _registrar()
+
+    assert es_duplicado is False
 
 
 def test_carrera_de_insercion_relee_la_ganadora_como_duplicado(repo_falso):
     ganadora = {}
 
     def otro_proceso_inserta_primero():
-        ganadora.update(repo_falso.sembrar(sha256=SHA, origen="manual"))
+        ganadora.update(repo_falso.sembrar(sha256=SHA, origen="manual", updated_at=_hace(0)))
 
     repo_falso.antes_de_insertar = otro_proceso_inserta_primero
 
