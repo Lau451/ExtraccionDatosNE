@@ -1,5 +1,9 @@
 import csv
+import errno
+import os
+import shutil
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -138,23 +142,42 @@ def test_no_pisa_archivo_existente(tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
 
 
-@pytest.mark.parametrize("sistema", ["nt", "posix"])
-def test_publica_sin_temporales_en_cada_sistema(tmp_path, monkeypatch, sistema):
-    # `posix` usa os.link + unlink (NTFS también tiene hard links, así corre en Windows).
-    monkeypatch.setattr(escritor.os, "name", sistema)
+class _SistemaFalso:
+    """Fuerza la rama de `_publicar` con la semántica de cada sistema, sin depender
+    del sistema donde corre el test: `os.rename` de Windows falla si el destino
+    existe (en POSIX lo pisaría) y `os.link` de POSIX falla si existe (y no se
+    depende de que el disco tenga hard links)."""
 
-    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+    def __init__(self, monkeypatch, sistema, *, error_link=None):
+        self.llamadas: list[str] = []
+        self._replace_real = os.replace
+        self._error_link = error_link
+        monkeypatch.setattr(escritor.os, "name", sistema)
+        monkeypatch.setattr(escritor.os, "rename", self._rename)
+        monkeypatch.setattr(escritor.os, "link", self._link)
+        monkeypatch.setattr(escritor.os, "replace", self._replace)
 
-    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
-    assert _leer(destino)[1][9] == "Ñandú áéíóú"
+    def _rename(self, origen, destino):
+        self.llamadas.append("rename")
+        if Path(destino).exists():
+            raise FileExistsError(errno.EEXIST, "existe", str(destino))
+        self._replace_real(origen, destino)
+
+    def _link(self, origen, destino):
+        self.llamadas.append("link")
+        if self._error_link is not None:
+            raise OSError(self._error_link, "sin hard links")
+        if Path(destino).exists():
+            raise FileExistsError(errno.EEXIST, "existe", str(destino))
+        shutil.copyfile(origen, destino)
+
+    def _replace(self, origen, destino):
+        self.llamadas.append("replace")
+        self._replace_real(origen, destino)
 
 
-@pytest.mark.parametrize("sistema", ["nt", "posix"])
-def test_no_pisa_un_archivo_que_aparece_mientras_escribe(tmp_path, monkeypatch, sistema):
-    # R3-002 (T1): entre el chequeo de existencia y el renombrado otro proceso crea el
-    # mismo nombre; os.replace lo pisaba.
-    monkeypatch.setattr(escritor.os, "name", sistema)
-    existente = tmp_path / "a.csv"
+def _carrera_que_crea(monkeypatch, existente):
+    """Otro proceso crea `existente` después del chequeo previo, mientras se escribe."""
     writer_real = escritor.csv.writer
 
     def writer_con_carrera(*args, **kwargs):
@@ -163,12 +186,90 @@ def test_no_pisa_un_archivo_que_aparece_mientras_escribe(tmp_path, monkeypatch, 
 
     monkeypatch.setattr(escritor.csv, "writer", writer_con_carrera)
 
+
+@pytest.mark.parametrize(
+    ("sistema", "llamadas"), [("nt", ["rename"]), ("posix", ["link"])]
+)
+def test_publica_sin_temporales_en_cada_sistema(tmp_path, monkeypatch, sistema, llamadas):
+    falso = _SistemaFalso(monkeypatch, sistema)
+
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert falso.llamadas == llamadas
+    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+    assert _leer(destino)[1][9] == "Ñandú áéíóú"
+
+
+@pytest.mark.parametrize(
+    ("sistema", "llamadas"), [("nt", ["rename"]), ("posix", ["link"])]
+)
+def test_no_pisa_un_archivo_que_aparece_mientras_escribe(tmp_path, monkeypatch, sistema, llamadas):
+    # R3-002 (T1): entre el chequeo de existencia y el renombrado otro proceso crea el
+    # mismo nombre; os.replace lo pisaba.
+    falso = _SistemaFalso(monkeypatch, sistema)
+    existente = tmp_path / "a.csv"
+    _carrera_que_crea(monkeypatch, existente)
+
     with pytest.raises(ConflictError) as error:
         escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
 
     assert error.value.message == "Ya existe el archivo a.csv"
+    assert falso.llamadas == llamadas
     assert existente.read_bytes() == b"del otro proceso"
     assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+
+
+# --- T8: observaciones de la revisión de T7 (L15) ---------------------------------
+
+
+@pytest.mark.parametrize("error_link", sorted(e for e in escritor._SIN_HARD_LINKS if e > 0))
+def test_sin_hard_links_publica_con_replace(tmp_path, monkeypatch, error_link):
+    # R3-publicar-fallback-unproved: un disco sin hard links cae al chequeo + replace.
+    falso = _SistemaFalso(monkeypatch, "posix", error_link=error_link)
+
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert falso.llamadas == ["link", "replace"]
+    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+    assert _leer(destino)[1][9] == "Ñandú áéíóú"
+
+
+def test_sin_hard_links_no_pisa_un_archivo_que_aparece_mientras_escribe(tmp_path, monkeypatch):
+    falso = _SistemaFalso(monkeypatch, "posix", error_link=errno.EXDEV)
+    existente = tmp_path / "a.csv"
+    _carrera_que_crea(monkeypatch, existente)
+
+    with pytest.raises(ConflictError) as error:
+        escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert error.value.message == "Ya existe el archivo a.csv"
+    assert falso.llamadas == ["link"]
+    assert existente.read_bytes() == b"del otro proceso"
+    assert [p.name for p in tmp_path.iterdir()] == ["a.csv"]
+
+
+def test_falla_al_borrar_el_temporal_tras_el_link_no_es_una_falla_de_escritura(
+    tmp_path, monkeypatch, caplog
+):
+    # R3-publicar-unlink-after-link / R4: con el link hecho el archivo ya está
+    # publicado; informar una falla haría que el llamador no lo registre.
+    falso = _SistemaFalso(monkeypatch, "posix")
+    unlink_real = Path.unlink
+
+    def unlink_roto(self, *args, **kwargs):
+        if self.name == ".a.csv.tmp":
+            raise PermissionError(errno.EACCES, "en uso", str(self))
+        return unlink_real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink_roto)
+
+    destino = escribir_csv(ENCABEZADOS, [_fila()], carpeta=tmp_path, nombre="a.csv", encoding="cp1252")
+
+    assert destino == tmp_path / "a.csv"
+    assert falso.llamadas == ["link"]
+    assert _leer(destino)[1][9] == "Ñandú áéíóú"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [".a.csv.tmp", "a.csv"]
+    assert ".a.csv.tmp" in caplog.text
 
 
 def test_borrar_archivo_borra_y_tolera_que_ya_no_exista(tmp_path):

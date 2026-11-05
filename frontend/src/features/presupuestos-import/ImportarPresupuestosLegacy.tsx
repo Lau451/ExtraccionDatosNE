@@ -8,7 +8,8 @@ import { ImportarPresupuestosLegacyView } from './components/ImportarPresupuesto
  * decodifica, lo parsea y lo registra (odd/tasks/integracion-progress.md S4,
  * S5). Si el parseo tiene errores, el backend rechaza el archivo entero y
  * devuelve los errores por línea; si el mismo contenido ya se había recibido,
- * responde `duplicado` sin importar nada. */
+ * responde `duplicado` sin importar nada (con los errores del original si
+ * terminó en error). */
 export function ImportarPresupuestosLegacy() {
   const [archivo, setArchivo] = useState<File | null>(null)
   const mutation = useMutation({
@@ -26,7 +27,10 @@ export function ImportarPresupuestosLegacy() {
   }
 
   const recepcion = mutation.data
-  const duplicado = recepcion?.estado === 'duplicado' ? { procesadoAt: recepcion.procesado_at } : null
+  const duplicado =
+    recepcion?.estado === 'duplicado'
+      ? { procesadoAt: recepcion.procesado_at, conErrores: recepcion.errores.length > 0 }
+      : null
 
   return (
     <ImportarPresupuestosLegacyView

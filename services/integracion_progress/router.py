@@ -5,6 +5,8 @@
   automática desde la carpeta. Solo admin, mismo rol-set que
   POST /pcp/imports/presupuestos-legacy (ROLES_IMPORT_PRESUPUESTOS_LEGACY de PCP).
   Un archivo de más de `TAMANO_MAXIMO_BYTES` se rechaza con 413 sin procesarlo.
+  Un duplicado cuyo original terminó en `error` trae en `errores` los del original,
+  para que la pantalla no lo confunda con uno que sigue en curso.
 - GET /integracion-progress/archivos: registro de archivos del tenant. Lee con el
   user client para que aplique la política parch_sel (0043).
 """
@@ -69,12 +71,15 @@ def recibir_presupuestos_endpoint(
         origen="manual",
         usuario_id=usuario.id,
     )
+    errores = resultado.errores
+    if resultado.estado == "duplicado" and resultado.registro.estado == "error":
+        errores = resultado.registro.errores or []
     return RecepcionPresupuestosOut(
         estado=resultado.estado,
         registro_id=resultado.registro.id,
         nombre_archivo=resultado.registro.nombre_archivo,
         procesado_at=resultado.registro.procesado_at,
-        errores=resultado.errores,
+        errores=errores,
         resultados=resultado.resultados,
     )
 

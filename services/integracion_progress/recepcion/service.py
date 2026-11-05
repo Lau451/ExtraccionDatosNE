@@ -21,7 +21,7 @@ from supabase import Client
 from services.integracion_progress.registro import service as registro
 from services.integracion_progress.registro.models import ErrorLinea, Origen, RegistroArchivo
 from services.integracion_progress.tipos import tipo_entrada
-from services.shared.exceptions import DomainError
+from services.shared.exceptions import ConflictError, DomainError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,9 @@ def recibir_archivo(
     - Si la entrega falla, el registro queda en `error` (reprocesable) y la
       excepción se propaga para que el endpoint responda con el mismo status y
       mensaje que el import directo de PCP.
+    - Si las filas ya se entregaron pero el registro no se puede cerrar porque otro
+      proceso lo cerró o lo borró, es `procesado` igual (la entrega es idempotente
+      por presupuesto_legacy_map) con el registro tal como quedó, y se loguea.
     """
     parser, destino = tipo_entrada(tipo)
 
@@ -131,7 +134,24 @@ def recibir_archivo(
         )
         raise
 
-    procesado = registro.marcar_procesado(
-        client, drogueria_id=drogueria_id, registro_id=registro_archivo.id, filas=len(parseo.filas)
-    )
+    try:
+        procesado = registro.marcar_procesado(
+            client,
+            drogueria_id=drogueria_id,
+            registro_id=registro_archivo.id,
+            filas=len(parseo.filas),
+        )
+    except (ConflictError, NotFoundError):
+        logger.warning(
+            "El archivo %s se entregó pero su registro %s ya no estaba en curso",
+            nombre_archivo,
+            registro_archivo.id,
+            exc_info=True,
+        )
+        procesado = (
+            registro.buscar_entrada(
+                client, drogueria_id=drogueria_id, tipo=tipo, contenido=contenido
+            )
+            or registro_archivo
+        )
     return ResultadoRecepcion(estado="procesado", registro=procesado, resultados=resultados)

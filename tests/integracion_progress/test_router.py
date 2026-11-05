@@ -376,3 +376,41 @@ def test_carga_manual_con_errores_no_importa_nada(
         .data
     )
     assert mapa == []
+
+
+# --- T8: observaciones de la revisión de T7 (L15) ---------------------------------
+
+
+def test_duplicado_de_un_registro_en_error_devuelve_los_errores_del_original(recepcion_falsa):
+    # R3-ui-duplicate-in-error-says-processing: sin los errores la pantalla no puede
+    # distinguir un original en error de uno en curso (los dos sin procesado_at).
+    errores = [ErrorLinea(linea=0, mensaje="No se encontró el cliente CLI-9")]
+    recepcion_falsa(
+        ResultadoRecepcion(
+            estado="duplicado",
+            registro=_registro(estado="error", errores=errores, procesado_at=None, filas=None),
+        )
+    )
+
+    respuesta = _subir(_cliente_con_usuario("admin"))
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["estado"] == "duplicado"
+    assert cuerpo["procesado_at"] is None
+    assert cuerpo["errores"] == [{"linea": 0, "mensaje": "No se encontró el cliente CLI-9"}]
+    assert cuerpo["resultados"] == []
+
+
+def test_duplicado_en_curso_no_trae_errores(recepcion_falsa):
+    recepcion_falsa(
+        ResultadoRecepcion(
+            estado="duplicado", registro=_registro(estado="recibido", procesado_at=None, filas=None)
+        )
+    )
+
+    cuerpo = _subir(_cliente_con_usuario("admin")).json()
+
+    assert cuerpo["estado"] == "duplicado"
+    assert cuerpo["procesado_at"] is None
+    assert cuerpo["errores"] == []

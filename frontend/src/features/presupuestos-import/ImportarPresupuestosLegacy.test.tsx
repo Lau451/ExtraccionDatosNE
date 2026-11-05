@@ -143,6 +143,27 @@ describe('ImportarPresupuestosLegacy', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
+  it('si el original terminó en error, avisa que falló y que se puede reintentar', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(
+      recepcion({
+        estado: 'duplicado',
+        procesado_at: null,
+        errores: [{ linea: 0, mensaje: 'No se encontró el cliente CLI-9' }],
+      }),
+    )
+    renderPantalla()
+
+    seleccionar(archivoCsv())
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
+
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent(
+      /^Este archivo ya se intentó importar y terminó con errores\. Se puede volver a cargar para reintentar\.$/,
+    )
+    expect(screen.queryByText(/se está procesando/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
   it('elegir otro archivo limpia el resultado anterior', async () => {
     vi.mocked(subirPresupuestosProgress).mockResolvedValue(
       recepcion({ estado: 'error', errores: [{ linea: 2, mensaje: 'renglón no es un número entero' }] }),

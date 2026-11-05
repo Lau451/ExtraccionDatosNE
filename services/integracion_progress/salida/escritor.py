@@ -3,6 +3,7 @@
 # Es la única pieza que conoce la carpeta, el nombre y el encoding de los archivos.
 import csv
 import errno
+import logging
 import os
 import re
 from datetime import datetime
@@ -10,6 +11,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from services.shared.exceptions import ConflictError
+
+logger = logging.getLogger(__name__)
 
 _ZONA = ZoneInfo("America/Argentina/Buenos_Aires")
 _NO_VALIDO = re.compile(r"[^A-Za-z0-9-]")
@@ -47,7 +50,9 @@ def _publicar(temporal: Path, destino: Path) -> None:
     """Renombra `temporal` a `destino` de forma atómica sin pisarlo nunca: si
     `destino` ya existe lanza FileExistsError. En Windows `os.rename` ya falla si el
     destino existe; en POSIX se usa un hard link (falla si existe) y se borra el
-    temporal. Sin hard links queda el chequeo previo + `os.replace`."""
+    temporal. Sin hard links queda el chequeo previo + `os.replace`. Con el link
+    hecho el archivo ya está publicado: si no se puede borrar el temporal, queda y
+    se loguea, sin informar una falla."""
     if os.name == "nt":
         os.rename(temporal, destino)
         return
@@ -62,7 +67,13 @@ def _publicar(temporal: Path, destino: Path) -> None:
             raise FileExistsError(errno.EEXIST, "destino existente", str(destino)) from None
         os.replace(temporal, destino)
         return
-    temporal.unlink()
+    try:
+        temporal.unlink()
+    except OSError:
+        logger.warning(
+            "No se pudo borrar el temporal %s; %s ya está publicado", temporal, destino,
+            exc_info=True,
+        )
 
 
 def escribir_csv(

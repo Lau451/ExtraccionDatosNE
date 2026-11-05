@@ -288,3 +288,47 @@ def test_fila_que_no_cumple_el_modelo_de_pcp_es_error_de_validacion(repo_falso, 
     assert fila["estado"] == "error"
     assert fila["intentos"] == 1
     assert fila["errores"] == [{"linea": 0, "mensaje": mensaje}]
+
+
+# --- T8: observaciones de la revisión de T7 (L15) ---------------------------------
+
+
+@pytest.mark.parametrize("estado_ajeno", ["procesado", "error"])
+def test_cierre_en_conflicto_despues_de_entregar_informa_procesado(
+    repo_falso, entrega, caplog, estado_ajeno
+):
+    # R3-procesado-conflict-after-delivery: PCP ya recibió las filas (idempotentes por
+    # presupuesto_legacy_map) y otro proceso cerró el registro antes que este; un
+    # error haría creer que no se importó nada.
+    def otro_proceso_cierra_el_registro():
+        (fila,) = repo_falso.filas.values()
+        fila["estado"] = estado_ajeno
+
+    repo_falso.antes_de_actualizar = otro_proceso_cierra_el_registro
+
+    resultado = _recibir(CSV_VALIDO, nombre="cerrado.csv")
+
+    assert resultado.estado == "procesado"
+    assert [r["codigo_legacy"] for r in resultado.resultados] == ["PRE-100", "PRE-200"]
+    assert resultado.errores == []
+    assert resultado.registro.estado == estado_ajeno
+    assert len(entrega.llamadas) == 1
+    (fila,) = repo_falso.filas.values()
+    assert fila["estado"] == estado_ajeno
+    assert repo_falso.updates == []
+    assert "cerrado.csv" in caplog.text
+
+
+def test_registro_borrado_despues_de_entregar_informa_procesado(repo_falso, entrega, caplog):
+    def otro_proceso_borra_el_registro():
+        repo_falso.filas.clear()
+
+    repo_falso.antes_de_actualizar = otro_proceso_borra_el_registro
+
+    resultado = _recibir(CSV_VALIDO, nombre="borrado.csv")
+
+    assert resultado.estado == "procesado"
+    assert [r["codigo_legacy"] for r in resultado.resultados] == ["PRE-100", "PRE-200"]
+    assert resultado.registro.estado == "recibido"
+    assert repo_falso.filas == {}
+    assert "borrado.csv" in caplog.text

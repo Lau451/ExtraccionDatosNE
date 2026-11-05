@@ -13,6 +13,8 @@ class RecepcionPresupuestosOut(BaseModel):
     - `procesado`: `resultados` trae un resultado por presupuesto, igual que
       POST /pcp/imports/presupuestos-legacy.
     - `duplicado`: el mismo contenido ya se había recibido; no se importó nada.
+      Si el registro original terminó en error, `errores` trae esos errores y el
+      archivo se puede volver a cargar para reintentar.
       `procesado_at` es cuándo se procesó (None si sigue en curso).
     - `error`: `errores` trae los errores por línea; no se importó nada.
     """

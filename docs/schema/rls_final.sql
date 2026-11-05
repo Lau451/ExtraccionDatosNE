@@ -889,7 +889,8 @@ GRANT  EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) TO service_
 -- salida (OC): oc_export/router.py::_ROLES_OC (admin, gerencia,
 -- lider_comercial, comercial). Sin políticas INSERT/UPDATE: el registro lo
 -- escribe solo el backend con service_role (docs/reglas-globales.md 2.3).
--- DELETE solo superadmin.
+-- Sin DELETE desde el Data API: 0044 quitó parch_del (era inalcanzable sin GRANT
+-- DELETE y borrar una fila permitiría reimportar el mismo archivo).
 -- =============================================================================
 
 DROP TRIGGER IF EXISTS trg_progress_archivos_updated_at ON progress_archivos;
@@ -897,7 +898,6 @@ CREATE TRIGGER trg_progress_archivos_updated_at BEFORE UPDATE ON progress_archiv
 
 ALTER TABLE progress_archivos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY parch_sel ON progress_archivos FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id)));
-CREATE POLICY parch_del ON progress_archivos FOR DELETE USING ((select es_superadmin()));
 -- Sin políticas INSERT/UPDATE: RLS habilitado sin política = deny by default.
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON progress_archivos TO service_role;

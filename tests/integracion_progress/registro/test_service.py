@@ -10,9 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 from postgrest.exceptions import APIError
 
+from services.integracion_progress.registro import repository as repo
 from services.integracion_progress.registro import service
 from services.integracion_progress.registro.models import ErrorLinea
 from services.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from tests.integracion_progress.registro.conftest import RepositorioFalso
 
 CONTENIDO = "numero;cliente\n1;ACME\n".encode("utf-8")
 SHA = hashlib.sha256(CONTENIDO).hexdigest()
@@ -467,3 +469,57 @@ def test_registrar_salida_guarda_las_filas(repo_falso):
 
     assert registro.filas == 0
     assert repo_falso.inserts[0]["filas"] == 0
+
+
+# --- T8: observaciones de la revisión de T7 (L15) ---------------------------------
+
+
+def test_marcar_error_se_rinde_con_conflicto_si_intentos_cambia_en_cada_reintento(repo_falso):
+    # R3-marcar-error-cas-race-untested: otro proceso cambia `intentos` entre la
+    # lectura y el update en cada vuelta; tras los reintentos es ConflictError y la
+    # fila conserva lo que escribió el otro proceso.
+    existente = repo_falso.sembrar(sha256=SHA, estado="recibido", intentos=0)
+    carreras = []
+
+    def otro_proceso_cambia_intentos():
+        repo_falso.filas[existente["id"]]["intentos"] += 1
+        carreras.append(repo_falso.filas[existente["id"]]["intentos"])
+        repo_falso.antes_de_actualizar = otro_proceso_cambia_intentos
+
+    repo_falso.antes_de_actualizar = otro_proceso_cambia_intentos
+
+    with pytest.raises(ConflictError) as error:
+        _marcar_error(existente["id"], [{"linea": 1, "mensaje": "x"}])
+
+    assert error.value.message == (
+        f"El registro de archivo '{existente['id']}' cambió mientras se marcaba el error"
+    )
+    assert carreras == [1, 2, 3]
+    assert repo_falso.updates == []
+    fila = repo_falso.filas[existente["id"]]
+    assert fila["estado"] == "recibido"
+    assert fila["intentos"] == 3
+    assert fila["errores"] is None
+
+
+def test_marcar_error_reintenta_y_suma_sobre_el_valor_releido(repo_falso, monkeypatch):
+    existente = repo_falso.sembrar(sha256=SHA, estado="recibido", intentos=0)
+    lecturas = []
+
+    def buscar_contando(client, **kwargs):
+        fila = RepositorioFalso.buscar_por_id(repo_falso, client, **kwargs)
+        lecturas.append(fila["intentos"])
+        return fila
+
+    def otro_proceso_cambia_intentos():
+        repo_falso.filas[existente["id"]]["intentos"] = 5
+
+    monkeypatch.setattr(repo, "buscar_por_id", buscar_contando)
+    repo_falso.antes_de_actualizar = otro_proceso_cambia_intentos
+
+    registro = _marcar_error(existente["id"], [{"linea": 1, "mensaje": "x"}])
+
+    assert lecturas == [0, 5]
+    assert registro.intentos == 6
+    assert registro.estado == "error"
+    assert len(repo_falso.updates) == 1
