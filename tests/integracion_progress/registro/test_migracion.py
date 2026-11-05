@@ -50,3 +50,25 @@ def test_estado_por_defecto_y_rls(sql):
 def test_down_borra_la_tabla():
     down = DOWN.read_text(encoding="utf-8")
     assert "DROP TABLE IF EXISTS progress_archivos" in down
+
+
+SIN_DELETE = REPO_ROOT / "supabase" / "migrations" / "0044_progress_archivos_sin_delete.sql"
+SIN_DELETE_DOWN = REPO_ROOT / "supabase" / "migrations" / "0044_progress_archivos_sin_delete.down.sql"
+
+
+def test_0044_quita_el_delete_y_no_abre_escrituras():
+    sin_comentarios = re.sub(r"--[^\n]*", "", SIN_DELETE.read_text(encoding="utf-8"))
+    sql = re.sub(r"\s+", " ", sin_comentarios)
+    assert "DROP POLICY IF EXISTS parch_del ON progress_archivos" in sql
+    assert "REVOKE DELETE ON progress_archivos FROM authenticated" in sql
+    assert "CREATE POLICY" not in sql
+    assert "GRANT " not in sql
+    assert "NOTIFY pgrst, 'reload schema'" in sql
+
+
+def test_0044_down_restaura_la_politica_de_0043():
+    down = re.sub(r"\s+", " ", SIN_DELETE_DOWN.read_text(encoding="utf-8"))
+    assert (
+        "CREATE POLICY parch_del ON progress_archivos FOR DELETE USING ((select es_superadmin()))"
+        in down
+    )
