@@ -1252,6 +1252,59 @@ COMMENT ON TABLE compras_proveedor IS 'La compra efectiva al proveedor una vez g
 
 
 -- =============================================================================
+-- INTEGRACIÓN PROGRESS: REGISTRO DE ARCHIVOS (migración 0043)
+-- =============================================================================
+
+-- Cada archivo que entra o sale por la carpeta de Progress. fk_parch_usuario
+-- va en rls_final.sql (usuarios recién existe ahí).
+CREATE TABLE progress_archivos (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    drogueria_id    UUID        NOT NULL,
+    sentido         TEXT        NOT NULL,
+    tipo            TEXT        NOT NULL,
+    nombre_archivo  TEXT        NOT NULL,
+    sha256          TEXT        NOT NULL,
+    origen          TEXT        NULL,
+    estado          TEXT        NOT NULL DEFAULT 'recibido',
+    filas           INTEGER     NULL,
+    errores         JSONB       NULL,
+    usuario_id      UUID        NOT NULL,
+    intentos        INTEGER     NOT NULL DEFAULT 0,
+    procesado_at    TIMESTAMPTZ NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id),
+    CONSTRAINT uq_parch_id_drog    UNIQUE (id, drogueria_id),
+    CONSTRAINT uq_parch_contenido  UNIQUE (drogueria_id, sentido, tipo, sha256),
+    CONSTRAINT ck_parch_sentido    CHECK (sentido IN ('entrada', 'salida')),
+    CONSTRAINT ck_parch_origen     CHECK (
+        (sentido = 'entrada' AND origen IN ('carpeta', 'manual'))
+        OR (sentido = 'salida' AND origen IS NULL)
+    ),
+    CONSTRAINT ck_parch_estado     CHECK (estado IN ('recibido', 'procesado', 'error')),
+    CONSTRAINT ck_parch_procesado  CHECK ((estado = 'procesado') = (procesado_at IS NOT NULL)),
+    CONSTRAINT ck_parch_sha256     CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_parch_filas      CHECK (filas IS NULL OR filas >= 0),
+    CONSTRAINT ck_parch_intentos   CHECK (intentos >= 0),
+    CONSTRAINT ck_parch_errores    CHECK (errores IS NULL OR jsonb_typeof(errores) = 'array'),
+    CONSTRAINT fk_parch_drog       FOREIGN KEY (drogueria_id) REFERENCES droguerias (id)
+);
+
+COMMENT ON TABLE progress_archivos IS
+  'Registro de archivos intercambiados con Progress 9.1D (entrada y salida). uq_parch_contenido (drogueria_id, sentido, tipo, sha256) impide procesar dos veces el mismo contenido; un archivo en estado error se puede reprocesar. Agregada en 0043.';
+COMMENT ON COLUMN progress_archivos.sha256 IS
+  'SHA-256 en hexadecimal (minúsculas) de los bytes crudos del archivo, antes de decodificar. Agregada en 0043.';
+COMMENT ON COLUMN progress_archivos.origen IS
+  'Solo entradas: carpeta (escaneo automático) o manual (subida desde la pantalla). NULL en las salidas (ck_parch_origen). Agregada en 0043.';
+COMMENT ON COLUMN progress_archivos.errores IS
+  'Errores por línea del último intento: lista JSON de {linea, mensaje}. NULL si no hubo errores. Agregada en 0043.';
+COMMENT ON COLUMN progress_archivos.intentos IS
+  'Cantidad de intentos de procesamiento fallidos (se incrementa al marcar error). Agregada en 0043.';
+
+CREATE INDEX idx_parch_drog_created ON progress_archivos (drogueria_id, created_at DESC);
+
+
+-- =============================================================================
 -- MOTOR DE EVENTOS OPERATIVOS
 -- =============================================================================
 

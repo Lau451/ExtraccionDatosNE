@@ -18,17 +18,23 @@ de negocio. Esto funciona solo porque el contrato asume el canal más restrictiv
 
 ## Estado actual
 
+**[IMPLEMENTADO]** Etapa 1 (`odd/tasks/integracion-progress.md`). Todo lo que conoce
+Progress vive en `services/integracion_progress/` y se usa solo por
+`services/integracion_progress/api.py` (lo verifica
+`tests/integracion_progress/test_dependencias.py`).
+
 | Sentido | Qué viaja | Cómo funciona hoy | Evidencia |
 |---------|-----------|-------------------|-----------|
-| Nosotros → Progress | OC del cliente | **[IMPLEMENTADO]** CSV escrito en `<PROGRESS_DOCS_DIR>/oc` (en producción, `C:\SACPro\documentos_ia\oc`). La escritura es atómica (temporal + renombre) y nunca pisa un archivo existente. Nombre: `OC_{codigo_cliente}_{numero_oc}_v{version}_{yyyyMMddHHmmss}.csv`. | `services/presupuestacion/oc_export/escritor.py:32-66`, `docker-compose.yml` |
-| Progress → nosotros | Presupuestos legacy | **[IMPLEMENTADO]** Un admin sube el CSV exportado por Progress; el frontend lo parsea y envía las filas al backend. La idempotencia se apoya en `presupuesto_legacy_map`. | `frontend/src/features/presupuestos-import/parsearCsvPresupuestos.ts`, `services/pcp/imports/router.py:40-55`, `services/pcp/imports/repository.py:133-143` |
-| Configuración | Carpeta de intercambio | `progress_docs_dir`; si no está configurada, la exportación responde 503. | `services/shared/config.py:35-37` |
+| Nosotros → Progress | OC del cliente | `oc_export` arma las filas y la fachada escribe el CSV en `<PROGRESS_DOCS_DIR>/oc` (en producción, `C:\SACPro\documentos_ia\oc`): escritura atómica, nunca pisa un archivo. Contrato: [`tipos/oc/contrato.md`](../../services/integracion_progress/tipos/oc/contrato.md). | `services/integracion_progress/salida/escritor.py`, `services/presupuestacion/oc_export/service.py` |
+| Progress → nosotros | Presupuestos legacy | **Automática:** cada `PROGRESS_ESCANEO_INTERVALO_SEGUNDOS` (300 por defecto) la plataforma lee `<PROGRESS_ENTRADA_DIR>/presupuestos/` y mueve cada archivo a `procesados/` o `errores/`. Se saltean los ocultos (también con el atributo oculto de Windows) y los `.tmp`; un archivo bloqueado, que cambió mientras se leía o cuyo procesamiento falló sin dejar el registro en error (ej. base caída) queda en la carpeta para el próximo escaneo; un duplicado cuyo registro quedó en error va a `errores/`. Al apagar el servicio el escaneo en curso para después del archivo que está procesando. **Manual:** un admin sube el archivo en la pantalla de importación (`POST /integracion-progress/presupuestos`), de hasta 10 MB (más grande: HTTP 413 "El archivo supera el tamaño máximo de 10 MB", sin registrarlo). Los dos caminos usan el mismo lector en el backend (UTF-8 o `cp1252`) y el mismo registro, y entregan las filas a `pcp.api`. Contrato: [`tipos/presupuestos/contrato.md`](../../services/integracion_progress/tipos/presupuestos/contrato.md). | `services/integracion_progress/recepcion/`, `services/integracion_progress/tipos/presupuestos/parser.py`, `services/integracion_progress/router.py` |
+| Registro | Cada archivo recibido o escrito | Tabla `progress_archivos` (migración 0043): no procesa dos veces el mismo contenido, los archivos con error se pueden reprocesar y un `recibido` colgado más de una hora se reprocesa. Reprocesar reclama el registro (vuelve a `recibido`) para que dos llegadas simultáneas no lo procesen las dos; solo un registro en `recibido` se cierra como `procesado` o `error`, y toda escritura filtra por droguería. Listado: `GET /integracion-progress/archivos`. | `services/integracion_progress/registro/`, `supabase/migrations/0043_progress_archivos.sql` |
+| Configuración | Carpetas y droguería | `PROGRESS_DOCS_DIR` (salida; sin ella la exportación responde 503), `PROGRESS_ENTRADA_DIR` y `PROGRESS_DROGUERIA_ID` (entrada; sin las dos, la recepción automática queda apagada). | `services/shared/config.py`, `docker-compose.yml` |
 
-**Desvíos respecto del objetivo:**
+**Desvíos que quedan respecto del objetivo:**
 
-- El conocimiento de Progress está repartido en tres lugares (`oc_export`, `pcp/imports` y un parser en el frontend), sin un dueño.
-- El formato del archivo de presupuestos se interpreta en el frontend. En el objetivo, el parser vive en el adaptador del backend y es único.
-- La recepción es manual. En el objetivo, la plataforma detecta los archivos nuevos (la carga manual puede seguir existiendo como alternativa).
+- La fachada todavía expone funciones de escritura (`escribir_csv`, `carpeta_oc`…), no el contrato asincrónico `enviar_oc` / `estado_envio` de abajo. Hace falta cuando Progress devuelva archivos de confirmación.
+- Las OC exportadas todavía no se anotan en el registro como `salida` (`registrar_salida` existe pero `oc_export` no lo llama).
+- El import de PCP legacy (`POST /pcp/imports/legacy`) sigue recibiendo JSON y no pasa por esta capa: no está confirmado que venga de Progress.
 
 ## Contrato hacia los módulos
 

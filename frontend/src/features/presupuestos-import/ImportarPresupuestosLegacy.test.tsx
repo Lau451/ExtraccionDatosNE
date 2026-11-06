@@ -3,37 +3,31 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ImportarPresupuestosLegacy } from './ImportarPresupuestosLegacy'
 import { Route as ImportarRoute } from '@/routes/_authenticated.presupuestos.importar'
+import { fechaLegible } from '@/lib/fechas'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
 
 vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
-vi.mock('@/lib/api/pcp', () => ({ importarPresupuestosLegacy: vi.fn() }))
+vi.mock('@/lib/api/integracionProgress', () => ({ subirPresupuestosProgress: vi.fn() }))
 
-import { importarPresupuestosLegacy } from '@/lib/api/pcp'
-import type { ImportPresupuestoLegacyResultado } from '@/lib/api/pcp'
+import { subirPresupuestosProgress } from '@/lib/api/integracionProgress'
+import type { RecepcionPresupuestos } from '@/lib/api/integracionProgress'
 
-const ENCABEZADO =
-  'codigo_cliente,razon_social_cliente,numero_presupuesto,renglon,descripcion_producto,cantidad_producto'
-
-function archivoCsv(contenido: string, textoDeferido?: Promise<void>) {
-  const archivo = new File([contenido], 'legado.csv', { type: 'text/csv' })
-  if (textoDeferido) {
-    archivo.text = async () => {
-      await textoDeferido
-      return contenido
-    }
-  }
-  return archivo
+function archivoCsv(nombre = 'legado.csv') {
+  return new File(['codigo_cliente;razon_social_cliente\n'], nombre, { type: 'text/csv' })
 }
 
-const CSV_DOS_PRESUPUESTOS = [
-  ENCABEZADO,
-  'CLI-1,Farmacia Central,PRE-100,1,Amoxicilina 500mg,10',
-  'CLI-1,Farmacia Central,PRE-100,2,Ibuprofeno 400mg,5',
-  'CLI-2,Farmacia Sur,PRE-200,1,Paracetamol 500mg,20',
-].join('\n')
-
-const CSV_CON_ERROR = [ENCABEZADO, 'CLI-1,Farmacia Central,PRE-100,abc,Amoxicilina 500mg,10'].join('\n')
+function recepcion(campos: Partial<RecepcionPresupuestos>): RecepcionPresupuestos {
+  return {
+    estado: 'procesado',
+    registro_id: 'reg-1',
+    nombre_archivo: 'legado.csv',
+    procesado_at: '2026-11-04T12:00:00Z',
+    errores: [],
+    resultados: [],
+    ...campos,
+  }
+}
 
 function renderPantalla() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -51,10 +45,14 @@ function navigationArgs(rol: 'superadmin' | 'admin' | 'gerencia' | 'compras') {
   }
 }
 
+function seleccionar(archivo: File) {
+  fireEvent.change(screen.getByLabelText(/archivo/i), { target: { files: [archivo] } })
+}
+
 describe('ImportarPresupuestosLegacy', () => {
   beforeEach(() => {
     perfilMock.rol = 'admin'
-    vi.mocked(importarPresupuestosLegacy).mockReset()
+    vi.mocked(subirPresupuestosProgress).mockReset()
   })
 
   it('S6: solo admin puede navegar directo a la importación legacy', () => {
@@ -67,80 +65,125 @@ describe('ImportarPresupuestosLegacy', () => {
     expect(() => ImportarRoute.options.beforeLoad?.(navigationArgs('superadmin') as never)).toThrow()
   })
 
-  it('muestra la vista previa con la cantidad de presupuestos y filas detectadas', async () => {
+  it('el botón importar queda deshabilitado hasta elegir un archivo', () => {
     renderPantalla()
 
-    fireEvent.change(screen.getByLabelText(/archivo/i), { target: { files: [archivoCsv(CSV_DOS_PRESUPUESTOS)] } })
-
-    expect(await screen.findByText(/2 presupuestos/i)).toBeInTheDocument()
-    expect(screen.getByText(/3 filas/i)).toBeInTheDocument()
-  })
-
-  it('lista errores de validación con número de línea y bloquea el botón importar', async () => {
-    renderPantalla()
-
-    fireEvent.change(screen.getByLabelText(/archivo/i), { target: { files: [archivoCsv(CSV_CON_ERROR)] } })
-
-    expect(await screen.findByText(/línea 2/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /importar/i })).toBeDisabled()
-    expect(importarPresupuestosLegacy).not.toHaveBeenCalled()
+    seleccionar(archivoCsv())
+    expect(screen.getByRole('button', { name: /importar/i })).toBeEnabled()
+    expect(subirPresupuestosProgress).not.toHaveBeenCalled()
   })
 
-  it('envía las filas parseadas y muestra la tabla de resultados', async () => {
-    const resultado: ImportPresupuestoLegacyResultado[] = [
-      { codigo_legacy: 'PRE-100', presupuesto_id: 'p1', accion: 'creado', renglones_procesados: 2, renglones_sin_producto: 0 },
-      { codigo_legacy: 'PRE-200', presupuesto_id: 'p2', accion: 'existente', renglones_procesados: 1, renglones_sin_producto: 1 },
-    ]
-    vi.mocked(importarPresupuestosLegacy).mockResolvedValue(resultado)
+  it('sube el archivo seleccionado tal cual y muestra la tabla de resultados', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(
+      recepcion({
+        resultados: [
+          { codigo_legacy: 'PRE-100', presupuesto_id: 'p1', accion: 'creado', renglones_procesados: 2, renglones_sin_producto: 0 },
+          { codigo_legacy: 'PRE-200', presupuesto_id: 'p2', accion: 'existente', renglones_procesados: 1, renglones_sin_producto: 1 },
+        ],
+      }),
+    )
     renderPantalla()
+    const archivo = archivoCsv()
 
-    fireEvent.change(screen.getByLabelText(/archivo/i), { target: { files: [archivoCsv(CSV_DOS_PRESUPUESTOS)] } })
-    await screen.findByText(/2 presupuestos/i)
+    seleccionar(archivo)
     fireEvent.click(screen.getByRole('button', { name: /importar/i }))
 
-    await waitFor(() =>
-      expect(importarPresupuestosLegacy).toHaveBeenCalledWith([
-        { codigo_cliente: 'CLI-1', razon_social_cliente: 'Farmacia Central', numero_presupuesto: 'PRE-100', proceso_comercial: undefined, fecha_generacion: undefined, renglon: 1, codigo_producto: undefined, descripcion_producto: 'Amoxicilina 500mg', cantidad_producto: 10, precio_producto: undefined, importe_total: undefined },
-        { codigo_cliente: 'CLI-1', razon_social_cliente: 'Farmacia Central', numero_presupuesto: 'PRE-100', proceso_comercial: undefined, fecha_generacion: undefined, renglon: 2, codigo_producto: undefined, descripcion_producto: 'Ibuprofeno 400mg', cantidad_producto: 5, precio_producto: undefined, importe_total: undefined },
-        { codigo_cliente: 'CLI-2', razon_social_cliente: 'Farmacia Sur', numero_presupuesto: 'PRE-200', proceso_comercial: undefined, fecha_generacion: undefined, renglon: 1, codigo_producto: undefined, descripcion_producto: 'Paracetamol 500mg', cantidad_producto: 20, precio_producto: undefined, importe_total: undefined },
-      ]),
-    )
-
+    await waitFor(() => expect(subirPresupuestosProgress).toHaveBeenCalledWith(archivo))
     expect(await screen.findByText('PRE-100')).toBeInTheDocument()
     expect(screen.getByText('creado')).toBeInTheDocument()
     expect(screen.getByText('PRE-200')).toBeInTheDocument()
     expect(screen.getByText('existente')).toBeInTheDocument()
   })
 
-  it('ignora una lectura de archivo obsoleta cuando dos selecciones resuelven fuera de orden', async () => {
+  it('lista los errores por línea que devuelve el backend', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(
+      recepcion({
+        estado: 'error',
+        procesado_at: null,
+        errores: [
+          { linea: 2, mensaje: 'renglón no es un número entero' },
+          { linea: 4, mensaje: 'falta codigo_cliente; falta descripcion_producto' },
+        ],
+      }),
+    )
     renderPantalla()
 
-    let resolverLecturaA: () => void = () => {}
-    const lecturaA = new Promise<void>((resolve) => {
-      resolverLecturaA = resolve
-    })
-    const archivoA = archivoCsv(CSV_CON_ERROR, lecturaA)
-    const archivoB = archivoCsv(CSV_DOS_PRESUPUESTOS)
+    seleccionar(archivoCsv())
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
 
-    const input = screen.getByLabelText(/archivo/i)
-    fireEvent.change(input, { target: { files: [archivoA] } })
-    fireEvent.change(input, { target: { files: [archivoB] } })
+    expect(await screen.findByText('Línea 2: renglón no es un número entero')).toBeInTheDocument()
+    expect(screen.getByText('Línea 4: falta codigo_cliente; falta descripcion_producto')).toBeInTheDocument()
+    expect(screen.getByText(/2 errores bloquean el import/i)).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
 
-    expect(await screen.findByText(/2 presupuestos/i)).toBeInTheDocument()
+  it('avisa cuando el archivo ya fue procesado, con la fecha original', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(recepcion({ estado: 'duplicado' }))
+    renderPantalla()
 
-    resolverLecturaA()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    seleccionar(archivoCsv())
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
 
-    expect(screen.getByText(/2 presupuestos/i)).toBeInTheDocument()
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent('Este archivo ya fue procesado')
+    expect(aviso).toHaveTextContent(fechaLegible('2026-11-04T12:00:00Z'))
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('si el original sigue en curso, avisa que se está procesando y no que ya se procesó', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(recepcion({ estado: 'duplicado', procesado_at: null }))
+    renderPantalla()
+
+    seleccionar(archivoCsv())
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
+
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent(/^Este archivo ya se está procesando\.$/)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('si el original terminó en error, avisa que falló y que se puede reintentar', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(
+      recepcion({
+        estado: 'duplicado',
+        procesado_at: null,
+        errores: [{ linea: 0, mensaje: 'No se encontró el cliente CLI-9' }],
+      }),
+    )
+    renderPantalla()
+
+    seleccionar(archivoCsv())
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
+
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent(
+      /^Este archivo ya se intentó importar y terminó con errores\. Se puede volver a cargar para reintentar\.$/,
+    )
+    expect(screen.queryByText(/se está procesando/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('elegir otro archivo limpia el resultado anterior', async () => {
+    vi.mocked(subirPresupuestosProgress).mockResolvedValue(
+      recepcion({ estado: 'error', errores: [{ linea: 2, mensaje: 'renglón no es un número entero' }] }),
+    )
+    renderPantalla()
+
+    seleccionar(archivoCsv('a.csv'))
+    fireEvent.click(screen.getByRole('button', { name: /importar/i }))
+    expect(await screen.findByText(/línea 2/i)).toBeInTheDocument()
+
+    seleccionar(archivoCsv('b.csv'))
+
     expect(screen.queryByText(/línea 2/i)).not.toBeInTheDocument()
   })
 
   it('si la API de import falla, muestra el detalle del backend', async () => {
-    vi.mocked(importarPresupuestosLegacy).mockRejectedValueOnce(new Error('No se encontró el cliente CLI-9'))
+    vi.mocked(subirPresupuestosProgress).mockRejectedValueOnce(new Error('No se encontró el cliente CLI-9'))
     renderPantalla()
 
-    fireEvent.change(screen.getByLabelText(/archivo/i), { target: { files: [archivoCsv(CSV_DOS_PRESUPUESTOS)] } })
-    await screen.findByText(/2 presupuestos/i)
+    seleccionar(archivoCsv())
     fireEvent.click(screen.getByRole('button', { name: /importar/i }))
 
     const alerta = await screen.findByRole('alert')

@@ -31,6 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from services.integracion_progress import api as progress  # noqa: E402
 from services.presupuestacion.oc_export.service import exportar_orden_compra  # noqa: E402
 from services.shared.config import get_settings  # noqa: E402
 from services.shared.database import get_service_client  # noqa: E402
@@ -226,7 +227,7 @@ def main() -> None:
         usuario_id=caso["usuario_id"],
         settings=settings.model_copy(update={"progress_docs_dir": args.salida}),
     )
-    ruta = Path(args.salida) / "oc" / resultado.archivo
+    ruta = progress.carpeta_oc(args.salida) / resultado.archivo
     print(f"OC id:        {caso['oc_id']}")
     print(f"Droguería id: {caso['drogueria_id']}")
     print(f"CSV:          {ruta}")

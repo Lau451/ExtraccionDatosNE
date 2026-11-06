@@ -14,7 +14,7 @@ quedan juntas y qué desvíos hay que corregir en el camino. Los principios
 | `comercial` | Negocio | `procesos_comerciales`, `matching`, `pricing`, `presupuestos`, `comparativas`, `extraccion` (materialización) | **[RECOMENDACIÓN]** — hoy son subcarpetas de `presupuestacion/` |
 | `compras` (PCP) | Negocio | `services/pcp/` + `presupuestacion/compras` | **[IMPLEMENTADO]** como módulo top-level con fachada |
 | `ordenes_compra` | Negocio | `oc_presupuesto`, `oc_entregas`, `oc_resumen`, `compromisos` | **[RECOMENDACIÓN]** — hoy cuatro carpetas sueltas |
-| `integracion_progress` | Integración | `oc_export`, la parte Progress de `pcp/imports`, `progress_docs_dir` | **[RECOMENDACIÓN]** — ver [`integracion-progress.md`](./integracion-progress.md) |
+| `integracion_progress` | Integración | `oc_export` (escritura), la parte Progress de `pcp/imports`, `progress_docs_dir` | **[IMPLEMENTADO]** etapa 1: fachada, registro, recepción manual y automática — ver [`integracion-progress.md`](./integracion-progress.md) |
 | `extraccion_ia` | Capacidades | `services/extraccion/` (proceso aparte) | **[IMPLEMENTADO]** como unidad desplegable propia |
 | `automatizaciones` / agentes | Capacidades | `presupuestacion/automatizaciones` | **[IMPLEMENTADO]** sin disparador real en producción |
 
@@ -41,7 +41,7 @@ quedan juntas y qué desvíos hay que corregir en el camino. Los principios
 | Pieza | Decisión | Motivo |
 |-------|----------|--------|
 | Núcleo común | **Sale de `presupuestacion/` a `plataforma`** (D-ARQ-003) | Es la base de todos los módulos, pero vive dentro de uno de negocio. |
-| Todo lo que toca Progress | **Sale a `integracion_progress`** (D-ARQ-004) | Hoy está repartido entre `oc_export`, `pcp/imports` y `shared/config.py:35-37`, sin un dueño. |
+| Todo lo que toca Progress | **Sale a `integracion_progress`** (D-ARQ-004) | Hecho en la etapa 1: antes estaba repartido entre `oc_export`, `pcp/imports` y un parser del frontend. |
 | Extracción IA | **Sigue como proceso aparte** | Dependencias pesadas y consumo de memoria distinto (P8). |
 
 ## Desvíos conocidos a corregir

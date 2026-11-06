@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +30,8 @@ from services.presupuestacion.presupuestos.router import router as presupuestos_
 from services.presupuestacion.pricing.router import router as pricing_router
 from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
 from services.presupuestacion.usuarios.router import router as usuarios_router
+from services.integracion_progress import api as integracion_progress
+from services.integracion_progress.router import router as integracion_progress_router
 from services.pcp.router import router as pcp_router
 from services.productos.router import router as productos_router
 from services.terceros.router import router as terceros_router
@@ -37,7 +41,26 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-app = FastAPI(title="Presupuestación API")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """integracion-progress S4: recepción automática de archivos de Progress como
+    tarea de fondo (escanea al arrancar y cada intervalo; se apaga sola si no está
+    configurada). Se cancela limpiamente al apagar el servicio."""
+    tarea_recepcion = asyncio.create_task(
+        integracion_progress.recepcion_automatica_periodica(get_settings())
+    )
+    try:
+        yield
+    finally:
+        tarea_recepcion.cancel()
+        try:
+            await tarea_recepcion
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Presupuestación API", lifespan=_lifespan)
 
 register_exception_handlers(app)
 
@@ -74,3 +97,4 @@ app.include_router(oc_entregas_router, tags=["oc_entregas"])
 app.include_router(oc_export_router, tags=["oc_export"])
 app.include_router(oc_resumen_router, tags=["oc_resumen"])
 app.include_router(compromisos_router, tags=["compromisos"])
+app.include_router(integracion_progress_router, tags=["integracion_progress"])

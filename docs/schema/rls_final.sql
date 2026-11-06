@@ -556,6 +556,9 @@ ALTER TABLE pcp                    ADD CONSTRAINT fk_pcp_regla    FOREIGN KEY (r
 ALTER TABLE pcp_renglones          ADD CONSTRAINT fk_pcpr_regla   FOREIGN KEY (regla_pcp_id, drogueria_id) REFERENCES reglas_pcp (id, drogueria_id);
 ALTER TABLE pcp_renglon_resultados ADD CONSTRAINT fk_ppr_consulta FOREIGN KEY (consulta_id, drogueria_id)  REFERENCES pcp_consultas (id, drogueria_id);
 
+-- progress_archivos (migración 0043, integración Progress)
+ALTER TABLE progress_archivos ADD CONSTRAINT fk_parch_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id);
+
 -- eventos / eventos_recurrentes
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_resp       FOREIGN KEY (responsable_id) REFERENCES usuarios (id);
 ALTER TABLE eventos             ADD CONSTRAINT fk_ev_createdby  FOREIGN KEY (created_by)     REFERENCES usuarios (id);
@@ -877,6 +880,28 @@ REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM PUBLIC
 REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM anon;
 REVOKE EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) FROM authenticated;
 GRANT  EXECUTE ON FUNCTION backfill_condicion_pago_desde_plazo(UUID) TO service_role;
+
+
+-- =============================================================================
+-- RLS de progress_archivos (migración 0043, integración Progress)
+-- Lectura: unión de los roles de cada sentido del intercambio -- entrada
+-- (presupuestos): prelm_sel de 0015 (superadmin, admin, gerencia, compras);
+-- salida (OC): oc_export/router.py::_ROLES_OC (admin, gerencia,
+-- lider_comercial, comercial). Sin políticas INSERT/UPDATE: el registro lo
+-- escribe solo el backend con service_role (docs/reglas-globales.md 2.3).
+-- Sin DELETE desde el Data API: 0044 quitó parch_del (era inalcanzable sin GRANT
+-- DELETE y borrar una fila permitiría reimportar el mismo archivo).
+-- =============================================================================
+
+DROP TRIGGER IF EXISTS trg_progress_archivos_updated_at ON progress_archivos;
+CREATE TRIGGER trg_progress_archivos_updated_at BEFORE UPDATE ON progress_archivos FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+
+ALTER TABLE progress_archivos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY parch_sel ON progress_archivos FOR SELECT USING ((select get_rol()) IN ('superadmin','admin','gerencia','compras','lider_comercial','comercial') AND (select mismo_tenant(drogueria_id)));
+-- Sin políticas INSERT/UPDATE: RLS habilitado sin política = deny by default.
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON progress_archivos TO service_role;
+GRANT SELECT ON progress_archivos TO authenticated;
 
 
 -- =============================================================================

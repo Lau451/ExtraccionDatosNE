@@ -1,17 +1,28 @@
 import type { ChangeEvent } from 'react'
+import type { ErrorLineaArchivo } from '@/lib/api/integracionProgress'
 import type { ImportPresupuestoLegacyResultado } from '@/lib/api/pcp'
-import type { ErrorParseoCsv } from '../parsearCsvPresupuestos'
+import { fechaLegible } from '@/lib/fechas'
 
-export interface VistaPreviaCsv {
-  presupuestos: number
-  filas: number
+export interface ArchivoDuplicado {
+  /** Cuándo se procesó el archivo original; null si sigue en curso (el aviso
+   * no dice "ya fue procesado" porque todavía puede terminar en error). */
+  procesadoAt: string | null
+  /** El original terminó en error: se puede volver a cargar para reintentar. */
+  conErrores: boolean
+}
+
+function avisoDuplicado({ procesadoAt, conErrores }: ArchivoDuplicado): string {
+  if (procesadoAt) return `Este archivo ya fue procesado el ${fechaLegible(procesadoAt)}.`
+  if (conErrores) {
+    return 'Este archivo ya se intentó importar y terminó con errores. Se puede volver a cargar para reintentar.'
+  }
+  return 'Este archivo ya se está procesando.'
 }
 
 interface Props {
   onSeleccionarArchivo: (event: ChangeEvent<HTMLInputElement>) => void
-  errorLectura: string | null
-  vistaPrevia: VistaPreviaCsv | null
-  erroresValidacion: ErrorParseoCsv[]
+  erroresValidacion: ErrorLineaArchivo[]
+  duplicado: ArchivoDuplicado | null
   onImportar: () => void
   puedeImportar: boolean
   importando: boolean
@@ -19,14 +30,13 @@ interface Props {
   resultados: ImportPresupuestoLegacyResultado[]
 }
 
-/** Pura: toda la lógica (lectura de archivo, parseo, mutation) vive en el
+/** Pura: toda la lógica (selección de archivo, mutation) vive en el
  * container `ImportarPresupuestosLegacy`. Container-presentational split
  * pedido por la tarea T1 (odd/tasks/presupuestos-legacy-import-ui.md). */
 export function ImportarPresupuestosLegacyView({
   onSeleccionarArchivo,
-  errorLectura,
-  vistaPrevia,
   erroresValidacion,
+  duplicado,
   onImportar,
   puedeImportar,
   importando,
@@ -50,15 +60,9 @@ export function ImportarPresupuestosLegacyView({
         />
       </label>
 
-      {errorLectura ? (
-        <p role="alert" className="mt-4 text-sm text-red-600">
-          {errorLectura}
-        </p>
-      ) : null}
-
-      {vistaPrevia ? (
-        <p className="mt-4 text-sm text-slate-700">
-          {vistaPrevia.presupuestos} presupuestos, {vistaPrevia.filas} filas detectadas
+      {duplicado ? (
+        <p role="status" className="mt-4 max-w-xl rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          {avisoDuplicado(duplicado)}
         </p>
       ) : null}
 

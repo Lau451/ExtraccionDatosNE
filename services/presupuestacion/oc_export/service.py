@@ -10,16 +10,12 @@ from zoneinfo import ZoneInfo
 
 from supabase import Client
 
+from services.integracion_progress import api as progress
 from services.presupuestacion.core.audit import registrar_cambio
 from services.presupuestacion.oc_entregas.service import _clasificar_renglones
 from services.presupuestacion.oc_presupuesto.service import _derivar_estado
 from services.presupuestacion.oc_export import repository as repo
-from services.presupuestacion.oc_export.escritor import (
-    carpeta_oc,
-    construir_nombre,
-    escribir_csv,
-)
-from services.presupuestacion.oc_export.filas import construir_filas
+from services.presupuestacion.oc_export.filas import ENCABEZADOS, construir_filas
 from services.presupuestacion.oc_export.models import (
     EntregaExport,
     OcExport,
@@ -288,10 +284,11 @@ def exportar_orden_compra(
             "No se puede exportar la orden de compra a Progress: no hay cantidades planificadas"
         )
 
-    nombre = construir_nombre(codigo_cliente, oc["numero_oc"], oc["version_numero"])
-    ruta = escribir_csv(
+    nombre = progress.construir_nombre_oc(codigo_cliente, oc["numero_oc"], oc["version_numero"])
+    ruta = progress.escribir_csv(
+        ENCABEZADOS,
         filas,
-        carpeta=carpeta_oc(settings.progress_docs_dir),
+        carpeta=progress.carpeta_oc(settings.progress_docs_dir),
         nombre=nombre,
         encoding=settings.oc_export_encoding,
     )
@@ -316,11 +313,11 @@ def exportar_orden_compra(
             )
         else:
             # Compensación manual (D6, mismo criterio que oc_entregas.planificar_entregas).
-            ruta.unlink(missing_ok=True)
+            progress.borrar_archivo(ruta)
             raise
     else:
         if estado != "ok":
-            ruta.unlink(missing_ok=True)
+            progress.borrar_archivo(ruta)
             raise _error_de_marca(estado)
 
     try:
