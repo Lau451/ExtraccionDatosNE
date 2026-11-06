@@ -121,3 +121,36 @@ def seed_presupuesto_item_factory(service_client, seed_drogueria, seed_producto,
     yield _seed
     for presupuesto_item in creados:
         service_client.table("presupuesto_items").delete().eq("id", presupuesto_item["id"]).execute()
+
+
+@pytest.fixture
+def seed_cliente_legacy_factory(service_client, seed_drogueria):
+    """Crea un `tercero` con `codigo_interno` conocido + su fila de rol `clientes`
+    (el import legado de presupuestos resuelve el cliente por
+    `terceros.codigo_interno` y confirma la fila de rol). `terceros.id` ==
+    `clientes.id` (fk_cli_tercero) -- alta en dos pasos, misma que
+    tests/pcp/imports/conftest.py::seed_cliente_pcp_factory. Al finalizar borra
+    los `terceros` de la droguería de test (cascadea a `clientes`)."""
+
+    def _seed(*, codigo_interno: str, razon_social: str = "Cliente Import Legado Test") -> dict:
+        tercero = (
+            service_client.table("terceros")
+            .insert(
+                {
+                    "drogueria_id": seed_drogueria["id"],
+                    "codigo_interno": codigo_interno,
+                    "razon_social": razon_social,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        return (
+            service_client.table("clientes")
+            .insert({"id": tercero["id"], "drogueria_id": seed_drogueria["id"], "tipo": "otro"})
+            .execute()
+            .data[0]
+        )
+
+    yield _seed
+    service_client.table("terceros").delete().eq("drogueria_id", seed_drogueria["id"]).execute()

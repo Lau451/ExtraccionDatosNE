@@ -3,7 +3,7 @@ S3, S4, S5): registrar → descartar duplicados → parsear → entregar → cer
 
 Corre contra el service real del registro con su repository falso en memoria
 (`tests/integracion_progress/registro/conftest.py::RepositorioFalso`) y con la
-entrega a `services.pcp.api` reemplazada por un doble.
+entrega a `services.presupuestacion.presupuestos.api` reemplazada por un doble.
 """
 
 import pytest

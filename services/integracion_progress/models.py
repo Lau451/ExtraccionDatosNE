@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from services.integracion_progress.recepcion.service import EstadoRecepcion
 from services.integracion_progress.registro.models import ErrorLinea
-from services.pcp.api import ImportPresupuestoLegacyResultado
+from services.presupuestacion.presupuestos.api import ImportPresupuestoLegacyResultado
 
 
 class RecepcionPresupuestosOut(BaseModel):

@@ -25,3 +25,16 @@ def listar_procesos_comerciales(
     if activos:
         query = query.not_.in_("estado", _ESTADOS_TERMINALES)
     return query.order("nombre").execute().data
+
+
+def borrar_proceso_comercial_recien_creado(client: Client, *, proceso_comercial_id: str) -> None:
+    """Deshace la creación de un proceso que nunca llegó a usarse (compensación
+    manual, no hay transacción real vía PostgREST). Borra primero sus filas de
+    `historial_cambios` -- el evento 'creacion' que escribió
+    `service.crear_proceso_comercial`; fk_hc_proc no tiene CASCADE -- y después el
+    proceso, que cascadea `items_proceso` (fk_ip_proc). Ambos borrados filtran por
+    este `proceso_comercial_id`, nunca por fecha ni por tipo de evento."""
+    client.table("historial_cambios").delete().eq(
+        "proceso_comercial_id", proceso_comercial_id
+    ).execute()
+    client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()

@@ -77,6 +77,15 @@ def crear_proceso_comercial_para_endpoint(
     )
 
 
+def deshacer_creacion_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> None:
+    """Compensación de quien creó el proceso con `crear_proceso_comercial` en la
+    misma operación y no pudo completarla (p.ej. el import legado de
+    presupuestos): borra el proceso junto con su evento de creación. El llamador
+    debe haber borrado antes lo que referencie al proceso sin CASCADE
+    (`presupuestos`, `presupuesto_items`)."""
+    repo.borrar_proceso_comercial_recien_creado(client, proceso_comercial_id=proceso_comercial_id)
+
+
 def listar_procesos_comerciales(
     client: Client, *, drogueria_id: str, activos: bool = True
 ) -> list[dict[str, Any]]:

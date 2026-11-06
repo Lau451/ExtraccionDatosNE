@@ -7,21 +7,22 @@ rol-set que `services/presupuestacion/imports/router.py::_ROLES_IMPORT`
 módulo en vez de declarar una copia local, mismo criterio que el resto de
 `services/pcp/**`. `/pcp/imports/presupuestos-legacy` es la excepción: solo
 `admin` (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, odd/tasks/roles-permisos-matriz.md S6).
+Mantiene su path, roles, request y response, pero el import lo hace `comercial`
+a través de `services.presupuestacion.presupuestos.api`
+(odd/tasks/procesos-comerciales-dueno.md S1).
 """
 
 from fastapi import APIRouter, Depends
 
-from services.pcp.imports.models import (
-    ImportPcpLegacyRequest,
-    ImportPcpLegacyResultado,
+from services.pcp.imports.models import ImportPcpLegacyRequest, ImportPcpLegacyResultado
+from services.pcp.imports.service import importar_pcp_legacy_para_endpoint
+from services.pcp.roles import ROLES_ESCRITURA_PCP
+from services.presupuestacion.presupuestos.api import (
+    ROLES_IMPORT_PRESUPUESTOS_LEGACY,
     ImportPresupuestoLegacyRequest,
     ImportPresupuestoLegacyResultado,
-)
-from services.pcp.imports.service import (
-    importar_pcp_legacy_para_endpoint,
     importar_presupuesto_legacy_para_endpoint,
 )
-from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_IMPORT_PRESUPUESTOS_LEGACY
 from services.shared.auth import UsuarioPerfil, require_roles
 
 router = APIRouter()

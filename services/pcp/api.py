@@ -12,6 +12,10 @@ público para un consumidor futuro fuera de `services/presupuestacion/main.py`
 que ese consumidor tenga que conocer la estructura interna de cada
 submódulo de PCP. No define lógica propia: reexporta modelos y funciones de
 servicio de `gestion`, `historial`, `renglones` y (desde PR6) `catalogo`.
+
+El import legado de presupuestos ya no se expone acá: vive en `comercial`,
+fachada `services.presupuestacion.presupuestos.api`
+(odd/tasks/procesos-comerciales-dueno.md S1).
 """
 
 from services.pcp.catalogo.models import ProductoProveedorCreate, ProductoProveedorOut
@@ -45,16 +49,10 @@ from services.pcp.historial.models import EventoHistorialCreate, EventoHistorial
 from services.pcp.historial.service import agregar_evento, listar_eventos
 from services.pcp.imports.models import (
     FilaImportPcpLegacy,
-    FilaImportPresupuestoLegacy,
     ImportPcpLegacyRequest,
     ImportPcpLegacyResultado,
-    ImportPresupuestoLegacyResultado,
 )
-from services.pcp.imports.service import (
-    importar_pcp_legacy,
-    importar_pcp_legacy_para_endpoint,
-    importar_presupuesto_legacy,
-)
+from services.pcp.imports.service import importar_pcp_legacy, importar_pcp_legacy_para_endpoint
 from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort, ResultadoEnvio
 from services.pcp.negociacion.models import RegistrarResultadoNegociacion, ResultadoNegociacionOut
 from services.pcp.negociacion.service import (
@@ -82,7 +80,6 @@ from services.pcp.renglones.service import (
     seleccionar_proveedores,
     seleccionar_proveedores_para_endpoint,
 )
-from services.pcp.roles import ROLES_IMPORT_PRESUPUESTOS_LEGACY
 from services.pcp.sugerencias.models import SugerenciaAgrupacionOut, SugerenciaPrecioRecienteOut
 from services.pcp.sugerencias.service import (
     sugerir_agrupacion_por_renglon,
@@ -136,12 +133,6 @@ __all__ = [
     # imports -- funciones
     "importar_pcp_legacy",
     "importar_pcp_legacy_para_endpoint",
-    # imports de presupuestos legacy -- consumidos por services/integracion_progress
-    # (odd/tasks/integracion-progress.md S5), que les entrega el CSV de Progress
-    "FilaImportPresupuestoLegacy",
-    "ImportPresupuestoLegacyResultado",
-    "importar_presupuesto_legacy",
-    "ROLES_IMPORT_PRESUPUESTOS_LEGACY",
     # mensajeria -- modelos (D9)
     "MensajeAdjunto",
     "MensajeriaPort",

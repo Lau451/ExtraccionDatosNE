@@ -20,9 +20,13 @@ PRESUPUESTACION_ROOT = REPO_ROOT / "services" / "presupuestacion"
 
 # D1: capas de servicio publicas que services/pcp/** puede importar. Nunca un
 # `repository` ajeno, y nunca ningun otro submodulo de presupuestacion/terceros.
+# `services.presupuestacion.presupuestos.api` es la fachada del import legado de
+# presupuestos que llama POST /pcp/imports/presupuestos-legacy
+# (odd/tasks/procesos-comerciales-dueno.md S1).
 _PERMITIDOS_EXACTOS = {
     "services.presupuestacion.pricing.service",
     "services.presupuestacion.notificaciones.service",
+    "services.presupuestacion.presupuestos.api",
     "services.terceros.api",
 }
 _PERMITIDOS_PREFIJO = ("services.productos",)
@@ -90,9 +94,21 @@ def test_pcp_solo_importa_capas_publicas_permitidas():
         f"Import prohibido desde services/pcp/**: {ofensores} "
         "(D1: services/pcp/** solo puede importar "
         "services.presupuestacion.pricing.service, "
-        "services.presupuestacion.notificaciones.service, services.terceros.api "
+        "services.presupuestacion.notificaciones.service, "
+        "services.presupuestacion.presupuestos.api, services.terceros.api "
         "y services.productos -- nunca un repository ajeno)."
     )
+
+
+def test_de_presupuestos_solo_se_permite_la_fachada():
+    assert _modulo_permitido_desde_pcp("services.presupuestacion.presupuestos.api")
+    for interno in (
+        "services.presupuestacion.presupuestos.importacion_legacy",
+        "services.presupuestacion.presupuestos.importacion_legacy_repository",
+        "services.presupuestacion.presupuestos.importacion_legacy_models",
+        "services.presupuestacion.presupuestos.service",
+    ):
+        assert not _modulo_permitido_desde_pcp(interno), interno
 
 
 def test_presupuestacion_solo_importa_pcp_desde_main():

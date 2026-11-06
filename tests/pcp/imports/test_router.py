@@ -132,6 +132,9 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_pcp(
         pcp = service_client.table("pcp").select("*").eq("id", cuerpo[0]["pcp_id"]).execute().data[0]
         service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
         service_client.table("presupuestos").delete().eq("id", pcp["presupuesto_id"]).execute()
+        service_client.table("historial_cambios").delete().eq(
+            "proceso_comercial_id", pcp["proceso_comercial_id"]
+        ).execute()
         service_client.table("procesos_comerciales").delete().eq(
             "id", pcp["proceso_comercial_id"]
         ).execute()

@@ -94,6 +94,9 @@ def test_importar_con_rol_autorizado_devuelve_200_y_crea_el_presupuesto(
             .data[0]
         )
         service_client.table("presupuestos").delete().eq("id", presupuesto["id"]).execute()
+        service_client.table("historial_cambios").delete().eq(
+            "proceso_comercial_id", presupuesto["proceso_comercial_id"]
+        ).execute()
         service_client.table("procesos_comerciales").delete().eq(
             "id", presupuesto["proceso_comercial_id"]
         ).execute()
