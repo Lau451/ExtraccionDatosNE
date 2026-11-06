@@ -27,7 +27,10 @@ def generate_with_fallback(client, contents, config=None): ...
 
 DATA_DIR: Path                  # config.py:110
 OUTPUT_BASE: Path               # config.py:111, de OUTPUT_BASE_DIR (env o config_local.py)
-COMPARATIVAS_OUTPUT_BASE: Path  # config.py:112
+# One folder per document type under OUTPUT_BASE, one subfolder per client inside:
+LICITACIONES_OUTPUT_BASE: Path    # OUTPUT_BASE/licitaciones/directas (robot.py)
+COMPARATIVAS_OUTPUT_BASE: Path    # OUTPUT_BASE/comparativas (robot_comparativas.py)
+ORDENES_COMPRA_OUTPUT_BASE: Path  # OUTPUT_BASE/ordenes_compra (robot_orden_compra.py)
 
 def get_output_dir(base_dir: Path = OUTPUT_BASE, origen_id: str = "", ensure_exists: bool = True) -> Path: ...
 # config.py:157-162

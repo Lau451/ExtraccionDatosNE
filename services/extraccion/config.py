@@ -109,7 +109,10 @@ def generate_with_fallback(client, contents, config=None):
 # ======================
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_BASE = _resolve_output_base_dir()
+# One folder per document type, one subfolder per client inside each.
+LICITACIONES_OUTPUT_BASE = OUTPUT_BASE / "licitaciones" / "directas"
 COMPARATIVAS_OUTPUT_BASE = OUTPUT_BASE / "comparativas"
+ORDENES_COMPRA_OUTPUT_BASE = OUTPUT_BASE / "ordenes_compra"
 
 
 def _safe_folder_value(raw_value: str, default_value: str) -> str:

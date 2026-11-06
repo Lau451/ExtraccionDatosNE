@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 from uuid import UUID
 import pandas as pd
-from services.extraccion.config import CLIENT, get_output_dir, get_processed_dir, get_next_client, generate_with_fallback
+from services.extraccion.config import CLIENT, LICITACIONES_OUTPUT_BASE, get_output_dir, get_processed_dir, get_next_client, generate_with_fallback
 from services.extraccion.gemini_errors import handle_gemini_errors, GeminiQuotaExceededError, GeminiRateLimitError
 
 logger = logging.getLogger(__name__)
@@ -344,8 +344,8 @@ REGLAS:
     contenido = _limpiar_cantidad(contenido)
     contenido = _rellenar_items_incrementales(contenido)
 
-    output_dir = get_output_dir(origen_id=cliente)
-    processed_dir = get_processed_dir(origen_id=cliente)
+    output_dir = get_output_dir(base_dir=LICITACIONES_OUTPUT_BASE, origen_id=cliente)
+    processed_dir = get_processed_dir(base_dir=LICITACIONES_OUTPUT_BASE, origen_id=cliente)
 
     nombre_csv = nombre_unico(nombre_base, output_dir, ".csv")
     ruta_salida = output_dir / nombre_csv
