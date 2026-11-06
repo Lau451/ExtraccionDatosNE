@@ -106,7 +106,7 @@ que más riesgo tiene de romper datos sin que se note y deja al final lo que es 
 |-------|--------------|--------|--------|
 | 0 | Cimientos: capas y `services/shared` como plataforma (`tests/arquitectura/test_capas.py`). | X-ARQ-001 | **[IMPLEMENTADO]** (#96) |
 | 1 | `integracion_progress`: fachada, registro de archivos, recepción manual y automática. | — | **[IMPLEMENTADO]** (#97, `odd/tasks/integracion-progress.md`) |
-| 2 | Un solo dueño de `procesos_comerciales`: los demás módulos escriben a través de su fachada. | X-ARQ-003 | En curso |
+| 2 | Un solo dueño de `procesos_comerciales`: los demás módulos escriben a través de su fachada. | X-ARQ-003 | **[IMPLEMENTADO]** (`odd/tasks/procesos-comerciales-dueno.md`) |
 | 3 | Versionado de costos en un solo lugar (hoy duplicado entre `imports` y `productos`). | X-ARQ-004 | Pendiente |
 | 4 | `pcp` usa las fachadas de `notificaciones` y `pricing` en lugar de sus internos. | X-ARQ-002 | Pendiente |
 | 5 | Roles y permisos centralizados en la plataforma. | X-ARQ-005 | Pendiente |
