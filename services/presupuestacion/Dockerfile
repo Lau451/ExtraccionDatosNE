@@ -12,6 +12,7 @@ COPY services/shared ./services/shared
 COPY services/terceros ./services/terceros
 COPY services/productos ./services/productos
 COPY services/pcp ./services/pcp
+COPY services/integracion_progress ./services/integracion_progress
 
 # Exponemos el puerto
 EXPOSE 8001
