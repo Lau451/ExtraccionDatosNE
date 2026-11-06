@@ -57,15 +57,21 @@ def crear_proceso_comercial(
             "updated_by": usuario_id,
         },
     )
-    registrar_evento_ciclo_vida(
-        client,
-        entidad="proceso_comercial",
-        entidad_id=proceso["id"],
-        drogueria_id=drogueria_id,
-        tipo_cambio="creacion",
-        origen="usuario",
-        usuario_id=usuario_id,
-    )
+    # Two writes without a transaction (PostgREST): if the event cannot be recorded,
+    # the proceso is removed so no caller is left with a proceso it never got back.
+    try:
+        registrar_evento_ciclo_vida(
+            client,
+            entidad="proceso_comercial",
+            entidad_id=proceso["id"],
+            drogueria_id=drogueria_id,
+            tipo_cambio="creacion",
+            origen="usuario",
+            usuario_id=usuario_id,
+        )
+    except Exception:
+        repo.borrar_proceso_comercial_recien_creado(client, proceso_comercial_id=proceso["id"])
+        raise
     return proceso
 
 
@@ -75,6 +81,15 @@ def crear_proceso_comercial_para_endpoint(
     return crear_proceso_comercial(
         get_service_client(), drogueria_id=drogueria_id, body=body, usuario_id=usuario_id
     )
+
+
+def deshacer_creacion_proceso_comercial(client: Client, *, proceso_comercial_id: str) -> None:
+    """Compensación de quien creó el proceso con `crear_proceso_comercial` en la
+    misma operación y no pudo completarla (p.ej. el import legado de
+    presupuestos): borra el proceso junto con su evento de creación. El llamador
+    debe haber borrado antes lo que referencie al proceso sin CASCADE
+    (`presupuestos`, `presupuesto_items`)."""
+    repo.borrar_proceso_comercial_recien_creado(client, proceso_comercial_id=proceso_comercial_id)
 
 
 def listar_procesos_comerciales(

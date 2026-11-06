@@ -334,6 +334,9 @@ def test_carga_manual_de_punta_a_punta_duplicado_y_listado(
                 service_client.table("presupuestos").delete().eq(
                     "id", presupuesto[0]["id"]
                 ).execute()
+                service_client.table("historial_cambios").delete().eq(
+                    "proceso_comercial_id", presupuesto[0]["proceso_comercial_id"]
+                ).execute()
                 service_client.table("procesos_comerciales").delete().eq(
                     "id", presupuesto[0]["proceso_comercial_id"]
                 ).execute()

@@ -199,7 +199,7 @@ gerencia, compras)`, `ROLES_ESCRITURA_PCP = (admin, gerencia, compras)` —
 `superadmin` puede leer pero no escribir. Verificado end-to-end contra los 6
 routers reales (`tests/pcp/test_matriz_roles.py`, tasks.md 12.2). Excepción:
 `POST /pcp/imports/presupuestos-legacy` exige `ROLES_IMPORT_PRESUPUESTOS_LEGACY =
-(admin,)` (`services/pcp/roles.py:20`, `services/pcp/imports/router.py:45`; matriz de
+(admin,)` (`services/presupuestacion/presupuestos/importacion_legacy.py`, `services/pcp/imports/router.py`; matriz de
 roles, `odd/tasks/roles-permisos-matriz.md` S6) — `gerencia` y `compras` reciben 403
 ahí, verificado en `tests/test_roles_matriz_backend.py:315-330`.
 

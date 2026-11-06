@@ -6,7 +6,8 @@ RFC4180 y mismos mensajes de error por línea. Lo único nuevo es la decodificac
 los bytes crudos: UTF-8 (con o sin BOM) y, si no es UTF-8 válido, cp1252, que es el
 encoding con el que exporta Progress.
 
-Las filas salen como dicts compatibles con `services.pcp.api.FilaImportPresupuestoLegacy`
+Las filas salen como dicts compatibles con
+`services.presupuestacion.presupuestos.api.FilaImportPresupuestoLegacy`
 (los opcionales vacíos van como None) y los errores como `{"linea", "mensaje"}`.
 """
 

@@ -5,8 +5,9 @@ resolución de `producto_id` por `codigo_producto`, y compensación manual
 ante una falla a mitad de camino (mismo criterio que
 `services/presupuestacion/extraccion/service.py::_materializar_orden_compra`).
 
-RED hasta que `services/pcp/imports/{repository,service}.py` expongan
-`importar_presupuesto_legacy`.
+Movidos desde tests/pcp/imports/test_presupuestos_legacy_service.py junto con el
+import, que ahora vive en `comercial` (odd/tasks/procesos-comerciales-dueno.md S1);
+el proceso se crea con `procesos_comerciales.service.crear_proceso_comercial` (S2).
 """
 
 from decimal import Decimal
@@ -14,9 +15,12 @@ from decimal import Decimal
 import pytest
 from postgrest.exceptions import APIError
 
-from services.pcp.imports import repository as repo
-from services.pcp.imports.models import FilaImportPresupuestoLegacy
-from services.pcp.imports.service import importar_presupuesto_legacy
+from services.presupuestacion.presupuestos import importacion_legacy
+from services.presupuestacion.presupuestos import importacion_legacy_repository as repo
+from services.presupuestacion.presupuestos.api import (
+    FilaImportPresupuestoLegacy,
+    importar_presupuesto_legacy,
+)
 from services.shared.exceptions import NotFoundError
 
 
@@ -27,8 +31,13 @@ def _limpiar_import(service_client, *, presupuesto_id: str, proceso_comercial_id
     `presupuesto_legacy_map` (fk_prelm_presupuesto), liberando la referencia
     que bloquearía el CASCADE de `items_proceso` al borrar
     `procesos_comerciales` (fk_ip_proc) -- mismo criterio que
-    tests/pcp/imports/test_service.py::_limpiar_import."""
+    tests/pcp/imports/test_service.py::_limpiar_import. `historial_cambios`
+    (el evento 'creacion' del proceso, fk_hc_proc sin CASCADE) va antes que
+    `procesos_comerciales`."""
     service_client.table("presupuestos").delete().eq("id", presupuesto_id).execute()
+    service_client.table("historial_cambios").delete().eq(
+        "proceso_comercial_id", proceso_comercial_id
+    ).execute()
     service_client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()
 
 
@@ -53,9 +62,9 @@ def _fila(*, codigo_cliente: str, numero_presupuesto: str, renglon: int = 1, **o
 
 @pytest.mark.integration
 def test_primer_import_crea_proceso_presupuesto_map_e_items(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-1001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-1001")
     fila = _fila(
         codigo_cliente="CLI-PRE-1001",
         numero_presupuesto="PRE-1001",
@@ -151,9 +160,9 @@ def test_primer_import_crea_proceso_presupuesto_map_e_items(
 
 @pytest.mark.integration
 def test_reimportar_mismo_numero_no_duplica_nada_y_retorna_existente(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-2001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-2001")
     fila = _fila(codigo_cliente="CLI-PRE-2001", numero_presupuesto="PRE-2001")
 
     resultado_1 = importar_presupuesto_legacy(
@@ -231,9 +240,9 @@ def test_reimportar_mismo_numero_no_duplica_nada_y_retorna_existente(
 
 @pytest.mark.integration
 def test_reimportar_reporta_el_mismo_renglones_sin_producto_que_el_primer_import(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-9001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-9001")
     fila = _fila(
         codigo_cliente="CLI-PRE-9001", numero_presupuesto="PRE-9001", precio_producto=Decimal("5.00")
     )
@@ -271,9 +280,9 @@ def test_reimportar_reporta_el_mismo_renglones_sin_producto_que_el_primer_import
 
 @pytest.mark.integration
 def test_producto_id_resuelto_desde_codigo_producto(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory, seed_producto_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory, seed_producto_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-3001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-3001")
     producto = seed_producto_factory()
     fila = _fila(
         codigo_cliente="CLI-PRE-3001",
@@ -327,9 +336,9 @@ def test_producto_id_resuelto_desde_codigo_producto(
 
 @pytest.mark.integration
 def test_codigo_producto_desconocido_no_falla_la_fila(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-4001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-4001")
     fila = _fila(
         codigo_cliente="CLI-PRE-4001", numero_presupuesto="PRE-4001", codigo_producto="NO-EXISTE-CODIGO"
     )
@@ -391,9 +400,9 @@ def test_cliente_desconocido_lanza_notfound_sin_crear_nada(
 
 @pytest.mark.integration
 def test_falla_a_mitad_de_camino_compensa_y_permite_reintentar(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory, monkeypatch
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory, monkeypatch
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-6001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-6001")
     filas_invalidas = [
         _fila(codigo_cliente="CLI-PRE-6001", numero_presupuesto="PRE-6001", renglon=1),
         _fila(codigo_cliente="CLI-PRE-6001", numero_presupuesto="PRE-6001", renglon=1),  # renglón duplicado
@@ -404,12 +413,12 @@ def test_falla_a_mitad_de_camino_compensa_y_permite_reintentar(
     # presupuesto/proceso_comercial/items_proceso quedaron gone, no solo
     # inferirlo de forma indirecta.
     ids_creados: dict[str, str] = {}
-    proceso_original = repo.crear_proceso_comercial
+    proceso_original = importacion_legacy.crear_proceso_comercial
     presupuesto_original = repo.crear_presupuesto
     item_original = repo.crear_item_proceso
 
-    def _proceso_spy(client, fila):
-        resultado = proceso_original(client, fila)
+    def _proceso_spy(client, **kwargs):
+        resultado = proceso_original(client, **kwargs)
         ids_creados["proceso_comercial_id"] = resultado["id"]
         return resultado
 
@@ -423,7 +432,7 @@ def test_falla_a_mitad_de_camino_compensa_y_permite_reintentar(
         ids_creados.setdefault("items_proceso_ids", []).append(resultado["id"])
         return resultado
 
-    monkeypatch.setattr(repo, "crear_proceso_comercial", _proceso_spy)
+    monkeypatch.setattr(importacion_legacy, "crear_proceso_comercial", _proceso_spy)
     monkeypatch.setattr(repo, "crear_presupuesto", _presupuesto_spy)
     monkeypatch.setattr(repo, "crear_item_proceso", _item_spy)
 
@@ -464,6 +473,15 @@ def test_falla_a_mitad_de_camino_compensa_y_permite_reintentar(
         .data
     )
     assert procesos == []  # proceso_comercial compensado
+
+    historial = (
+        service_client.table("historial_cambios")
+        .select("id")
+        .eq("proceso_comercial_id", proceso_comercial_id)
+        .execute()
+        .data
+    )
+    assert historial == []  # el evento 'creacion' del proceso compensado también se borró
 
     items_proceso = (
         service_client.table("items_proceso")
@@ -509,9 +527,9 @@ def test_falla_a_mitad_de_camino_compensa_y_permite_reintentar(
 
 @pytest.mark.integration
 def test_compensacion_re_lanza_el_error_original_y_borra_proceso_aunque_falle_borrar_presupuesto(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory, monkeypatch
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory, monkeypatch
 ):
-    cliente = seed_cliente_pcp_factory(codigo_interno="CLI-PRE-6501")
+    cliente = seed_cliente_legacy_factory(codigo_interno="CLI-PRE-6501")
     filas_invalidas = [
         _fila(codigo_cliente="CLI-PRE-6501", numero_presupuesto="PRE-6501", renglon=1),
         _fila(codigo_cliente="CLI-PRE-6501", numero_presupuesto="PRE-6501", renglon=1),  # renglón duplicado
@@ -557,9 +575,9 @@ def test_compensacion_re_lanza_el_error_original_y_borra_proceso_aunque_falle_bo
 
 @pytest.mark.integration
 def test_lote_con_multiples_numero_presupuesto_agrupa_y_devuelve_un_resultado_por_cada_uno_en_orden(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
 ):
-    seed_cliente_pcp_factory(codigo_interno="CLI-PRE-8001")
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-8001")
     filas = [
         _fila(codigo_cliente="CLI-PRE-8001", numero_presupuesto="PRE-8001", renglon=1),
         _fila(codigo_cliente="CLI-PRE-8001", numero_presupuesto="PRE-8002", renglon=1),
@@ -590,3 +608,61 @@ def test_lote_con_multiples_numero_presupuesto_agrupa_y_devuelve_un_resultado_po
                 presupuesto_id=fila_resultado["presupuesto_id"],
                 proceso_comercial_id=proceso_comercial_id,
             )
+
+
+# ---------------------------------------------------------------------------
+# S2: el proceso se crea con el servicio del dueño -- queda con created_by =
+# el usuario que importa y un evento de auditoría 'creacion'.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_primer_import_crea_el_proceso_con_created_by_y_evento_de_creacion(
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_legacy_factory
+):
+    seed_cliente_legacy_factory(codigo_interno="CLI-PRE-1101")
+    fila = _fila(codigo_cliente="CLI-PRE-1101", numero_presupuesto="PRE-1101")
+
+    resultado = importar_presupuesto_legacy(
+        service_client, drogueria_id=seed_drogueria["id"], filas=[fila], usuario_id=seed_usuario_sistema["id"]
+    )
+    proceso_comercial_id = (
+        service_client.table("presupuestos")
+        .select("proceso_comercial_id")
+        .eq("id", resultado[0]["presupuesto_id"])
+        .execute()
+        .data[0]["proceso_comercial_id"]
+    )
+    try:
+        proceso = (
+            service_client.table("procesos_comerciales")
+            .select("nombre, clase, created_by, updated_by")
+            .eq("id", proceso_comercial_id)
+            .execute()
+            .data[0]
+        )
+        assert proceso["created_by"] == seed_usuario_sistema["id"]
+        assert proceso["updated_by"] == seed_usuario_sistema["id"]
+        assert proceso["nombre"] == "Import legado — Hospital Presupuesto Test (presupuesto PRE-1101)"
+        assert proceso["clase"] == "licitacion"  # sin proceso_comercial -> default
+
+        eventos = (
+            service_client.table("historial_cambios")
+            .select("tipo_cambio, usuario_id, drogueria_id")
+            .eq("proceso_comercial_id", proceso_comercial_id)
+            .execute()
+            .data
+        )
+        assert eventos == [
+            {
+                "tipo_cambio": "creacion",
+                "usuario_id": seed_usuario_sistema["id"],
+                "drogueria_id": seed_drogueria["id"],
+            }
+        ]
+    finally:
+        _limpiar_import(
+            service_client,
+            presupuesto_id=resultado[0]["presupuesto_id"],
+            proceso_comercial_id=proceso_comercial_id,
+        )

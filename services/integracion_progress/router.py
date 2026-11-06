@@ -3,7 +3,8 @@
 - POST /integracion-progress/presupuestos: carga manual del archivo de presupuestos
   tal como lo exporta Progress (multipart). Corre el mismo pipeline que la recepción
   automática desde la carpeta. Solo admin, mismo rol-set que
-  POST /pcp/imports/presupuestos-legacy (ROLES_IMPORT_PRESUPUESTOS_LEGACY de PCP).
+  POST /pcp/imports/presupuestos-legacy (ROLES_IMPORT_PRESUPUESTOS_LEGACY de
+  `comercial`, services.presupuestacion.presupuestos.api).
   Un archivo de más de `TAMANO_MAXIMO_BYTES` se rechaza con 413 sin procesarlo.
   Un duplicado cuyo original terminó en `error` trae en `errores` los del original,
   para que la pantalla no lo confunda con uno que sigue en curso.
@@ -24,7 +25,7 @@ from services.integracion_progress.registro.models import (
     RegistroArchivo,
     Sentido,
 )
-from services.pcp.api import ROLES_IMPORT_PRESUPUESTOS_LEGACY
+from services.presupuestacion.presupuestos.api import ROLES_IMPORT_PRESUPUESTOS_LEGACY
 from services.shared.auth import UsuarioPerfil, require_roles
 from services.shared.database import get_service_client, get_user_client
 from services.shared.exceptions import ForbiddenError

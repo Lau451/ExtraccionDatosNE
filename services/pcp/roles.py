@@ -14,7 +14,3 @@ constantes.
 
 ROLES_LECTURA_PCP = ("superadmin", "admin", "gerencia", "compras")
 ROLES_ESCRITURA_PCP = ("admin", "gerencia", "compras")
-
-# Import de presupuestos legacy (odd/tasks/roles-permisos-matriz.md S6): solo
-# admin, más restrictivo que el import de PCP (ROLES_ESCRITURA_PCP).
-ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)

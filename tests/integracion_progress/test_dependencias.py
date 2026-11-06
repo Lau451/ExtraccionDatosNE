@@ -23,8 +23,9 @@ _ROUTER = f"{_PREFIJO}.router"
 _MAIN_PRESUPUESTACION = REPO_ROOT / "services" / "presupuestacion" / "main.py"
 
 # Fachadas públicas de los módulos dueños a los que integracion_progress entrega
-# lotes. `services.pcp.api` recibe el archivo de presupuestos (S5).
-_FACHADAS_DESTINO: set[str] = {"services.pcp.api"}
+# lotes. `services.presupuestacion.presupuestos.api` (`comercial`) recibe el archivo
+# de presupuestos (S5; odd/tasks/procesos-comerciales-dueno.md S1).
+_FACHADAS_DESTINO: set[str] = {"services.presupuestacion.presupuestos.api"}
 
 
 def _paquete(archivo: Path) -> str:
@@ -123,6 +124,16 @@ def test_los_imports_relativos_se_resuelven_contra_el_paquete(tmp_path):
         "services.shared",
     ]
     assert not _permitido_desde_adentro("services.pcp.imports")
+
+
+def test_de_los_destinos_solo_se_permite_la_fachada():
+    assert _permitido_desde_adentro("services.presupuestacion.presupuestos.api")
+    for interno in (
+        "services.presupuestacion.presupuestos.importacion_legacy",
+        "services.presupuestacion.presupuestos.importacion_legacy_models",
+        "services.pcp.api",
+    ):
+        assert not _permitido_desde_adentro(interno), interno
 
 
 def test_el_paquete_de_un_archivo_sale_de_su_ruta():

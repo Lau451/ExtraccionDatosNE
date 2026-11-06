@@ -58,8 +58,15 @@ submódulos de `services/pcp/`.
 > presupuestos de Progress ya no se parsea en el frontend. Entra por
 > `services/integracion_progress` (carga manual `POST /integracion-progress/presupuestos`
 > o recepción automática desde la carpeta), que lo registra, lo parsea y entrega las
-> filas a `importar_presupuesto_legacy` vía `services/pcp/api.py`. El endpoint
+> filas a `importar_presupuesto_legacy` vía `services/presupuestacion/presupuestos/api.py`. El endpoint
 > `POST /pcp/imports/presupuestos-legacy` sigue existiendo, pero la pantalla ya no lo usa.
+>
+> **Actualización (etapa 2, `odd/tasks/procesos-comerciales-dueno.md`):** el import de
+> presupuestos (punto 1 abajo) ya no vive en `pcp`: su implementación está en
+> `services/presupuestacion/presupuestos/importacion_legacy.py` (módulo `comercial`), que
+> crea el proceso con `procesos_comerciales.service.crear_proceso_comercial` (`created_by` y
+> evento `creacion`). `pcp` solo sirve el endpoint a través de esa fachada y solo escribe
+> sus propias tablas (`pcp`, `pcp_legacy_map`, `pcp_renglones`).
 >
 > **Actualización (2026-09-24, `odd/tasks/presupuestos-legacy-import.md`):**
 > el diseño de placeholders de D8 quedó superado. Ahora hay dos imports
@@ -78,8 +85,8 @@ submódulos de `services/pcp/`.
 >    `descripcion_producto`, `cantidad_producto`, `precio_producto`,
 >    `importe_total`. El subtotal por renglón no se importa:
 >    `presupuesto_items.monto_total` es GENERATED. Roles: solo `admin`
->    (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, `services/pcp/roles.py:20`, aplicado en
->    `services/pcp/imports/router.py:45`; matriz de roles,
+>    (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, `services/presupuestacion/presupuestos/importacion_legacy.py`,
+>    aplicado en `services/pcp/imports/router.py`; matriz de roles,
 >    `odd/tasks/roles-permisos-matriz.md` S6). El import de PCP (punto 2) sigue con
 >    `ROLES_ESCRITURA_PCP` (`admin`, `gerencia`, `compras`).
 > 2. **PCP** — `POST /pcp/imports/legacy`. Busca el presupuesto ya importado
@@ -161,7 +168,7 @@ sistema de referencia primario.
 
 | Archivo | Qué hace |
 |---|---|
-| `services/pcp/roles.py` | `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP` (D11) — compartidas por los 6 routers — y `ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)` (S6 de la matriz de roles), solo para `/pcp/imports/presupuestos-legacy`. |
+| `services/pcp/roles.py` | `ROLES_LECTURA_PCP`/`ROLES_ESCRITURA_PCP` (D11) — compartidas por los 6 routers. El rol del import de presupuestos (`ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)`, S6 de la matriz de roles) vive en `services/presupuestacion/presupuestos/importacion_legacy.py`. |
 | `services/pcp/errors.py` | Códigos Postgres compartidos (`UNIQUE_VIOLATION`, `CHECK_VIOLATION`) — no lógica de traducción. |
 | `services/pcp/router.py` | Agrega los 6 routers de submódulo en un único `APIRouter`. |
 | `services/pcp/api.py` | Fachada unidireccional: reexporta modelos/funciones de servicio de todos los submódulos. |

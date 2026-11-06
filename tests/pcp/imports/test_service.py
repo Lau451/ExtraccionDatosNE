@@ -18,8 +18,12 @@ from decimal import Decimal
 
 import pytest
 
-from services.pcp.imports.models import FilaImportPcpLegacy, FilaImportPresupuestoLegacy
-from services.pcp.imports.service import importar_pcp_legacy, importar_presupuesto_legacy
+from services.pcp.imports.models import FilaImportPcpLegacy
+from services.pcp.imports.service import importar_pcp_legacy
+from services.presupuestacion.presupuestos.api import (
+    FilaImportPresupuestoLegacy,
+    importar_presupuesto_legacy,
+)
 from services.shared.exceptions import NotFoundError
 
 
@@ -30,9 +34,14 @@ def _limpiar_import(service_client, *, pcp_id: str, presupuesto_id: str, proceso
     (fk_pcpr_pcp/fk_pcplm_pcp/fk_pcph_pcp), y `presupuestos` cascadea
     `presupuesto_items`/`presupuesto_legacy_map` -- ambos liberan la
     referencia que bloquearía el CASCADE de `items_proceso` al borrar
-    `procesos_comerciales` (fk_ip_proc)."""
+    `procesos_comerciales` (fk_ip_proc). `historial_cambios` (el evento
+    'creacion' del proceso, fk_hc_proc sin CASCADE) va antes que
+    `procesos_comerciales`."""
     service_client.table("pcp").delete().eq("id", pcp_id).execute()
     service_client.table("presupuestos").delete().eq("id", presupuesto_id).execute()
+    service_client.table("historial_cambios").delete().eq(
+        "proceso_comercial_id", proceso_comercial_id
+    ).execute()
     service_client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()
 
 
@@ -537,6 +546,9 @@ def test_pcp_renglon_no_existe_en_el_presupuesto_es_rechazado(
             .data[0]["proceso_comercial_id"]
         )
         service_client.table("presupuestos").delete().eq("id", presupuesto["presupuesto_id"]).execute()
+        service_client.table("historial_cambios").delete().eq(
+            "proceso_comercial_id", proceso_comercial_id
+        ).execute()
         service_client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()
 
 
