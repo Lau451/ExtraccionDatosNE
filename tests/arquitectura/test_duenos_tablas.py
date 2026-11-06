@@ -19,8 +19,8 @@ _TABLAS_COMERCIAL = (
 )
 _DUENO_COMERCIAL = RAIZ / "services" / "presupuestacion"
 
-# `.table("x")` up to the end of its call chain (`.execute()`), across lines.
-_CADENA = re.compile(r"\.table\(\s*[\"']([a-z_]+)[\"']\s*\)(.*?)\.execute\(\)", re.DOTALL)
+# `.table("x")` / `.from_("x")` up to the end of its call chain (`.execute()`), across lines.
+_CADENA = re.compile(r"\.(?:table|from_)\(\s*[\"']([a-z_]+)[\"']\s*\)(.*?)\.execute\(\)", re.DOTALL)
 _ESCRITURA = re.compile(r"\.(insert|update|upsert|delete)\(")
 
 
@@ -69,3 +69,29 @@ def test_only_comercial_writes_its_tables():
     ]
 
     assert escrituras == []
+
+
+def test_detects_a_write_on_a_stored_query_and_through_from_(tmp_path):
+    archivo = tmp_path / "m.py"
+    archivo.write_text(
+        't = client.table("items_proceso")\n'
+        't.delete().eq("id", 1).execute()\n'
+        'client.from_("presupuestos").insert({}).execute()\n',
+        encoding="utf-8",
+    )
+
+    assert _escrituras(archivo, _TABLAS_COMERCIAL, raiz=tmp_path) == [
+        "m.py:1 items_proceso",
+        "m.py:3 presupuestos",
+    ]
+
+
+def test_ignores_reads_of_comercial_tables_and_writes_to_other_tables(tmp_path):
+    archivo = tmp_path / "m.py"
+    archivo.write_text(
+        'client.table("presupuestos").select("*").execute()\n'
+        'client.table("pcp").delete().execute()\n',
+        encoding="utf-8",
+    )
+
+    assert _escrituras(archivo, _TABLAS_COMERCIAL, raiz=tmp_path) == []

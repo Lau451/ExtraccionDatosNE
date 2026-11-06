@@ -57,15 +57,21 @@ def crear_proceso_comercial(
             "updated_by": usuario_id,
         },
     )
-    registrar_evento_ciclo_vida(
-        client,
-        entidad="proceso_comercial",
-        entidad_id=proceso["id"],
-        drogueria_id=drogueria_id,
-        tipo_cambio="creacion",
-        origen="usuario",
-        usuario_id=usuario_id,
-    )
+    # Two writes without a transaction (PostgREST): if the event cannot be recorded,
+    # the proceso is removed so no caller is left with a proceso it never got back.
+    try:
+        registrar_evento_ciclo_vida(
+            client,
+            entidad="proceso_comercial",
+            entidad_id=proceso["id"],
+            drogueria_id=drogueria_id,
+            tipo_cambio="creacion",
+            origen="usuario",
+            usuario_id=usuario_id,
+        )
+    except Exception:
+        repo.borrar_proceso_comercial_recien_creado(client, proceso_comercial_id=proceso["id"])
+        raise
     return proceso
 
 

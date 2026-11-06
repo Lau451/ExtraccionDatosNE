@@ -11,8 +11,7 @@ cualquier proceso.
 
 Import order es mandatorio (design agreed): presupuesto PRIMERO, PCP DESPUÉS
 (el import de PCP, en `services/pcp/imports`, busca las líneas ya existentes
-vía `presupuesto_legacy_map`, nunca las crea). La resolución de cliente y de
-clase es una copia del mismo criterio que usa el import de PCP.
+vía `presupuesto_legacy_map`, nunca las crea).
 """
 
 import logging
@@ -41,8 +40,7 @@ logger = logging.getLogger(__name__)
 ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)
 
 # "1" = cotización directa / "2" = licitación; ausente -> default `licitacion`
-# (decisión confirmada por el usuario, no `cotizacion`). Mismo criterio que el
-# import de PCP (`services/pcp/imports/service.py`).
+# (decisión confirmada por el usuario, no `cotizacion`).
 _CLASE_POR_PROCESO_COMERCIAL: dict[str, str] = {"1": "cotizacion", "2": "licitacion"}
 _CLASE_DEFAULT = "licitacion"
 

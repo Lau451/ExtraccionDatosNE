@@ -103,3 +103,36 @@ def test_listar_activos_excluye_estados_terminales(
     nombres_todos = {p["nombre"] for p in todos}
     assert abierto["nombre"] in nombres_todos
     assert cerrado["nombre"] in nombres_todos
+
+
+@pytest.mark.integration
+def test_crear_sin_poder_registrar_el_evento_no_deja_el_proceso(
+    service_client, seed_drogueria, seed_usuario_sistema, monkeypatch
+):
+    from services.presupuestacion.procesos_comerciales import service as servicio
+
+    def _falla(*args, **kwargs):
+        raise RuntimeError("historial caído")
+
+    monkeypatch.setattr(servicio, "registrar_evento_ciclo_vida", _falla)
+    nombre = "Proceso sin evento de creación"
+
+    with pytest.raises(RuntimeError, match="historial caído"):
+        crear_proceso_comercial(
+            service_client,
+            drogueria_id=seed_drogueria["id"],
+            body=ProcesoComercialCreate(nombre=nombre, clase="cotizacion"),
+            usuario_id=seed_usuario_sistema["id"],
+        )
+
+    restantes = (
+        service_client.table("procesos_comerciales")
+        .select("id")
+        .eq("drogueria_id", seed_drogueria["id"])
+        .eq("nombre", nombre)
+        .execute()
+        .data
+    )
+    for fila in restantes:
+        _borrar_proceso(service_client, fila["id"])
+    assert restantes == []

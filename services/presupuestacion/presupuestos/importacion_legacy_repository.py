@@ -15,9 +15,8 @@ SISTEMA_ORIGEN_LEGACY = "legacy"
 
 
 # -- resolución de cliente_id vía terceros.codigo_interno -- lectura directa de
-# las tablas `terceros`/`clientes`, misma consulta que
-# `services/pcp/imports/repository.py` (copia propia: el import de PCP la sigue
-# usando). ----------------------------------------------------------------------
+# las tablas `terceros`/`clientes` (antes vivía en `services/pcp/imports`, que ya
+# no la usa). ----------------------------------------------------------------------
 
 
 def buscar_tercero_por_codigo(
