@@ -28,6 +28,15 @@ _BASE = {
 _CLIENTE = object()
 
 
+@pytest.fixture(autouse=True)
+def _sin_progress_en_el_entorno(monkeypatch):
+    """Another module may have run load_dotenv() during collection
+    (services/extraccion/config.py), which leaves the .env PROGRESS_* values in
+    os.environ; Settings reads them even with _env_file=None."""
+    for nombre in ("PROGRESS_ENTRADA_DIR", "PROGRESS_DROGUERIA_ID", "PROGRESS_ESCANEO_INTERVALO_SEGUNDOS"):
+        monkeypatch.delenv(nombre, raising=False)
+
+
 def _settings(**campos) -> Settings:
     # _env_file=None: el .env del repo no debe decidir si la recepción está encendida.
     return Settings(_env_file=None, **{**_BASE, **campos})
