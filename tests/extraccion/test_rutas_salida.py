@@ -7,7 +7,7 @@ from services.extraccion import config, robot, robot_comparativas, robot_orden_c
 
 
 def test_each_document_type_has_its_own_folder_under_the_output_base():
-    assert config.LICITACIONES_OUTPUT_BASE == config.OUTPUT_BASE / "licitaciones" / "directas"
+    assert config.LICITACIONES_OUTPUT_BASE == config.OUTPUT_BASE / "licitaciones-directas"
     assert config.ORDENES_COMPRA_OUTPUT_BASE == config.OUTPUT_BASE / "ordenes_compra"
     assert config.COMPARATIVAS_OUTPUT_BASE == config.OUTPUT_BASE / "comparativas"
 
@@ -68,6 +68,6 @@ def test_licitacion_csv_and_source_go_to_licitaciones_directas(monkeypatch, tmp_
 
     csv_path = robot.procesar_archivo(origen, origen.name)
 
-    carpeta = tmp_path / "licitaciones" / "directas" / "HOSPITAL"
+    carpeta = tmp_path / "licitaciones-directas" / "HOSPITAL"
     assert Path(csv_path).parent == carpeta
     assert (carpeta / "Procesados" / "HOSPITAL_LIC1.pdf").exists()

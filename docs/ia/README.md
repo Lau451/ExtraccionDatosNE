@@ -274,7 +274,7 @@ generate_with_fallback(client, prompt [+ archivo]) ──► respuesta CSV en te
 limpieza: strip fences, validar "item;", _limpiar_cantidad, _rellenar_items_incrementales
   │
   ▼
-escribir CSV en OUTPUT_BASE/licitaciones/directas/{cliente}/ + mover original a Procesados/
+escribir CSV en OUTPUT_BASE/licitaciones-directas/{cliente}/ + mover original a Procesados/
   │
   ▼
 Path del CSV devuelto al caller (main.py) — la persistencia en Supabase ocurre
