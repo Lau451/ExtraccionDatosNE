@@ -34,7 +34,7 @@ from uuid import UUID
 
 from google.genai import types
 
-from services.extraccion.config import get_next_client, get_output_dir, get_processed_dir, generate_with_fallback
+from services.extraccion.config import ORDENES_COMPRA_OUTPUT_BASE, get_next_client, get_output_dir, get_processed_dir, generate_with_fallback
 from services.extraccion.robot import obtener_cliente, nombre_unico
 from services.extraccion.gemini_errors import handle_gemini_errors, GeminiTruncationError
 from services.extraccion.parsers import is_scanned_pdf, parse_document_orden_compra
@@ -452,7 +452,7 @@ def _escribir_csv(rows: list[dict[str, str]], nombre_base: str, cliente: str) ->
     Returns:
         Path to the written CSV file.
     """
-    output_dir = get_output_dir(origen_id=cliente)
+    output_dir = get_output_dir(base_dir=ORDENES_COMPRA_OUTPUT_BASE, origen_id=cliente)
 
     csv_filename = nombre_unico(nombre_base, output_dir, ".csv")
     csv_path = output_dir / csv_filename
@@ -476,7 +476,7 @@ def _mover_a_procesados(ruta_archivo: Path, nombre_base: str, extension: str, cl
 
     Idéntico en estructura a robot_comparativas._mover_a_procesados.
     """
-    processed_dir = get_processed_dir(origen_id=cliente)
+    processed_dir = get_processed_dir(base_dir=ORDENES_COMPRA_OUTPUT_BASE, origen_id=cliente)
 
     dest_filename = nombre_unico(nombre_base, processed_dir, extension)
     dest_path = processed_dir / dest_filename

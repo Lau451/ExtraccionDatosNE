@@ -38,8 +38,8 @@ Total: 2459 líneas, verificadas línea por línea en esta sesión.
   ante truncamiento (`finish_reason=MAX_TOKENS`) — ver [`flujo.md`](./flujo.md).
 - Aplica heurísticas de limpieza de datos (fuzzy matching de columnas Excel, formato de
   cantidad AR/US, formato de precio multi-moneda) — ver [`reglas.md`](./reglas.md).
-- Escribe el resultado final como CSV en el filesystem local (`OUTPUT_BASE` /
-  `COMPARATIVAS_OUTPUT_BASE`, definidos en `config.py`) y mueve el archivo original a
+- Escribe el resultado final como CSV en el filesystem local (`LICITACIONES_OUTPUT_BASE`,
+  `COMPARATIVAS_OUTPUT_BASE` u `ORDENES_COMPRA_OUTPUT_BASE`, definidos en `config.py`) y mueve el archivo original a
   una carpeta `Procesados/`.
 
 ## Qué NO hace

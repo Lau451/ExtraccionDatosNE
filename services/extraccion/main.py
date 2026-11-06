@@ -23,7 +23,7 @@ from services.extraccion.robot import obtener_cliente, procesar_archivo
 from services.extraccion.robot_comparativas import procesar_comparativa, NoProvidersDetectedError
 from services.extraccion.robot_orden_compra import procesar_orden_compra, OrdenCompraSinRenglonesError
 from services.extraccion.parsers import parse_document, ParserError, UnsupportedFormatError
-from services.extraccion.config import get_tmp_dir, OUTPUT_BASE, COMPARATIVAS_OUTPUT_BASE
+from services.extraccion.config import get_tmp_dir, COMPARATIVAS_OUTPUT_BASE, LICITACIONES_OUTPUT_BASE, ORDENES_COMPRA_OUTPUT_BASE
 from services.extraccion.gemini_errors import GeminiQuotaExceededError, GeminiRateLimitError, GeminiAPIError
 from services.extraccion.persistent_output import (
     calcular_sha256,
@@ -522,7 +522,12 @@ async def procesar(
             status_code=415,
         )
 
-    base_dir = COMPARATIVAS_OUTPUT_BASE if tipo == "comparativas" else OUTPUT_BASE
+    if tipo == "comparativas":
+        base_dir = COMPARATIVAS_OUTPUT_BASE
+    elif tipo == "ordenes":
+        base_dir = ORDENES_COMPRA_OUTPUT_BASE
+    else:
+        base_dir = LICITACIONES_OUTPUT_BASE
     tmp_dir = get_tmp_dir(base_dir=base_dir, origen_id=origen_id)
     destino = tmp_dir / f"{uuid4()}_{nombre_original}"
     destino.parent.mkdir(parents=True, exist_ok=True)
