@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Una plataforma propia para Nueva Era — Propuesta</title>
+<style>
+  :root {
+    --navy: #0f172a;
+    --accent: #0369a1;
+    --accent-soft: #f0f9ff;
+    --accent-line: #bae6fd;
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #64748b;
+    --line: #e2e8f0;
+    --panel: #f8fafc;
+    --ok: #047857;
+    --ok-soft: #ecfdf5;
+    --ok-line: #a7f3d0;
+    --warn: #92400e;
+    --warn-soft: #fffbeb;
+    --warn-line: #fde68a;
+    --muted-soft: #f1f5f9;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0;
+    font-family: "Fira Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text);
+    background: #fff;
+    line-height: 1.6;
+    font-size: 17px;
+  }
+  .page { max-width: 820px; margin: 0 auto; padding: 0 28px 96px; }
+
+  /* Cover */
+  .cover {
+    background: var(--navy);
+    color: #f1f5f9;
+    padding: 72px 28px 64px;
+  }
+  .cover-inner { max-width: 820px; margin: 0 auto; }
+  .eyebrow {
+    font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+    color: #94a3b8; margin: 0 0 18px;
+  }
+  .cover h1 {
+    font-size: 40px; line-height: 1.15; margin: 0 0 18px; font-weight: 700;
+    text-wrap: balance; color: #fff;
+  }
+  .cover p.lead { font-size: 19px; color: #cbd5e1; margin: 0; max-width: 640px; text-wrap: pretty; }
+
+  /* Sections */
+  section { padding-top: 56px; }
+  h2 {
+    font-size: 26px; line-height: 1.25; margin: 0 0 8px; font-weight: 700; text-wrap: balance;
+  }
+  .num {
+    display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent);
+    letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px;
+  }
+  h3 { font-size: 19px; margin: 28px 0 8px; font-weight: 600; }
+  p { margin: 0 0 14px; color: var(--text); text-wrap: pretty; }
+  .muted { color: var(--text-2); }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  strong { font-weight: 600; }
+
+  /* Summary box */
+  .summary {
+    margin-top: 40px; border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px 28px; background: var(--panel);
+  }
+  .summary h2 { font-size: 20px; margin-bottom: 14px; }
+  .summary ol { margin: 0; }
+  .summary li { margin-bottom: 10px; }
+
+  /* Callouts */
+  .example {
+    border-left: 4px solid var(--accent); background: var(--accent-soft);
+    padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0;
+  }
+  .example .tag {
+    font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 6px; display: block;
+  }
+  .example p:last-child { margin-bottom: 0; }
+  .analogy {
+    border: 1px solid var(--warn-line); background: var(--warn-soft);
+    padding: 16px 20px; border-radius: 8px; margin: 20px 0;
+  }
+  .analogy .tag {
+    font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--warn); margin-bottom: 6px; display: block;
+  }
+  .analogy p:last-child { margin-bottom: 0; }
+
+  /* Before / after */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare .col { border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .compare .col.after { border-color: var(--ok-line); background: var(--ok-soft); }
+  .compare h4 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); }
+  .compare .after h4 { color: var(--ok); }
+  .compare ol { margin: 0; padding-left: 20px; font-size: 16px; }
+
+  /* Platform diagram */
+  .diagram { margin: 24px 0; border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: #fff; }
+  .layer { border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .layer:last-child { margin-bottom: 0; }
+  .layer-title { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+  .layer.app { background: var(--navy); color: #fff; text-align: center; }
+  .layer.app .layer-title { color: #94a3b8; margin-bottom: 2px; }
+  .layer.solutions { background: var(--accent-soft); border: 1px solid var(--accent-line); }
+  .layer.solutions .layer-title { color: var(--accent); }
+  .layer.shared { background: var(--muted-soft); border: 1px solid var(--line); }
+  .layer.shared .layer-title { color: var(--text-3); }
+  .layer.core { background: var(--warn-soft); border: 1px solid var(--warn-line); text-align: center; }
+  .layer.core .layer-title { color: var(--warn); margin-bottom: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 10px; font-size: 14px; color: var(--text);
+  }
+  .bridge { text-align: center; font-size: 14px; color: var(--text-3); margin: 6px 0 10px; }
+  .bridge span { display: inline-block; border: 1px dashed #cbd5e1; border-radius: 999px; padding: 4px 14px; background: #fff; }
+
+  /* Modules grid */
+  .modules { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 20px 0; }
+  .module { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .module h4 { margin: 0 0 6px; font-size: 17px; }
+  .module p { font-size: 15px; color: var(--text-2); margin: 0 0 10px; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px;
+    padding: 2px 10px; border: 1px solid;
+  }
+  .badge.ok { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
+  .badge.future { color: var(--text-2); background: var(--muted-soft); border-color: var(--line); }
+
+  /* Mailbox flow */
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 10px; margin: 22px 0; }
+  .flow .box { border: 1px solid var(--line); border-radius: 10px; padding: 14px; text-align: center; font-size: 15px; }
+  .flow .box strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .flow .box.mid { background: var(--warn-soft); border-color: var(--warn-line); }
+  .flow .arrow { align-self: center; color: var(--text-3); font-size: 20px; }
+
+  /* Steps */
+  .steps { list-style: none; padding: 0; counter-reset: s; margin: 20px 0; }
+  .steps li {
+    counter-increment: s; position: relative; padding: 14px 18px 14px 60px;
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px;
+  }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 18px; top: 14px;
+    width: 28px; height: 28px; border-radius: 999px; background: var(--navy); color: #fff;
+    font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .steps li strong { display: block; }
+  .steps li span { color: var(--text-2); font-size: 16px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 16px; }
+  th { text-align: left; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--muted-soft); vertical-align: top; }
+
+  .no-list li::marker { color: #dc2626; }
+  .yes-list li::marker { color: var(--ok); }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-3); }
+
+  @media (max-width: 680px) {
+    body { font-size: 16px; }
+    .cover h1 { font-size: 30px; }
+    .compare, .modules { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr; }
+    .flow .arrow { transform: rotate(90deg); justify-self: center; }
+  }
+
+  @media print {
+    body { font-size: 12pt; }
+    .cover { padding: 40px 28px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { padding-bottom: 0; }
+    section { padding-top: 28px; break-inside: avoid-page; }
+    .example, .analogy, .diagram, .module, .compare, .steps li, .flow, table { break-inside: avoid; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="cover-inner">
+    <p class="eyebrow">Droguería Nueva Era · Propuesta para Gerencia</p>
+    <h1>Una plataforma propia para crecer con más autonomía</h1>
+    <p class="lead">Cómo convertir las herramientas que venimos construyendo en una plataforma ordenada, conectada con el sistema actual, que nos permita incorporar nuevas soluciones sin depender de un tercero para cada mejora.</p>
+  </div>
+</header>
+
+<main class="page">
+
+  <div class="summary">
+    <h2>La propuesta en un minuto</h2>
+    <ol>
+      <li><strong>El sistema actual sigue siendo el corazón de la empresa.</strong> No lo reemplazamos ni lo duplicamos.</li>
+      <li><strong>Sumamos una plataforma propia</strong> donde viven todas las herramientas nuevas: documentos con inteligencia artificial, licitaciones, presupuestos, compras, órdenes de compra y las que vengan.</li>
+      <li><strong>Las herramientas comparten</strong> los mismos usuarios, los mismos permisos y la misma información. Para quien las usa, es una sola aplicación.</li>
+      <li><strong>La plataforma y el sistema actual se comunican</strong> de forma ordenada, hoy intercambiando archivos. Así el proveedor ya no tiene que desarrollar cada herramienta: solo nos entrega la información que necesitamos.</li>
+      <li><strong>Avanzamos de a poco</strong>, aprovechando todo lo que ya está construido. No empezamos de cero.</li>
+    </ol>
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <span class="num">1 · La situación hoy</span>
+    <h2>Cada mejora depende del sistema central</h2>
+    <p>Hoy, casi cualquier mejora que involucre la información de la empresa (clientes, productos, stock, presupuestos, órdenes) requiere un cambio en el sistema de gestión principal. Ese cambio lo tiene que hacer su proveedor, con sus tiempos y su agenda.</p>
+    <p>Mientras tanto, la forma de crear software cambió. Con la ayuda de la inteligencia artificial podemos construir herramientas y automatizar tareas mucho más rápido que antes. Pero esa velocidad se pierde si cada herramienta nueva tiene que esperar un cambio en el sistema central.</p>
+
+    <div class="example">
+      <span class="tag">Ejemplo</span>
+      <p>Compras quiere un aviso automático cuando una orden de compra tiene una entrega vencida.</p>
+      <p><strong>Hoy:</strong> se le pide al proveedor del sistema, se espera a que lo incluya en su planificación, lo desarrolla y recién después se puede usar.</p>
+      <p><strong>Con la plataforma:</strong> lo construimos nosotros sobre la información que el sistema ya nos entrega. El sistema central no se toca.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <span class="num">2 · La idea</span>
+    <h2>Una plataforma común con soluciones especializadas</h2>
+    <p>No queremos un único programa gigante que haga todo, porque cada cambio sería lento y riesgoso. Tampoco queremos muchas aplicaciones sueltas que no se hablan entre sí, cada una con su propio usuario y su propia copia de los datos.</p>
+    <p>Buscamos un punto intermedio: <strong>una base común y, sobre ella, soluciones especializadas para cada área.</strong></p>
+
+    <div class="analogy">
+      <span class="tag">Una forma de imaginarlo</span>
+      <p>Pensemos en un <strong>centro comercial</strong>. Cada local tiene su propio rubro y lo puede renovar cuando quiera, sin cerrar el resto del edificio. Pero todos comparten la entrada, la seguridad, la electricidad y el estacionamiento.</p>
+      <p>Para quien lo visita, es <strong>un solo lugar</strong>: entra una vez y recorre los locales que necesita.</p>
+      <p>En nuestra plataforma, los <strong>locales</strong> son las soluciones de cada área, y lo <strong>compartido</strong> son los usuarios, los permisos, la información y el diseño.</p>
+    </div>
+
+    <div class="diagram" role="img" aria-label="Esquema de la plataforma: una aplicación unificada arriba, soluciones por área en el medio, servicios compartidos debajo y el sistema de gestión actual como base, conectado por intercambio de archivos.">
+      <div class="layer app">
+        <div class="layer-title">Lo que ve el usuario</div>
+        Una sola aplicación · un solo usuario y contraseña · un solo menú
+      </div>
+      <div class="layer solutions">
+        <div class="layer-title">Soluciones por área</div>
+        <div class="chips">
+          <span class="chip">Documentos con IA</span>
+          <span class="chip">Licitaciones y presupuestos</span>
+          <span class="chip">Compras y PCP</span>
+          <span class="chip">Órdenes de compra y entregas</span>
+          <span class="chip">Productos</span>
+          <span class="chip">Clientes y proveedores</span>
+          <span class="chip">Analítica (futuro)</span>
+          <span class="chip">Asistentes de IA (futuro)</span>
+        </div>
+      </div>
+      <div class="layer shared">
+        <div class="layer-title">Lo que todas comparten</div>
+        <div class="chips">
+          <span class="chip">Usuarios</span>
+          <span class="chip">Permisos</span>
+          <span class="chip">Información común</span>
+          <span class="chip">Historial de cambios</span>
+          <span class="chip">Avisos</span>
+          <span class="chip">Diseño</span>
+        </div>
+      </div>
+      <div class="bridge"><span>⇅ Conexión ordenada (hoy, intercambio de archivos)</span></div>
+      <div class="layer core">
+        <div class="layer-title">El corazón de la empresa</div>
+        Sistema de gestión actual (Progress)
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <span class="num">3 · El sistema actual</span>
+    <h2>El sistema de gestión sigue siendo el corazón</h2>
+    <p>El sistema de gestión actual sigue siendo <strong>la referencia oficial</strong> para todo lo que hoy administra. La plataforma no lo reemplaza ni lo copia: trabaja con su información.</p>
+    <ul>
+      <li>Si el sistema ya calcula algo (un precio, un saldo, un stock), <strong>usamos su resultado</strong>. No volvemos a programar esa regla en otro lugar.</li>
+      <li>Cuando la plataforma necesita información del sistema, <strong>la recibe de él</strong> y sabe de qué fecha es.</li>
+      <li>Cuando la plataforma genera algo que el sistema debe registrar, como una orden de compra, <strong>se lo envía</strong> y espera la confirmación.</li>
+    </ul>
+
+    <h3>Cómo se comunican: un buzón con acuse de recibo</h3>
+    <p>Hoy la comunicación es por <strong>intercambio de archivos</strong>. Funciona como un buzón entre dos oficinas: cada una deja documentos para la otra en un lugar acordado.</p>
+
+    <div class="flow" aria-label="Flujo del intercambio de archivos">
+      <div class="box"><strong>Plataforma</strong>Prepara la información (por ejemplo, una orden de compra)</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="box mid"><strong>Buzón compartido</strong>Una carpeta acordada donde se dejan y se retiran los archivos</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="box"><strong>Sistema actual</strong>La toma, la registra y deja su respuesta en el buzón</div>
+    </div>
+
+    <p>Hoy ya funciona en los dos sentidos: <strong>la plataforma envía las órdenes de compra</strong> y <strong>el sistema entrega los presupuestos</strong>. A medida que lo necesitemos, se van a sumar más archivos, por ejemplo de productos, stock o confirmaciones.</p>
+
+    <div class="example">
+      <span class="tag">Ejemplo: cómo funcionará cuando sumemos las confirmaciones</span>
+      <p>Una persona de ventas carga una orden de compra de un hospital en la plataforma. La plataforma la deja en el buzón y la marca como <em>enviada</em>. El sistema de gestión la registra y deja un archivo de respuesta. La plataforma lo lee y la marca como <em>confirmada</em> o, si hubo un problema, como <em>rechazada</em> con el motivo.</p>
+      <p>En ningún momento alguien tiene que copiar datos a mano entre los dos sistemas.</p>
+    </div>
+
+    <p class="muted">Si en el futuro el sistema permite comunicarse de una forma más directa e inmediata, se cambia solo esta conexión. Las herramientas que lo usan siguen funcionando igual, como cuando se cambia el cableado detrás de una pared sin mover los muebles.</p>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <span class="num">4 · El rol del proveedor</span>
+    <h2>Del proveedor pedimos información, no herramientas</h2>
+    <p>El proveedor del sistema sigue siendo muy importante, pero su trabajo cambia. En lugar de desarrollar cada herramienta nueva, <strong>nos entrega la información que necesitamos</strong>, con un formato que acordamos una vez.</p>
+
+    <div class="compare">
+      <div class="col">
+        <h4>Hoy</h4>
+        <ol>
+          <li>Necesitamos una herramienta nueva.</li>
+          <li>Se la pedimos al proveedor.</li>
+          <li>La desarrolla dentro del sistema, con sus tiempos.</li>
+          <li>Cualquier ajuste vuelve a pasar por él.</li>
+        </ol>
+      </div>
+      <div class="col after">
+        <h4>Con la plataforma</h4>
+        <ol>
+          <li>Necesitamos una herramienta nueva.</li>
+          <li>Si nos falta información, le pedimos al proveedor un archivo con esos datos.</li>
+          <li>La herramienta la construimos nosotros.</li>
+          <li>Los ajustes los hacemos nosotros.</li>
+        </ol>
+      </div>
+    </div>
+
+    <p>Para que este intercambio sea confiable, proponemos acordar con el proveedor <strong>unas reglas comunes para todos los archivos</strong>: cómo se llaman, qué contienen, cómo se confirma que llegaron completos y cómo se responde cada envío. Se acuerdan una sola vez y valen para todos los archivos que se agreguen después.</p>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <span class="num">5 · Lo que ya tenemos</span>
+    <h2>No empezamos de cero</h2>
+    <p>Buena parte de la plataforma ya existe. Estas son las soluciones que ya están construidas y las que forman parte de la visión de crecimiento:</p>
+
+    <div class="modules">
+      <div class="module">
+        <h4>Documentos con IA</h4>
+        <p>Lee pliegos, comparativas y órdenes de compra y extrae sus datos automáticamente.</p>
+        <span class="badge ok">En uso</span>
+      </div>
+      <div class="module">
+        <h4>Licitaciones y presupuestos</h4>
+        <p>Asocia cada renglón con nuestros productos y arma el presupuesto con el motor de precios.</p>
+        <span class="badge ok">En uso y en desarrollo</span>
+      </div>
+      <div class="module">
+        <h4>Compras y PCP</h4>
+        <p>Gestiona los pedidos a proveedores, consultas y negociación.</p>
+        <span class="badge ok">En uso</span>
+      </div>
+      <div class="module">
+        <h4>Órdenes de compra y entregas</h4>
+        <p>Registra órdenes de clientes, planifica entregas y las envía al sistema de gestión.</p>
+        <span class="badge ok">En uso</span>
+      </div>
+      <div class="module">
+        <h4>Productos</h4>
+        <p>Catálogo, costos y stock disponibles para todas las soluciones.</p>
+        <span class="badge ok">En uso</span>
+      </div>
+      <div class="module">
+        <h4>Clientes y proveedores</h4>
+        <p>Datos de contacto, direcciones y condiciones comerciales, en un solo lugar.</p>
+        <span class="badge ok">En uso</span>
+      </div>
+      <div class="module">
+        <h4>Analítica</h4>
+        <p>Tableros e indicadores que cruzan la información de todas las áreas.</p>
+        <span class="badge future">Futuro</span>
+      </div>
+      <div class="module">
+        <h4>Automatizaciones y asistentes de IA</h4>
+        <p>Tareas que se hacen solas y asistentes que ayudan a cada área en su trabajo diario.</p>
+        <span class="badge future">Futuro</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <span class="num">6 · Lo que se comparte</span>
+    <h2>Una sola plataforma para quien la usa</h2>
+
+    <h3>Un solo usuario</h3>
+    <p>Cada persona entra una vez, con su usuario y contraseña, y accede a todas las soluciones que le corresponden. No hay una contraseña por herramienta.</p>
+
+    <h3>Permisos según la tarea de cada persona</h3>
+    <p>Los permisos se definen por <strong>lo que cada persona puede hacer</strong>, no por cada pantalla.</p>
+    <div class="example">
+      <span class="tag">Ejemplo</span>
+      <p>Una persona de Compras ve y edita los pedidos a proveedores, consulta los productos y no ve la configuración de usuarios. Si mañana se suma una herramienta nueva de compras, la ve automáticamente, sin que nadie tenga que configurarla una por una.</p>
+      <p>Si cambia la forma de trabajar de un área, sus permisos se ajustan desde la plataforma, sin desarrollar nada nuevo.</p>
+    </div>
+
+    <h3>La información se carga una vez</h3>
+    <p>Cada dato tiene <strong>un único responsable</strong> dentro de la plataforma. Un producto se carga y se actualiza en un solo lugar, y todas las soluciones ven ese mismo producto. Así se evitan dos versiones distintas del mismo dato y la pregunta de "¿cuál es el correcto?".</p>
+    <div class="example">
+      <span class="tag">Ejemplo</span>
+      <p>Si se actualiza el costo de un producto, el presupuestador, las comparativas y compras ven el costo nuevo al mismo tiempo. Nadie tiene que acordarse de actualizarlo en tres lugares.</p>
+    </div>
+
+    <h3>Una misma forma de trabajar</h3>
+    <p>Todas las soluciones se ven y se usan igual: los mismos menús, las mismas tablas, los mismos botones y los mismos mensajes. Quien aprende a usar una ya sabe usar las demás.</p>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <span class="num">7 · Cómo crece</span>
+    <h2>Cada solución avanza a su propio ritmo</h2>
+    <p>Cada solución tiene una responsabilidad clara y se puede mejorar sin afectar a las demás. Esto permite:</p>
+    <ul>
+      <li><strong>Mejorar un área sin frenar a las otras.</strong> Si Compras necesita cambios urgentes, se hacen sin tocar Presupuestos.</li>
+      <li><strong>Probar algo nuevo con menos riesgo.</strong> Una solución nueva se puede habilitar primero para algunas personas y después para todas.</li>
+      <li><strong>Separar solo lo que lo necesita.</strong> Por ejemplo, la lectura de documentos con IA ya funciona por separado porque consume muchos recursos. El resto trabaja junto mientras no haya un motivo concreto para separarlo.</li>
+    </ul>
+  </section>
+
+  <!-- 8 -->
+  <section>
+    <span class="num">8 · Lo que no vamos a hacer</span>
+    <h2>Para tranquilidad de todos</h2>
+    <ul class="no-list">
+      <li><strong>No reemplazamos el sistema de gestión actual.</strong> Sigue siendo el corazón de la empresa.</li>
+      <li><strong>No empezamos de cero.</strong> Todo lo construido se aprovecha.</li>
+      <li><strong>No hacemos grandes cambios de golpe.</strong> Se avanza en pasos chicos, y cada uno se puede revisar y deshacer.</li>
+      <li><strong>No copiamos toda la información del sistema "por las dudas".</strong> Solo la que una solución concreta necesita.</li>
+      <li><strong>No agregamos complejidad sin motivo.</strong> Cada decisión técnica tiene que resolver un problema real del negocio.</li>
+    </ul>
+  </section>
+
+  <!-- 9 -->
+  <section>
+    <span class="num">9 · Beneficios</span>
+    <h2>Qué gana la empresa</h2>
+    <table>
+      <thead>
+        <tr><th>Beneficio</th><th>Qué significa en el día a día</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Autonomía</strong></td><td>Las herramientas nuevas no dependen de la agenda del proveedor del sistema.</td></tr>
+        <tr><td><strong>Velocidad</strong></td><td>Una necesidad de un área puede convertirse en una herramienta mucho más rápido.</td></tr>
+        <tr><td><strong>Orden</strong></td><td>Cada dato tiene un responsable, sin copias que se contradigan.</td></tr>
+        <tr><td><strong>Menor riesgo</strong></td><td>Los cambios son chicos y no afectan a las áreas que no corresponden.</td></tr>
+        <tr><td><strong>Experiencia simple</strong></td><td>Un solo lugar, un solo usuario, una misma forma de trabajar.</td></tr>
+        <tr><td><strong>Preparada para el futuro</strong></td><td>Si el sistema central permite conectarse mejor, se aprovecha sin rehacer las herramientas.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 10 -->
+  <section>
+    <span class="num">10 · Puntos a cuidar</span>
+    <h2>Lo que tenemos que tener en cuenta</h2>
+    <table>
+      <thead>
+        <tr><th>Punto</th><th>Cómo lo cuidamos</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>El intercambio por archivos no es instantáneo</strong></td>
+          <td>Cada pantalla muestra de cuándo es la información (por ejemplo, "actualizado hace 2 horas") y cada envío muestra su estado: enviado, confirmado o rechazado.</td>
+        </tr>
+        <tr>
+          <td><strong>Depende de acordar reglas con el proveedor</strong></td>
+          <td>Se acuerdan una sola vez y se aplican a todos los archivos. Ya funcionan dos intercambios que sirven de base.</td>
+        </tr>
+        <tr>
+          <td><strong>La calidad de la información</strong></td>
+          <td>Cada archivo recibido se revisa antes de usarse. Si tiene errores, queda registrado qué falló y se puede volver a procesar.</td>
+        </tr>
+        <tr>
+          <td><strong>Mantener el orden a medida que crece</strong></td>
+          <td>Reglas escritas que todas las soluciones respetan, y controles automáticos que avisan cuando alguna se aparta.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 11 -->
+  <section>
+    <span class="num">11 · Próximos pasos</span>
+    <h2>Cómo seguimos</h2>
+    <ol class="steps">
+      <li><strong>Ordenar la conexión con el sistema actual.</strong><span>Reunir en un solo lugar todo lo que hoy se intercambia, y que los archivos se reciban automáticamente.</span></li>
+      <li><strong>Acordar las reglas de los archivos con el proveedor.</strong><span>Un documento único que sirva para todos los intercambios presentes y futuros.</span></li>
+      <li><strong>Unificar los permisos.</strong><span>Definir lo que cada área puede hacer, de forma que valga para todas las soluciones.</span></li>
+      <li><strong>Sumar la próxima información del sistema.</strong><span>Elegir con cada área qué datos se necesitan primero (por ejemplo, productos o stock).</span></li>
+      <li><strong>Seguir incorporando soluciones.</strong><span>Cada nueva herramienta se suma a la plataforma con las mismas reglas.</span></li>
+    </ol>
+
+    <h3>Lo que necesitamos de Gerencia</h3>
+    <ul class="yes-list">
+      <li><strong>Respaldo para acordar con el proveedor</strong> las reglas comunes del intercambio de información.</li>
+      <li><strong>Prioridades:</strong> qué áreas y qué información conviene abordar primero.</li>
+      <li><strong>Referentes por área</strong> que validen cada solución antes de ponerla en uso.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Droguería Nueva Era · Propuesta de plataforma de soluciones · Documento de lectura para Gerencia.
+    El detalle técnico de esta propuesta está documentado aparte para el equipo de desarrollo.
+  </footer>
+
+</main>
+</body>
+</html>

@@ -14,9 +14,7 @@ from services.presupuestacion.imports.models import (
     ImportProveedorRow,
     ImportStockRow,
 )
-from services.productos.domain import parsear_unidades_por_presentacion
-
-DEPOSITO_SENTINEL = "unico"
+from services.productos.domain import DEPOSITO_SENTINEL, parsear_unidades_por_presentacion
 
 
 def _usuario_sistema_id() -> str:

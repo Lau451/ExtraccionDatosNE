@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
-from services.presupuestacion.core.database import get_user_client
+from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.database import get_user_client
 from services.productos.models import (
     CaracteristicaCreate,
     CaracteristicaOut,

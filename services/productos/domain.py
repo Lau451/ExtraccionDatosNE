@@ -4,6 +4,12 @@ hablan con la DB."""
 
 import re
 
+# Valor de `stock_productos.deposito` cuando la fila no informa un depósito: así
+# `uq_stock UNIQUE (producto_id, deposito)` también aplica a esas filas (con NULL
+# no aplicaría). Lo comparten el catálogo y el import de stock
+# (services/presupuestacion/imports).
+DEPOSITO_SENTINEL = "unico"
+
 # Único formato de `presentacion` (texto libre) del que se puede inferir un
 # tamaño de pack numérico sin ambigüedad: "Presentación x N" exacto. Cualquier
 # otra variante ("Pres x 1(cajax100)", "x35", "1 x 100"...) se deja en NULL --

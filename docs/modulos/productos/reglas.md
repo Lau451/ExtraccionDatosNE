@@ -154,10 +154,9 @@ y sus tests (`tests/productos/test_service.py`) en esta sesión.
 ### RN-PRODUCTOS-009 — Sin depósito especificado, se usa el sentinel `"unico"`
 
 - **Descripción**: si `StockAjuste.deposito` es `None` o cadena vacía, se sustituye
-  por la constante `DEPOSITO_SENTINEL`, definida fuera de este módulo.
+  por la constante `DEPOSITO_SENTINEL`, definida en `services/productos/domain.py`.
 - **Condición**: `body.deposito` es falsy.
-- **Resultado**: `deposito = repo.DEPOSITO_SENTINEL` (valor `"unico"`, definido en
-  `services/presupuestacion/imports/service.py:18`).
+- **Resultado**: `deposito = repo.DEPOSITO_SENTINEL` (valor `"unico"`).
 - **Prioridad**: Media.
 - **Archivo**: `services/productos/service.py:247`;
   `services/productos/repository.py:173` (mismo patrón para

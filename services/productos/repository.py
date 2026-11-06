@@ -3,7 +3,7 @@ from typing import Any
 
 from supabase import Client
 
-from services.presupuestacion.imports.service import DEPOSITO_SENTINEL
+from services.productos.domain import DEPOSITO_SENTINEL
 
 # -- productos ---------------------------------------------------------------
 

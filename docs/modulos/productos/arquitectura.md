@@ -8,46 +8,37 @@
 > que este módulo mantenía sobre esa tabla se eliminó por completo (no se movió). El
 > resto de esta página no fue reescrito línea por línea en este refactor.
 
-## Dependencias hacia Core
+## Dependencias hacia la plataforma
 
-Productos no importa de ningún otro módulo de negocio de `presupuestacion/` para su
-lógica de dominio (roles, excepciones, clientes de Supabase); depende de Core para
-eso. La única excepción es un import cruzado puntual hacia `imports/service.py`, ver
-más abajo.
+Productos no importa ningún módulo de negocio (`services.presupuestacion`,
+`services.pcp`): roles, excepciones y clientes de Supabase vienen de
+`services/shared/`, la capa plataforma. Lo verifica `tests/arquitectura/test_capas.py`.
 
 | Import | Origen | Uso |
 |---|---|---|
-| `UsuarioPerfil`, `require_roles` | `core/auth.py` | Perfil del solicitante y autorización por rol en los 12 endpoints (`router.py:38`). |
-| `get_user_client` | `core/database.py` | Cliente con RLS, inyectado en los 6 endpoints `GET` de listados/detalle (`router.py:39`). |
-| `get_service_client` | `core/database.py` | Cliente sin RLS, resuelto internamente por los 8 pares de wrappers `*_para_endpoint` de `service.py` (`service.py:18`). |
-| `NotFoundError` | `core/exceptions.py` | Única excepción de dominio levantada por este módulo, en las 4 validaciones de pertenencia de `service.py` (`service.py:19`). |
+| `UsuarioPerfil`, `require_roles` | `services/shared/auth.py` | Perfil del solicitante y autorización por rol en los 12 endpoints (`router.py:38`). |
+| `get_user_client` | `services/shared/database.py` | Cliente con RLS, inyectado en los 6 endpoints `GET` de listados/detalle (`router.py:39`). |
+| `get_service_client` | `services/shared/database.py` | Cliente sin RLS, resuelto internamente por los 8 pares de wrappers `*_para_endpoint` de `service.py` (`service.py:18`). |
+| `NotFoundError` | `services/shared/exceptions.py` | Única excepción de dominio levantada por este módulo, en las 4 validaciones de pertenencia de `service.py` (`service.py:19`). |
 
 Ver [`../core/`](../core/) para la documentación de estas piezas — no se repite acá.
 
-## El único import cruzado: `DEPOSITO_SENTINEL` de `imports/service.py`
+## `DEPOSITO_SENTINEL` vive en `domain.py`
 
-`repository.py:6` importa `DEPOSITO_SENTINEL` de
-`services.presupuestacion.imports.service` — el único import de este módulo hacia
-otro paquete de negocio o de soporte que no es `core/`:
+`DEPOSITO_SENTINEL = "unico"` está definido en `services/productos/domain.py`, junto
+a las otras reglas puras del catálogo. Productos lo usa para resolver a qué depósito
+pertenece una fila de `stock_productos` cuando no se especifica uno explícito:
 
-```python
-from services.presupuestacion.imports.service import DEPOSITO_SENTINEL
-```
-
-`DEPOSITO_SENTINEL = "unico"` está definido en `imports/service.py:18`. Productos lo
-usa en dos puntos, ambos para resolver a qué depósito pertenece una fila de
-`stock_productos` cuando no se especifica uno explícito:
-
-- `repository.py:173` (`buscar_stock_por_deposito`): `valor = deposito if deposito
+- `repository.py` (`buscar_stock_por_deposito`): `valor = deposito if deposito
   else DEPOSITO_SENTINEL`.
-- `service.py:247` (`ajustar_stock`): `"deposito": body.deposito if body.deposito
-  else repo.DEPOSITO_SENTINEL` — accedido vía el módulo `repo` reexportado, no
-  reimportado directo.
+- `service.py` (`ajustar_stock`): `"deposito": body.deposito if body.deposito
+  else repo.DEPOSITO_SENTINEL`.
 
-Ver RN-PRODUCTOS-009 en [`reglas.md`](./reglas.md) y D-PRODUCTOS-004 en
-[`decisiones.md`](./decisiones.md) sobre el riesgo de este acoplamiento
-negocio→soporte: si `imports/service.py` cambia el valor o el nombre de la constante,
-o el módulo se elimina, `productos/repository.py` se rompe en tiempo de import.
+`services/presupuestacion/imports/service.py` lo importa desde acá para el import de
+stock. Antes la dependencia iba al revés (productos importaba la constante de
+`imports`); se invirtió para que un dato maestro no dependa de un módulo de negocio
+(X-ARQ-001 en [`../../arquitectura/mapa-modulos.md`](../../arquitectura/mapa-modulos.md)).
+`tests/arquitectura/test_capas.py` impide que vuelva a pasar.
 
 ## Separación de responsabilidad sobre `stock_productos` con `core/stock.py`
 

@@ -23,6 +23,7 @@ pero comparten la misma base de datos Supabase.
 
 | Carpeta/archivo | Contenido |
 |---|---|
+| [`arquitectura/`](./arquitectura/README.md) | Arquitectura objetivo de la plataforma: principios, mapa de módulos actual → objetivo, plataforma común (usuarios, permisos, eventos, experiencia unificada) e integración con Progress. |
 | [`modulos/`](./modulos/) | Un subdirectorio por módulo técnico (22 en total), cada uno con `README.md`, `arquitectura.md`, `base_de_datos.md` (si aplica), `reglas.md`, `flujo.md`, `estados.md` (si aplica), `casos_de_uso.md`, `api.md`, `decisiones.md` y `pendientes.md` — algunos módulos chicos (`planes`, `frontend_mi_cuenta`) omiten deliberadamente los documentos que no aportarían contenido verificable adicional, ver sus respectivos `README.md`. |
 | [`ia/README.md`](./ia/README.md) | Documentación transversal de los componentes de IA (Gemini): modelos, prompts, flujo técnico, manejo de errores y riesgos. |
 | [`reglas-globales.md`](./reglas-globales.md) | Reglas técnicas transversales a todo el repo: autenticación, autorización/RLS, auditoría, manejo de fechas, logging, manejo de errores, convenciones de API. |

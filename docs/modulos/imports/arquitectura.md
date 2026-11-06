@@ -13,6 +13,12 @@ Ver [`../core/`](../core/) para la documentación de estas piezas — no se repi
 
 ## El acoplamiento inverso: `DEPOSITO_SENTINEL` definido acá, consumido por Catálogo
 
+> **Actualización (X-ARQ-001):** `DEPOSITO_SENTINEL` ya no se define en este módulo.
+> Vive en `services/productos/domain.py` y `imports/service.py` lo importa desde ahí
+> ([`../../arquitectura/mapa-modulos.md`](../../arquitectura/mapa-modulos.md)). El
+> resto de esta sección describe el estado anterior.
+
+
 `imports/service.py:18` define:
 
 ```python
