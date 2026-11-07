@@ -11,8 +11,8 @@ export const PRODUCTOS_READ_ROLES: Rol[] = [
   'compras',
 ]
 
-/** Escritura de catálogo: crear/editar/eliminar producto, cargar costo,
- * ajustar stock. */
+/** Escritura sobre un producto: asignar y quitar características. El resto
+ * del producto, sus costos y su stock vienen de Progress (etapa 7). */
 export const PRODUCTOS_WRITE_ROLES: Rol[] = ['admin', 'gerencia', 'compras']
 
 /** Escritura de categorías — subconjunto más chico que la escritura de
