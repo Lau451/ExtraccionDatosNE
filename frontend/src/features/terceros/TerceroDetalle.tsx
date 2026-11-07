@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
 import { listarCondicionesPago, listarFormasPago, listarSectoresContacto } from '@/lib/api/catalogosComerciales'
 import { obtenerTercero } from '@/lib/api/terceros'
-import { CrearTerceroDialog } from './CrearTerceroDialog'
+import { EditarTerceroDialog } from './EditarTerceroDialog'
 import { RolClienteSection } from './RolClienteSection'
 import { RolProveedorSection } from './RolProveedorSection'
 import { DireccionesSection } from './DireccionesSection'
@@ -51,7 +51,7 @@ export function TerceroDetalle({ terceroId }: { terceroId: string }) {
           </p>
         </div>
         {puedeEscribir && tercero && (
-          <CrearTerceroDialog
+          <EditarTerceroDialog
             tercero={tercero}
             trigger={
               <button

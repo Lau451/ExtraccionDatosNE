@@ -22,27 +22,14 @@ export interface Tercero {
   tiene_rol_proveedor?: boolean
 }
 
-export interface TerceroCreatePayload {
-  codigo_interno?: string
-  razon_social: string
-  nombre_fantasia?: string
-  cuit?: string
-  email?: string
-  telefono?: string
-  sitio_web?: string
-  notas?: string
-}
-
+/** Solo los campos de la app: identidad y estado son de Progress y el
+ * backend responde 422 si llegan (docs/arquitectura/maestros-progress.md). */
 export interface TerceroUpdatePayload {
-  codigo_interno?: string
-  razon_social?: string
   nombre_fantasia?: string
-  cuit?: string
   email?: string
   telefono?: string
   sitio_web?: string
   notas?: string
-  activo?: boolean
 }
 
 export interface ClienteRol {
@@ -54,17 +41,10 @@ export interface ClienteRol {
   activo: boolean
 }
 
-export interface ClienteRolCreatePayload {
-  tipo?: TipoCliente
-  condicion_pago_id?: string
-  forma_pago_id?: string
-}
-
+/** El rol lo crea la importación; tipo y estado son de Progress. */
 export interface ClienteRolUpdatePayload {
-  tipo?: TipoCliente
   condicion_pago_id?: string
   forma_pago_id?: string
-  activo?: boolean
 }
 
 export interface ProveedorRol {
@@ -78,21 +58,11 @@ export interface ProveedorRol {
   activo: boolean
 }
 
-export interface ProveedorRolCreatePayload {
-  tipo?: TipoProveedor
-  es_competidor?: boolean
-  es_proveedor_compra?: boolean
-  condicion_pago_id?: string
-  forma_pago_id?: string
-}
-
+/** Mismo criterio que `ClienteRolUpdatePayload`: tipo, marcas y estado son
+ * de Progress. */
 export interface ProveedorRolUpdatePayload {
-  tipo?: TipoProveedor
-  es_competidor?: boolean
-  es_proveedor_compra?: boolean
   condicion_pago_id?: string
   forma_pago_id?: string
-  activo?: boolean
 }
 
 export interface TerceroDireccion {
@@ -216,14 +186,6 @@ export function listarTerceros(params: ListarTercerosParams = {}): Promise<Terce
   return presupuestacionFetch<TercerosPagina>(`/terceros?${query.toString()}`)
 }
 
-export function crearTercero(payload: TerceroCreatePayload): Promise<Tercero> {
-  return presupuestacionFetch<Tercero>('/terceros', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
 export function obtenerTercero(terceroId: string): Promise<Tercero> {
   return presupuestacionFetch<Tercero>(`/terceros/${terceroId}`)
 }
@@ -240,17 +202,6 @@ export function actualizarTercero(
 }
 
 // Rol cliente
-
-export function crearRolCliente(
-  terceroId: string,
-  payload: ClienteRolCreatePayload,
-): Promise<ClienteRol> {
-  return presupuestacionFetch<ClienteRol>(`/terceros/${terceroId}/clientes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
 
 /** 404 si el tercero no tiene rol cliente asignado — el caller debe capturar
  * `ApiError` con `status === 404` para mostrar el estado vacío. */
@@ -270,17 +221,6 @@ export function actualizarRolCliente(
 }
 
 // Rol proveedor
-
-export function crearRolProveedor(
-  terceroId: string,
-  payload: ProveedorRolCreatePayload,
-): Promise<ProveedorRol> {
-  return presupuestacionFetch<ProveedorRol>(`/terceros/${terceroId}/proveedores`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
 
 /** 404 si el tercero no tiene rol proveedor asignado — mismo criterio que
  * `obtenerRolCliente`. */

@@ -23,8 +23,8 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 | T1 | S1 | inline: contract doc | docs(arquitectura): field ownership contract |
 | T2 | S2, S3 | worker: productos backend, tests | feat(productos): delete manual alta, edición, baja, costo and stock |
 | T3 | S4, S5 | worker: terceros + clientes backend, tests | feat(terceros): Progress owns tercero alta and identity |
-| T4 | S6 | inline: frontend productos | pending |
-| T5 | S7 | inline: frontend terceros | pending |
+| T4 | S6 | worker: frontend productos | feat(frontend): product masters are read-only |
+| T5 | S7 | worker: frontend terceros | feat(frontend): tercero identity and roles are read-only |
 | T6 | S8 | inline: docs | pending |
 
 ## Log

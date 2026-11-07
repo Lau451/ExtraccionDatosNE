@@ -3,11 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
 import { listarTerceros, type FiltroRolTercero, type Tercero } from '@/lib/api/terceros'
-import { CrearTerceroDialog } from './CrearTerceroDialog'
 import { GestionSectoresDialog } from './GestionSectoresDialog'
 import { GestionCondicionesPagoDialog } from './GestionCondicionesPagoDialog'
 import { GestionFormasPagoDialog } from './GestionFormasPagoDialog'
-import { CATALOGOS_COMERCIALES_WRITE_ROLES, TERCEROS_WRITE_ROLES, puedeRol } from './roles'
+import { CATALOGOS_COMERCIALES_WRITE_ROLES, puedeRol } from './roles'
 
 const FILTROS_ROL: { value: FiltroRolTercero; label: string }[] = [
   { value: 'todos', label: 'Todos' },
@@ -42,7 +41,6 @@ export function GestionTerceros() {
   const [filtroRol, setFiltroRol] = useState<FiltroRolTercero>('todos')
   const [pagina, setPagina] = useState(1)
 
-  const puedeEscribir = puedeRol(perfil?.rol, TERCEROS_WRITE_ROLES)
   const puedeEscribirCatalogos = puedeRol(perfil?.rol, CATALOGOS_COMERCIALES_WRITE_ROLES)
 
   useEffect(() => {
@@ -73,23 +71,14 @@ export function GestionTerceros() {
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-navy">Terceros</h1>
+        <div>
+          <h1 className="text-xl font-semibold text-navy">Terceros</h1>
+          <p className="text-sm text-slate-500">Los terceros se dan de alta en Progress.</p>
+        </div>
         <div className="flex gap-2">
           <GestionSectoresDialog puedeEscribir={puedeEscribirCatalogos} />
           <GestionCondicionesPagoDialog puedeEscribir={puedeEscribirCatalogos} />
           <GestionFormasPagoDialog puedeEscribir={puedeEscribirCatalogos} />
-          {puedeEscribir && (
-            <CrearTerceroDialog
-              trigger={
-                <button
-                  type="button"
-                  className="rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white"
-                >
-                  + Nuevo tercero
-                </button>
-              }
-            />
-          )}
         </div>
       </div>
 

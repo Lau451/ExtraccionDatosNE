@@ -17,8 +17,6 @@ vi.mock('@/features/auth/AuthContext', () => ({
 
 vi.mock('@/lib/api/terceros', () => ({
   listarTerceros: vi.fn(),
-  crearTercero: vi.fn(),
-  actualizarTercero: vi.fn(),
 }))
 
 vi.mock('@/lib/api/catalogosComerciales', () => ({
@@ -33,7 +31,7 @@ vi.mock('@/lib/api/catalogosComerciales', () => ({
   actualizarFormaPago: vi.fn(),
 }))
 
-import { crearTercero, listarTerceros } from '@/lib/api/terceros'
+import { listarTerceros } from '@/lib/api/terceros'
 
 const TERCERO_CLIENTE = {
   id: 'tercero-1',
@@ -111,7 +109,6 @@ beforeEach(() => {
   vi.mocked(listarTerceros)
     .mockReset()
     .mockResolvedValue({ items: TODOS_LOS_TERCEROS, total: TODOS_LOS_TERCEROS.length })
-  vi.mocked(crearTercero).mockReset().mockResolvedValue(TERCERO_SIN_ROL)
 })
 
 describe('GestionTerceros', () => {
@@ -193,19 +190,12 @@ describe('GestionTerceros', () => {
     expect(listarTerceros).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }))
   })
 
-  it('el diálogo de alta llama a crearTercero con los campos cargados', async () => {
+  it('S7: no ofrece alta de terceros, que se dan de alta en Progress', async () => {
     renderConQueryClient(<GestionTerceros />)
 
     await waitFor(() => expect(screen.getByText('Hospital Central')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /nuevo tercero/i }))
-    fireEvent.change(screen.getByLabelText(/razón social/i), { target: { value: 'Nueva Farmacia SA' } })
-    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }))
-
-    await waitFor(() =>
-      expect(crearTercero).toHaveBeenCalledWith(
-        expect.objectContaining({ razon_social: 'Nueva Farmacia SA' }),
-      ),
-    )
+    expect(screen.queryByRole('button', { name: /nuevo tercero/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Los terceros se dan de alta en Progress.')).toBeInTheDocument()
   })
 })
