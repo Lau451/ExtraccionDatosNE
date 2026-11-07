@@ -1,5 +1,12 @@
 # Flujos — Core
 
+> **Actualización (etapa 7, S9):** al confirmar una entrega de OC, `entregar_stock_producto`
+> solo libera `cantidad_comprometida` y devuelve el total liberado. Ya no descuenta
+> `cantidad_disponible` (se eliminó `_descontar_disponible_hasta`): ese campo es de Progress y
+> llega con la importación de stock ([`maestros-progress.md`](../../arquitectura/maestros-progress.md)).
+> Lo que sigue sobre el descuento es histórico.
+
+
 Cuatro flujos principales en los que Core participa. Cada paso cita `archivo:línea`
 verificado en esta sesión.
 

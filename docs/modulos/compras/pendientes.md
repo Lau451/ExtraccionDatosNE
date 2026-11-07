@@ -1,5 +1,12 @@
 # Pendientes — Compras
 
+> **Actualización (etapa 7, S9):** al confirmar una entrega de OC, `entregar_stock_producto`
+> solo libera `cantidad_comprometida` y devuelve el total liberado. Ya no descuenta
+> `cantidad_disponible` (se eliminó `_descontar_disponible_hasta`): ese campo es de Progress y
+> llega con la importación de stock ([`maestros-progress.md`](../../arquitectura/maestros-progress.md)).
+> Lo que sigue sobre el descuento es histórico.
+
+
 Auditoría técnica P1 (bloqueante/riesgo alto) / P2 (riesgo medio, corregir pronto) / P3
 (mejora, sin urgencia), verificada contra el código y los tests reales en esta sesión.
 

@@ -12,9 +12,10 @@ Branch `feat/maestros-solo-lectura` from `dev` (`01a2cbf`). No migrations. Close
 - **S5** Legacy clientes (same decision): delete `POST /clientes` and `DELETE /clientes/{id}`; `PATCH /clientes/{id}` accepts only `email, telefono, condicion_pago_id, forma_pago_id` (422 otherwise). Its contactos, formato-documentos and observaciones stay.
 - **S6** Frontend productos: remove create, edit, delete, costo and stock-adjust UI and their API client functions; the screens show the data read-only. Characteristic assignment stays.
 - **S7** Frontend terceros: remove tercero create and role-assign UI; edit forms show Progress-owned fields read-only and send only app-owned fields.
+- **S9** Stock on OC delivery (L5): "con respecto al descuento por el momento vamos a dejar que progress se encargue, nosotros solo vamos a reflejar lo que se hizo" — confirming an OC delivery only releases `cantidad_comprometida`; `cantidad_disponible` is no longer lowered by the app (the next stock import brings it). The contract's known deviation is removed.
 - **S8** Docs: stage 7 implemented in README stage table; `mapa-modulos.md` notes `imports` as the only writer of Progress-owned columns; `docs/modulos/{productos,terceros,clientes}` updated; tests of deleted endpoints replaced by one that proves the route no longer exists.
 
-Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disponible` on OC delivery (app writes a Progress-owned column) — recorded in the contract as a known deviation. The `/imports/*` endpoints stay as they are.
+Out of scope: the `/imports/*` endpoints stay as they are.
 
 ## Tasks
 
@@ -26,6 +27,7 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 | T4 | S6 | worker: frontend productos | feat(frontend): product masters are read-only |
 | T5 | S7 | worker: frontend terceros | feat(frontend): tercero identity and roles are read-only |
 | T6 | S8 | inline: docs | docs: record stage 7 read-only masters |
+| T7 | S9 | inline: stock delivery releases only the commitment, docs | fix(stock): OC delivery releases only the commitment |
 
 ## Log
 
@@ -33,3 +35,4 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 - **L2** (user answers, 2026-11-07): Q1 Productos — "Sin alta/baja; solo características (Recomendado)" ("Se cierran POST y DELETE /productos y la edición de campos. Queda asignar/quitar características (N:M), que Progress no manda. Categoría/marca/envase pasan a ser de Progress."); Q2 — "Cerrar los dos y sacar sus pantallas (Recomendado)"; Q3 — "Alta e identidad a Progress; resto en la app (Recom.)" ("Se cierran POST /terceros, POST /clientes (legacy, hoy lo puede usar comercial) y la edición de razón social/CUIT/código/tipo. Direcciones, contactos, email, teléfono y condiciones siguen editables."); Q4 — "Borrar endpoint, servicio, API y pantalla (Recom.)".
 - **L3** (assistant, derived): catalog CRUD (categorias/marcas/envases/caracteristicas) stays because the import sends their ids; role POSTs close because the import creates roles; `nombre_fantasia, sitio_web, notas` are app-owned because the import never writes them.
 - **L4** (assistant, T3): service `crear_tercero`/`TerceroCreate` deleted too (L2 Q4), after reseeding its only remaining caller, a seed in `tests/imports/test_service.py`, with a direct insert.
+- **L5** (user, 2026-11-07): "con respecto al descuento por el momento vamos a dejar que progress se encargue, nosotros solo vamos a reflejar lo que se hizo"

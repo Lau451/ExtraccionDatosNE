@@ -45,9 +45,9 @@ Las columnas técnicas (`id`, `drogueria_id`, `created_at`, `updated_at`, `creat
 | `deposito`, `cantidad_disponible` | Progress | Upsert por `(producto_id, deposito)`. |
 | `cantidad_comprometida` | App | La mantiene el motor de compromiso de stock (`services/presupuestacion/core/stock.py`). |
 
-**Desvío conocido:** al confirmar la entrega de una OC, `core/stock.py::_descontar_disponible_hasta`
-baja `cantidad_disponible`, que es de Progress. La próxima importación de stock lo reemplaza
-por el valor de Progress. Queda pendiente decidir si ese descuento debe seguir existiendo.
+Al confirmar la entrega de una OC la app solo libera `cantidad_comprometida`
+(`core/stock.py::entregar_stock_producto`); el descuento de `cantidad_disponible` lo hace
+Progress y llega con la próxima importación de stock.
 
 ## Terceros
 

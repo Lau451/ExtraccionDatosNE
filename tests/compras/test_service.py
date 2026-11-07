@@ -294,7 +294,7 @@ def test_crear_entrega_completa_libera_stock_y_marca_oc_entregada(
         .data[0]
     )
     assert Decimal(str(fila_stock["cantidad_comprometida"])) == Decimal("0")
-    assert Decimal(str(fila_stock["cantidad_disponible"])) == Decimal("10")
+    assert Decimal(str(fila_stock["cantidad_disponible"])) == Decimal("20")
 
     oc_final = (
         service_client.table("ordenes_compra")
@@ -360,7 +360,7 @@ def test_crear_entrega_parcial_deja_oc_parcialmente_entregada(
 
 
 @pytest.mark.integration
-def test_crear_entrega_con_rechazo_no_descuenta_disponible_por_lo_rechazado(
+def test_crear_entrega_con_rechazo_libera_el_total_y_no_toca_disponible(
     service_client,
     seed_drogueria,
     seed_proceso_comercial,
@@ -416,7 +416,7 @@ def test_crear_entrega_con_rechazo_no_descuenta_disponible_por_lo_rechazado(
         .execute()
         .data[0]
     )
-    # Se libera el compromiso por el total (10) pero disponible solo baja por lo
-    # aceptado (10 - 3 = 7): 20 - 7 = 13.
+    # Se libera el compromiso por el total (10); el disponible es de Progress
+    # (maestros-solo-lectura S9) y no cambia.
     assert Decimal(str(fila_stock["cantidad_comprometida"])) == Decimal("0")
-    assert Decimal(str(fila_stock["cantidad_disponible"])) == Decimal("13")
+    assert Decimal(str(fila_stock["cantidad_disponible"])) == Decimal("20")

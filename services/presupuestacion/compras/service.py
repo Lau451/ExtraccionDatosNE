@@ -205,7 +205,7 @@ def crear_entrega(
     observaciones: str | None,
 ) -> ResultadoEntrega:
     """Registra una entrega con las cantidades observadas y, en el mismo paso, libera el
-    stock comprometido y descuenta lo aceptado (§6) — no hay un estado "entrega sin
+    stock comprometido (§6; el disponible lo actualiza Progress) — no hay un estado "entrega sin
     confirmar" intermedio: una entrega es el registro de algo que ya ocurrió físicamente.
 
     Nota de alcance: si `stock.entregar_stock_producto` agota reintentos para ALGÚN ítem
@@ -275,7 +275,6 @@ def crear_entrega(
             producto_id=producto_id,
             drogueria_id=oc["drogueria_id"],
             cantidad_entregada=item.cantidad_entregada,
-            cantidad_rechazada=item.cantidad_rechazada,
         )
 
     nuevo_estado_oc = _recalcular_estado_orden_compra(client, orden_compra_id=orden_compra_id)
@@ -311,7 +310,7 @@ def crear_entrega_para_endpoint(
     fecha_entrega_real: date | None,
     observaciones: str | None,
 ) -> ResultadoEntrega:
-    """Corre con service_role: además de entregas_oc/entregas_oc_items, libera y descuenta
+    """Corre con service_role: además de entregas_oc/entregas_oc_items, libera el compromiso en
     stock_productos, cuya RLS de UPDATE solo permite admin/gerencia/compras."""
     return crear_entrega(
         get_service_client(),
