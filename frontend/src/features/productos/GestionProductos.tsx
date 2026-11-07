@@ -1,20 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
-import {
-  eliminarProducto,
-  listarCategorias,
-  listarEnvases,
-  listarMarcas,
-  listarProductos,
-  type Clasificacion,
-  type Producto,
-} from '@/lib/api/productos'
-import { CrearProductoDialog } from './CrearProductoDialog'
+import { listarCategorias, listarMarcas, listarProductos, type Clasificacion } from '@/lib/api/productos'
 import { GestionCategoriasDialog } from './GestionCategoriasDialog'
-import { CATEGORIAS_WRITE_ROLES, PRODUCTOS_WRITE_ROLES, puedeRol } from './roles'
+import { CATEGORIAS_WRITE_ROLES, puedeRol } from './roles'
 
 const CLASIFICACIONES = [
   'medicamento', 'descartable', 'solucion', 'nutricion', 'equipamiento', 'reactivo', 'cosmetico', 'otro',
@@ -25,8 +15,6 @@ const DEBOUNCE_BUSQUEDA_MS = 300
 
 export function GestionProductos() {
   const { perfil } = useAuth()
-  const queryClient = useQueryClient()
-  const [aEliminar, setAEliminar] = useState<Producto | null>(null)
   const [texto, setTexto] = useState('')
   const [textoBuscado, setTextoBuscado] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
@@ -45,7 +33,6 @@ export function GestionProductos() {
     setPagina(1)
   }, [textoBuscado, categoriaId, clasificacion])
 
-  const puedeEscribir = puedeRol(perfil?.rol, PRODUCTOS_WRITE_ROLES)
   const puedeEscribirCategorias = puedeRol(perfil?.rol, CATEGORIAS_WRITE_ROLES)
 
   const { data, isPending } = useQuery({
@@ -64,15 +51,6 @@ export function GestionProductos() {
   })
   const { data: categorias } = useQuery({ queryKey: ['categorias'], queryFn: listarCategorias })
   const { data: marcas } = useQuery({ queryKey: ['marcas'], queryFn: listarMarcas })
-  const { data: envases } = useQuery({ queryKey: ['envases'], queryFn: listarEnvases })
-
-  const eliminarMutation = useMutation({
-    mutationFn: (id: string) => eliminarProducto(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productos'] })
-      setAEliminar(null)
-    },
-  })
 
   const nombreCategoria = (id: string | null) => categorias?.find((c) => c.id === id)?.nombre ?? '—'
   const nombreMarca = (id: string | null) => marcas?.find((m) => m.id === id)?.nombre ?? '—'
@@ -84,25 +62,11 @@ export function GestionProductos() {
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-navy">Productos</h1>
-        <div className="flex gap-2">
-          <GestionCategoriasDialog puedeEscribir={puedeEscribirCategorias} />
-          {puedeEscribir && (
-            <CrearProductoDialog
-              categorias={categorias ?? []}
-              marcas={marcas ?? []}
-              envases={envases ?? []}
-              trigger={
-                <button
-                  type="button"
-                  className="rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white"
-                >
-                  + Nuevo producto
-                </button>
-              }
-            />
-          )}
+        <div>
+          <h1 className="text-xl font-semibold text-navy">Productos</h1>
+          <p className="mt-1 text-sm text-slate-500">Los productos se dan de alta y se editan en Progress.</p>
         </div>
+        <GestionCategoriasDialog puedeEscribir={puedeEscribirCategorias} />
       </div>
 
       <div className="mb-4 flex flex-wrap gap-3">
@@ -139,14 +103,6 @@ export function GestionProductos() {
         </select>
       </div>
 
-      {eliminarMutation.isError && (
-        <p className="mb-4 text-sm text-red-600">
-          {eliminarMutation.error instanceof Error
-            ? eliminarMutation.error.message
-            : 'No se pudo eliminar el producto.'}
-        </p>
-      )}
-
       {isPending ? (
         <p className="text-sm text-slate-500">Cargando…</p>
       ) : (
@@ -159,7 +115,6 @@ export function GestionProductos() {
               <th className="py-2 font-medium">Clasificación</th>
               <th className="py-2 font-medium">Marca</th>
               <th className="py-2 font-medium">Estado</th>
-              <th className="py-2 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -182,33 +137,6 @@ export function GestionProductos() {
                   <span className={producto.activo ? 'text-emerald-600' : 'text-slate-400'}>
                     {producto.activo ? 'Activo' : 'Inactivo'}
                   </span>
-                </td>
-                <td className="py-2 text-right space-x-3">
-                  {puedeEscribir && (
-                    <>
-                      <CrearProductoDialog
-                        producto={producto}
-                        categorias={categorias ?? []}
-                        marcas={marcas ?? []}
-                        envases={envases ?? []}
-                        trigger={
-                          <button
-                            type="button"
-                            className="text-sm font-medium text-accent hover:underline"
-                          >
-                            Editar
-                          </button>
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setAEliminar(producto)}
-                        className="text-sm font-medium text-red-600 hover:underline"
-                      >
-                        Eliminar
-                      </button>
-                    </>
-                  )}
                 </td>
               </tr>
             ))}
@@ -241,15 +169,6 @@ export function GestionProductos() {
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={aEliminar !== null}
-        onOpenChange={(open) => !open && setAEliminar(null)}
-        title="Eliminar producto"
-        description={`¿Eliminar el producto "${aEliminar?.nombre ?? ''}"? Esta acción no se puede deshacer.`}
-        isPending={eliminarMutation.isPending}
-        onConfirm={() => aEliminar && eliminarMutation.mutate(aEliminar.id)}
-      />
     </div>
   )
 }

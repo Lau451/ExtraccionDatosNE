@@ -1,5 +1,12 @@
 # Reglas — Core
 
+> **Actualización (etapa 7, S9):** al confirmar una entrega de OC, `entregar_stock_producto`
+> solo libera `cantidad_comprometida` y devuelve el total liberado. Ya no descuenta
+> `cantidad_disponible` (se eliminó `_descontar_disponible_hasta`): ese campo es de Progress y
+> llega con la importación de stock ([`maestros-progress.md`](../../arquitectura/maestros-progress.md)).
+> Lo que sigue sobre el descuento es histórico.
+
+
 Todas las reglas fueron verificadas contra el código real en esta sesión. La numeración
 sigue exactamente la definida en el descubrimiento previo; no existe una RN-CORE-015 —
 no se identificó en el código una regla adicional que ameritara ese número, por lo que

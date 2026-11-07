@@ -35,7 +35,7 @@ function camposDesdeContacto(contacto: TerceroContacto): TerceroContactoCreatePa
   }
 }
 
-/** Alta o edición de un contacto — mismo criterio que `CrearProductoDialog`.
+/** Alta o edición de un contacto.
  * El catálogo de sectores puede venir vacío (drogueria nueva); el select
  * sigue disponible con "Sin sector" y no bloquea el guardado, ver prompt de
  * la tarea. */

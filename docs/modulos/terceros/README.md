@@ -1,5 +1,14 @@
 # Módulo Terceros — `services/terceros/`
 
+> **Actualización (etapa 7, maestros de solo lectura):** los terceros y sus roles se dan de
+> alta en Progress y llegan por `/imports/{clientes,proveedores}`. Se eliminaron `POST /terceros`,
+> `POST /terceros/{id}/clientes` y `POST /terceros/{id}/proveedores` con `crear_tercero`,
+> `asignar_rol_cliente` y `asignar_rol_proveedor`. `PATCH /terceros/{id}` acepta solo
+> `nombre_fantasia`, `email`, `telefono`, `sitio_web` y `notas`; los PATCH de rol solo
+> `condicion_pago_id` y `forma_pago_id`. Otro campo responde 422 (`extra="forbid"`).
+> Direcciones, contactos y catálogos de pago no cambian. Contrato completo: [`docs/arquitectura/maestros-progress.md`](../../arquitectura/maestros-progress.md). Seguimiento: `odd/tasks/maestros-solo-lectura.md`.
+
+
 ## Qué es
 
 Terceros concentra la identidad de toda entidad externa a la droguería —hospitales,

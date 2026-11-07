@@ -4,13 +4,10 @@ from supabase import Client
 from services.shared.auth import UsuarioPerfil, require_roles
 from services.shared.database import get_user_client
 from services.terceros.identidad.models import (
-    ClienteRolCreate,
     ClienteRolOut,
     ClienteRolUpdate,
-    ProveedorRolCreate,
     ProveedorRolOut,
     ProveedorRolUpdate,
-    TerceroCreate,
     TerceroListOut,
     TerceroOut,
     TerceroUpdate,
@@ -20,9 +17,6 @@ from services.terceros.identidad.service import (
     actualizar_rol_cliente_para_endpoint,
     actualizar_rol_proveedor_para_endpoint,
     actualizar_tercero_para_endpoint,
-    asignar_rol_cliente_para_endpoint,
-    asignar_rol_proveedor_para_endpoint,
-    crear_tercero_para_endpoint,
     listar_terceros_paginado,
     obtener_rol_cliente,
     obtener_rol_proveedor,
@@ -68,16 +62,6 @@ def listar_terceros_endpoint(
     return TerceroListOut(items=items, total=total)
 
 
-@router.post("/terceros", response_model=TerceroOut)
-def crear_tercero_endpoint(
-    body: TerceroCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
-) -> TerceroOut:
-    return crear_tercero_para_endpoint(
-        drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
-    )
-
-
 @router.get("/terceros/{tercero_id}", response_model=TerceroOut)
 def obtener_tercero_endpoint(
     tercero_id: str,
@@ -107,17 +91,6 @@ def actualizar_tercero_endpoint(
     )
 
 
-@router.post("/terceros/{tercero_id}/clientes", response_model=ClienteRolOut)
-def asignar_rol_cliente_endpoint(
-    tercero_id: str,
-    body: ClienteRolCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
-) -> ClienteRolOut:
-    return asignar_rol_cliente_para_endpoint(
-        tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
-    )
-
-
 @router.get("/terceros/{tercero_id}/clientes", response_model=ClienteRolOut)
 def obtener_rol_cliente_endpoint(
     tercero_id: str,
@@ -134,17 +107,6 @@ def actualizar_rol_cliente_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
 ) -> ClienteRolOut:
     return actualizar_rol_cliente_para_endpoint(
-        tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
-    )
-
-
-@router.post("/terceros/{tercero_id}/proveedores", response_model=ProveedorRolOut)
-def asignar_rol_proveedor_endpoint(
-    tercero_id: str,
-    body: ProveedorRolCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
-) -> ProveedorRolOut:
-    return asignar_rol_proveedor_para_endpoint(
         tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
     )
 

@@ -1,5 +1,12 @@
 # API pública — Core
 
+> **Actualización (etapa 7, S9):** al confirmar una entrega de OC, `entregar_stock_producto`
+> solo libera `cantidad_comprometida` y devuelve el total liberado. Ya no descuenta
+> `cantidad_disponible` (se eliminó `_descontar_disponible_hasta`): ese campo es de Progress y
+> llega con la importación de stock ([`maestros-progress.md`](../../arquitectura/maestros-progress.md)).
+> Lo que sigue sobre el descuento es histórico.
+
+
 Firmas verificadas contra el código real en esta sesión, organizadas por archivo
 fuente. `core/__init__.py` está vacío
 (`services/presupuestacion/core/__init__.py`) — no re-exporta nada; cada firma debajo

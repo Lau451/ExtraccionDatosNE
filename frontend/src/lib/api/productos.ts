@@ -27,35 +27,6 @@ export interface Producto {
   activo: boolean
 }
 
-export interface ProductoCreatePayload {
-  codigo_interno: string
-  nombre: string
-  categoria_id?: string
-  clasificacion?: Clasificacion
-  droga?: string
-  presentacion?: string
-  forma_farmaceutica?: string
-  marca_id?: string
-  envase_id?: string
-  alicuota_iva?: number
-  codigo_anmat?: string
-}
-
-export interface ProductoUpdatePayload {
-  codigo_interno?: string
-  nombre?: string
-  categoria_id?: string
-  clasificacion?: Clasificacion
-  droga?: string
-  presentacion?: string
-  forma_farmaceutica?: string
-  marca_id?: string
-  envase_id?: string
-  alicuota_iva?: number
-  codigo_anmat?: string
-  activo?: boolean
-}
-
 export interface Categoria {
   id: string
   drogueria_id: string
@@ -138,22 +109,12 @@ export interface Costo {
   origen: string
 }
 
-export interface CostoCreatePayload {
-  costo_unitario: number
-  fecha_desde: string
-}
-
 export interface Stock {
   id: string
   producto_id: string
   deposito: string | null
   cantidad_disponible: number
   cantidad_comprometida: number
-}
-
-export interface StockAjustePayload {
-  deposito?: string
-  cantidad_disponible: number
 }
 
 export interface ListarProductosParams {
@@ -179,31 +140,8 @@ export function listarProductos(params: ListarProductosParams = {}): Promise<Pro
   return presupuestacionFetch<ProductosPagina>(`/productos?${query.toString()}`)
 }
 
-export function crearProducto(payload: ProductoCreatePayload): Promise<Producto> {
-  return presupuestacionFetch<Producto>('/productos', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
 export function obtenerProducto(productoId: string): Promise<Producto> {
   return presupuestacionFetch<Producto>(`/productos/${productoId}`)
-}
-
-export function actualizarProducto(
-  productoId: string,
-  payload: ProductoUpdatePayload,
-): Promise<Producto> {
-  return presupuestacionFetch<Producto>(`/productos/${productoId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
-export function eliminarProducto(productoId: string): Promise<void> {
-  return presupuestacionFetch<void>(`/productos/${productoId}`, { method: 'DELETE' })
 }
 
 export function listarCategorias(): Promise<Categoria[]> {
@@ -317,22 +255,6 @@ export function listarCostos(productoId: string): Promise<Costo[]> {
   return presupuestacionFetch<Costo[]>(`/productos/${productoId}/costos`)
 }
 
-export function crearCosto(productoId: string, payload: CostoCreatePayload): Promise<Costo> {
-  return presupuestacionFetch<Costo>(`/productos/${productoId}/costos`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
 export function listarStock(productoId: string): Promise<Stock[]> {
   return presupuestacionFetch<Stock[]>(`/productos/${productoId}/stock`)
-}
-
-export function ajustarStock(productoId: string, payload: StockAjustePayload): Promise<Stock> {
-  return presupuestacionFetch<Stock>(`/productos/${productoId}/stock`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
 }

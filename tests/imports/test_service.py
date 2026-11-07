@@ -19,7 +19,6 @@ from services.presupuestacion.imports.service import (
     importar_proveedores,
     importar_stock,
 )
-from services.terceros.api import TerceroCreate, crear_tercero
 
 
 def _codigo() -> str:
@@ -809,11 +808,18 @@ def test_import_actualiza_tercero_creado_nativamente_en_vez_de_duplicarlo(
 ):
     cod = _codigo()
     cuit = _cuit()
-    nativo = crear_tercero(
-        service_client,
-        drogueria_id=seed_drogueria["id"],
-        body=TerceroCreate(codigo_interno=cod, razon_social="Nativo SA", cuit=cuit),
-        usuario_id=seed_usuario_sistema["id"],
+    nativo = (
+        service_client.table("terceros")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "codigo_interno": cod,
+                "razon_social": "Nativo SA",
+                "cuit": cuit,
+            }
+        )
+        .execute()
+        .data[0]
     )
 
     resultado = importar_clientes(

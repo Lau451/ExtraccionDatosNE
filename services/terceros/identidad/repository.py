@@ -119,10 +119,6 @@ def listar_terceros_paginado(
     return resultado.data, resultado.count or 0
 
 
-def crear_tercero(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return client.table("terceros").insert(fila).execute().data[0]
-
-
 def actualizar_tercero(client: Client, *, tercero_id: str, campos: dict[str, Any]) -> dict[str, Any]:
     return client.table("terceros").update(campos).eq("id", tercero_id).execute().data[0]
 
@@ -133,10 +129,6 @@ def actualizar_tercero(client: Client, *, tercero_id: str, campos: dict[str, Any
 def buscar_rol_cliente(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
     resultado = client.table("clientes").select("*").eq("id", tercero_id).limit(1).execute()
     return resultado.data[0] if resultado.data else None
-
-
-def crear_rol_cliente(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return client.table("clientes").insert(fila).execute().data[0]
 
 
 def actualizar_rol_cliente(client: Client, *, tercero_id: str, campos: dict[str, Any]) -> dict[str, Any]:
@@ -189,10 +181,6 @@ def buscar_cliente_con_tercero(client: Client, *, tercero_id: str) -> dict[str, 
 def buscar_rol_proveedor(client: Client, *, tercero_id: str) -> dict[str, Any] | None:
     resultado = client.table("proveedores").select("*").eq("id", tercero_id).limit(1).execute()
     return resultado.data[0] if resultado.data else None
-
-
-def crear_rol_proveedor(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return client.table("proveedores").insert(fila).execute().data[0]
 
 
 def actualizar_rol_proveedor(client: Client, *, tercero_id: str, campos: dict[str, Any]) -> dict[str, Any]:

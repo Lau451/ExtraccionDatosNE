@@ -20,23 +20,11 @@ vi.mock('@/lib/api/productos', () => ({
   listarCategorias: vi.fn(),
   listarMarcas: vi.fn(),
   listarEnvases: vi.fn(),
-  listarCaracteristicas: vi.fn(),
-  listarCaracteristicasProducto: vi.fn(),
-  crearProducto: vi.fn(),
-  actualizarProducto: vi.fn(),
-  eliminarProducto: vi.fn(),
   crearCategoria: vi.fn(),
   actualizarCategoria: vi.fn(),
-  asignarCaracteristicaProducto: vi.fn(),
-  quitarCaracteristicaProducto: vi.fn(),
 }))
 
 import {
-  actualizarProducto,
-  crearProducto,
-  eliminarProducto,
-  listarCaracteristicas,
-  listarCaracteristicasProducto,
   listarCategorias,
   listarEnvases,
   listarMarcas,
@@ -71,11 +59,6 @@ beforeEach(() => {
   vi.mocked(listarCategorias).mockReset().mockResolvedValue([])
   vi.mocked(listarMarcas).mockReset().mockResolvedValue([])
   vi.mocked(listarEnvases).mockReset().mockResolvedValue([])
-  vi.mocked(listarCaracteristicas).mockReset().mockResolvedValue([])
-  vi.mocked(listarCaracteristicasProducto).mockReset().mockResolvedValue([])
-  vi.mocked(crearProducto).mockReset().mockResolvedValue(PRODUCTO_A)
-  vi.mocked(actualizarProducto).mockReset().mockResolvedValue(PRODUCTO_A)
-  vi.mocked(eliminarProducto).mockReset().mockResolvedValue(undefined)
 })
 
 describe('GestionProductos', () => {
@@ -84,23 +67,6 @@ describe('GestionProductos', () => {
 
     await waitFor(() => expect(screen.getByText('Ibuprofeno 400mg')).toBeInTheDocument())
     expect(screen.getByText('A001')).toBeInTheDocument()
-  })
-
-  it('el diálogo de alta llama a crearProducto con los campos cargados', async () => {
-    renderConQueryClient(<GestionProductos />)
-
-    await waitFor(() => expect(screen.getByText('Ibuprofeno 400mg')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByRole('button', { name: /nuevo producto/i }))
-    fireEvent.change(screen.getByLabelText(/código interno/i), { target: { value: 'B002' } })
-    fireEvent.change(screen.getByLabelText(/^nombre$/i), { target: { value: 'Paracetamol 500mg' } })
-    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }))
-
-    await waitFor(() =>
-      expect(crearProducto).toHaveBeenCalledWith(
-        expect.objectContaining({ codigo_interno: 'B002', nombre: 'Paracetamol 500mg' }),
-      ),
-    )
   })
 
   it('muestra controles de paginación y pide la página siguiente al backend', async () => {
@@ -119,8 +85,7 @@ describe('GestionProductos', () => {
     expect(listarProductos).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }))
   })
 
-  it('un rol sin permiso de escritura no ve las acciones de alta/edición/borrado', async () => {
-    perfilMock.rol = 'comercial'
+  it('S6: ni un rol con escritura ve alta, edición o borrado; el listado avisa que los productos vienen de Progress', async () => {
     renderConQueryClient(<GestionProductos />)
 
     await waitFor(() => expect(screen.getByText('Ibuprofeno 400mg')).toBeInTheDocument())
@@ -128,5 +93,6 @@ describe('GestionProductos', () => {
     expect(screen.queryByRole('button', { name: /nuevo producto/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /editar/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /eliminar/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Los productos se dan de alta y se editan en Progress.')).toBeInTheDocument()
   })
 })

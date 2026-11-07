@@ -41,19 +41,6 @@ def actualizar_comprometida_si_no_cambio(
     return resultado.data[0] if resultado.data else None
 
 
-def actualizar_disponible_si_no_cambio(
-    client: Client, *, fila_id: str, valor_esperado: str, nuevo_valor: str
-) -> dict[str, Any] | None:
-    resultado = (
-        client.table("stock_productos")
-        .update({"cantidad_disponible": nuevo_valor})
-        .eq("id", fila_id)
-        .eq("cantidad_disponible", valor_esperado)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
-
 def _comprometer_hasta(client: Client, *, fila_id: str, monto_deseado: Decimal) -> Decimal:
     """Compromete hasta `monto_deseado` en una fila de stock, acotado a lo libre disponible
     en el momento del intento.
@@ -239,87 +226,36 @@ def _liberar_hasta(client: Client, *, fila_id: str, monto_deseado: Decimal) -> D
     )
 
 
-def _descontar_disponible_hasta(client: Client, *, fila_id: str, monto_deseado: Decimal) -> Decimal:
-    """Descuenta hasta `monto_deseado` de cantidad_disponible en una fila, acotado a lo
-    disponible. Columna independiente de cantidad_comprometida — mismo optimistic locking.
-    Devuelve el monto realmente descontado (puede ser 0)."""
-    for intento in range(_MAX_REINTENTOS):
-        fila = buscar_fila_stock(client, fila_id=fila_id)
-        if fila is None:
-            return Decimal("0")
-
-        disponible_actual = Decimal(str(fila["cantidad_disponible"]))
-        monto = min(monto_deseado, disponible_actual)
-        if monto <= 0:
-            return Decimal("0")
-
-        nuevo_valor = disponible_actual - monto
-        actualizado = actualizar_disponible_si_no_cambio(
-            client,
-            fila_id=fila_id,
-            valor_esperado=str(fila["cantidad_disponible"]),
-            nuevo_valor=str(nuevo_valor),
-        )
-        if actualizado is not None:
-            return monto
-
-        time.sleep(_BACKOFF_BASE_SEGUNDOS * (intento + 1))
-
-    raise ConflictError(
-        "No se pudo descontar el stock disponible tras un error, reintentá la operación"
-    )
-
-
 def entregar_stock_producto(
     client: Client,
     *,
     producto_id: str,
     drogueria_id: str,
     cantidad_entregada: Decimal,
-    cantidad_rechazada: Decimal = Decimal("0"),
-) -> tuple[Decimal, Decimal]:
+) -> Decimal:
     """Al confirmar una entrega de OC (§6): libera cantidad_comprometida por el TOTAL
-    entregado (`cantidad_entregada` — la promesa al cliente queda resuelta, sea aceptada o
-    rechazada) y descuenta cantidad_disponible SOLO por lo aceptado
-    (`cantidad_entregada - cantidad_rechazada` — lo rechazado nunca entró al stock
-    vendible).
+    entregado (la promesa al cliente queda resuelta, sea aceptada o rechazada), empezando
+    por el depósito con más comprometido -- no hay registro de en qué fila exacta se
+    comprometió cada unidad, misma aproximación de pool agregado que
+    `comprometer_stock_producto`.
 
-    Los dos ajustes se calculan y reparten de forma INDEPENDIENTE entre los depósitos del
-    producto (mayor cantidad_comprometida primero para liberar; mayor cantidad_disponible
-    primero para descontar) porque no hay registro de en qué fila exacta se comprometió o
-    tiene stock cada unidad — misma aproximación de pool agregado que ya usa
-    `comprometer_stock_producto`, solo que ahora en dos pasadas porque los montos a mover
-    en cada columna pueden ser distintos y no hay por qué caer en las mismas filas.
+    No toca cantidad_disponible: es de Progress (docs/arquitectura/maestros-progress.md) y
+    el descuento llega con la próxima importación de stock.
 
-    No revierte nada si no alcanza en alguna columna (no existe "liberar/descontar de
-    más": cada pasada topea en lo que haya). Devuelve (liberado_total, descontado_total)
-    para que el llamador detecte discrepancias.
+    Topea en lo comprometido (no existe "liberar de más"). Devuelve el total liberado para
+    que el llamador detecte discrepancias.
     """
-    cantidad_aceptada = cantidad_entregada - cantidad_rechazada
     filas = listar_stock_por_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-
     filas_por_comprometida = sorted(
         filas, key=lambda f: Decimal(str(f["cantidad_comprometida"])), reverse=True
     )
-    restante_liberar = cantidad_entregada
+    restante = cantidad_entregada
     liberado_total = Decimal("0")
     for fila in filas_por_comprometida:
-        if restante_liberar <= 0:
+        if restante <= 0:
             break
-        liberado = _liberar_hasta(client, fila_id=fila["id"], monto_deseado=restante_liberar)
+        liberado = _liberar_hasta(client, fila_id=fila["id"], monto_deseado=restante)
         liberado_total += liberado
-        restante_liberar -= liberado
+        restante -= liberado
 
-    filas_por_disponible = sorted(
-        filas, key=lambda f: Decimal(str(f["cantidad_disponible"])), reverse=True
-    )
-    restante_descontar = cantidad_aceptada
-    descontado_total = Decimal("0")
-    for fila in filas_por_disponible:
-        if restante_descontar <= 0:
-            break
-        descontado = _descontar_disponible_hasta(client, fila_id=fila["id"], monto_deseado=restante_descontar)
-        descontado_total += descontado
-        restante_descontar -= descontado
-
-    return liberado_total, descontado_total
+    return liberado_total

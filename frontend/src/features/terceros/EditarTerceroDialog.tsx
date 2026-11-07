@@ -1,30 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  actualizarTercero,
-  crearTercero,
-  type Tercero,
-  type TerceroCreatePayload,
-} from '@/lib/api/terceros'
+import { actualizarTercero, type Tercero, type TerceroUpdatePayload } from '@/lib/api/terceros'
 
-const CAMPOS_VACIOS: TerceroCreatePayload = {
-  codigo_interno: '',
-  razon_social: '',
-  nombre_fantasia: '',
-  cuit: '',
-  email: '',
-  telefono: '',
-  sitio_web: '',
-  notas: '',
-}
+type CamposApp = Required<TerceroUpdatePayload>
 
-function camposDesdeTercero(tercero: Tercero): TerceroCreatePayload {
+function camposDesdeTercero(tercero: Tercero): CamposApp {
   return {
-    codigo_interno: tercero.codigo_interno ?? '',
-    razon_social: tercero.razon_social,
     nombre_fantasia: tercero.nombre_fantasia ?? '',
-    cuit: tercero.cuit ?? '',
     email: tercero.email ?? '',
     telefono: tercero.telefono ?? '',
     sitio_web: tercero.sitio_web ?? '',
@@ -32,36 +15,23 @@ function camposDesdeTercero(tercero: Tercero): TerceroCreatePayload {
   }
 }
 
-/** Alta o edición de un tercero — mismo criterio que `CrearProductoDialog`:
- * un único formulario para ambos casos. La creación es SOLO datos generales
- * — los roles cliente/proveedor se asignan después desde el detalle (ver
- * prompt de la tarea, punto 3). */
-export function CrearTerceroDialog({
-  tercero,
-  trigger,
-}: {
-  tercero?: Tercero
-  trigger: ReactNode
-}) {
+/** Edición de los datos propios de la app. Razón social, código interno, CUIT
+ * y estado son de Progress (docs/arquitectura/maestros-progress.md): se
+ * muestran de solo lectura y no viajan en el PATCH. */
+export function EditarTerceroDialog({ tercero, trigger }: { tercero: Tercero; trigger: ReactNode }) {
   const [open, setOpen] = useState(false)
-  const [campos, setCampos] = useState<TerceroCreatePayload>(
-    tercero ? camposDesdeTercero(tercero) : CAMPOS_VACIOS,
-  )
+  const [campos, setCampos] = useState<CamposApp>(camposDesdeTercero(tercero))
   const queryClient = useQueryClient()
-  const esEdicion = !!tercero
 
   useEffect(() => {
     if (open) {
-      setCampos(tercero ? camposDesdeTercero(tercero) : CAMPOS_VACIOS)
+      setCampos(camposDesdeTercero(tercero))
     }
   }, [open, tercero])
 
-  function limpiarPayload(): TerceroCreatePayload {
+  function limpiarPayload(): TerceroUpdatePayload {
     return {
-      ...campos,
-      codigo_interno: campos.codigo_interno || undefined,
       nombre_fantasia: campos.nombre_fantasia || undefined,
-      cuit: campos.cuit || undefined,
       email: campos.email || undefined,
       telefono: campos.telefono || undefined,
       sitio_web: campos.sitio_web || undefined,
@@ -70,25 +40,21 @@ export function CrearTerceroDialog({
   }
 
   const mutation = useMutation({
-    mutationFn: () =>
-      esEdicion ? actualizarTercero(tercero.id, limpiarPayload()) : crearTercero(limpiarPayload()),
+    mutationFn: () => actualizarTercero(tercero.id, limpiarPayload()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['terceros'] })
-      if (esEdicion) {
-        queryClient.invalidateQueries({ queryKey: ['terceros', tercero.id] })
-      }
+      queryClient.invalidateQueries({ queryKey: ['terceros', tercero.id] })
       setOpen(false)
     },
   })
 
-  function campo(key: keyof TerceroCreatePayload, label: string, required = false, type = 'text') {
+  function campo(key: keyof CamposApp, label: string, type = 'text') {
     return (
       <label className="block text-sm">
         <span className="mb-1 block text-slate-600">{label}</span>
         <input
           type={type}
-          required={required}
-          value={(campos[key] as string) ?? ''}
+          value={campos[key]}
           onChange={(event) => setCampos((c) => ({ ...c, [key]: event.target.value }))}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
@@ -103,9 +69,15 @@ export function CrearTerceroDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed z-50 inset-0 bg-black/40" />
         <Dialog.Content className="fixed z-50 top-1/2 left-1/2 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-          <Dialog.Title className="text-base font-semibold text-slate-900">
-            {esEdicion ? 'Editar tercero' : 'Nuevo tercero'}
-          </Dialog.Title>
+          <Dialog.Title className="text-base font-semibold text-slate-900">Editar tercero</Dialog.Title>
+
+          <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 rounded-md bg-slate-50 p-3 text-sm">
+            <DatoProgress etiqueta="Razón social" valor={tercero.razon_social} />
+            <DatoProgress etiqueta="Código interno" valor={tercero.codigo_interno} />
+            <DatoProgress etiqueta="CUIT" valor={tercero.cuit} />
+            <DatoProgress etiqueta="Estado" valor={tercero.activo ? 'Activo' : 'Inactivo'} />
+          </dl>
+          <p className="mt-2 text-xs text-slate-500">Estos datos vienen de Progress.</p>
 
           <form
             className="mt-4 space-y-3"
@@ -114,18 +86,15 @@ export function CrearTerceroDialog({
               mutation.mutate()
             }}
           >
-            {campo('razon_social', 'Razón social', true)}
-            {campo('codigo_interno', 'Código interno')}
             {campo('nombre_fantasia', 'Nombre de fantasía')}
-            {campo('cuit', 'CUIT')}
-            {campo('email', 'Email', false, 'email')}
+            {campo('email', 'Email', 'email')}
             {campo('telefono', 'Teléfono')}
             {campo('sitio_web', 'Sitio web')}
 
             <label className="block text-sm">
               <span className="mb-1 block text-slate-600">Notas</span>
               <textarea
-                value={campos.notas ?? ''}
+                value={campos.notas}
                 onChange={(event) => setCampos((c) => ({ ...c, notas: event.target.value }))}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                 rows={3}
@@ -149,12 +118,21 @@ export function CrearTerceroDialog({
                 disabled={mutation.isPending}
                 className="rounded-md bg-navy px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
-                {mutation.isPending ? 'Guardando…' : esEdicion ? 'Guardar' : 'Crear'}
+                {mutation.isPending ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
           </form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+function DatoProgress({ etiqueta, valor }: { etiqueta: string; valor: string | null }) {
+  return (
+    <div>
+      <dt className="text-slate-500">{etiqueta}</dt>
+      <dd className="text-slate-800">{valor || '—'}</dd>
+    </div>
   )
 }

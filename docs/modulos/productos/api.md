@@ -1,5 +1,15 @@
 # API pública — Productos
 
+> **Actualización (etapa 7, maestros de solo lectura):** los productos se dan de alta y se
+> editan en Progress y llegan por `/imports/*`. Se eliminaron `POST /productos`,
+> `PATCH /productos/{id}`, `DELETE /productos/{id}`, `POST /productos/{id}/costos` y
+> `PATCH /productos/{id}/stock`, con sus funciones de servicio (`crear_producto`,
+> `actualizar_producto`, `eliminar_producto`, `crear_costo`, `ajustar_stock`) y modelos
+> (`ProductoCreate`, `ProductoUpdate`, `CostoCreate`, `StockAjuste`). Siguen las lecturas, los
+> catálogos, la asignación de características y `versionar_costos`. Las secciones de abajo
+> que describen lo eliminado son históricas. Contrato completo: [`docs/arquitectura/maestros-progress.md`](../../arquitectura/maestros-progress.md). Seguimiento: `odd/tasks/maestros-solo-lectura.md`.
+
+
 > **Actualización (refactor `catalogo/` → `services/productos/`)**: el módulo se
 > movió a `services/productos/` (top-level) y el wrapper de compatibilidad de
 > `proveedores` (`ProveedorCreate`/`Update`/`Out`, `crear_proveedor`,

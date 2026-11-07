@@ -5,7 +5,6 @@ from services.presupuestacion.clientes.models import (
     ClienteContactoCreate,
     ClienteContactoOut,
     ClienteContactoUpdate,
-    ClienteCreate,
     ClienteFormatoDocumentoOut,
     ClienteFormatoDocumentoUpsert,
     ClienteObservacionCreate,
@@ -16,10 +15,8 @@ from services.presupuestacion.clientes.models import (
 from services.presupuestacion.clientes.service import (
     actualizar_cliente_para_endpoint,
     actualizar_contacto_para_endpoint,
-    crear_cliente_para_endpoint,
     crear_contacto_para_endpoint,
     crear_observacion_para_endpoint,
-    eliminar_cliente_para_endpoint,
     listar_clientes,
     listar_contactos,
     listar_formato_documentos,
@@ -34,7 +31,6 @@ from services.terceros import api
 router = APIRouter()
 
 _ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_ELIMINACION = ("admin", "gerencia")
 _ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 
 
@@ -45,16 +41,6 @@ def listar_clientes_endpoint(
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteOut]:
     return listar_clientes(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
-
-
-@router.post("/clientes", response_model=ClienteOut)
-def crear_cliente_endpoint(
-    body: ClienteCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
-) -> ClienteOut:
-    return crear_cliente_para_endpoint(
-        drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
-    )
 
 
 @router.get("/clientes/{cliente_id}", response_model=ClienteOut)
@@ -74,16 +60,6 @@ def actualizar_cliente_endpoint(
 ) -> ClienteOut:
     return actualizar_cliente_para_endpoint(
         cliente_id=cliente_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
-    )
-
-
-@router.delete("/clientes/{cliente_id}", status_code=204)
-def eliminar_cliente_endpoint(
-    cliente_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ELIMINACION)),
-) -> None:
-    eliminar_cliente_para_endpoint(
-        cliente_id=cliente_id, drogueria_id=usuario.drogueria_id, usuario_id=usuario.id
     )
 
 

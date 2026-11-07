@@ -5,7 +5,6 @@ import pytest
 from services.presupuestacion.clientes.models import (
     ClienteContactoCreate,
     ClienteContactoUpdate,
-    ClienteCreate,
     ClienteFormatoDocumentoUpsert,
     ClienteObservacionCreate,
     ClienteUpdate,
@@ -13,10 +12,8 @@ from services.presupuestacion.clientes.models import (
 from services.presupuestacion.clientes.service import (
     actualizar_cliente,
     actualizar_contacto,
-    crear_cliente,
     crear_contacto,
     crear_observacion,
-    eliminar_cliente,
     listar_clientes,
     listar_contactos,
     listar_formato_documentos,
@@ -189,29 +186,10 @@ def test_crear_observacion_cliente_inexistente(
 
 
 # ---------------------------------------------------------------------------
-# CRUD básico de clientes (Fase 8: identidad -> terceros, rol -> clientes,
-# combinados vía services.terceros.api — design.md D5)
+# Lectura y edición de clientes (Fase 8: identidad -> terceros, rol -> clientes,
+# combinados vía services.terceros.api — design.md D5). El alta y la baja son
+# de Progress (docs/arquitectura/maestros-progress.md).
 # ---------------------------------------------------------------------------
-
-@pytest.mark.integration
-def test_crear_cliente(service_client, seed_drogueria, seed_usuario_sistema, limpiar_terceros_de_clientes):
-    resultado = crear_cliente(
-        service_client,
-        drogueria_id=seed_drogueria["id"],
-        body=ClienteCreate(nombre="Hospital Nuevo", tipo="hospital"),
-        usuario_id=seed_usuario_sistema["id"],
-    )
-
-    assert resultado["nombre"] == "Hospital Nuevo"
-    assert resultado["tipo"] == "hospital"
-    assert resultado["activo"] is True
-
-    # el id del cliente ES el id del tercero (id compartido, design.md sección 5)
-    tercero = (
-        service_client.table("terceros").select("razon_social").eq("id", resultado["id"]).execute().data[0]
-    )
-    assert tercero["razon_social"] == "Hospital Nuevo"
-
 
 @pytest.mark.integration
 def test_listar_clientes_filtra_por_drogueria_y_activo(
@@ -258,54 +236,29 @@ def test_actualizar_cliente_solo_pisa_campos_enviados(
 def test_actualizar_cliente_pisa_identidad_y_rol_en_la_misma_llamada(
     service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_factory
 ):
-    """`ClienteUpdate` mezcla campos de terceros (nombre) y de clientes
-    (tipo): actualizar_cliente debe escribir ambos, con una sola respuesta
-    combinada (design.md D5, decisión documentada en clientes/models.py)."""
+    """`ClienteUpdate` mezcla campos de terceros (email) y de clientes
+    (condicion_pago_id): actualizar_cliente debe escribir ambos, con una sola
+    respuesta combinada (design.md D5, decisión documentada en clientes/models.py)."""
     cliente = seed_cliente_factory(nombre="Original", tipo="hospital")
+    condicion = (
+        service_client.table("condiciones_pago")
+        .insert({"drogueria_id": seed_drogueria["id"], "nombre": f"Condición {secrets.token_hex(4)}"})
+        .execute()
+        .data[0]
+    )
 
     resultado = actualizar_cliente(
         service_client,
         cliente_id=cliente["id"],
         drogueria_id=seed_drogueria["id"],
-        body=ClienteUpdate(nombre="Renombrado", tipo="municipio"),
+        body=ClienteUpdate(email="nuevo@test.com", condicion_pago_id=condicion["id"]),
         usuario_id=seed_usuario_sistema["id"],
     )
 
-    assert resultado["nombre"] == "Renombrado"
-    assert resultado["tipo"] == "municipio"
-
-
-@pytest.mark.integration
-def test_eliminar_cliente_desactiva_el_rol_pero_no_el_tercero(
-    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_factory
-):
-    """D1 (doble rol): un tercero puede seguir siendo proveedor aunque su
-    rol cliente se desactive, así que eliminar_cliente ya no marca
-    `deleted_at` en `terceros` -- solo desactiva la fila de rol (D4). A
-    diferencia del viejo soft-delete, `obtener_cliente` (lookup directo por
-    id) sigue encontrándolo -- lo que cambia es que desaparece del listado
-    activo por defecto, igual que cualquier otro D4-hidden-by-default."""
-    cliente = seed_cliente_factory()
-
-    eliminar_cliente(
-        service_client,
-        cliente_id=cliente["id"],
-        drogueria_id=seed_drogueria["id"],
-        usuario_id=seed_usuario_sistema["id"],
-    )
-
-    encontrado = obtener_cliente(
-        service_client, cliente_id=cliente["id"], drogueria_id=seed_drogueria["id"]
-    )
-    assert encontrado["activo"] is False
-
-    activos = listar_clientes(service_client, drogueria_id=seed_drogueria["id"], activo=True)
-    assert cliente["id"] not in {c["id"] for c in activos}
-
-    fila_tercero = (
-        service_client.table("terceros").select("activo").eq("id", cliente["id"]).execute().data[0]
-    )
-    assert fila_tercero["activo"] is True
+    assert resultado["email"] == "nuevo@test.com"
+    assert resultado["condicion_pago_id"] == condicion["id"]
+    assert resultado["nombre"] == "Original"
+    assert resultado["tipo"] == "hospital"
 
 
 # ---------------------------------------------------------------------------

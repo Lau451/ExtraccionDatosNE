@@ -1,41 +1,7 @@
 from datetime import date
 from decimal import Decimal
-from typing import Literal
 
 from pydantic import BaseModel
-
-Clasificacion = Literal[
-    "medicamento", "descartable", "solucion", "nutricion",
-    "equipamiento", "reactivo", "cosmetico", "otro",
-]
-
-
-class ProductoCreate(BaseModel):
-    codigo_interno: str
-    nombre: str
-    categoria_id: str | None = None
-    clasificacion: Clasificacion | None = None
-    droga: str | None = None
-    presentacion: str | None = None
-    forma_farmaceutica: str | None = None
-    marca_id: str | None = None
-    envase_id: str | None = None
-    alicuota_iva: Decimal | None = None
-    codigo_anmat: str | None = None
-
-
-class ProductoUpdate(BaseModel):
-    nombre: str | None = None
-    categoria_id: str | None = None
-    clasificacion: Clasificacion | None = None
-    droga: str | None = None
-    presentacion: str | None = None
-    forma_farmaceutica: str | None = None
-    marca_id: str | None = None
-    envase_id: str | None = None
-    alicuota_iva: Decimal | None = None
-    codigo_anmat: str | None = None
-    activo: bool | None = None
 
 
 class ProductoOut(BaseModel):
@@ -137,11 +103,6 @@ class ProductoCaracteristicaOut(BaseModel):
     caracteristica_id: str
 
 
-class CostoCreate(BaseModel):
-    costo_unitario: Decimal
-    fecha_desde: date
-
-
 class CostoAVersionar(BaseModel):
     """Una fila del versionado en lote (`service.versionar_costos`). El llamador
     garantiza que `producto_id` pertenece a la droguería que versiona."""
@@ -158,11 +119,6 @@ class CostoOut(BaseModel):
     fecha_desde: date
     fecha_hasta: date | None
     origen: str
-
-
-class StockAjuste(BaseModel):
-    deposito: str | None = None
-    cantidad_disponible: Decimal
 
 
 class StockOut(BaseModel):
