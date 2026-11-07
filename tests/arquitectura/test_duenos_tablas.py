@@ -1,7 +1,8 @@
-"""Only the owner module writes its tables (docs/arquitectura/README.md P1, stage 2).
+"""Only the owner module writes its tables (docs/arquitectura/README.md P1, stages 2-3).
 
 The comercial tables are written only from `services/presupuestacion/` (the future
-`comercial` module, D-ARQ-006). Other modules may read them; a write through the
+`comercial` module, D-ARQ-006), and `costos_productos` only from `services/productos/`
+(X-ARQ-004). Other modules may read them; a write through the
 Supabase client (`.table("<tabla>")` followed by insert/update/upsert/delete in the
 same call chain) anywhere else in `services/` fails this test. `scripts/` and `tests/`
 seed TEST data on purpose and are not modules."""
@@ -18,6 +19,9 @@ _TABLAS_COMERCIAL = (
     "presupuesto_legacy_map",
 )
 _DUENO_COMERCIAL = RAIZ / "services" / "presupuestacion"
+
+_TABLAS_COSTOS = ("costos_productos",)
+_DUENO_COSTOS = RAIZ / "services" / "productos"
 
 # `.table("x")` / `.from_("x")` up to the end of its call chain (`.execute()`), across lines.
 _CADENA = re.compile(r"\.(?:table|from_)\(\s*[\"']([a-z_]+)[\"']\s*\)(.*?)\.execute\(\)", re.DOTALL)
@@ -66,6 +70,16 @@ def test_only_comercial_writes_its_tables():
         escritura
         for archivo in _archivos_fuera_del_dueno(_DUENO_COMERCIAL)
         for escritura in _escrituras(archivo, _TABLAS_COMERCIAL)
+    ]
+
+    assert escrituras == []
+
+
+def test_only_productos_writes_costos_productos():
+    escrituras = [
+        escritura
+        for archivo in _archivos_fuera_del_dueno(_DUENO_COSTOS)
+        for escritura in _escrituras(archivo, _TABLAS_COSTOS)
     ]
 
     assert escrituras == []

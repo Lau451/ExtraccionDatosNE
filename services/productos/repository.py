@@ -273,6 +273,25 @@ def costo_vigente(client: Client, *, producto_id: str) -> dict[str, Any] | None:
     return resultado.data[0] if resultado.data else None
 
 
+# .in_() codifica cada id en la URL (GET): con miles de productos de golpe la URL
+# supera el limite del servidor y PostgREST devuelve 400. Se trocea en lotes.
+_TAMANO_LOTE_COSTOS = 200
+
+
+def costos_vigentes_por_producto(client: Client, *, producto_ids: list[str]) -> dict[str, dict[str, Any]]:
+    vigentes: dict[str, dict[str, Any]] = {}
+    for inicio in range(0, len(producto_ids), _TAMANO_LOTE_COSTOS):
+        resultado = (
+            client.table("costos_productos")
+            .select("*")
+            .in_("producto_id", producto_ids[inicio : inicio + _TAMANO_LOTE_COSTOS])
+            .is_("fecha_hasta", None)
+            .execute()
+        )
+        vigentes.update({fila["producto_id"]: fila for fila in resultado.data})
+    return vigentes
+
+
 def crear_costo(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("costos_productos").insert(fila).execute().data[0]
 

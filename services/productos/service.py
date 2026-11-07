@@ -1,6 +1,6 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from supabase import Client
 
@@ -13,6 +13,7 @@ from services.productos.models import (
     CaracteristicaUpdate,
     CategoriaCreate,
     CategoriaUpdate,
+    CostoAVersionar,
     CostoCreate,
     EnvaseCreate,
     EnvaseUpdate,
@@ -321,30 +322,77 @@ def listar_costos(client: Client, *, producto_id: str, drogueria_id: str) -> lis
     return repo.listar_costos(client, producto_id=producto_id)
 
 
-def crear_costo(
-    client: Client, *, producto_id: str, drogueria_id: str, body: CostoCreate
-) -> dict[str, Any]:
-    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-    vigente = repo.costo_vigente(client, producto_id=producto_id)
+OrigenCosto = Literal["manual", "import_sistema"]
+ResultadoVersionado = Literal["nuevos", "actualizados", "sin_cambios"]
 
-    if vigente is not None and Decimal(str(vigente["costo_unitario"])) == body.costo_unitario:
-        return vigente
+
+def _versionar_costo(
+    client: Client,
+    *,
+    vigente: dict[str, Any] | None,
+    producto_id: str,
+    drogueria_id: str,
+    costo_unitario: Decimal,
+    fecha_desde: date,
+    origen: OrigenCosto,
+) -> tuple[ResultadoVersionado, dict[str, Any]]:
+    """Única regla de versionado de costos (X-ARQ-004): un valor igual conserva el
+    vigente; uno distinto lo cierra en `fecha_desde - 1 día` y abre un vigente nuevo."""
+    if vigente is not None and Decimal(str(vigente["costo_unitario"])) == costo_unitario:
+        return "sin_cambios", vigente
 
     if vigente is not None:
-        fecha_cierre = body.fecha_desde - timedelta(days=1)
+        fecha_cierre = fecha_desde - timedelta(days=1)
         repo.cerrar_costo_vigente(client, costo_id=vigente["id"], fecha_hasta=fecha_cierre.isoformat())
 
-    return repo.crear_costo(
+    nuevo = repo.crear_costo(
         client,
         {
             "producto_id": producto_id,
             "drogueria_id": drogueria_id,
-            "costo_unitario": str(body.costo_unitario),
-            "fecha_desde": body.fecha_desde.isoformat(),
+            "costo_unitario": str(costo_unitario),
+            "fecha_desde": fecha_desde.isoformat(),
             "fecha_hasta": None,
-            "origen": "manual",
+            "origen": origen,
         },
     )
+    return ("nuevos" if vigente is None else "actualizados"), nuevo
+
+
+def crear_costo(
+    client: Client, *, producto_id: str, drogueria_id: str, body: CostoCreate
+) -> dict[str, Any]:
+    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
+    _, costo = _versionar_costo(
+        client,
+        vigente=repo.costo_vigente(client, producto_id=producto_id),
+        producto_id=producto_id,
+        drogueria_id=drogueria_id,
+        costo_unitario=body.costo_unitario,
+        fecha_desde=body.fecha_desde,
+        origen="manual",
+    )
+    return costo
+
+
+def versionar_costos(
+    client: Client, *, drogueria_id: str, costos: list[CostoAVersionar], origen: OrigenCosto
+) -> dict[str, int]:
+    """La misma regla en lote. Los vigentes se leen una vez, antes de escribir."""
+    vigentes = repo.costos_vigentes_por_producto(client, producto_ids=[c.producto_id for c in costos])
+    conteo = {"nuevos": 0, "actualizados": 0, "sin_cambios": 0}
+    for costo in costos:
+        resultado, _ = _versionar_costo(
+            client,
+            vigente=vigentes.get(costo.producto_id),
+            producto_id=costo.producto_id,
+            drogueria_id=drogueria_id,
+            costo_unitario=costo.costo_unitario,
+            fecha_desde=costo.fecha_desde,
+            origen=origen,
+        )
+        conteo[resultado] += 1
+    return conteo
 
 
 def listar_costos_para_endpoint(*, producto_id: str, drogueria_id: str) -> list[dict[str, Any]]:
