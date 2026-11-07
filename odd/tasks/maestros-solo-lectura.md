@@ -21,7 +21,7 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 | ID | Specs | Route | Commit |
 |----|-------|-------|--------|
 | T1 | S1 | inline: contract doc | docs(arquitectura): field ownership contract |
-| T2 | S2, S3 | inline: productos backend, tests | pending |
+| T2 | S2, S3 | worker: productos backend, tests | feat(productos): delete manual alta, edición, baja, costo and stock |
 | T3 | S4, S5 | inline: terceros + clientes backend, tests | pending |
 | T4 | S6 | inline: frontend productos | pending |
 | T5 | S7 | inline: frontend terceros | pending |

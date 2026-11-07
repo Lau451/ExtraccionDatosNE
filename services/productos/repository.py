@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Any
 
 from supabase import Client
@@ -6,10 +5,6 @@ from supabase import Client
 from services.productos.domain import DEPOSITO_SENTINEL
 
 # -- productos ---------------------------------------------------------------
-
-def crear_producto(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return client.table("productos").insert(fila).execute().data[0]
-
 
 # PostgREST/Supabase acota cada respuesta a un máximo de filas (1000 por
 # defecto) aunque no se pida .limit() explícito. Sin paginar, un catálogo de
@@ -112,20 +107,6 @@ def obtener_producto(client: Client, *, producto_id: str) -> dict[str, Any] | No
         .execute()
     )
     return resultado.data[0] if resultado.data else None
-
-
-def actualizar_producto(client: Client, *, producto_id: str, campos: dict[str, Any]) -> dict[str, Any]:
-    return client.table("productos").update(campos).eq("id", producto_id).execute().data[0]
-
-
-def soft_delete_producto(client: Client, *, producto_id: str, usuario_id: str) -> None:
-    client.table("productos").update(
-        {
-            "deleted_at": datetime.now(timezone.utc).isoformat(),
-            "deleted_by": usuario_id,
-            "activo": False,
-        }
-    ).eq("id", producto_id).execute()
 
 
 # -- categorias ----------------------------------------------------------------
@@ -261,18 +242,6 @@ def listar_costos(client: Client, *, producto_id: str) -> list[dict[str, Any]]:
     )
 
 
-def costo_vigente(client: Client, *, producto_id: str) -> dict[str, Any] | None:
-    resultado = (
-        client.table("costos_productos")
-        .select("*")
-        .eq("producto_id", producto_id)
-        .is_("fecha_hasta", None)
-        .limit(1)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
-
 # .in_() codifica cada id en la URL (GET): con miles de productos de golpe la URL
 # supera el limite del servidor y PostgREST devuelve 400. Se trocea en lotes.
 _TAMANO_LOTE_COSTOS = 200
@@ -326,12 +295,3 @@ def buscar_stock_por_deposito(
         .execute()
     )
     return resultado.data[0] if resultado.data else None
-
-
-def upsert_stock(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return (
-        client.table("stock_productos")
-        .upsert(fila, on_conflict="producto_id,deposito")
-        .execute()
-        .data[0]
-    )

@@ -7,52 +7,20 @@ from supabase import Client
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError
 from services.productos import repository as repo
-from services.productos.domain import parsear_unidades_por_presentacion
 from services.productos.models import (
     CaracteristicaCreate,
     CaracteristicaUpdate,
     CategoriaCreate,
     CategoriaUpdate,
     CostoAVersionar,
-    CostoCreate,
     EnvaseCreate,
     EnvaseUpdate,
     MarcaCreate,
     MarcaUpdate,
     ProductoCaracteristicaCreate,
-    ProductoCreate,
-    ProductoUpdate,
-    StockAjuste,
 )
 
 # -- productos ---------------------------------------------------------------
-
-def crear_producto(
-    client: Client, *, drogueria_id: str, body: ProductoCreate, usuario_id: str
-) -> dict[str, Any]:
-    return repo.crear_producto(
-        client,
-        {
-            "drogueria_id": drogueria_id,
-            "codigo_interno": body.codigo_interno,
-            "nombre": body.nombre,
-            "categoria_id": body.categoria_id,
-            "clasificacion": body.clasificacion,
-            "droga": body.droga,
-            "presentacion": body.presentacion,
-            # 0031: tamaño de pack numérico inferido de presentacion (NULL si
-            # no matchea "Presentación x N").
-            "unidades_por_presentacion": parsear_unidades_por_presentacion(body.presentacion),
-            "forma_farmaceutica": body.forma_farmaceutica,
-            "marca_id": body.marca_id,
-            "envase_id": body.envase_id,
-            "alicuota_iva": str(body.alicuota_iva) if body.alicuota_iva is not None else None,
-            "codigo_anmat": body.codigo_anmat,
-            "created_by": usuario_id,
-            "updated_by": usuario_id,
-        },
-    )
-
 
 def listar_productos(
     client: Client,
@@ -103,42 +71,6 @@ def obtener_producto(client: Client, *, producto_id: str, drogueria_id: str) -> 
     if producto is None or producto["drogueria_id"] != drogueria_id:
         raise NotFoundError("No se encontró el producto")
     return producto
-
-
-def actualizar_producto(
-    client: Client, *, producto_id: str, drogueria_id: str, body: ProductoUpdate, usuario_id: str
-) -> dict[str, Any]:
-    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-    campos = body.model_dump(exclude_unset=True)
-    if "alicuota_iva" in campos and campos["alicuota_iva"] is not None:
-        campos["alicuota_iva"] = str(campos["alicuota_iva"])
-    # 0031: presentacion editada -> recalcular unidades_por_presentacion, no
-    # dejar la columna vieja desactualizada.
-    if "presentacion" in campos:
-        campos["unidades_por_presentacion"] = parsear_unidades_por_presentacion(campos["presentacion"])
-    campos["updated_by"] = usuario_id
-    return repo.actualizar_producto(client, producto_id=producto_id, campos=campos)
-
-
-def eliminar_producto(client: Client, *, producto_id: str, drogueria_id: str, usuario_id: str) -> None:
-    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-    repo.soft_delete_producto(client, producto_id=producto_id, usuario_id=usuario_id)
-
-
-def crear_producto_para_endpoint(*, drogueria_id: str, body: ProductoCreate, usuario_id: str) -> dict[str, Any]:
-    return crear_producto(get_service_client(), drogueria_id=drogueria_id, body=body, usuario_id=usuario_id)
-
-
-def actualizar_producto_para_endpoint(
-    *, producto_id: str, drogueria_id: str, body: ProductoUpdate, usuario_id: str
-) -> dict[str, Any]:
-    return actualizar_producto(
-        get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id, body=body, usuario_id=usuario_id
-    )
-
-
-def eliminar_producto_para_endpoint(*, producto_id: str, drogueria_id: str, usuario_id: str) -> None:
-    eliminar_producto(get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id, usuario_id=usuario_id)
 
 
 # -- categorias ----------------------------------------------------------------
@@ -359,22 +291,6 @@ def _versionar_costo(
     return ("nuevos" if vigente is None else "actualizados"), nuevo
 
 
-def crear_costo(
-    client: Client, *, producto_id: str, drogueria_id: str, body: CostoCreate
-) -> dict[str, Any]:
-    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-    _, costo = _versionar_costo(
-        client,
-        vigente=repo.costo_vigente(client, producto_id=producto_id),
-        producto_id=producto_id,
-        drogueria_id=drogueria_id,
-        costo_unitario=body.costo_unitario,
-        fecha_desde=body.fecha_desde,
-        origen="manual",
-    )
-    return costo
-
-
 def versionar_costos(
     client: Client, *, drogueria_id: str, costos: list[CostoAVersionar], origen: OrigenCosto
 ) -> dict[str, int]:
@@ -399,10 +315,6 @@ def listar_costos_para_endpoint(*, producto_id: str, drogueria_id: str) -> list[
     return listar_costos(get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id)
 
 
-def crear_costo_para_endpoint(*, producto_id: str, drogueria_id: str, body: CostoCreate) -> dict[str, Any]:
-    return crear_costo(get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id, body=body)
-
-
 # -- stock -----------------------------------------------------------------------
 
 def listar_stock(client: Client, *, producto_id: str, drogueria_id: str) -> list[dict[str, Any]]:
@@ -410,26 +322,5 @@ def listar_stock(client: Client, *, producto_id: str, drogueria_id: str) -> list
     return repo.listar_stock(client, producto_id=producto_id)
 
 
-def ajustar_stock(
-    client: Client, *, producto_id: str, drogueria_id: str, body: StockAjuste
-) -> dict[str, Any]:
-    """Ajuste manual de cantidad_disponible. NO toca cantidad_comprometida —
-    esa la mantiene únicamente el motor de compromiso de stock (core/stock.py)."""
-    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
-    return repo.upsert_stock(
-        client,
-        {
-            "producto_id": producto_id,
-            "drogueria_id": drogueria_id,
-            "deposito": body.deposito if body.deposito else repo.DEPOSITO_SENTINEL,
-            "cantidad_disponible": str(body.cantidad_disponible),
-        },
-    )
-
-
 def listar_stock_para_endpoint(*, producto_id: str, drogueria_id: str) -> list[dict[str, Any]]:
     return listar_stock(get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id)
-
-
-def ajustar_stock_para_endpoint(*, producto_id: str, drogueria_id: str, body: StockAjuste) -> dict[str, Any]:
-    return ajustar_stock(get_service_client(), producto_id=producto_id, drogueria_id=drogueria_id, body=body)

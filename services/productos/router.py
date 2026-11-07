@@ -10,7 +10,6 @@ from services.productos.models import (
     CategoriaCreate,
     CategoriaOut,
     CategoriaUpdate,
-    CostoCreate,
     CostoOut,
     EnvaseCreate,
     EnvaseOut,
@@ -20,11 +19,8 @@ from services.productos.models import (
     MarcaUpdate,
     ProductoCaracteristicaCreate,
     ProductoCaracteristicaOut,
-    ProductoCreate,
     ProductoListOut,
     ProductoOut,
-    ProductoUpdate,
-    StockAjuste,
     StockOut,
 )
 from services.productos.service import (
@@ -32,16 +28,11 @@ from services.productos.service import (
     actualizar_categoria_para_endpoint,
     actualizar_envase_para_endpoint,
     actualizar_marca_para_endpoint,
-    actualizar_producto_para_endpoint,
-    ajustar_stock_para_endpoint,
     asignar_caracteristica_producto_para_endpoint,
     crear_caracteristica_para_endpoint,
     crear_categoria_para_endpoint,
-    crear_costo_para_endpoint,
     crear_envase_para_endpoint,
     crear_marca_para_endpoint,
-    crear_producto_para_endpoint,
-    eliminar_producto_para_endpoint,
     listar_caracteristicas,
     listar_caracteristicas_producto_para_endpoint,
     listar_categorias,
@@ -92,14 +83,6 @@ def listar_productos_endpoint(
     return ProductoListOut(items=items, total=total)
 
 
-@router.post("/productos", response_model=ProductoOut)
-def crear_producto_endpoint(
-    body: ProductoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> ProductoOut:
-    return crear_producto_para_endpoint(drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id)
-
-
 @router.get("/productos/{producto_id}", response_model=ProductoOut)
 def obtener_producto_endpoint(
     producto_id: str,
@@ -107,27 +90,6 @@ def obtener_producto_endpoint(
     user_client: Client = Depends(get_user_client),
 ) -> ProductoOut:
     return obtener_producto(user_client, producto_id=producto_id, drogueria_id=usuario.drogueria_id)
-
-
-@router.patch("/productos/{producto_id}", response_model=ProductoOut)
-def actualizar_producto_endpoint(
-    producto_id: str,
-    body: ProductoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> ProductoOut:
-    return actualizar_producto_para_endpoint(
-        producto_id=producto_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
-    )
-
-
-@router.delete("/productos/{producto_id}", status_code=204)
-def eliminar_producto_endpoint(
-    producto_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles("admin", "gerencia")),
-) -> None:
-    eliminar_producto_para_endpoint(
-        producto_id=producto_id, drogueria_id=usuario.drogueria_id, usuario_id=usuario.id
-    )
 
 
 # -- categorias ----------------------------------------------------------------
@@ -290,15 +252,6 @@ def listar_costos_endpoint(
     return listar_costos_para_endpoint(producto_id=producto_id, drogueria_id=usuario.drogueria_id)
 
 
-@router.post("/productos/{producto_id}/costos", response_model=CostoOut)
-def crear_costo_endpoint(
-    producto_id: str,
-    body: CostoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> CostoOut:
-    return crear_costo_para_endpoint(producto_id=producto_id, drogueria_id=usuario.drogueria_id, body=body)
-
-
 # -- stock -----------------------------------------------------------------------
 
 @router.get("/productos/{producto_id}/stock", response_model=list[StockOut])
@@ -307,12 +260,3 @@ def listar_stock_endpoint(
     usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA_CATALOGO)),
 ) -> list[StockOut]:
     return listar_stock_para_endpoint(producto_id=producto_id, drogueria_id=usuario.drogueria_id)
-
-
-@router.patch("/productos/{producto_id}/stock", response_model=StockOut)
-def ajustar_stock_endpoint(
-    producto_id: str,
-    body: StockAjuste,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA_CATALOGO)),
-) -> StockOut:
-    return ajustar_stock_para_endpoint(producto_id=producto_id, drogueria_id=usuario.drogueria_id, body=body)
