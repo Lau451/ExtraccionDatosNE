@@ -82,13 +82,10 @@ from services.terceros.direcciones.service import (
     obtener_direccion,
 )
 from services.terceros.identidad.models import (
-    ClienteRolCreate,
     ClienteRolOut,
     ClienteRolUpdate,
-    ProveedorRolCreate,
     ProveedorRolOut,
     ProveedorRolUpdate,
-    TerceroCreate,
     TerceroOut,
     TerceroUpdate,
 )
@@ -99,12 +96,6 @@ from services.terceros.identidad.service import (
     actualizar_rol_proveedor_para_endpoint,
     actualizar_tercero,
     actualizar_tercero_para_endpoint,
-    asignar_rol_cliente,
-    asignar_rol_cliente_para_endpoint,
-    asignar_rol_proveedor,
-    asignar_rol_proveedor_para_endpoint,
-    crear_tercero,
-    crear_tercero_para_endpoint,
     listar_clientes_con_tercero,
     listar_proveedores_con_tercero,
     listar_terceros,
@@ -117,33 +108,24 @@ from services.terceros.identidad.service import (
 
 __all__ = [
     # identidad — modelos
-    "TerceroCreate",
     "TerceroUpdate",
     "TerceroOut",
-    "ClienteRolCreate",
     "ClienteRolUpdate",
     "ClienteRolOut",
-    "ProveedorRolCreate",
     "ProveedorRolUpdate",
     "ProveedorRolOut",
     # identidad — tercero
-    "crear_tercero",
-    "crear_tercero_para_endpoint",
     "listar_terceros",
     "obtener_tercero",
     "actualizar_tercero",
     "actualizar_tercero_para_endpoint",
     # identidad — rol cliente
-    "asignar_rol_cliente",
-    "asignar_rol_cliente_para_endpoint",
     "obtener_rol_cliente",
     "actualizar_rol_cliente",
     "actualizar_rol_cliente_para_endpoint",
     "listar_clientes_con_tercero",
     "obtener_cliente_con_tercero",
     # identidad — rol proveedor
-    "asignar_rol_proveedor",
-    "asignar_rol_proveedor_para_endpoint",
     "obtener_rol_proveedor",
     "actualizar_rol_proveedor",
     "actualizar_rol_proveedor_para_endpoint",

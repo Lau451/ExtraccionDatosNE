@@ -22,7 +22,7 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 |----|-------|-------|--------|
 | T1 | S1 | inline: contract doc | docs(arquitectura): field ownership contract |
 | T2 | S2, S3 | worker: productos backend, tests | feat(productos): delete manual alta, edición, baja, costo and stock |
-| T3 | S4, S5 | inline: terceros + clientes backend, tests | pending |
+| T3 | S4, S5 | worker: terceros + clientes backend, tests | feat(terceros): Progress owns tercero alta and identity |
 | T4 | S6 | inline: frontend productos | pending |
 | T5 | S7 | inline: frontend terceros | pending |
 | T6 | S8 | inline: docs | pending |
@@ -32,3 +32,4 @@ Out of scope: `core/stock.py::_descontar_disponible_hasta` lowers `cantidad_disp
 - **L1** (user, 2026-11-07): "vamos con la 7" (stage 7 as recorded in docs/arquitectura/README.md: "Maestros de solo lectura: las altas de productos y terceros las hace Progress. Se escribe el contrato de propiedad por campo y se cierran o restringen los endpoints manuales de alta, costo y stock, junto con sus pantallas.")
 - **L2** (user answers, 2026-11-07): Q1 Productos — "Sin alta/baja; solo características (Recomendado)" ("Se cierran POST y DELETE /productos y la edición de campos. Queda asignar/quitar características (N:M), que Progress no manda. Categoría/marca/envase pasan a ser de Progress."); Q2 — "Cerrar los dos y sacar sus pantallas (Recomendado)"; Q3 — "Alta e identidad a Progress; resto en la app (Recom.)" ("Se cierran POST /terceros, POST /clientes (legacy, hoy lo puede usar comercial) y la edición de razón social/CUIT/código/tipo. Direcciones, contactos, email, teléfono y condiciones siguen editables."); Q4 — "Borrar endpoint, servicio, API y pantalla (Recom.)".
 - **L3** (assistant, derived): catalog CRUD (categorias/marcas/envases/caracteristicas) stays because the import sends their ids; role POSTs close because the import creates roles; `nombre_fantasia, sitio_web, notas` are app-owned because the import never writes them.
+- **L4** (assistant, T3): service `crear_tercero`/`TerceroCreate` deleted too (L2 Q4), after reseeding its only remaining caller, a seed in `tests/imports/test_service.py`, with a direct insert.

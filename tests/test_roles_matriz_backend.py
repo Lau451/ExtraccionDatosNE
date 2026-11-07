@@ -217,11 +217,8 @@ def test_s3_ver_costos_comercial_sigue_rechazado(mocker):
 # ---------------------------------------------------------------------------
 
 ESCRITURAS_S4 = (
-    ("post", "/terceros"),
     ("patch", "/terceros/t-1"),
-    ("post", "/terceros/t-1/clientes"),
     ("patch", "/terceros/t-1/clientes"),
-    ("post", "/terceros/t-1/proveedores"),
     ("patch", "/terceros/t-1/proveedores"),
     ("post", "/terceros/t-1/direcciones"),
     ("patch", "/terceros/t-1/direcciones/d-1"),

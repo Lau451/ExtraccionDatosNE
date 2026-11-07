@@ -1,42 +1,24 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 DocType = Literal["comparativa", "licitacion", "cotizacion", "orden_compra"]
 CategoriaObservacion = Literal[
     "general", "pago", "contacto", "logistica", "historial", "alerta", "otro"
 ]
-TipoCliente = Literal["hospital", "obra_social", "municipio", "provincia", "nacional", "otro"]
-
-
-class ClienteCreate(BaseModel):
-    """Identidad (-> terceros) + rol cliente (-> clientes) combinados: `POST
-    /clientes` sigue siendo una única llamada HTTP aunque internamente ahora
-    orquesta dos escrituras vía `services.terceros.api` (design.md D5) --
-    ver clientes/service.py::crear_cliente. `direccion`/`ciudad`/`provincia`/
-    `codigo_postal` ya no viven acá: se gestionan como `tercero_direcciones`
-    vía `/terceros/{id}/direcciones` (fuera del alcance de este módulo)."""
-
-    codigo_interno: str | None = None
-    nombre: str
-    cuit: str | None = None
-    email: str | None = None
-    telefono: str | None = None
-    tipo: TipoCliente = "otro"
-    condicion_pago_id: str | None = None
-    forma_pago_id: str | None = None
 
 
 class ClienteUpdate(BaseModel):
-    nombre: str | None = None
-    cuit: str | None = None
+    """Solo campos de la app (docs/arquitectura/maestros-progress.md): nombre, cuit,
+    tipo y activo los escribe la importación, y un body que los incluya responde 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
     email: str | None = None
     telefono: str | None = None
-    tipo: TipoCliente | None = None
     condicion_pago_id: str | None = None
     forma_pago_id: str | None = None
-    activo: bool | None = None
 
 
 class ClienteOut(BaseModel):

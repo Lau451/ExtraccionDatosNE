@@ -6,7 +6,6 @@ from services.presupuestacion.clientes import repository as repo
 from services.presupuestacion.clientes.models import (
     ClienteContactoCreate,
     ClienteContactoUpdate,
-    ClienteCreate,
     ClienteFormatoDocumentoUpsert,
     ClienteObservacionCreate,
     ClienteUpdate,
@@ -21,13 +20,8 @@ from services.terceros import api
 # cliente, terceros_contactos). Este módulo importa EXCLUSIVAMENTE esa
 # fachada, nunca un repository/service interno de services/terceros/.
 
-_IDENTIDAD_CAMPOS = {
-    "nombre": "razon_social",
-    "cuit": "cuit",
-    "email": "email",
-    "telefono": "telefono",
-}
-_ROL_CAMPOS = ("tipo", "condicion_pago_id", "forma_pago_id", "activo")
+_IDENTIDAD_CAMPOS = ("email", "telefono")
+_ROL_CAMPOS = ("condicion_pago_id", "forma_pago_id")
 
 
 def _combinar(tercero: dict[str, Any], rol: dict[str, Any]) -> dict[str, Any]:
@@ -83,34 +77,6 @@ def _asegurar_cliente(client: Client, *, cliente_id: str, drogueria_id: str) -> 
 # ---------------------------------------------------------------------------
 
 
-def crear_cliente(
-    client: Client, *, drogueria_id: str, body: ClienteCreate, usuario_id: str
-) -> dict[str, Any]:
-    tercero = api.crear_tercero(
-        client,
-        drogueria_id=drogueria_id,
-        body=api.TerceroCreate(
-            codigo_interno=body.codigo_interno,
-            razon_social=body.nombre,
-            cuit=body.cuit,
-            email=body.email,
-            telefono=body.telefono,
-        ),
-        usuario_id=usuario_id,
-    )
-    rol = api.asignar_rol_cliente(
-        client,
-        tercero_id=tercero["id"],
-        drogueria_id=drogueria_id,
-        body=api.ClienteRolCreate(
-            tipo=body.tipo,
-            condicion_pago_id=body.condicion_pago_id,
-            forma_pago_id=body.forma_pago_id,
-        ),
-    )
-    return _combinar(tercero, rol)
-
-
 def listar_clientes(
     client: Client, *, drogueria_id: str, activo: bool | None = None
 ) -> list[dict[str, Any]]:
@@ -127,7 +93,7 @@ def actualizar_cliente(
     client: Client, *, cliente_id: str, drogueria_id: str, body: ClienteUpdate, usuario_id: str
 ) -> dict[str, Any]:
     campos = body.model_dump(exclude_unset=True)
-    identidad_campos = {v: campos[k] for k, v in _IDENTIDAD_CAMPOS.items() if k in campos}
+    identidad_campos = {k: campos[k] for k in _IDENTIDAD_CAMPOS if k in campos}
     rol_campos = {k: campos[k] for k in _ROL_CAMPOS if k in campos}
 
     if identidad_campos:
@@ -146,20 +112,6 @@ def actualizar_cliente(
             body=api.ClienteRolUpdate(**rol_campos),
         )
     return obtener_cliente(client, cliente_id=cliente_id, drogueria_id=drogueria_id)
-
-
-def eliminar_cliente(client: Client, *, cliente_id: str, drogueria_id: str, usuario_id: str) -> None:
-    """D4: ya no hay soft-delete propio de `clientes` -- desactivar el rol
-    (`activo=false`) es la baja lógica correcta acá, porque el mismo
-    tercero puede seguir activo como proveedor (D1 doble rol). `usuario_id`
-    se conserva en la firma por compatibilidad con el router/tests aunque
-    `ClienteRolUpdate` no audita quién desactivó el rol."""
-    api.actualizar_rol_cliente(
-        client,
-        tercero_id=cliente_id,
-        drogueria_id=drogueria_id,
-        body=api.ClienteRolUpdate(activo=False),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -288,20 +240,12 @@ def listar_observaciones(client: Client, *, cliente_id: str) -> list[dict[str, A
 # ---------------------------------------------------------------------------
 
 
-def crear_cliente_para_endpoint(*, drogueria_id: str, body: ClienteCreate, usuario_id: str) -> dict[str, Any]:
-    return crear_cliente(get_service_client(), drogueria_id=drogueria_id, body=body, usuario_id=usuario_id)
-
-
 def actualizar_cliente_para_endpoint(
     *, cliente_id: str, drogueria_id: str, body: ClienteUpdate, usuario_id: str
 ) -> dict[str, Any]:
     return actualizar_cliente(
         get_service_client(), cliente_id=cliente_id, drogueria_id=drogueria_id, body=body, usuario_id=usuario_id
     )
-
-
-def eliminar_cliente_para_endpoint(*, cliente_id: str, drogueria_id: str, usuario_id: str) -> None:
-    eliminar_cliente(get_service_client(), cliente_id=cliente_id, drogueria_id=drogueria_id, usuario_id=usuario_id)
 
 
 def crear_contacto_para_endpoint(

@@ -34,6 +34,27 @@ def seed_tercero_factory(service_client, seed_drogueria, limpiar_terceros):
 
 
 @pytest.fixture
+def seed_rol_cliente_factory(service_client, seed_drogueria, limpiar_terceros):
+    """El rol lo crea la importación (docs/arquitectura/maestros-progress.md); los
+    tests lo siembran directo en `clientes`."""
+
+    def _seed(tercero_id: str, **overrides):
+        fila = {"id": tercero_id, "drogueria_id": seed_drogueria["id"], "tipo": "otro", **overrides}
+        return service_client.table("clientes").insert(fila).execute().data[0]
+
+    return _seed
+
+
+@pytest.fixture
+def seed_rol_proveedor_factory(service_client, seed_drogueria, limpiar_terceros):
+    def _seed(tercero_id: str, **overrides):
+        fila = {"id": tercero_id, "drogueria_id": seed_drogueria["id"], "tipo": "otro", **overrides}
+        return service_client.table("proveedores").insert(fila).execute().data[0]
+
+    return _seed
+
+
+@pytest.fixture
 def seed_condicion_pago_factory(service_client, seed_drogueria, limpiar_terceros):
     def _seed(nombre: str | None = None, **overrides):
         fila = {

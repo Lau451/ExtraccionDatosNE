@@ -10,8 +10,6 @@ from services.terceros.contactos.service import (
     listar_contactos,
     obtener_contacto,
 )
-from services.terceros.identidad.models import ProveedorRolCreate
-from services.terceros.identidad.service import asignar_rol_proveedor
 
 
 # ---------------------------------------------------------------------------
@@ -21,15 +19,10 @@ from services.terceros.identidad.service import asignar_rol_proveedor
 
 @pytest.mark.integration
 def test_crear_contacto_para_tercero_solo_con_rol_proveedor(
-    service_client, seed_drogueria, seed_tercero_factory
+    service_client, seed_drogueria, seed_tercero_factory, seed_rol_proveedor_factory
 ):
     tercero = seed_tercero_factory()
-    asignar_rol_proveedor(
-        service_client,
-        tercero_id=tercero["id"],
-        drogueria_id=seed_drogueria["id"],
-        body=ProveedorRolCreate(tipo="laboratorio"),
-    )
+    seed_rol_proveedor_factory(tercero["id"], tipo="laboratorio")
 
     creado = crear_contacto(
         service_client,
