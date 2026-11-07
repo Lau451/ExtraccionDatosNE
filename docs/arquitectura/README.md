@@ -95,6 +95,7 @@ escribe tablas de otro módulo.
 | [`mapa-modulos.md`](./mapa-modulos.md) | Módulos actuales → módulos objetivo, qué se separa, qué queda junto y desvíos conocidos. |
 | [`plataforma-comun.md`](./plataforma-comun.md) | Usuarios, permisos, información compartida, eventos, evolución a distinta velocidad y experiencia unificada. |
 | [`integracion-progress.md`](./integracion-progress.md) | Contrato con Progress, flujo de archivos en ambos sentidos y estándar de archivos para el proveedor. |
+| [`maestros-progress.md`](./maestros-progress.md) | Productos y terceros: qué campos escribe Progress y cuáles la app (etapa 7). |
 | [`propuesta-gerencia.html`](./propuesta-gerencia.html) | Versión para Gerencia: lenguaje no técnico, con ejemplos. Se abre en el navegador y se puede imprimir o guardar como PDF. |
 
 ## Etapas de implementación
