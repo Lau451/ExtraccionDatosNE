@@ -181,6 +181,8 @@ sesión.
 - **Condición**: `vigente is not None` y el valor difiere (tras descartar
   RN-IMPORTS-009).
 - **Resultado**: `repo.cerrar_costo_vigente(...)` seguido de `repo.crear_costo(...)`.
+  Desde X-ARQ-004 lo ejecuta `services/productos` (`versionar_costos`, vía su `api.py`): ya
+  no es una reimplementación independiente.
 - **Prioridad**: Alta.
 - **Archivo**: `services/presupuestacion/imports/service.py:119-134`.
 - **Observaciones**: [IMPLEMENTADO]. Verificada en

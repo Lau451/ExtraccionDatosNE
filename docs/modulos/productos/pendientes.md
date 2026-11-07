@@ -44,7 +44,8 @@ Clasificación P1 (ausencia de una capacidad esperada) / P2 (deuda técnica rele
    — más consumidores por tabla que cualquier otro módulo documentado hasta ahora en
    este proyecto (ver [`../clientes/arquitectura.md`](../clientes/arquitectura.md)
    para el caso comparable, más chico, de `clientes`). [IMPLEMENTADO]. El caso más
-   grave, verificado en esta sesión: `imports/service.py:87-138`
+   grave quedó **resuelto en X-ARQ-004** (`odd/tasks/costos-un-dueno.md`): `importar_costos`
+   llama a `versionar_costos` de `services/productos/api.py`. Estado anterior, verificado en esta sesión: `imports/service.py:87-138`
    (`importar_costos`) reimplementa **el mismo algoritmo** de versionado de costo
    que `productos.service.crear_costo` (cerrar vigente + insertar nuevo, sin cambios
    si el valor es igual) de forma completamente independiente, con la única

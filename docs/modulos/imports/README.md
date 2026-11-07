@@ -57,7 +57,9 @@ ambos lados:
    ese campo (confirmado en [`../clientes/pendientes.md`](../clientes/pendientes.md)
    P3(4)); `imports/service.py:301` (`importar_clientes`) sí lo hace en el `INSERT`.
    Ver [`arquitectura.md`](./arquitectura.md) y [`../clientes/arquitectura.md`](../clientes/arquitectura.md).
-2. **`imports/service.py:87-144`** (`importar_costos`) reimplementa **el mismo
+2. **[Resuelto, X-ARQ-004]** Hoy `importar_costos` llama a `services/productos/api.py`
+   (`versionar_costos`) y no tiene copia propia. Estado anterior:
+   **`imports/service.py:87-144`** (`importar_costos`) reimplementaba **el mismo
    algoritmo** de versionado de costo que `catalogo.service.crear_costo`
    (`catalogo/service.py:195-218`, RN-CATALOGO-005/006): cerrar el costo vigente con
    `fecha_hasta = fecha_desde - 1 día` e insertar uno nuevo, sin escribir nada si el

@@ -32,7 +32,9 @@ P3 (menor), verificada contra el código y los tests reales en esta sesión.
    producto o desactivó un cliente. Ver D-IMPORTS-002 en
    [`decisiones.md`](./decisiones.md).
 
-3. **Duplicación del algoritmo de versionado de costos con `catalogo.service.crear_costo`,
+3. **[RESUELTO, X-ARQ-004 — `odd/tasks/costos-un-dueno.md`]** Hoy hay un solo algoritmo, en
+   `services/productos/service.py`, y `importar_costos` lo llama por `services/productos/api.py`.
+   Estado anterior: **Duplicación del algoritmo de versionado de costos con `catalogo.service.crear_costo`,
    sin punto único de verdad — el caso de duplicación más grave confirmado en el
    proyecto hasta ahora.** `imports/service.py:87-144` (`importar_costos`) reimplementa
    exactamente el mismo algoritmo que `catalogo/service.py:195-218` (`crear_costo`,

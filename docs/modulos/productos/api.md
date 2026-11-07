@@ -11,6 +11,11 @@
 
 Firmas verificadas contra el código real en esta sesión.
 
+> **Fachada para otros módulos (X-ARQ-004):** `services/productos/api.py` reexporta
+> `CostoAVersionar` y `versionar_costos`. Es el único punto por el que otro módulo versiona
+> costos; `productos` es el único que escribe `costos_productos`
+> (`tests/arquitectura/test_duenos_tablas.py`).
+
 > **Actualización (migración `0016_productos_marca_envase_caracteristicas`)**:
 > `ProductoCreate`/`ProductoUpdate`/`ProductoOut` perdieron `laboratorio` y
 > ganaron `marca_id`, `envase_id`, `alicuota_iva`. Se agregaron
@@ -253,6 +258,9 @@ def cerrar_costo_vigente(client: Client, *, costo_id: str, fecha_hasta: str) -> 
 # repository.py:153-154
 # Único UPDATE parcial del módulo: solo toca fecha_hasta.
 
+def costos_vigentes_por_producto(client: Client, *, producto_ids: list[str]) -> dict[str, dict[str, Any]]: ...
+# WHERE producto_id IN (...) AND fecha_hasta IS NULL, en lotes de 200 ids (X-ARQ-004).
+
 # -- stock --
 
 def listar_stock(client: Client, *, producto_id: str) -> list[dict[str, Any]]: ...
@@ -370,6 +378,12 @@ def listar_costos(client: Client, *, producto_id: str, drogueria_id: str) -> lis
 def crear_costo(client: Client, *, producto_id: str, drogueria_id: str, body: CostoCreate) -> dict[str, Any]: ...
 # service.py:195-218
 # RN-PRODUCTOS-001 + RN-PRODUCTOS-005 + RN-PRODUCTOS-006 + RN-PRODUCTOS-007.
+# Aplica la regla con _versionar_costo (origen="manual"), la misma que usa versionar_costos.
+
+def versionar_costos(client: Client, *, drogueria_id: str, costos: list[CostoAVersionar], origen: Literal["manual", "import_sistema"]) -> dict[str, int]: ...
+# La misma regla en lote (X-ARQ-004). Lee los vigentes una vez y devuelve
+# {nuevos, actualizados, sin_cambios}. No valida pertenencia: el llamador garantiza
+# que cada producto_id es de la droguería. La usa la importación de Progress.
 
 def listar_costos_para_endpoint(*, producto_id: str, drogueria_id: str) -> list[dict[str, Any]]: ...
 # service.py:221-222

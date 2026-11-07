@@ -18,8 +18,8 @@ Out of scope: `imports` still upserts `productos` and `stock_productos` directly
 
 | ID | Specs | Route | Commit |
 |----|-------|-------|--------|
-| T1 | S1, S2, S3 | inline: RED guard + batch facade test, move rule to productos, import uses facade | pending |
-| T2 | S4 | inline: docs | pending |
+| T1 | S1, S2, S3 | inline: RED guard + batch facade test, move rule to productos, import uses facade | aee45d4 |
+| T2 | S4 | inline: docs | this commit (`docs(arquitectura): resolve X-ARQ-004 ...`) |
 
 ## Log
 

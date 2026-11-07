@@ -148,15 +148,8 @@ def mapear_productos_por_codigo(client: Client, *, drogueria_id: str, codigos: l
 # Compartida por los flujos de costos y stock.
 
 # -- costos --
-def costos_vigentes_por_producto(client: Client, *, producto_ids: list[str]) -> dict[str, dict[str, Any]]: ...
-# repository.py:66-76
-# WHERE producto_id IN (...) AND fecha_hasta IS NULL — una query para todo el lote.
-
-def crear_costo(client: Client, fila: dict[str, Any]) -> dict[str, Any]: ...
-# repository.py:79-80
-
-def cerrar_costo_vigente(client: Client, *, costo_id: str, fecha_hasta: str) -> None: ...
-# repository.py:83-84
+# Sin funciones propias desde X-ARQ-004: importar_costos llama a
+# services.productos.api.versionar_costos, que es quien escribe costos_productos.
 
 # -- stock --
 def upsert_stock(client: Client, filas: list[dict[str, Any]]) -> None: ...
