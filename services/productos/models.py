@@ -142,6 +142,15 @@ class CostoCreate(BaseModel):
     fecha_desde: date
 
 
+class CostoAVersionar(BaseModel):
+    """Una fila del versionado en lote (`service.versionar_costos`). El llamador
+    garantiza que `producto_id` pertenece a la droguería que versiona."""
+
+    producto_id: str
+    costo_unitario: Decimal
+    fecha_desde: date
+
+
 class CostoOut(BaseModel):
     id: str
     producto_id: str

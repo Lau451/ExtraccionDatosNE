@@ -55,6 +55,11 @@ módulo — ver [`arquitectura.md`](./arquitectura.md).
    para todo el lote (`service.py:94`, `repository.py:49-61`); los códigos sin match
    quedan en `no_encontrados` (`service.py:95`) y sus filas se excluyen del resto del
    procesamiento (`filas_validas`, `service.py:96`).
+> **Actualización (X-ARQ-004):** los pasos 5 y 6 ya no los hace este módulo: `importar_costos`
+> arma un `CostoAVersionar` por fila válida y llama a `versionar_costos`
+> (`services/productos/api.py`), que lee los vigentes del lote en una sola pasada y aplica la
+> misma regla que `crear_costo`. Los conteos y `origen="import_sistema"` no cambiaron.
+
 5. `costos_vigentes_por_producto` trae, para todos los `producto_id` válidos de una
    sola query, la fila con `fecha_hasta IS NULL` de cada uno (`service.py:99`,
    `repository.py:66-76`) — evita N+1 queries dentro del loop.

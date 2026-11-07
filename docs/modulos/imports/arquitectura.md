@@ -56,6 +56,13 @@ explique la decisión — motivo pendiente de definición funcional. Ver D-IMPOR
 
 ## La duplicación real: `importar_costos` reimplementa `catalogo.crear_costo`
 
+> **Actualización (X-ARQ-004, etapa 3):** la duplicación descrita en esta sección ya no
+> existe. El versionado de costos vive solo en `services/productos/service.py`
+> (`_versionar_costo`, usado por `crear_costo` y por `versionar_costos`), e Imports lo
+> llama por la fachada `services/productos/api.py` con `origen="import_sistema"`.
+> `imports/repository.py` ya no escribe `costos_productos`; lo protege
+> `tests/arquitectura/test_duenos_tablas.py`. El texto de abajo describe el estado anterior.
+
 `imports/service.py:87-144` (`importar_costos`):
 
 ```python

@@ -1,6 +1,3 @@
-from datetime import timedelta
-from decimal import Decimal
-
 from supabase import Client
 
 from services.presupuestacion.core.config import get_settings
@@ -14,6 +11,7 @@ from services.presupuestacion.imports.models import (
     ImportProveedorRow,
     ImportStockRow,
 )
+from services.productos.api import CostoAVersionar, versionar_costos
 from services.productos.domain import DEPOSITO_SENTINEL, parsear_unidades_por_presentacion
 
 
@@ -101,53 +99,21 @@ def importar_costos(
     no_encontrados = [c for c in codigos if c not in mapa_productos]
     filas_validas = [c for c in costos if c.codigo_interno in mapa_productos]
 
-    producto_ids = [mapa_productos[c.codigo_interno] for c in filas_validas]
-    vigentes = repo.costos_vigentes_por_producto(client, producto_ids=producto_ids)
-
-    nuevos = actualizados = sin_cambios = 0
-    for fila in filas_validas:
-        producto_id = mapa_productos[fila.codigo_interno]
-        vigente = vigentes.get(producto_id)
-
-        if vigente is None:
-            repo.crear_costo(
-                client,
-                {
-                    "producto_id": producto_id,
-                    "drogueria_id": drogueria_id,
-                    "costo_unitario": str(fila.costo_unitario),
-                    "fecha_desde": fila.fecha_desde.isoformat(),
-                    "fecha_hasta": None,
-                    "origen": "import_sistema",
-                },
+    conteo = versionar_costos(
+        client,
+        drogueria_id=drogueria_id,
+        costos=[
+            CostoAVersionar(
+                producto_id=mapa_productos[fila.codigo_interno],
+                costo_unitario=fila.costo_unitario,
+                fecha_desde=fila.fecha_desde,
             )
-            nuevos += 1
-        elif Decimal(str(vigente["costo_unitario"])) != fila.costo_unitario:
-            fecha_cierre = fila.fecha_desde - timedelta(days=1)
-            repo.cerrar_costo_vigente(
-                client, costo_id=vigente["id"], fecha_hasta=fecha_cierre.isoformat()
-            )
-            repo.crear_costo(
-                client,
-                {
-                    "producto_id": producto_id,
-                    "drogueria_id": drogueria_id,
-                    "costo_unitario": str(fila.costo_unitario),
-                    "fecha_desde": fila.fecha_desde.isoformat(),
-                    "fecha_hasta": None,
-                    "origen": "import_sistema",
-                },
-            )
-            actualizados += 1
-        else:
-            sin_cambios += 1
+            for fila in filas_validas
+        ],
+        origen="import_sistema",
+    )
 
-    return {
-        "nuevos": nuevos,
-        "actualizados": actualizados,
-        "sin_cambios": sin_cambios,
-        "no_encontrados": no_encontrados,
-    }
+    return {**conteo, "no_encontrados": no_encontrados}
 
 
 def importar_costos_para_endpoint(*, drogueria_id: str, costos: list[ImportCostoRow]) -> dict:

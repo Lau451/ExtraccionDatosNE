@@ -82,32 +82,6 @@ def mapear_productos_por_codigo(
     return mapa
 
 
-# -- costos ----------------------------------------------------------------
-
-def costos_vigentes_por_producto(client: Client, *, producto_ids: list[str]) -> dict[str, dict[str, Any]]:
-    if not producto_ids:
-        return {}
-    vigentes: dict[str, dict[str, Any]] = {}
-    for lote in _en_lotes(producto_ids):
-        resultado = (
-            client.table("costos_productos")
-            .select("id, producto_id, costo_unitario")
-            .in_("producto_id", lote)
-            .is_("fecha_hasta", None)
-            .execute()
-        )
-        vigentes.update({fila["producto_id"]: fila for fila in resultado.data})
-    return vigentes
-
-
-def crear_costo(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
-    return client.table("costos_productos").insert(fila).execute().data[0]
-
-
-def cerrar_costo_vigente(client: Client, *, costo_id: str, fecha_hasta: str) -> None:
-    client.table("costos_productos").update({"fecha_hasta": fecha_hasta}).eq("id", costo_id).execute()
-
-
 # -- stock -------------------------------------------------------------------
 
 def upsert_stock(client: Client, filas: list[dict[str, Any]]) -> None:

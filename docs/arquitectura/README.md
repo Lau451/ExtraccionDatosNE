@@ -107,8 +107,9 @@ que más riesgo tiene de romper datos sin que se note y deja al final lo que es 
 | 0 | Cimientos: capas y `services/shared` como plataforma (`tests/arquitectura/test_capas.py`). | X-ARQ-001 | **[IMPLEMENTADO]** (#96) |
 | 1 | `integracion_progress`: fachada, registro de archivos, recepción manual y automática. | — | **[IMPLEMENTADO]** (#97, `odd/tasks/integracion-progress.md`) |
 | 2 | Un solo dueño de `procesos_comerciales`: los demás módulos escriben a través de su fachada. | X-ARQ-003 | **[IMPLEMENTADO]** (`odd/tasks/procesos-comerciales-dueno.md`) |
-| 3 | Versionado de costos en un solo lugar (hoy duplicado entre `imports` y `productos`). | X-ARQ-004 | Pendiente |
+| 3 | Versionado de costos en un solo lugar: `imports` llama a la fachada de `productos`. | X-ARQ-004 | **[IMPLEMENTADO]** (`odd/tasks/costos-un-dueno.md`) |
 | 4 | `pcp` usa las fachadas de `notificaciones` y `pricing` en lugar de sus internos. | X-ARQ-002 | Pendiente |
 | 5 | Roles y permisos centralizados en la plataforma. | X-ARQ-005 | Pendiente |
 | 6 | `presupuestacion/main.py` deja de montar 25 routers sueltos; se agrupan por módulo. | X-ARQ-006 | Pendiente |
+| 7 | Maestros de solo lectura: las altas de productos y terceros las hace Progress. Se escribe el contrato de propiedad por campo y se cierran o restringen los endpoints manuales de alta, costo y stock, junto con sus pantallas. | — | Pendiente |
 | Después | Eventos con outbox en Postgres ([`plataforma-comun.md`](./plataforma-comun.md)) y nuevos tipos de archivo con Progress a medida que se acuerden con el proveedor. | — | Pendiente |

@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from services.presupuestacion.core.exceptions import NotFoundError
+from services.productos.api import CostoAVersionar, versionar_costos
 from services.productos.models import (
     CaracteristicaCreate,
     CategoriaCreate,
@@ -387,6 +388,42 @@ def test_crear_costo_manual_no_duplica_si_es_igual(
 
     historial = listar_costos(service_client, producto_id=producto["id"], drogueria_id=seed_drogueria["id"])
     assert len(historial) == 1
+
+
+@pytest.mark.integration
+def test_versionar_costos_en_lote_aplica_la_misma_regla(
+    service_client, seed_drogueria, seed_producto_factory
+):
+    nuevo, cambia, igual = seed_producto_factory(), seed_producto_factory(), seed_producto_factory()
+    for producto in (cambia, igual):
+        crear_costo(
+            service_client,
+            producto_id=producto["id"],
+            drogueria_id=seed_drogueria["id"],
+            body=CostoCreate(costo_unitario=Decimal("10.00"), fecha_desde=date(2026, 1, 1)),
+        )
+
+    resultado = versionar_costos(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        costos=[
+            CostoAVersionar(producto_id=nuevo["id"], costo_unitario=Decimal("5.00"), fecha_desde=date(2026, 3, 1)),
+            CostoAVersionar(producto_id=cambia["id"], costo_unitario=Decimal("12.00"), fecha_desde=date(2026, 3, 1)),
+            CostoAVersionar(producto_id=igual["id"], costo_unitario=Decimal("10.00"), fecha_desde=date(2026, 3, 1)),
+        ],
+        origen="import_sistema",
+    )
+
+    assert resultado == {"nuevos": 1, "actualizados": 1, "sin_cambios": 1}
+    historial_nuevo = listar_costos(service_client, producto_id=nuevo["id"], drogueria_id=seed_drogueria["id"])
+    assert [(c["origen"], c["fecha_hasta"]) for c in historial_nuevo] == [("import_sistema", None)]
+    historial_cambia = listar_costos(service_client, producto_id=cambia["id"], drogueria_id=seed_drogueria["id"])
+    assert [(c["origen"], Decimal(str(c["costo_unitario"])), c["fecha_hasta"]) for c in historial_cambia] == [
+        ("import_sistema", Decimal("12.00"), None),
+        ("manual", Decimal("10.00"), "2026-02-28"),
+    ]
+    historial_igual = listar_costos(service_client, producto_id=igual["id"], drogueria_id=seed_drogueria["id"])
+    assert [(c["origen"], c["fecha_hasta"]) for c in historial_igual] == [("manual", None)]
 
 
 # ---------------------------------------------------------------------------

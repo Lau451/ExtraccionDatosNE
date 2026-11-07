@@ -52,6 +52,10 @@ Numeración D-IMPORTS-NNN, verificada contra el código en esta sesión.
 
 ### D-IMPORTS-003 — Reimplementar el algoritmo de versionado de costos en vez de reusar `catalogo.service.crear_costo`
 
+> **Reemplazada (X-ARQ-004, etapa 3):** `importar_costos` ya no reimplementa el algoritmo;
+> llama a `versionar_costos` de `services/productos/api.py`, que recibe `origen` y procesa
+> el lote con la misma regla que `crear_costo`. Se conserva como registro histórico.
+
 - **Decisión**: `importar_costos` arma su propia lógica de cierre+alta de costo
   vigente en `imports/service.py:106-137`, en vez de importar y llamar a
   `catalogo.service.crear_costo` (`catalogo/service.py:195-218`) con
