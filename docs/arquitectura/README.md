@@ -112,5 +112,5 @@ que más riesgo tiene de romper datos sin que se note y deja al final lo que es 
 | 4 | `pcp` usa las fachadas de `notificaciones` y `pricing` en lugar de sus internos. | X-ARQ-002 | Pendiente |
 | 5 | Roles y permisos centralizados en la plataforma. | X-ARQ-005 | Pendiente |
 | 6 | `presupuestacion/main.py` deja de montar 25 routers sueltos; se agrupan por módulo. | X-ARQ-006 | Pendiente |
-| 7 | Maestros de solo lectura: las altas de productos y terceros las hace Progress. Se escribe el contrato de propiedad por campo y se cierran o restringen los endpoints manuales de alta, costo y stock, junto con sus pantallas. | — | Pendiente |
+| 7 | Maestros de solo lectura: las altas de productos y terceros las hace Progress. Contrato por campo en [`maestros-progress.md`](./maestros-progress.md); se eliminaron los endpoints manuales de alta, edición de identidad, baja, costo y stock, junto con sus pantallas. | — | **[IMPLEMENTADO]** (`odd/tasks/maestros-solo-lectura.md`) |
 | Después | Eventos con outbox en Postgres ([`plataforma-comun.md`](./plataforma-comun.md)) y nuevos tipos de archivo con Progress a medida que se acuerden con el proveedor. | — | Pendiente |

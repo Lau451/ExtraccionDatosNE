@@ -1,5 +1,12 @@
 # API pública — Clientes
 
+> **Actualización (etapa 7, maestros de solo lectura):** se eliminaron `POST /clientes` y
+> `DELETE /clientes/{id}` con `crear_cliente`, `eliminar_cliente` y `ClienteCreate`.
+> `PATCH /clientes/{id}` acepta solo `email`, `telefono`, `condicion_pago_id` y
+> `forma_pago_id` (otro campo responde 422). Contactos, formato de documentos y
+> observaciones no cambian. Lo que sigue sobre alta y baja es histórico. Contrato completo: [`docs/arquitectura/maestros-progress.md`](../../arquitectura/maestros-progress.md). Seguimiento: `odd/tasks/maestros-solo-lectura.md`.
+
+
 Firmas verificadas contra el código real en esta sesión.
 
 ## `clientes/models.py`
