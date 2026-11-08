@@ -43,7 +43,7 @@ from services.pcp.mensajeria.adapters import get_mensajeria
 from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort, ResultadoEnvio
 from services.pcp.negociacion import service as negociacion_service
 from services.pcp.renglones import service as renglones_service
-from services.productos import service as productos_service
+from services.productos.api import obtener_producto
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError, ValidationError
 from services.terceros.api import listar_contactos, obtener_proveedor_con_tercero
@@ -160,7 +160,7 @@ def _armar_datos_pdf(client: Client, *, consulta_id: str, drogueria_id: str) -> 
         )
         producto = None
         if renglon.get("producto_id"):
-            producto = productos_service.obtener_producto(
+            producto = obtener_producto(
                 client, producto_id=renglon["producto_id"], drogueria_id=drogueria_id
             )
         renglones.append(

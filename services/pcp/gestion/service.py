@@ -16,6 +16,7 @@ from supabase import Client
 from services.pcp.gestion import repository as repo
 from services.pcp.gestion.models import EstadoPcp, PcpCreate
 from services.pcp.historial import service as historial_service
+from services.presupuestacion.presupuestos.api import buscar_presupuesto
 from services.shared.database import get_service_client
 from services.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
@@ -40,7 +41,7 @@ _TRANSICIONES_PERMITIDAS: dict[str, frozenset[str]] = {
 
 
 def crear_pcp(client: Client, *, drogueria_id: str, body: PcpCreate, usuario_id: str) -> dict[str, Any]:
-    presupuesto = repo.buscar_presupuesto(client, presupuesto_id=body.presupuesto_id)
+    presupuesto = buscar_presupuesto(client, presupuesto_id=body.presupuesto_id)
     if presupuesto is None or presupuesto["drogueria_id"] != drogueria_id:
         raise NotFoundError(f"No se encontró el presupuesto '{body.presupuesto_id}'")
 

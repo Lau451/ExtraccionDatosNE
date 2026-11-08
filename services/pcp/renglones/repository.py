@@ -3,21 +3,6 @@ from typing import Any
 from supabase import Client
 
 
-def buscar_item_proceso(client: Client, *, item_proceso_id: str) -> dict[str, Any] | None:
-    """Lectura directa de `items_proceso` -- mismo criterio que
-    `services/pcp/gestion/repository.py::buscar_presupuesto` (D1: el acceso a
-    la tabla en sí, fuera de un import Python de otro `repository`, no está
-    restringido por ese guard)."""
-    resultado = (
-        client.table("items_proceso")
-        .select("id, drogueria_id, proceso_comercial_id, producto_id, descripcion, cantidad")
-        .eq("id", item_proceso_id)
-        .limit(1)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
-
 def crear_renglon(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("pcp_renglones").insert(fila).execute().data[0]
 

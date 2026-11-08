@@ -52,10 +52,9 @@ def marcar_resultado_en_consulta(
     en 0012_pcp_extras.sql M4b una vez que esa tabla existe) para la fila que
     `services/pcp/renglones/service.py::seleccionar_proveedores` (PR5) dejó
     en `sin_respuesta`. Acceso directo a la tabla -- no un import Python de
-    `services.pcp.negociacion.repository` -- mismo criterio ya documentado en
-    `services/pcp/renglones/repository.py::buscar_item_proceso`: el guard D1
-    restringe imports Python entre módulos, nunca el acceso a una tabla en
-    sí. Precondición (garantizada por el caller, `service.py::agrupar_renglones`,
+    `services.pcp.negociacion.repository`: es una tabla del propio `pcp`, así
+    que escribirla desde otro submódulo de `pcp` no cruza ninguna fachada.
+    Precondición (garantizada por el caller, `service.py::agrupar_renglones`,
     vía `negociacion_service.obtener_resultado`): la fila ya existe para este
     par renglón-proveedor."""
     return (

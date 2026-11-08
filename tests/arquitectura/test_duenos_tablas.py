@@ -2,7 +2,8 @@
 
 The comercial tables are written only from `services/presupuestacion/` (the future
 `comercial` module, D-ARQ-006), and `costos_productos` only from `services/productos/`
-(X-ARQ-004). Other modules may read them; a write through the
+(X-ARQ-004). Other modules may read them (except `pcp`, which reads the comercial
+tables only through their facades, X-ARQ-002); a write through the
 Supabase client (`.table("<tabla>")` followed by insert/update/upsert/delete in the
 same call chain) anywhere else in `services/` fails this test. `scripts/` and `tests/`
 seed TEST data on purpose and are not modules."""
@@ -109,3 +110,37 @@ def test_ignores_reads_of_comercial_tables_and_writes_to_other_tables(tmp_path):
     )
 
     assert _escrituras(archivo, _TABLAS_COMERCIAL, raiz=tmp_path) == []
+
+
+# X-ARQ-002 (odd/tasks/pcp-fachadas.md S4): `pcp` does not even read the comercial
+# tables; it asks `presupuestos/api.py` and `procesos_comerciales/api.py` instead.
+_PCP = RAIZ / "services" / "pcp"
+_TABLA_NOMBRADA = re.compile(r"\.(?:table|from_)\(\s*[\"']([a-z_]+)[\"']")
+
+
+def _accesos(archivo: Path, tablas: tuple[str, ...], raiz: Path = RAIZ) -> list[str]:
+    texto = archivo.read_text(encoding="utf-8")
+    return [
+        f"{archivo.relative_to(raiz).as_posix()}:{texto.count(chr(10), 0, uso.start()) + 1} {uso.group(1)}"
+        for uso in _TABLA_NOMBRADA.finditer(texto)
+        if uso.group(1) in tablas
+    ]
+
+
+def test_detects_any_access_to_a_comercial_table(tmp_path):
+    archivo = tmp_path / "modulo.py"
+    archivo.write_text(
+        'client.table("presupuestos").select("id").execute()\n'
+        "consulta = client.from_('items_proceso')\n"
+        'client.table("pcp").select("*").execute()\n',
+        encoding="utf-8",
+    )
+    assert _accesos(archivo, _TABLAS_COMERCIAL, raiz=tmp_path) == [
+        "modulo.py:1 presupuestos",
+        "modulo.py:2 items_proceso",
+    ]
+
+
+def test_pcp_does_not_access_comercial_tables():
+    accesos = [acceso for archivo in _PCP.rglob("*.py") for acceso in _accesos(archivo, _TABLAS_COMERCIAL)]
+    assert accesos == [], f"services/pcp reads a comercial table instead of its facade: {accesos}"

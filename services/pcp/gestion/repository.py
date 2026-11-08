@@ -3,21 +3,6 @@ from typing import Any
 from supabase import Client
 
 
-def buscar_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
-    """Lectura directa de `presupuestos` -- nunca vía
-    `services.presupuestacion.presupuestos.repository` (D1: services/pcp/**
-    no puede importar el repository de otro módulo; el acceso a la tabla en
-    sí, fuera de un import Python, no está restringido por ese guard)."""
-    resultado = (
-        client.table("presupuestos")
-        .select("id, drogueria_id, proceso_comercial_id")
-        .eq("id", presupuesto_id)
-        .limit(1)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
-
 def crear_pcp(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("pcp").insert(fila).execute().data[0]
 

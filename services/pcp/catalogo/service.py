@@ -35,7 +35,7 @@ from supabase import Client
 from services.pcp.catalogo import repository as repo
 from services.pcp.catalogo.models import ProductoProveedorCreate
 from services.pcp.errors import UNIQUE_VIOLATION
-from services.productos import service as productos_service
+from services.productos.api import obtener_producto
 from services.shared.database import get_service_client
 from services.shared.exceptions import ConflictError
 from services.terceros.api import obtener_proveedor_con_tercero
@@ -69,14 +69,14 @@ def agregar_proveedor(
     # Valida que ambos extremos de la asociación existan y sean del tenant
     # antes de escribir -- mismo criterio que
     # services/pcp/renglones/service.py::crear_renglon con item_proceso_id.
-    # `productos.service` y `services.terceros.api` son ambos imports
-    # permitidos por D1 (design.md). Import directo de la función (no del
+    # `services.productos.api` y `services.terceros.api` son ambos fachadas
+    # permitidas por D1 / X-ARQ-002 (odd/tasks/pcp-fachadas.md S4). Import directo de la función (no del
     # módulo `services.terceros.api` como alias) -- `tests/pcp/test_dependencias.py`
     # matchea el `ast.ImportFrom.module` exacto contra
     # `_PERMITIDOS_EXACTOS = {"services.terceros.api", ...}`; un
     # `from services.terceros import api` registra "services.terceros" (sin
     # el `.api`), que el guard no reconoce.
-    productos_service.obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
+    obtener_producto(client, producto_id=producto_id, drogueria_id=drogueria_id)
     obtener_proveedor_con_tercero(client, tercero_id=body.proveedor_id, drogueria_id=drogueria_id)
 
     fila = {
