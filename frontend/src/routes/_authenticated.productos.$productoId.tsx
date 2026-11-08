@@ -1,10 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ProductoDetalle } from '@/features/productos/ProductoDetalle'
-import { requireRole } from '@/features/auth/routeGuards'
-import { PRODUCTOS_READ_ROLES } from '@/features/productos/roles'
+import { requireCapacidad } from '@/features/auth/routeGuards'
 
 export const Route = createFileRoute('/_authenticated/productos/$productoId')({
-  beforeLoad: requireRole(...PRODUCTOS_READ_ROLES),
+  beforeLoad: requireCapacidad('productos.leer'),
   component: RouteComponent,
 })
 

@@ -49,6 +49,20 @@ function perfilFalso(nombre: string) {
   }
 }
 
+const CAPACIDADES_ADMIN = ['extraccion.extraer', 'usuarios.gestionar']
+
+// GET /usuarios/{id} devuelve el perfil y GET /auth/capacidades la lista del rol
+// (spec S7); `capacidades` puede ser un error para simular el 403 de L5.
+function responder(perfil: unknown, capacidades: string[] | Error = CAPACIDADES_ADMIN) {
+  vi.mocked(presupuestacionFetch).mockImplementation(async (path: string) => {
+    if (path === '/auth/capacidades') {
+      if (capacidades instanceof Error) throw capacidades
+      return { rol: 'admin', capacidades }
+    }
+    return perfil
+  })
+}
+
 function SignInProbe() {
   const { signIn, perfil } = useAuth()
   const [estado, setEstado] = useState('idle')
@@ -71,13 +85,17 @@ function SignInProbe() {
 }
 
 function Probe() {
-  const { loading, perfilLoading, perfil, refrescarPerfil } = useAuth()
+  const { loading, perfilLoading, perfil, refrescarPerfil, capacidades, puede } = useAuth()
+  const [refrescadas, setRefrescadas] = useState('')
   return (
     <div>
+      <span data-testid="capacidades">{capacidades.join(',')}</span>
+      <span data-testid="puedeUsuarios">{String(puede('usuarios.gestionar'))}</span>
+      <span data-testid="refrescadas">{refrescadas}</span>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="perfilLoading">{String(perfilLoading)}</span>
       <span data-testid="perfil">{perfil ? perfil.nombre : 'null'}</span>
-      <button onClick={() => refrescarPerfil()}>refrescar</button>
+      <button onClick={() => refrescarPerfil().then((caps) => setRefrescadas(caps.join(',')))}>refrescar</button>
     </div>
   )
 }
@@ -104,7 +122,7 @@ describe('signIn con username (S1)', () => {
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as never)
     vi.mocked(iniciarSesion).mockResolvedValue(login)
     vi.mocked(supabase.auth.setSession).mockResolvedValue({ data: {}, error: null } as never)
-    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+    responder(perfilFalso('Ana'))
 
     render(
       <AuthProvider>
@@ -152,7 +170,7 @@ describe('AuthProvider', () => {
       resolverSesion = resolve
     })
     vi.mocked(supabase.auth.getSession).mockReturnValue(sesionPromise as never)
-    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+    responder(perfilFalso('Ana'))
 
     render(
       <AuthProvider>
@@ -215,7 +233,7 @@ describe('AuthProvider', () => {
 
   it('un refresh de token del mismo usuario no recarga el perfil ni tira perfilLoading a true', async () => {
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
-    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+    responder(perfilFalso('Ana'))
 
     render(
       <AuthProvider>
@@ -223,7 +241,8 @@ describe('AuthProvider', () => {
       </AuthProvider>,
     )
     await waitFor(() => expect(screen.getByTestId('perfil').textContent).toBe('Ana'))
-    expect(presupuestacionFetch).toHaveBeenCalledTimes(1)
+    // Perfil + capacidades.
+    expect(presupuestacionFetch).toHaveBeenCalledTimes(2)
 
     // Supabase dispara onAuthStateChange con un objeto session NUEVO pero el
     // MISMO user.id cada vez que la pestaña recupera el foco y refresca el
@@ -237,12 +256,12 @@ describe('AuthProvider', () => {
     })
 
     expect(screen.getByTestId('perfilLoading').textContent).toBe('false')
-    expect(presupuestacionFetch).toHaveBeenCalledTimes(1)
+    expect(presupuestacionFetch).toHaveBeenCalledTimes(2)
   })
 
   it('refrescarPerfil() vuelve a pedir el perfil', async () => {
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
-    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana'))
+    responder(perfilFalso('Ana'))
 
     render(
       <AuthProvider>
@@ -251,12 +270,48 @@ describe('AuthProvider', () => {
     )
     await waitFor(() => expect(screen.getByTestId('perfil').textContent).toBe('Ana'))
 
-    vi.mocked(presupuestacionFetch).mockResolvedValue(perfilFalso('Ana renombrada'))
+    responder(perfilFalso('Ana renombrada'), ['extraccion.extraer', 'usuarios.gestionar', 'pcp.leer'])
 
     await act(async () => {
       screen.getByText('refrescar').click()
     })
 
     await waitFor(() => expect(screen.getByTestId('perfil').textContent).toBe('Ana renombrada'))
+    // S7/L5: refrescarPerfil también recarga las capacidades y las devuelve.
+    expect(screen.getByTestId('capacidades').textContent).toBe('extraccion.extraer,usuarios.gestionar,pcp.leer')
+    expect(screen.getByTestId('refrescadas').textContent).toBe('extraccion.extraer,usuarios.gestionar,pcp.leer')
+  })
+
+  it('S7: carga las capacidades junto con el perfil y las expone con puede()', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
+    responder(perfilFalso('Ana'))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('perfilLoading').textContent).toBe('false'))
+    expect(presupuestacionFetch).toHaveBeenCalledWith('/auth/capacidades')
+    expect(screen.getByTestId('capacidades').textContent).toBe('extraccion.extraer,usuarios.gestionar')
+    expect(screen.getByTestId('puedeUsuarios').textContent).toBe('true')
+  })
+
+  it('S7/L5: un 403 de capacidades (contraseña temporal) deja la lista vacía y no cierra la sesión', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
+    responder({ ...perfilFalso('Ana'), debe_cambiar_password: true }, new ApiError('Debés cambiar la contraseña', 403))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('perfilLoading').textContent).toBe('false'))
+    expect(screen.getByTestId('perfil').textContent).toBe('Ana')
+    expect(screen.getByTestId('capacidades').textContent).toBe('')
+    expect(screen.getByTestId('puedeUsuarios').textContent).toBe('false')
+    expect(supabase.auth.signOut).not.toHaveBeenCalled()
   })
 })

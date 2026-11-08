@@ -14,12 +14,11 @@ import {
   quitarCaracteristicaProducto,
   type Producto,
 } from '@/lib/api/productos'
-import { COSTOS_READ_ROLES, PRODUCTOS_WRITE_ROLES, puedeRol } from './roles'
 
 export function ProductoDetalle({ productoId }: { productoId: string }) {
-  const { perfil } = useAuth()
-  const puedeEscribir = puedeRol(perfil?.rol, PRODUCTOS_WRITE_ROLES)
-  const puedeVerCostos = puedeRol(perfil?.rol, COSTOS_READ_ROLES)
+  const { puede } = useAuth()
+  const puedeEscribir = puede('productos.escribir')
+  const puedeVerCostos = puede('productos.costos.leer')
 
   const { data: producto, isPending } = useQuery({
     queryKey: ['productos', productoId],

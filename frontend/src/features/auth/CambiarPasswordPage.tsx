@@ -8,7 +8,9 @@ import { homeForRol } from './routeGuards'
  *
  * `irA` es una navegación completa en la ruta real (mismo motivo que en
  * login.tsx: los guards leen auth.perfil del context del router, que recién
- * se actualiza en el próximo render). */
+ * se actualiza en el próximo render). Por lo mismo, el aterrizaje se calcula
+ * con las capacidades que devuelve el refresco, no con las del context (vacías
+ * mientras la contraseña era temporal). */
 export function CambiarPasswordPage({ irA }: { irA: (destino: string) => void }) {
   const { perfil, signOut } = useAuth()
   const forzado = perfil?.debe_cambiar_password ?? false
@@ -28,7 +30,7 @@ export function CambiarPasswordPage({ irA }: { irA: (destino: string) => void })
           </p>
         )}
 
-        <CambiarPasswordForm onSuccess={() => irA(homeForRol(perfil?.rol))} />
+        <CambiarPasswordForm onSuccess={(capacidades) => irA(homeForRol(perfil?.rol, capacidades))} />
 
         <div className="mt-6 flex justify-between border-t border-slate-200 pt-4">
           {!forzado ? (

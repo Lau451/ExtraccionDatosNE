@@ -6,7 +6,6 @@ import { listarTerceros, type FiltroRolTercero, type Tercero } from '@/lib/api/t
 import { GestionSectoresDialog } from './GestionSectoresDialog'
 import { GestionCondicionesPagoDialog } from './GestionCondicionesPagoDialog'
 import { GestionFormasPagoDialog } from './GestionFormasPagoDialog'
-import { CATALOGOS_COMERCIALES_WRITE_ROLES, puedeRol } from './roles'
 
 const FILTROS_ROL: { value: FiltroRolTercero; label: string }[] = [
   { value: 'todos', label: 'Todos' },
@@ -35,13 +34,13 @@ function badgeRol(tercero: Tercero): { texto: string; clase: string } {
 }
 
 export function GestionTerceros() {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const [texto, setTexto] = useState('')
   const [textoDebounced, setTextoDebounced] = useState('')
   const [filtroRol, setFiltroRol] = useState<FiltroRolTercero>('todos')
   const [pagina, setPagina] = useState(1)
 
-  const puedeEscribirCatalogos = puedeRol(perfil?.rol, CATALOGOS_COMERCIALES_WRITE_ROLES)
+  const puedeEscribirCatalogos = puede('terceros.catalogos.escribir')
 
   useEffect(() => {
     const id = setTimeout(() => setTextoDebounced(texto.trim()), DEBOUNCE_BUSQUEDA_MS)

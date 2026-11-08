@@ -1,9 +1,15 @@
 import { redirect } from '@tanstack/react-router'
-import { CARGA_DOCUMENTOS_ROLES } from '@/features/carga-documentos/roles'
 import type { Rol } from './AuthContext'
+import type { Capacidad } from './capacidades'
 
 interface GuardArgs {
-  context: { auth: { isAuthenticated: boolean; perfil: { rol: Rol; debe_cambiar_password?: boolean } | null } }
+  context: {
+    auth: {
+      isAuthenticated: boolean
+      perfil: { rol: Rol; debe_cambiar_password?: boolean } | null
+      capacidades: readonly Capacidad[]
+    }
+  }
   location: { href: string }
 }
 
@@ -15,7 +21,7 @@ export function requireSession({ context, location }: GuardArgs) {
   }
 }
 
-// Toda ruta protegida pasa por acá (el layout _authenticated y requireRole):
+// Toda ruta protegida pasa por acá (el layout _authenticated y requireCapacidad):
 // mientras la contraseña sea temporal se manda a cambiarla (spec S3).
 export function requireAuth(args: GuardArgs) {
   requireSession(args)
@@ -27,20 +33,20 @@ export function requireAuth(args: GuardArgs) {
 // Pantalla de aterrizaje de cada rol (spec S9). "/" (carga de documentos)
 // ya no es de todos: si un rol denegado rebotara siempre a "/", el guard de
 // "/" lo volvería a rebotar ahí mismo (loop). Sin perfil resuelto se va a
-// /mi-cuenta, que no tiene guard de rol, por la misma razón.
-export function homeForRol(rol: Rol | undefined): string {
-  if (rol && CARGA_DOCUMENTOS_ROLES.includes(rol)) return '/'
+// /mi-cuenta, que no tiene guard, por la misma razón.
+export function homeForRol(rol: Rol | undefined, capacidades: readonly Capacidad[]): string {
+  if (rol && capacidades.includes('extraccion.extraer')) return '/'
   if (rol === 'compras') return '/productos'
   if (rol === 'superadmin') return '/superadmin/empresas'
   return '/mi-cuenta'
 }
 
-export function requireRole(...roles: Rol[]) {
+export function requireCapacidad(capacidad: Capacidad) {
   return (args: GuardArgs) => {
     requireAuth(args)
-    const rol = args.context.auth.perfil?.rol
-    if (!rol || !roles.includes(rol)) {
-      throw redirect({ to: homeForRol(rol) })
+    const { perfil, capacidades } = args.context.auth
+    if (!perfil || !capacidades.includes(capacidad)) {
+      throw redirect({ to: homeForRol(perfil?.rol, capacidades) })
     }
   }
 }

@@ -3,12 +3,11 @@ import { useAuth } from '@/features/auth/AuthContext'
 import { obtenerDetalleRenglon } from '@/lib/api/pcp'
 import { ComparacionProveedoresTable } from './ComparacionProveedoresTable'
 import { pcpQueryKeys } from './queryKeys'
-import { PCP_WRITE_ROLES, puedeRol } from './roles'
 import { SeleccionProveedoresSection } from './SeleccionProveedoresSection'
 import { SugerenciasPanel } from './SugerenciasPanel'
 
 export function RenglonDetalle({ pcpId, renglonId }: { pcpId: string, renglonId: string }) {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const detalleQuery = useQuery({
     queryKey: pcpQueryKeys.renglon(pcpId, renglonId),
     queryFn: () => obtenerDetalleRenglon(pcpId, renglonId),
@@ -18,7 +17,7 @@ export function RenglonDetalle({ pcpId, renglonId }: { pcpId: string, renglonId:
   if (detalleQuery.isError || !detalleQuery.data) return <p role="alert" className="p-8 text-sm text-red-600">No se pudo cargar el detalle del renglón.</p>
 
   const { producto, proveedores_catalogados: proveedores } = detalleQuery.data
-  const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+  const puedeEscribir = puede('pcp.escribir')
 
   return (
     <main className="p-8">

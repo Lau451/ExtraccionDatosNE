@@ -5,7 +5,6 @@ import { obtenerOcResumen, type EstadoVinculo, type OcResumenOut, type RenglonRe
 import { ApiError } from '@/lib/api/presupuestacion'
 import { fechaLegible } from '@/lib/fechas'
 import { formatearMoneda } from '@/lib/formatoMoneda'
-import { OC_RESUMEN_ACCIONES_ROLES, puedeRol } from './roles'
 
 const ETIQUETA_VINCULO: Record<EstadoVinculo, { texto: string; clase: string }> = {
   confirmado: { texto: 'Confirmado', clase: 'bg-emerald-50 text-emerald-700' },
@@ -163,7 +162,7 @@ interface Props {
 }
 
 export function OcResumen({ ordenCompraId }: Props) {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const query = useQuery({
     queryKey: ['oc-resumen', ordenCompraId],
     queryFn: () => obtenerOcResumen(ordenCompraId),
@@ -184,7 +183,7 @@ export function OcResumen({ ordenCompraId }: Props) {
   }
 
   const resumen = query.data
-  const mostrarAcciones = puedeRol(perfil?.rol, OC_RESUMEN_ACCIONES_ROLES)
+  const mostrarAcciones = puede('oc_resumen.acciones')
   // Exportada, la sección de entregas ya muestra el plan en solo lectura.
   const mostrarPlanificar = mostrarAcciones && resumen.exportacion === null
 

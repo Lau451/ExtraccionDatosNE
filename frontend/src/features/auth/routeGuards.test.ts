@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { destinoRedirect } from '@/test/capacidades'
 import type { Rol } from './AuthContext'
-import { homeForRol, requireAuth, requireRole, requireSession } from './routeGuards'
+import type { Capacidad } from './capacidades'
+import { homeForRol, requireAuth, requireCapacidad, requireSession } from './routeGuards'
 
-function args(auth: { isAuthenticated: boolean; perfil: { rol: Rol; debe_cambiar_password?: boolean } | null }) {
-  return { context: { auth }, location: { href: '/admin/usuarios' } }
+function args(
+  auth: { isAuthenticated: boolean; perfil: { rol: Rol; debe_cambiar_password?: boolean } | null },
+  capacidades: Capacidad[] = [],
+) {
+  return { context: { auth: { ...auth, capacidades } }, location: { href: '/admin/usuarios' } }
 }
 
 describe('requireAuth', () => {
@@ -16,59 +21,66 @@ describe('requireAuth', () => {
   })
 })
 
-describe('requireRole', () => {
+describe('requireCapacidad (S7)', () => {
+  const guard = requireCapacidad('usuarios.gestionar')
+
   it('redirige si el perfil todavía no resolvió (caso D-LOGIN-005/007)', () => {
-    const guard = requireRole('admin', 'superadmin')
-    expect(() => guard(args({ isAuthenticated: true, perfil: null }))).toThrow()
+    expect(() => guard(args({ isAuthenticated: true, perfil: null }, ['usuarios.gestionar']))).toThrow()
   })
 
-  it('redirige si el rol del perfil no está permitido', () => {
-    const guard = requireRole('admin', 'superadmin')
+  it('redirige si el usuario no tiene la capacidad', () => {
     expect(() =>
-      guard(args({ isAuthenticated: true, perfil: { rol: 'comercial' } })),
+      guard(args({ isAuthenticated: true, perfil: { rol: 'comercial' } }, ['extraccion.extraer'])),
     ).toThrow()
   })
 
-  it('deja pasar si el rol del perfil está permitido', () => {
-    const guard = requireRole('admin', 'superadmin')
+  it('deja pasar si el usuario tiene la capacidad', () => {
     expect(() =>
-      guard(args({ isAuthenticated: true, perfil: { rol: 'admin' } })),
+      guard(args({ isAuthenticated: true, perfil: { rol: 'admin' } }, ['usuarios.gestionar'])),
     ).not.toThrow()
   })
 
-  it('redirige a /login antes de evaluar el rol si no hay sesión', () => {
-    const guard = requireRole('admin')
-    expect(() => guard(args({ isAuthenticated: false, perfil: null }))).toThrow()
+  it('decide por la capacidad, no por el rol', () => {
+    expect(() => guard(args({ isAuthenticated: true, perfil: { rol: 'admin' } }, []))).toThrow()
+  })
+
+  it('redirige a /login antes de evaluar la capacidad si no hay sesión', () => {
+    expect(destinoRedirect(() => guard(args({ isAuthenticated: false, perfil: null })))).toBe('/login')
   })
 })
 
-function destinoRedirect(fn: () => void): string | undefined {
-  try {
-    fn()
-  } catch (error) {
-    return (error as { options: { to: string } }).options.to
-  }
-  return undefined
-}
-
 describe('homeForRol (S9: aterrizaje sin loop)', () => {
-  it.each(['admin', 'gerencia', 'lider_comercial', 'comercial'] as const)('%s aterriza en / (carga)', (rol) => {
-    expect(homeForRol(rol)).toBe('/')
-  })
+  it.each(['admin', 'gerencia', 'lider_comercial', 'comercial'] as const)(
+    '%s con extraccion.extraer aterriza en / (carga)',
+    (rol) => {
+      expect(homeForRol(rol, ['extraccion.extraer'])).toBe('/')
+    },
+  )
 
   it('compras aterriza en /productos y superadmin en /superadmin/empresas', () => {
-    expect(homeForRol('compras')).toBe('/productos')
-    expect(homeForRol('superadmin')).toBe('/superadmin/empresas')
+    expect(homeForRol('compras', ['productos.leer'])).toBe('/productos')
+    expect(homeForRol('superadmin', ['droguerias.gestionar'])).toBe('/superadmin/empresas')
   })
 
-  it('un rol denegado es redirigido a su home, no a /', () => {
-    const guard = requireRole('admin')
-    expect(destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: { rol: 'compras' } })))).toBe('/productos')
+  it('sin extraccion.extraer ni rol con home propio va a /mi-cuenta', () => {
+    expect(homeForRol('admin', [])).toBe('/mi-cuenta')
+    expect(homeForRol(undefined, ['extraccion.extraer'])).toBe('/mi-cuenta')
   })
 
-  it('sigue redirigiendo a / a un rol de carga denegado (comportamiento previo)', () => {
-    const guard = requireRole('admin', 'superadmin')
-    expect(destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: { rol: 'comercial' } })))).toBe('/')
+  it('un usuario sin la capacidad es redirigido a su home, no a /', () => {
+    const guard = requireCapacidad('usuarios.gestionar')
+    expect(
+      destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: { rol: 'compras' } }, ['productos.leer']))),
+    ).toBe('/productos')
+  })
+
+  it('sigue redirigiendo a / a un usuario de carga sin la capacidad (comportamiento previo)', () => {
+    const guard = requireCapacidad('usuarios.gestionar')
+    expect(
+      destinoRedirect(() =>
+        guard(args({ isAuthenticated: true, perfil: { rol: 'comercial' } }, ['extraccion.extraer'])),
+      ),
+    ).toBe('/')
   })
 })
 
@@ -81,15 +93,19 @@ describe('cambio de contraseña forzado (S3)', () => {
     )
   })
 
-  it('requireRole manda a /cambiar-password aunque el rol esté permitido', () => {
-    const guard = requireRole('admin')
-    expect(destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: pendiente })))).toBe('/cambiar-password')
+  it('requireCapacidad manda a /cambiar-password aunque tenga la capacidad', () => {
+    const guard = requireCapacidad('usuarios.gestionar')
+    expect(
+      destinoRedirect(() => guard(args({ isAuthenticated: true, perfil: pendiente }, ['usuarios.gestionar']))),
+    ).toBe('/cambiar-password')
   })
 
   it('con el flag apagado no redirige', () => {
-    const guard = requireRole('admin')
+    const guard = requireCapacidad('usuarios.gestionar')
     expect(() =>
-      guard(args({ isAuthenticated: true, perfil: { rol: 'admin', debe_cambiar_password: false } })),
+      guard(
+        args({ isAuthenticated: true, perfil: { rol: 'admin', debe_cambiar_password: false } }, ['usuarios.gestionar']),
+      ),
     ).not.toThrow()
   })
 

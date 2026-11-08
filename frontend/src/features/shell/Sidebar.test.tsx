@@ -8,9 +8,12 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to }: { children?: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
   useNavigate: () => vi.fn(),
 }))
-vi.mock('@/features/auth/AuthContext', () => ({
-  useAuth: () => ({ perfil: { rol: rolActual.valor, nombre: 'Test' }, signOut: vi.fn() }),
-}))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return {
+    useAuth: () => ({ perfil: { rol: rolActual.valor, nombre: 'Test' }, ...authDeRol(rolActual.valor), signOut: vi.fn() }),
+  }
+})
 
 import { Sidebar } from './Sidebar'
 
@@ -80,6 +83,35 @@ describe('Sidebar: matriz de roles', () => {
     rolActual.valor = 'compras'
     render(<Sidebar />)
     expect(screen.getByRole('link', { name: 'PCP' })).toBeTruthy()
+  })
+})
+
+describe('Sidebar: PCP (pcp.leer)', () => {
+  it.each<Rol>(['lider_comercial', 'comercial'])('oculto para %s', (rol) => {
+    rolActual.valor = rol
+    render(<Sidebar />)
+    expect(screen.queryByText('PCP')).toBeNull()
+  })
+
+  it('visible para superadmin', () => {
+    rolActual.valor = 'superadmin'
+    render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'PCP' })).toBeTruthy()
+  })
+})
+
+describe('Sidebar: Empresas (droguerias.gestionar)', () => {
+  it('visible solo para superadmin', () => {
+    rolActual.valor = 'superadmin'
+    const { unmount } = render(<Sidebar />)
+    expect(screen.getByRole('link', { name: 'Empresas' }).getAttribute('href')).toBe('/superadmin/empresas')
+    unmount()
+    for (const rol of ['admin', 'gerencia', 'compras'] as Rol[]) {
+      rolActual.valor = rol
+      const r = render(<Sidebar />)
+      expect(screen.queryByText('Empresas')).toBeNull()
+      r.unmount()
+    }
   })
 })
 

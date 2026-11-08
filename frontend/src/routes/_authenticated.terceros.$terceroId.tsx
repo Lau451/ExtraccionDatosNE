@@ -1,10 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { TerceroDetalle } from '@/features/terceros/TerceroDetalle'
-import { requireRole } from '@/features/auth/routeGuards'
-import { TERCEROS_READ_ROLES } from '@/features/terceros/roles'
+import { requireCapacidad } from '@/features/auth/routeGuards'
 
 export const Route = createFileRoute('/_authenticated/terceros/$terceroId')({
-  beforeLoad: requireRole(...TERCEROS_READ_ROLES),
+  beforeLoad: requireCapacidad('terceros.leer'),
   component: RouteComponent,
 })
 

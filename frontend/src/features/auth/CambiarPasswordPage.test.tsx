@@ -25,7 +25,7 @@ const irA = vi.fn()
 
 beforeEach(() => {
   irA.mockReset()
-  authMock.refrescarPerfil.mockReset().mockResolvedValue(undefined)
+  authMock.refrescarPerfil.mockReset().mockResolvedValue(['productos.leer'])
   authMock.signOut.mockReset().mockResolvedValue(undefined)
   authMock.perfil = { id: 'yo', rol: 'compras', debe_cambiar_password: true }
   vi.mocked(cambiarPasswordPropia).mockReset()
@@ -77,6 +77,16 @@ describe('CambiarPasswordPage (S3)', () => {
     await waitFor(() => expect(irA).toHaveBeenCalledWith('/productos'))
     expect(cambiarPasswordPropia).toHaveBeenCalledWith({ password_actual: 'temporal1', password_nueva: 'nueva12345' })
     expect(authMock.refrescarPerfil).toHaveBeenCalledTimes(1)
+  })
+
+  it('S7: aterriza con las capacidades recién cargadas, no con las del context (vacías con el flag activo)', async () => {
+    authMock.perfil = { id: 'yo', rol: 'admin', debe_cambiar_password: true }
+    authMock.refrescarPerfil.mockResolvedValue(['extraccion.extraer', 'usuarios.gestionar'])
+    vi.mocked(cambiarPasswordPropia).mockResolvedValue(undefined)
+    render(<CambiarPasswordPage irA={irA} />)
+    llenarYEnviar('temporal1', 'nueva12345', 'nueva12345')
+
+    await waitFor(() => expect(irA).toHaveBeenCalledWith('/'))
   })
 
   it('muestra el error del backend (ej. contraseña actual incorrecta) y no navega', async () => {

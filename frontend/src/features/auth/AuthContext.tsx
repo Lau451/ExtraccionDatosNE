@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { iniciarSesion } from '@/lib/api/auth'
 import { ApiError, presupuestacionFetch } from '@/lib/api/presupuestacion'
 import { supabase } from '@/lib/supabase'
+import type { Capacidad } from './capacidades'
 
 // Duplicado a propósito de `Rol` en services/presupuestacion/usuarios/models.py:5 —
 // no hay generación de tipos entre ambos proyectos. Si cambia una lista, cambiar la otra.
@@ -29,9 +30,15 @@ interface AuthContextValue {
   isAuthenticated: boolean
   loading: boolean
   perfilLoading: boolean
+  // Capacidades del rol (GET /auth/capacidades, spec S7). Vacía mientras la
+  // contraseña sea temporal: el backend responde 403 hasta que se cambie.
+  capacidades: Capacidad[]
+  puede: (capacidad: Capacidad) => boolean
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
-  refrescarPerfil: () => Promise<void>
+  // Devuelve las capacidades recién cargadas: quien navega justo después (el
+  // cambio de contraseña) no puede esperar al próximo render para leerlas.
+  refrescarPerfil: () => Promise<Capacidad[]>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -39,12 +46,13 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [perfil, setPerfil] = useState<Perfil | null>(null)
+  const [capacidades, setCapacidades] = useState<Capacidad[]>([])
   const [loading, setLoading] = useState(true)
-  // Segundo paso asíncrono, distinto de `loading` (que solo cubre la
-  // resolución de la sesión de Supabase). Sin este estado separado, el router
-  // se monta con perfil=null apenas la sesión resuelve, y requireRole()
-  // rebota a "/" porque todavía no llegó el GET /usuarios/{id} — reproducido
-  // en sesión de testing manual: recargar /admin/usuarios (deep-link) redirigía
+  // Segundo paso asíncrono (perfil + capacidades), distinto de `loading` (que
+  // solo cubre la resolución de la sesión de Supabase). Sin este estado
+  // separado, el router se monta con perfil=null apenas la sesión resuelve, y
+  // requireCapacidad() rebota a "/" porque todavía no llegó el GET
+  // /usuarios/{id} — reproducido en sesión de testing manual: recargar /admin/usuarios (deep-link) redirigía
   // a "/" pese a estar autenticado con el rol correcto.
   const [perfilLoading, setPerfilLoading] = useState(true)
 
@@ -67,15 +75,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // el fetch de perfil solo se disparaba de forma reactiva (efecto sobre
   // `session`) y signIn() resolvía apenas el login terminaba, antes
   // de que perfil estuviera listo. LoginForm navega apenas signIn() resuelve
-  // (a `?redirect=`, que puede ser una ruta con requireRole) — reproducido en
-  // sesión de testing manual: login → redirect directo a /superadmin/empresas
-  // aterrizaba en "/" porque requireRole corría con perfil todavía null.
-  async function cargarPerfil(userId: string): Promise<void> {
+  // (a `?redirect=`, que puede ser una ruta con requireCapacidad) — reproducido
+  // en sesión de testing manual: login → redirect directo a /superadmin/empresas
+  // aterrizaba en "/" porque el guard corría con perfil todavía null.
+  async function cargarPerfil(userId: string): Promise<Capacidad[]> {
+    // Las capacidades fallan aparte y nunca cierran la sesión: con la
+    // contraseña temporal el backend responde 403 (L5) y la lista queda vacía
+    // hasta que refrescarPerfil() la vuelve a pedir después del cambio.
+    const capacidadesPromise = presupuestacionFetch<{ rol: string; capacidades: Capacidad[] }>('/auth/capacidades')
+      .then((respuesta) => respuesta.capacidades ?? [])
+      .catch(() => [] as Capacidad[])
     try {
-      const perfilCargado = await presupuestacionFetch<Perfil>(`/usuarios/${userId}`)
+      const [perfilCargado, capacidadesCargadas] = await Promise.all([
+        presupuestacionFetch<Perfil>(`/usuarios/${userId}`),
+        capacidadesPromise,
+      ])
       setPerfil(perfilCargado)
+      setCapacidades(capacidadesCargadas)
+      return capacidadesCargadas
     } catch (error) {
       setPerfil(null)
+      setCapacidades([])
       // 401 (usuario desactivado, ver core/auth.py get_current_user) o 404
       // (fila borrada) con una sesión de Supabase todavía válida — sin este
       // signOut, la UI queda mostrando "Cargando…" para siempre (perfil
@@ -84,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
         await supabase.auth.signOut()
       }
+      return []
     }
   }
 
@@ -95,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!session) {
       setPerfil(null)
+      setCapacidades([])
       setPerfilLoading(false)
       return
     }
@@ -113,9 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // importa si CAMBIÓ el usuario real, no cada renovación de token.
   }, [session?.user.id, loading])
 
-  async function refrescarPerfil() {
-    if (!session) return
-    await cargarPerfil(session.user.id)
+  async function refrescarPerfil(): Promise<Capacidad[]> {
+    if (!session) return []
+    return cargarPerfil(session.user.id)
   }
 
   async function signIn(username: string, password: string) {
@@ -145,6 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: session !== null,
         loading,
         perfilLoading,
+        capacidades,
+        puede: (capacidad) => capacidades.includes(capacidad),
         signIn,
         signOut,
         refrescarPerfil,

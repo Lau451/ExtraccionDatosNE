@@ -1,12 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { capacidadesDeRol } from '@/test/capacidades'
 import { ImportLegacyPcp } from './ImportLegacyPcp'
 import { Route as ImportsRoute } from '@/routes/_authenticated.pcp.imports'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
 
-vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return { useAuth: () => ({ perfil: perfilMock, ...authDeRol(perfilMock.rol) }) }
+})
 vi.mock('@/lib/api/pcp', () => ({ importarPcpLegacy: vi.fn() }))
 
 import { importarPcpLegacy } from '@/lib/api/pcp'
@@ -47,7 +51,7 @@ function renderImport() {
 
 function navigationArgs(rol: 'superadmin' | 'admin' | 'gerencia' | 'compras') {
   return {
-    context: { auth: { isAuthenticated: true, perfil: { rol } } },
+    context: { auth: { isAuthenticated: true, perfil: { rol }, capacidades: capacidadesDeRol(rol) } },
     location: { href: '/pcp/imports' },
   }
 }
