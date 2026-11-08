@@ -67,6 +67,11 @@ describe('homeForRol (S9: aterrizaje sin loop)', () => {
     expect(homeForRol(undefined, ['extraccion.extraer'])).toBe('/mi-cuenta')
   })
 
+  it('sin capacidades cargadas no aterriza en una ruta que las pide (sin loop)', () => {
+    expect(homeForRol('compras', [])).toBe('/mi-cuenta')
+    expect(homeForRol('superadmin', [])).toBe('/mi-cuenta')
+  })
+
   it('un usuario sin la capacidad es redirigido a su home, no a /', () => {
     const guard = requireCapacidad('usuarios.gestionar')
     expect(

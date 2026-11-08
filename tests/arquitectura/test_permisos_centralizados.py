@@ -40,7 +40,9 @@ def ofensores(raiz: Path) -> list[str]:
             continue
         arbol = ast.parse(archivo.read_text(encoding="utf-8"), filename=str(archivo))
         for nodo in ast.walk(arbol):
-            if isinstance(nodo, ast.Name) and nodo.id == "require_roles":
+            if (isinstance(nodo, ast.Name) and nodo.id == "require_roles") or (
+                isinstance(nodo, ast.Attribute) and nodo.attr == "require_roles"
+            ):
                 encontrados.append(f"{relativo}:{nodo.lineno} usa require_roles")
             elif isinstance(nodo, ast.alias) and nodo.name == "require_roles":
                 encontrados.append(f"{relativo} importa require_roles")
@@ -79,3 +81,11 @@ def test_el_guard_detecta_tuplas_y_require_roles(tmp_path):
         "pcp/router.py:2 define la tupla de roles _ROLES",
         "pcp/router.py:3 define la tupla de roles OTROS",
     ]
+
+
+def test_el_guard_detecta_require_roles_por_atributo(tmp_path):
+    (tmp_path / "pcp").mkdir()
+    (tmp_path / "pcp" / "router.py").write_text(
+        "from services.shared import auth\ndep = auth.require_roles('admin')\n", encoding="utf-8"
+    )
+    assert ofensores(tmp_path) == ["pcp/router.py:2 usa require_roles"]

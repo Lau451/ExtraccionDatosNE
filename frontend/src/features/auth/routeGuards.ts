@@ -33,11 +33,13 @@ export function requireAuth(args: GuardArgs) {
 // Pantalla de aterrizaje de cada rol (spec S9). "/" (carga de documentos)
 // ya no es de todos: si un rol denegado rebotara siempre a "/", el guard de
 // "/" lo volvería a rebotar ahí mismo (loop). Sin perfil resuelto se va a
-// /mi-cuenta, que no tiene guard, por la misma razón.
+// /mi-cuenta, que no tiene guard, por la misma razón. Cada destino exige la
+// capacidad que pide su ruta: si /auth/capacidades falló (lista vacía), el
+// guard del destino rebotaría a sí mismo.
 export function homeForRol(rol: Rol | undefined, capacidades: readonly Capacidad[]): string {
   if (rol && capacidades.includes('extraccion.extraer')) return '/'
-  if (rol === 'compras') return '/productos'
-  if (rol === 'superadmin') return '/superadmin/empresas'
+  if (rol === 'compras' && capacidades.includes('productos.leer')) return '/productos'
+  if (rol === 'superadmin' && capacidades.includes('droguerias.gestionar')) return '/superadmin/empresas'
   return '/mi-cuenta'
 }
 
