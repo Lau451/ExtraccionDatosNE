@@ -9,8 +9,10 @@ S1): `comercial` es el dueño de la materialización del presupuesto legado
 
 También expone las lecturas de `presupuestos` y `presupuesto_legacy_map` que
 hace `services/pcp` (X-ARQ-002, odd/tasks/pcp-fachadas.md S3): `pcp` ya no
-nombra esas tablas. `buscar_presupuesto` no filtra `deleted_at`, igual que las
-lecturas que `pcp` hacía directo.
+nombra esas tablas. `buscar_presupuesto` filtra `deleted_at IS NULL` (S6): para
+`pcp` un presupuesto dado de baja no existe. El import legado de `comercial`
+sigue usando su propio `importacion_legacy_repository.buscar_presupuesto`, sin
+ese filtro.
 
 No define lógica propia: reexporta modelos y funciones.
 """
@@ -26,8 +28,8 @@ from services.presupuestacion.presupuestos.importacion_legacy_models import (
 )
 from services.presupuestacion.presupuestos.importacion_legacy_repository import (
     buscar_mapa_legacy_presupuesto,
-    buscar_presupuesto,
 )
+from services.presupuestacion.presupuestos.repository import buscar_presupuesto
 
 __all__ = [
     # import legado de presupuestos -- modelos

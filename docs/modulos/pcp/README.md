@@ -66,7 +66,8 @@ submódulos de `services/pcp/`.
 > `pricing/api.py`, lee productos con `productos/api.py` y lee `presupuestos`,
 > `presupuesto_legacy_map` e `items_proceso` con `presupuestos/api.py` y
 > `procesos_comerciales/api.py`. Ya no nombra ninguna tabla comercial; lo protegen
-> `tests/pcp/test_dependencias.py` y `tests/arquitectura/test_duenos_tablas.py`.
+> `tests/pcp/test_dependencias.py` y `tests/arquitectura/test_duenos_tablas.py`. `pcp` ignora
+> los presupuestos dados de baja (`deleted_at`): no crea, importa ni repricea PCP sobre ellos.
 >
 > **Actualización (etapa 2, `odd/tasks/procesos-comerciales-dueno.md`):** el import de
 > presupuestos (punto 1 abajo) ya no vive en `pcp`: su implementación está en

@@ -12,6 +12,8 @@ una `FastAPI()` descartable solo para este test.
 RED hasta que 4.9 cree services/pcp/gestion/router.py.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -96,5 +98,36 @@ def test_crear_pcp_con_rol_autorizado_devuelve_201_o_200_y_crea_la_fila(
         cuerpo = respuesta.json()
         assert cuerpo["presupuesto_id"] == presupuesto["id"]
         assert cuerpo["drogueria_id"] == seed_drogueria["id"]
+    finally:
+        service_client.table("pcp").delete().eq("presupuesto_id", presupuesto["id"]).execute()
+
+
+@pytest.mark.integration
+def test_crear_pcp_sobre_presupuesto_dado_de_baja_devuelve_404_sin_crear_fila(
+    service_client, seed_drogueria, seed_presupuesto_factory, crear_usuario_con_token
+):
+    """S6 (odd/tasks/pcp-fachadas.md): `pcp` trata un presupuesto con
+    `deleted_at` como inexistente -- mismo 404 que un id que no existe."""
+    presupuesto = seed_presupuesto_factory(deleted_at=datetime.now(timezone.utc).isoformat())
+    _, token = crear_usuario_con_token(rol="compras", drogueria_id=seed_drogueria["id"])
+    client = _cliente_de_prueba()
+
+    respuesta = client.post(
+        "/pcp",
+        json={"presupuesto_id": presupuesto["id"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    try:
+        assert respuesta.status_code == 404
+        assert respuesta.json() == {"detail": f"No se encontró el presupuesto '{presupuesto['id']}'"}
+        en_bd = (
+            service_client.table("pcp")
+            .select("id")
+            .eq("presupuesto_id", presupuesto["id"])
+            .execute()
+            .data
+        )
+        assert en_bd == []
     finally:
         service_client.table("pcp").delete().eq("presupuesto_id", presupuesto["id"]).execute()
