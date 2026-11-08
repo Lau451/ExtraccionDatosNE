@@ -15,6 +15,7 @@ from services.shared.auth_jwt import TokenInvalidoError, verificar_token
 from services.shared.config import get_settings
 from services.shared.database import get_bearer_token, get_user_client
 from services.shared.exceptions import AuthenticationError, ForbiddenError, NotFoundError
+from services.shared.permisos import roles_con
 
 
 class UserClaims(BaseModel):
@@ -90,3 +91,10 @@ def require_roles(*roles: str) -> Callable[..., UsuarioPerfil]:
         return usuario
 
     return _dependency
+
+
+def require_capacidad(capacidad: str) -> Callable[..., UsuarioPerfil]:
+    """Los módulos autorizan por capacidad (services/shared/permisos.py), nunca
+    con su propia tupla de roles (etapa 5). Una capacidad desconocida falla al
+    declarar el endpoint, no en cada request."""
+    return require_roles(*roles_con(capacidad))
