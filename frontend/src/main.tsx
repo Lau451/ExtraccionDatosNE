@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { AuthProvider, useAuth } from '@/features/auth/AuthContext'
+import { ErrorCapacidades } from '@/features/auth/ErrorCapacidades'
 import './index.css'
 import { routeTree } from './routeTree.gen'
 
@@ -25,6 +26,9 @@ function InnerApp() {
   // router — requireCapacidad() en routeGuards.ts decide en base a auth.perfil y auth.capacidades,
   // y si el router se monta antes de que llegue, rebota a "/" por las dudas.
   if (auth.loading || auth.perfilLoading) return null
+  if (auth.errorCapacidades) {
+    return <ErrorCapacidades mensaje={auth.errorCapacidades} onReintentar={() => void auth.refrescarPerfil()} />
+  }
   return <RouterProvider router={router} context={{ auth }} />
 }
 

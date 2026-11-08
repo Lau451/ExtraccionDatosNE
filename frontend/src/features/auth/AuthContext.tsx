@@ -33,6 +33,10 @@ interface AuthContextValue {
   // Capacidades del rol (GET /auth/capacidades, spec S7). Vacía mientras la
   // contraseña sea temporal: el backend responde 403 hasta que se cambie.
   capacidades: Capacidad[]
+  // Mensaje cuando GET /auth/capacidades falla por otra cosa que el 403 de la
+  // contraseña temporal (500, red caída): sin él, la app quedaba sin permisos
+  // y sin avisar. refrescarPerfil() lo vuelve a intentar y lo limpia.
+  errorCapacidades: string | null
   puede: (capacidad: Capacidad) => boolean
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
@@ -47,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [capacidades, setCapacidades] = useState<Capacidad[]>([])
+  const [errorCapacidades, setErrorCapacidades] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Segundo paso asíncrono (perfil + capacidades), distinto de `loading` (que
   // solo cubre la resolución de la sesión de Supabase). Sin este estado
@@ -81,10 +86,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function cargarPerfil(userId: string): Promise<Capacidad[]> {
     // Las capacidades fallan aparte y nunca cierran la sesión: con la
     // contraseña temporal el backend responde 403 (L5) y la lista queda vacía
-    // hasta que refrescarPerfil() la vuelve a pedir después del cambio.
+    // hasta que refrescarPerfil() la vuelve a pedir después del cambio. Cualquier
+    // otro fallo queda en `errorCapacidades` para que la UI lo muestre.
+    let fallo: string | null = null
     const capacidadesPromise = presupuestacionFetch<{ rol: string; capacidades: Capacidad[] }>('/auth/capacidades')
       .then((respuesta) => respuesta.capacidades ?? [])
-      .catch(() => [] as Capacidad[])
+      .catch((error: unknown) => {
+        if (!(error instanceof ApiError && error.status === 403)) {
+          const detalle = error instanceof Error ? error.message : String(error)
+          fallo = `No se pudieron cargar los permisos de tu usuario (${detalle}).`
+        }
+        return [] as Capacidad[]
+      })
     try {
       const [perfilCargado, capacidadesCargadas] = await Promise.all([
         presupuestacionFetch<Perfil>(`/usuarios/${userId}`),
@@ -92,10 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ])
       setPerfil(perfilCargado)
       setCapacidades(capacidadesCargadas)
+      setErrorCapacidades(fallo)
       return capacidadesCargadas
     } catch (error) {
       setPerfil(null)
       setCapacidades([])
+      setErrorCapacidades(null)
       // 401 (usuario desactivado, ver core/auth.py get_current_user) o 404
       // (fila borrada) con una sesión de Supabase todavía válida — sin este
       // signOut, la UI queda mostrando "Cargando…" para siempre (perfil
@@ -117,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setPerfil(null)
       setCapacidades([])
+      setErrorCapacidades(null)
       setPerfilLoading(false)
       return
     }
@@ -168,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         perfilLoading,
         capacidades,
+        errorCapacidades,
         puede: (capacidad) => capacidades.includes(capacidad),
         signIn,
         signOut,
