@@ -15,8 +15,7 @@ from services.pcp.consultas.service import (
     generar_pdf_consulta_para_endpoint,
     obtener_consulta,
 )
-from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_LECTURA_PCP
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 
 router = APIRouter()
@@ -25,7 +24,7 @@ router = APIRouter()
 @router.post("/pcp/consultas", response_model=list[ConsultaOut])
 def agrupar_renglones_endpoint(
     body: AgruparConsultaCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> list[ConsultaOut]:
     return agrupar_renglones_para_endpoint(
         drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
@@ -35,7 +34,7 @@ def agrupar_renglones_endpoint(
 @router.get("/pcp/consultas/{consulta_id}", response_model=ConsultaOut)
 def obtener_consulta_endpoint(
     consulta_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> ConsultaOut:
     return obtener_consulta(user_client, consulta_id=consulta_id, drogueria_id=usuario.drogueria_id)
@@ -44,7 +43,7 @@ def obtener_consulta_endpoint(
 @router.get("/pcp/consultas/{consulta_id}/pdf")
 def descargar_pdf_consulta_endpoint(
     consulta_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
 ) -> Response:
     pdf_bytes = generar_pdf_consulta_para_endpoint(
         consulta_id=consulta_id, drogueria_id=usuario.drogueria_id
@@ -55,7 +54,7 @@ def descargar_pdf_consulta_endpoint(
 @router.post("/pcp/consultas/{consulta_id}/enviar", response_model=ConsultaOut)
 def enviar_consulta_endpoint(
     consulta_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> ConsultaOut:
     return enviar_consulta_para_endpoint(
         consulta_id=consulta_id, drogueria_id=usuario.drogueria_id, usuario_id=usuario.id

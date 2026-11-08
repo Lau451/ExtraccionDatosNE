@@ -15,9 +15,8 @@ from services.presupuestacion.core.exceptions import (
     ValidationError,
 )
 from services.presupuestacion.usuarios import repository as repo
+from services.shared.permisos import tiene_capacidad
 from services.presupuestacion.usuarios.models import UsuarioCreate, UsuarioPerfilUpdate
-
-ROLES_GESTION_USUARIOS = ("superadmin", "admin", "gerencia")
 
 # gerencia solo gestiona usuarios de estos roles ("solo roles inferiores",
 # odd/tasks/roles-permisos-matriz.md S7): nunca admin, superadmin ni sistema.
@@ -74,7 +73,7 @@ def _mensaje_otra_drogueria(creador: UsuarioPerfil, accion: str) -> str:
 
 
 def crear_usuario(client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate) -> dict[str, Any]:
-    if creador.rol not in ROLES_GESTION_USUARIOS:
+    if not tiene_capacidad(creador.rol, "usuarios.gestionar"):
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden crear usuarios")
 
     if body.rol in ("superadmin", "admin") and creador.rol != "superadmin":
@@ -134,7 +133,7 @@ def crear_usuario(client: Client, *, creador: UsuarioPerfil, body: UsuarioCreate
 def cambiar_rol(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, nuevo_rol: str
 ) -> dict[str, Any]:
-    if creador.rol not in ROLES_GESTION_USUARIOS:
+    if not tiene_capacidad(creador.rol, "usuarios.gestionar"):
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden cambiar roles")
 
     if usuario_id == creador.id:
@@ -165,7 +164,7 @@ def cambiar_rol(
 def cambiar_activo(
     client: Client, *, creador: UsuarioPerfil, usuario_id: str, activo: bool
 ) -> dict[str, Any]:
-    if creador.rol not in ROLES_GESTION_USUARIOS:
+    if not tiene_capacidad(creador.rol, "usuarios.gestionar"):
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden activar/desactivar usuarios")
 
     if usuario_id == creador.id:
@@ -187,7 +186,7 @@ def cambiar_activo(
 
 
 def eliminar_usuario(client: Client, *, creador: UsuarioPerfil, usuario_id: str) -> None:
-    if creador.rol not in ROLES_GESTION_USUARIOS:
+    if not tiene_capacidad(creador.rol, "usuarios.gestionar"):
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden eliminar usuarios")
 
     if usuario_id == creador.id:
@@ -219,7 +218,7 @@ def _objetivo_gestionable(
     """Autorización de S4/S5, la misma que activar/desactivar: nadie sobre sí
     mismo, superadmin/sistema protegidos, gerencia solo roles inferiores y
     admin/gerencia solo su droguería."""
-    if creador.rol not in ROLES_GESTION_USUARIOS:
+    if not tiene_capacidad(creador.rol, "usuarios.gestionar"):
         raise ForbiddenError("Solo superadmin, admin o gerencia pueden gestionar usuarios")
 
     if usuario_id == creador.id:

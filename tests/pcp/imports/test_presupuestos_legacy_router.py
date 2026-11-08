@@ -42,7 +42,7 @@ def test_importar_con_rol_no_autorizado_es_rechazado_sin_crear_nada(
     service_client, seed_drogueria, seed_cliente_pcp_factory, crear_usuario_con_token
 ):
     seed_cliente_pcp_factory(codigo_interno="CLI-PRE-ROUTER-001")
-    # "comercial" no está en ROLES_IMPORT_PRESUPUESTOS_LEGACY (solo admin, S6).
+    # "comercial" no tiene presupuestos.importar_legacy (solo admin, S6).
     _, token = crear_usuario_con_token(rol="comercial", drogueria_id=seed_drogueria["id"])
     client = _cliente_de_prueba()
 

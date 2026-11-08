@@ -7,7 +7,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from services.presupuestacion.compromisos.router import _ROLES_LECTURA, router
+from services.presupuestacion.compromisos.router import router
+from services.shared.permisos import roles_con
+
+_ROLES_LECTURA = sorted(roles_con("compromisos.leer"))
 from services.shared.exceptions import register_exception_handlers
 from tests.compromisos.conftest import dias
 

@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 from services.presupuestacion.extraccion.models import (
@@ -24,11 +24,6 @@ from services.presupuestacion.extraccion.service import (
 )
 
 router = APIRouter()
-
-_ROLES_VALIDAR = ("admin", "gerencia", "lider_comercial", "comercial")
-# Listado de extracciones (odd/tasks/roles-permisos-matriz.md S2): mismo set que
-# la carga de documentos -- superadmin y compras no participan de la extracción.
-_ROLES_LECTURA = ("admin", "gerencia", "lider_comercial", "comercial")
 
 
 def _verificar_pertenencia(
@@ -66,7 +61,7 @@ def listar_extracciones_endpoint(
     solo_mias: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.listar")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ExtraccionResumen]:
     return listar_extracciones(
@@ -81,7 +76,7 @@ def listar_extracciones_endpoint(
 @router.get("/extracciones/{extraction_id}/filas", response_model=FilasExtraccionOut)
 def obtener_filas_extraccion_endpoint(
     extraction_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.validar")),
     user_client: Client = Depends(get_user_client),
 ) -> FilasExtraccionOut:
     extraccion = _verificar_pertenencia(
@@ -99,7 +94,7 @@ def obtener_filas_extraccion_endpoint(
 )
 def obtener_cliente_candidato_endpoint(
     extraction_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.validar")),
     user_client: Client = Depends(get_user_client),
 ) -> CandidatoClienteOut:
     extraccion = _verificar_pertenencia(
@@ -114,7 +109,7 @@ def obtener_cliente_candidato_endpoint(
 @router.post("/extracciones/agrupar")
 def agrupar_extracciones_endpoint(
     body: AgruparExtraccionesRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.validar")),
     user_client: Client = Depends(get_user_client),
 ) -> dict[str, str]:
     # D13 § Agrupar después -- _verificar_pertenencia POR CADA id con el user
@@ -132,7 +127,7 @@ def agrupar_extracciones_endpoint(
 @router.post("/extracciones/desagrupar", status_code=204)
 def desagrupar_extracciones_endpoint(
     body: AgruparExtraccionesRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.validar")),
     user_client: Client = Depends(get_user_client),
 ) -> None:
     for extraction_id in body.extraction_ids:
@@ -147,7 +142,7 @@ def desagrupar_extracciones_endpoint(
 def validar_extraccion_endpoint(
     extraction_id: str,
     body: ValidarExtraccionRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_VALIDAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("extraccion.validar")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoValidarExtraccion:
     _verificar_pertenencia(user_client, usuario=usuario, extraction_id=extraction_id)

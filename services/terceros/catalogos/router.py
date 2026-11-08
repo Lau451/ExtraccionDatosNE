@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 from services.terceros.catalogos.models import (
     CondicionPagoCreate,
@@ -31,17 +31,11 @@ from services.terceros.catalogos.service import (
 
 router = APIRouter()
 
-# RLS (0037_roles_permisos_matriz.sql, que redefine sec_*/cp_*/fp_* de
-# 0008_terceros_modelo.sql): los catálogos comerciales se escriben desde
-# admin/gerencia/lider_comercial (odd/tasks/roles-permisos-matriz.md S5).
-_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-
 
 @router.get("/sectores-contacto", response_model=list[SectorContactoOut])
 def listar_sectores_endpoint(
     activo: bool | None = True,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[SectorContactoOut]:
     return listar_sectores(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
@@ -50,7 +44,7 @@ def listar_sectores_endpoint(
 @router.post("/sectores-contacto", response_model=SectorContactoOut)
 def crear_sector_endpoint(
     body: SectorContactoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> SectorContactoOut:
     return crear_sector_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
 
@@ -58,7 +52,7 @@ def crear_sector_endpoint(
 @router.get("/sectores-contacto/{sector_id}", response_model=SectorContactoOut)
 def obtener_sector_endpoint(
     sector_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> SectorContactoOut:
     return obtener_sector(user_client, sector_id=sector_id, drogueria_id=usuario.drogueria_id)
@@ -68,7 +62,7 @@ def obtener_sector_endpoint(
 def actualizar_sector_endpoint(
     sector_id: str,
     body: SectorContactoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> SectorContactoOut:
     return actualizar_sector_para_endpoint(
         sector_id=sector_id, drogueria_id=usuario.drogueria_id, body=body
@@ -78,7 +72,7 @@ def actualizar_sector_endpoint(
 @router.get("/condiciones-pago", response_model=list[CondicionPagoOut])
 def listar_condiciones_pago_endpoint(
     activo: bool | None = True,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[CondicionPagoOut]:
     return listar_condiciones_pago(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
@@ -87,7 +81,7 @@ def listar_condiciones_pago_endpoint(
 @router.post("/condiciones-pago", response_model=CondicionPagoOut)
 def crear_condicion_pago_endpoint(
     body: CondicionPagoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> CondicionPagoOut:
     return crear_condicion_pago_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
 
@@ -95,7 +89,7 @@ def crear_condicion_pago_endpoint(
 @router.get("/condiciones-pago/{condicion_pago_id}", response_model=CondicionPagoOut)
 def obtener_condicion_pago_endpoint(
     condicion_pago_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> CondicionPagoOut:
     return obtener_condicion_pago(
@@ -107,7 +101,7 @@ def obtener_condicion_pago_endpoint(
 def actualizar_condicion_pago_endpoint(
     condicion_pago_id: str,
     body: CondicionPagoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> CondicionPagoOut:
     return actualizar_condicion_pago_para_endpoint(
         condicion_pago_id=condicion_pago_id, drogueria_id=usuario.drogueria_id, body=body
@@ -117,7 +111,7 @@ def actualizar_condicion_pago_endpoint(
 @router.get("/formas-pago", response_model=list[FormaPagoOut])
 def listar_formas_pago_endpoint(
     activo: bool | None = True,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[FormaPagoOut]:
     return listar_formas_pago(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
@@ -126,7 +120,7 @@ def listar_formas_pago_endpoint(
 @router.post("/formas-pago", response_model=FormaPagoOut)
 def crear_forma_pago_endpoint(
     body: FormaPagoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> FormaPagoOut:
     return crear_forma_pago_para_endpoint(drogueria_id=usuario.drogueria_id, body=body)
 
@@ -134,7 +128,7 @@ def crear_forma_pago_endpoint(
 @router.get("/formas-pago/{forma_pago_id}", response_model=FormaPagoOut)
 def obtener_forma_pago_endpoint(
     forma_pago_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> FormaPagoOut:
     return obtener_forma_pago(
@@ -146,7 +140,7 @@ def obtener_forma_pago_endpoint(
 def actualizar_forma_pago_endpoint(
     forma_pago_id: str,
     body: FormaPagoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.catalogos.escribir")),
 ) -> FormaPagoOut:
     return actualizar_forma_pago_para_endpoint(
         forma_pago_id=forma_pago_id, drogueria_id=usuario.drogueria_id, body=body

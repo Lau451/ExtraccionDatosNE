@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 from services.terceros.contactos.models import (
     TerceroContactoCreate,
@@ -17,18 +17,12 @@ from services.terceros.contactos.service import (
 
 router = APIRouter()
 
-# RLS (0037_roles_permisos_matriz.sql, que redefine las políticas de escritura
-# de 0008_terceros_modelo.sql): solo admin/gerencia/lider_comercial escriben
-# terceros, direcciones y contactos (odd/tasks/roles-permisos-matriz.md S4).
-_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-
 
 @router.get("/terceros/{tercero_id}/contactos", response_model=list[TerceroContactoOut])
 def listar_contactos_endpoint(
     tercero_id: str,
     activo: bool | None = True,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.contactos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[TerceroContactoOut]:
     return listar_contactos(
@@ -40,7 +34,7 @@ def listar_contactos_endpoint(
 def crear_contacto_endpoint(
     tercero_id: str,
     body: TerceroContactoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.contactos.escribir")),
 ) -> TerceroContactoOut:
     return crear_contacto_para_endpoint(
         tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
@@ -51,7 +45,7 @@ def crear_contacto_endpoint(
 def obtener_contacto_endpoint(
     tercero_id: str,
     contacto_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.contactos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> TerceroContactoOut:
     return obtener_contacto(user_client, contacto_id=contacto_id, drogueria_id=usuario.drogueria_id)
@@ -62,7 +56,7 @@ def actualizar_contacto_endpoint(
     tercero_id: str,
     contacto_id: str,
     body: TerceroContactoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.contactos.escribir")),
 ) -> TerceroContactoOut:
     return actualizar_contacto_para_endpoint(
         contacto_id=contacto_id, drogueria_id=usuario.drogueria_id, body=body

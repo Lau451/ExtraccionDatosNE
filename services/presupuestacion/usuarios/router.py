@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import NotFoundError
 from services.presupuestacion.usuarios.models import (
@@ -14,7 +14,6 @@ from services.presupuestacion.usuarios.models import (
     UsuarioUsernameUpdate,
 )
 from services.presupuestacion.usuarios.service import (
-    ROLES_GESTION_USUARIOS,
     actualizar_perfil_propio_para_endpoint,
     blanquear_password_para_endpoint,
     cambiar_activo_para_endpoint,
@@ -54,7 +53,7 @@ def obtener_usuario_endpoint(
 
 @router.post("/usuarios", response_model=UsuarioOut)
 def crear_usuario_endpoint(
-    body: UsuarioCreate, usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS))
+    body: UsuarioCreate, usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar"))
 ) -> UsuarioOut:
     return crear_usuario_para_endpoint(creador=usuario, body=body)
 
@@ -63,7 +62,7 @@ def crear_usuario_endpoint(
 def cambiar_rol_endpoint(
     usuario_id: str,
     body: UsuarioRolUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar")),
 ) -> UsuarioOut:
     return cambiar_rol_para_endpoint(creador=usuario, usuario_id=usuario_id, nuevo_rol=body.rol)
 
@@ -72,7 +71,7 @@ def cambiar_rol_endpoint(
 def cambiar_activo_endpoint(
     usuario_id: str,
     body: UsuarioActivoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar")),
 ) -> UsuarioOut:
     return cambiar_activo_para_endpoint(creador=usuario, usuario_id=usuario_id, activo=body.activo)
 
@@ -81,7 +80,7 @@ def cambiar_activo_endpoint(
 def blanquear_password_endpoint(
     usuario_id: str,
     body: UsuarioPasswordUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar")),
 ) -> UsuarioOut:
     return blanquear_password_para_endpoint(
         creador=usuario, usuario_id=usuario_id, password=body.password
@@ -92,7 +91,7 @@ def blanquear_password_endpoint(
 def cambiar_username_endpoint(
     usuario_id: str,
     body: UsuarioUsernameUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar")),
 ) -> UsuarioOut:
     return cambiar_username_para_endpoint(
         creador=usuario, usuario_id=usuario_id, username=body.username
@@ -110,6 +109,6 @@ def actualizar_perfil_propio_endpoint(
 @router.delete("/usuarios/{usuario_id}", status_code=204)
 def eliminar_usuario_endpoint(
     usuario_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_GESTION_USUARIOS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("usuarios.gestionar")),
 ) -> None:
     eliminar_usuario_para_endpoint(creador=usuario, usuario_id=usuario_id)

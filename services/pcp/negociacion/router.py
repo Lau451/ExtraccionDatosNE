@@ -17,8 +17,7 @@ from services.pcp.negociacion.service import (
     obtener_resultado,
     registrar_resultado_para_endpoint,
 )
-from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_LECTURA_PCP
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 
 router = APIRouter()
@@ -37,7 +36,7 @@ def registrar_resultado_endpoint(
     renglon_id: str,
     proveedor_id: str,
     body: RegistrarResultadoNegociacion,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> ResultadoNegociacionOut:
     return registrar_resultado_para_endpoint(
         drogueria_id=usuario.drogueria_id,
@@ -57,7 +56,7 @@ def obtener_resultado_endpoint(
     pcp_id: str,
     renglon_id: str,
     proveedor_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoNegociacionOut:
     return obtener_resultado(
@@ -78,7 +77,7 @@ def actualizar_seleccion_endpoint(
     renglon_id: str,
     proveedor_id: str,
     body: ActualizarSeleccionNegociacion,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> ResultadoNegociacionOut:
     return actualizar_seleccion_para_endpoint(
         drogueria_id=usuario.drogueria_id,
@@ -97,7 +96,7 @@ def actualizar_seleccion_endpoint(
 def listar_resultados_renglon_endpoint(
     pcp_id: str,
     renglon_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
 ) -> list[ResultadoNegociacionOut]:
     return listar_resultados_renglon_para_endpoint(
         drogueria_id=usuario.drogueria_id,
@@ -109,7 +108,7 @@ def listar_resultados_renglon_endpoint(
 @router.get("/pcp/{pcp_id}/seleccion", response_model=list[str])
 def listar_renglones_seleccionados_endpoint(
     pcp_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
 ) -> list[str]:
     return listar_renglones_seleccionados_para_endpoint(
         pcp_id=pcp_id,
@@ -121,7 +120,7 @@ def listar_renglones_seleccionados_endpoint(
 @router.get("/pcp/{pcp_id}/selecciones-agrupables", response_model=list[SeleccionAgrupable])
 def listar_selecciones_agrupables_endpoint(
     pcp_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
 ) -> list[SeleccionAgrupable]:
     return listar_selecciones_agrupables_para_endpoint(
         pcp_id=pcp_id,
@@ -133,7 +132,7 @@ def listar_selecciones_agrupables_endpoint(
 @router.post("/pcp/{pcp_id}/cerrar", response_model=PcpOut)
 def cerrar_pcp_endpoint(
     pcp_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> PcpOut:
     return cerrar_pcp_para_endpoint(
         pcp_id=pcp_id,

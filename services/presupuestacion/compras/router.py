@@ -12,16 +12,11 @@ from services.presupuestacion.compras.service import (
     crear_entrega_para_endpoint,
     crear_orden_compra_para_endpoint,
 )
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 
 router = APIRouter()
-
-_ROLES_OC = ("admin", "gerencia", "lider_comercial", "comercial")
-# Planificar entregas (odd/tasks/roles-permisos-matriz.md S8): compras no.
-_ROLES_ENTREGA = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
 
 
 def _validar_oc_de_la_drogueria(
@@ -45,7 +40,7 @@ def _validar_oc_de_la_drogueria(
 @router.post("/ordenes-compra", response_model=ResultadoOrdenCompra)
 def crear_orden_compra_endpoint(
     body: CrearOrdenCompraRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_OC)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("compras.oc")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoOrdenCompra:
     proceso = (
@@ -70,7 +65,7 @@ def crear_orden_compra_endpoint(
 @router.post("/ordenes-compra/{orden_compra_id}/confirmar", response_model=ResultadoOrdenCompra)
 def confirmar_orden_compra_endpoint(
     orden_compra_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_OC)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("compras.oc")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoOrdenCompra:
     _validar_oc_de_la_drogueria(user_client, usuario, orden_compra_id)
@@ -83,7 +78,7 @@ def confirmar_orden_compra_endpoint(
 def crear_entrega_endpoint(
     orden_compra_id: str,
     body: CrearEntregaRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ENTREGA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("compras.entregas")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoEntrega:
     _validar_oc_de_la_drogueria(user_client, usuario, orden_compra_id)
@@ -98,7 +93,7 @@ def crear_entrega_endpoint(
 
 @router.get("/entregas/pendientes")
 def entregas_pendientes_endpoint(
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("compras.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[dict]:
     return user_client.table("v_entregas_pendientes").select("*").execute().data
@@ -107,7 +102,7 @@ def entregas_pendientes_endpoint(
 @router.get("/compras/vs-cotizado")
 def compras_vs_cotizado_endpoint(
     usuario: UsuarioPerfil = Depends(
-        require_roles("superadmin", "admin", "gerencia", "compras")
+        require_capacidad("compras.vs_cotizado")
     ),
     user_client: Client = Depends(get_user_client),
 ) -> list[dict]:

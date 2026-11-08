@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 from services.terceros.identidad.models import (
     ClienteRolOut,
@@ -25,12 +25,6 @@ from services.terceros.identidad.service import (
 
 router = APIRouter()
 
-# RLS (0037_roles_permisos_matriz.sql, que redefine las políticas de escritura
-# de 0008_terceros_modelo.sql): solo admin/gerencia/lider_comercial escriben
-# terceros, direcciones y contactos (odd/tasks/roles-permisos-matriz.md S4).
-_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-
 
 def _es_superadmin(usuario: UsuarioPerfil) -> bool:
     return usuario.rol == "superadmin"
@@ -47,7 +41,7 @@ def listar_terceros_endpoint(
     # solo request, no una página de búsqueda -- 5000 cubre holgado los ~3264
     # proveedores reales de Nueva Era hoy.
     page_size: int = Query(50, ge=1, le=5000),
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> TerceroListOut:
     items, total = listar_terceros_paginado(
@@ -65,7 +59,7 @@ def listar_terceros_endpoint(
 @router.get("/terceros/{tercero_id}", response_model=TerceroOut)
 def obtener_tercero_endpoint(
     tercero_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> TerceroOut:
     return obtener_tercero(
@@ -80,7 +74,7 @@ def obtener_tercero_endpoint(
 def actualizar_tercero_endpoint(
     tercero_id: str,
     body: TerceroUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.escribir")),
 ) -> TerceroOut:
     return actualizar_tercero_para_endpoint(
         tercero_id=tercero_id,
@@ -94,7 +88,7 @@ def actualizar_tercero_endpoint(
 @router.get("/terceros/{tercero_id}/clientes", response_model=ClienteRolOut)
 def obtener_rol_cliente_endpoint(
     tercero_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteRolOut:
     return obtener_rol_cliente(user_client, tercero_id=tercero_id, drogueria_id=usuario.drogueria_id)
@@ -104,7 +98,7 @@ def obtener_rol_cliente_endpoint(
 def actualizar_rol_cliente_endpoint(
     tercero_id: str,
     body: ClienteRolUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.escribir")),
 ) -> ClienteRolOut:
     return actualizar_rol_cliente_para_endpoint(
         tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
@@ -114,7 +108,7 @@ def actualizar_rol_cliente_endpoint(
 @router.get("/terceros/{tercero_id}/proveedores", response_model=ProveedorRolOut)
 def obtener_rol_proveedor_endpoint(
     tercero_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> ProveedorRolOut:
     return obtener_rol_proveedor(user_client, tercero_id=tercero_id, drogueria_id=usuario.drogueria_id)
@@ -124,7 +118,7 @@ def obtener_rol_proveedor_endpoint(
 def actualizar_rol_proveedor_endpoint(
     tercero_id: str,
     body: ProveedorRolUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("terceros.escribir")),
 ) -> ProveedorRolOut:
     return actualizar_rol_proveedor_para_endpoint(
         tercero_id=tercero_id, drogueria_id=usuario.drogueria_id, body=body
