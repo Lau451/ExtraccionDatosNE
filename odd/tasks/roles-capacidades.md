@@ -16,13 +16,13 @@ Branch `feat/roles-capacidades` from `dev` (`82a8fc7`). No migrations.
 
 ## Tasks
 
-- **T1** S1-S3: `services/shared/permisos.py` + `require_capacidad`, unit tests — inline — commit:
-- **T2** S4: `GET /auth/capacidades` + test — inline — commit:
-- **T3** S2, S5: migrate pcp, terceros, productos, integracion_progress, extraccion — inline — commit:
-- **T4** S2, S5: migrate presupuestacion routers and usuarios service — inline — commit:
-- **T5** S6: architecture test — inline — commit:
-- **T6** S7: frontend capabilities — inline — commit:
-- **T7** S8: docs — inline — commit:
+- **T1** S1-S3: `services/shared/permisos.py` + `require_capacidad`, unit tests — inline — commit: 2074ae7 [x]
+- **T2** S4: `GET /auth/capacidades` + test — inline — commit: 9024310 [x]
+- **T3** S2, S5: migrate pcp, terceros, productos, integracion_progress, extraccion — inline — commit: 17e4503 [x]
+- **T4** S2, S5: migrate presupuestacion routers and usuarios service — inline — commit: 17e4503 [x]
+- **T5** S6: architecture test — inline — commit: 31e02dc [x]
+- **T6** S7: frontend capabilities — worker — commit: fde3153 [x]
+- **T7** S8: docs — inline — commit: this docs commit [x]
 
 ## Log
 
@@ -31,3 +31,4 @@ Branch `feat/roles-capacidades` from `dev` (`82a8fc7`). No migrations.
 - **L3** (user, 2026-11-08): "vamos con la a" (matrix in code, `services/shared`).
 - **L4** (evidence): explore found 48 named tuples + 6 inline `require_roles` in 27 backend files, 10 frontend `roles.ts`; no `plataforma/` package — the platform layer is `services/shared/` (D-ARQ-003).
 - **L5** (decision, 2026-11-08): `GET /auth/capacidades` is not a new exit of the pending-password lock (S3 of login-usuario-alta-admin; `tests/auth/test_flag_sweep.py` pins the only exits). While pending, the frontend already sends the user to `/cambiar-password`.
+- **L6** (evidence, 2026-11-08): backend full suite 2138 passed (41m, includes Supabase integration); frontend `tsc -b` ok, vitest 703/703, oxlint 0 errors (warnings pre-existing). Architecture guard on `dev` tree finds 237 offenses, 0 on this branch. The worker found no role-set mismatch between the 18 old frontend lists and `MATRIZ`. Frontend change: `CambiarPasswordPage` computes the landing page from the capabilities reloaded after the change (they are empty while the password is pending, L5).
