@@ -9,10 +9,10 @@ citas de código y de esquema, vive en `design.md`.
 
 **Decisión**: `services/pcp/` vive como hermano de `services/terceros/` y
 `services/productos/`, no como submódulo de `services/presupuestacion/`.
-`services/pcp/**` solo puede importar `services.presupuestacion.pricing.
-service`, `services.presupuestacion.notificaciones.service`,
-`services.terceros.api` y `services.productos` — nunca el `repository` de
-otro módulo. `services/presupuestacion` solo importa `services.pcp` desde
+`services/pcp/**` solo puede importar fachadas `api.py` de otros módulos
+(`notificaciones`, `pricing`, `presupuestos`, `procesos_comerciales`,
+`productos`, `terceros`) y no nombra las tablas comerciales (etapa 4,
+X-ARQ-002, `odd/tasks/pcp-fachadas.md`). `services/presupuestacion` solo importa `services.pcp` desde
 `main.py` (el montaje del router).
 
 **Motivo**: PCP es un dominio de Compras con tablas, roles y ciclo de vida
