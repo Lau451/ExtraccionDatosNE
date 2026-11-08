@@ -18,7 +18,7 @@ pricing and productos internals, and its direct reads of comercial tables. Branc
 - [x] T2 S2, S4(imports) — productos facade for pcp — inline — commit: 52d2c06
 - [x] T3 S3, S4(reads) — comercial read facades, pcp reads removed, read guard — inline — commit: 52d2c06
 - [x] T4 S5 — docs — inline — commit: 1cf14c1
-- [ ] T5 S6 — pcp ignores soft-deleted presupuestos (RED tests for the 3 consequences, facade swap, docs line) — gentle-ai-worker (context backstop) — commit:
+- [x] T5 S6 — pcp ignores soft-deleted presupuestos (RED tests for the 3 consequences, facade swap, docs line) — gentle-ai-worker, finished inline after its cancellation — commit: be00f79
 - [x] T6 L5 — commit the auth/capacidades error screen (L3) into this branch — inline — commit: 42a8203
 
 ## Log
@@ -28,3 +28,4 @@ pricing and productos internals, and its direct reads of comercial tables. Branc
 - **L3** Uncommitted frontend fix from earlier (auth/capacidades error screen: `frontend/src/main.tsx`, `features/auth/{AuthContext,AuthContext.test,ErrorCapacidades,ErrorCapacidades.test}.tsx`) travels in the worktree; it is not part of this feature's commits.
 - **L4** Evidence: guards RED first (7 forbidden imports, then 6 comercial table reads), GREEN after; affected suites `tests/pcp tests/notificaciones tests/pricing tests/productos tests/presupuestos tests/procesos_comerciales tests/integracion_progress tests/arquitectura`: 527 passed. T1-T3 share one ~340-line code commit (52d2c06, same guard file); T4 docs in the following commit. The stop-hook 'since origin/main' slice count is the accumulated branch, not this feature.
 - **L5** (user, 2026-11-08): "1 que ignore a los presupuestos dados de baja y agregalos a este pr" — answers the deleted_at question (S6) and asks to add the uncommitted auth/capacidades frontend fix (L3) to this PR.
+- **L6** T5 evidence: the worker was cancelled by an accidental abort after writing tests, facade swap and docs; parent verified inline. RED with the old facade: 3 failed (200 != 404, DID NOT RAISE NotFoundError, repricing ran). GREEN: 3 passed; tests/pcp tests/presupuestos tests/integracion_progress tests/arquitectura: 488 passed. Only pcp consumes presupuestos.api.buscar_presupuesto.
