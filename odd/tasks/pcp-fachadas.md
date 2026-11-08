@@ -9,6 +9,7 @@ pricing and productos internals, and its direct reads of comercial tables. Branc
 - **S2** (L1, option "2"): `services/productos/api.py` also exports `obtener_producto` and `ProductoOut`; every `services/pcp/**` file uses them through the facade, never `services.productos.service` / `.models`. Behavior unchanged.
 - **S3** (L1, option "3"): the six direct reads of comercial tables in `services/pcp/**` (`presupuestos` in gestion/negociacion/imports, `items_proceso` in renglones/imports, `presupuesto_legacy_map` in imports) are removed from pcp and served by the owner through `services/presupuestacion/presupuestos/api.py` (presupuestos, presupuesto_legacy_map) and a new `services/presupuestacion/procesos_comerciales/api.py` (items_proceso). Same rows as today (the pcp reads do not filter `deleted_at`; the facade keeps that), so pcp behavior is unchanged.
 - **S4** Guards: `tests/pcp/test_dependencias.py` allows only facades (`*.api`) from presupuestacion, terceros and productos — `pricing.service`, `notificaciones.service` and the `services.productos` prefix are no longer allowed. A new guard fails if any file in `services/pcp/**` reads or writes a comercial-owned table (`_TABLAS_COMERCIAL` in `tests/arquitectura/test_duenos_tablas.py`).
+- **S6** (L5 "que ignore a los presupuestos dados de baja"): `pcp` treats a presupuesto with `deleted_at` set as nonexistent. The `buscar_presupuesto` it gets from `services/presupuestacion/presupuestos/api.py` filters `deleted_at IS NULL` (supersedes the L2 choice). Consequences: creating a PCP on a deleted presupuesto -> the existing 404 "No se encontró el presupuesto '<id>'"; the PCP legacy import whose mapped presupuesto is deleted -> the existing NotFound "El presupuesto mapeado para '<numero>' ya no existe"; closing a PCP whose presupuesto is deleted -> no automatic repricing. The comercial legacy import's own `importacion_legacy_repository.buscar_presupuesto` is unchanged.
 - **S5** Docs: `docs/arquitectura/README.md` stage 4 done, X-ARQ-002 resolved in `mapa-modulos.md` (plus the stage-2 follow-up "pcp reads comercial tables"), and the pcp docstrings that justified direct table reads are updated.
 
 ## Tasks
@@ -16,7 +17,9 @@ pricing and productos internals, and its direct reads of comercial tables. Branc
 - [x] T1 S1, S4(imports) — notificaciones/pricing facades + negociacion uses them — inline — commit: 52d2c06
 - [x] T2 S2, S4(imports) — productos facade for pcp — inline — commit: 52d2c06
 - [x] T3 S3, S4(reads) — comercial read facades, pcp reads removed, read guard — inline — commit: 52d2c06
-- [x] T4 S5 — docs — inline — commit: (docs commit, see Log L4)
+- [x] T4 S5 — docs — inline — commit: 1cf14c1
+- [ ] T5 S6 — pcp ignores soft-deleted presupuestos (RED tests for the 3 consequences, facade swap, docs line) — gentle-ai-worker (context backstop) — commit:
+- [x] T6 L5 — commit the auth/capacidades error screen (L3) into this branch — inline — commit: 42a8203
 
 ## Log
 
@@ -24,3 +27,4 @@ pricing and productos internals, and its direct reads of comercial tables. Branc
 - **L2** Decision: the existing `presupuestos/repository.py::buscar_presupuesto` filters `deleted_at`; the pcp reads did not. To keep behavior identical (no unrequested change), the facade read does not filter it; whether pcp should ignore soft-deleted presupuestos is an open question for the user.
 - **L3** Uncommitted frontend fix from earlier (auth/capacidades error screen: `frontend/src/main.tsx`, `features/auth/{AuthContext,AuthContext.test,ErrorCapacidades,ErrorCapacidades.test}.tsx`) travels in the worktree; it is not part of this feature's commits.
 - **L4** Evidence: guards RED first (7 forbidden imports, then 6 comercial table reads), GREEN after; affected suites `tests/pcp tests/notificaciones tests/pricing tests/productos tests/presupuestos tests/procesos_comerciales tests/integracion_progress tests/arquitectura`: 527 passed. T1-T3 share one ~340-line code commit (52d2c06, same guard file); T4 docs in the following commit. The stop-hook 'since origin/main' slice count is the accumulated branch, not this feature.
+- **L5** (user, 2026-11-08): "1 que ignore a los presupuestos dados de baja y agregalos a este pr" — answers the deleted_at question (S6) and asks to add the uncommitted auth/capacidades frontend fix (L3) to this PR.
