@@ -5,7 +5,6 @@ import { useAuth } from '@/features/auth/AuthContext'
 import { listarPcp, type EstadoPcp } from '@/lib/api/pcp'
 import { CrearPcpDialog } from './CrearPcpDialog'
 import { pcpQueryKeys } from './queryKeys'
-import { PCP_WRITE_ROLES, puedeRol } from './roles'
 
 const ESTADOS: { value: EstadoPcp; label: string }[] = [
   { value: 'nueva', label: 'Nueva' },
@@ -15,7 +14,7 @@ const ESTADOS: { value: EstadoPcp; label: string }[] = [
 ]
 
 export function GestionPcp() {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const [estado, setEstado] = useState<EstadoPcp | ''>('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -29,7 +28,7 @@ export function GestionPcp() {
     queryKey: pcpQueryKeys.lista(tieneFiltros ? filtros : undefined),
     queryFn: () => listarPcp(tieneFiltros ? filtros : undefined),
   })
-  const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+  const puedeEscribir = puede('pcp.escribir')
 
   return (
     <main className="p-8">

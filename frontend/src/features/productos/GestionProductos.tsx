@@ -4,7 +4,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
 import { listarCategorias, listarMarcas, listarProductos, type Clasificacion } from '@/lib/api/productos'
 import { GestionCategoriasDialog } from './GestionCategoriasDialog'
-import { CATEGORIAS_WRITE_ROLES, puedeRol } from './roles'
 
 const CLASIFICACIONES = [
   'medicamento', 'descartable', 'solucion', 'nutricion', 'equipamiento', 'reactivo', 'cosmetico', 'otro',
@@ -14,7 +13,7 @@ const PAGE_SIZE = 50
 const DEBOUNCE_BUSQUEDA_MS = 300
 
 export function GestionProductos() {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const [texto, setTexto] = useState('')
   const [textoBuscado, setTextoBuscado] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
@@ -33,7 +32,7 @@ export function GestionProductos() {
     setPagina(1)
   }, [textoBuscado, categoriaId, clasificacion])
 
-  const puedeEscribirCategorias = puedeRol(perfil?.rol, CATEGORIAS_WRITE_ROLES)
+  const puedeEscribirCategorias = puede('productos.categorias.escribir')
 
   const { data, isPending } = useQuery({
     queryKey: ['productos', { q: textoBuscado, categoriaId, clasificacion, pagina }],

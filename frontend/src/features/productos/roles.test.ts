@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { COSTOS_READ_ROLES, puedeRol } from './roles'
+import type { Rol } from '@/features/auth/AuthContext'
+import { navegacionDeRol } from '@/test/capacidades'
+import { Route as ProductoDetalleRoute } from '@/routes/_authenticated.productos.$productoId'
+import { Route as ProductosRoute } from '@/routes/_authenticated.productos'
 
-describe('S3: ver costos', () => {
-  it('lider_comercial puede ver costos', () => {
-    expect(puedeRol('lider_comercial', COSTOS_READ_ROLES)).toBe(true)
-  })
+describe('rutas de productos (productos.leer)', () => {
+  const guards = [ProductosRoute.options.beforeLoad, ProductoDetalleRoute.options.beforeLoad]
 
-  it('comercial sigue sin ver costos; superadmin, admin, gerencia y compras siguen viéndolos', () => {
-    expect(puedeRol('comercial', COSTOS_READ_ROLES)).toBe(false)
-    expect(['superadmin', 'admin', 'gerencia', 'compras'].every((rol) => puedeRol(rol as never, COSTOS_READ_ROLES))).toBe(true)
+  it.each<Rol>(['superadmin', 'admin', 'gerencia', 'lider_comercial', 'comercial', 'compras'])(
+    'deja pasar a %s',
+    (rol) => {
+      guards.forEach((g) => expect(() => g?.(navegacionDeRol(rol, '/productos'))).not.toThrow())
+    },
+  )
+
+  it('bloquea un rol sin capacidades (sistema)', () => {
+    guards.forEach((g) => expect(() => g?.(navegacionDeRol('sistema', '/productos'))).toThrow())
   })
 })

@@ -1,12 +1,9 @@
 """Router de import legado de PCP (design.md D8, spec `pcp-legacy-import`,
 tasks.md Fase 8).
 
-Gateado por `ROLES_ESCRITURA_PCP` (`services/pcp/roles.py`, D11) -- mismo
-rol-set que `services/presupuestacion/imports/router.py::_ROLES_IMPORT`
-(`admin`,`gerencia`,`compras`), pero reusando la constante compartida del
-módulo en vez de declarar una copia local, mismo criterio que el resto de
-`services/pcp/**`. `/pcp/imports/presupuestos-legacy` es la excepción: solo
-`admin` (`ROLES_IMPORT_PRESUPUESTOS_LEGACY`, odd/tasks/roles-permisos-matriz.md S6).
+Gateado por la capacidad `pcp.escribir` (services/shared/permisos.py).
+`/pcp/imports/presupuestos-legacy` es la excepción: solo `admin`
+(`presupuestos.importar_legacy`, odd/tasks/roles-permisos-matriz.md S6).
 Mantiene su path, roles, request y response, pero el import lo hace `comercial`
 a través de `services.presupuestacion.presupuestos.api`
 (odd/tasks/procesos-comerciales-dueno.md S1).
@@ -16,14 +13,12 @@ from fastapi import APIRouter, Depends
 
 from services.pcp.imports.models import ImportPcpLegacyRequest, ImportPcpLegacyResultado
 from services.pcp.imports.service import importar_pcp_legacy_para_endpoint
-from services.pcp.roles import ROLES_ESCRITURA_PCP
 from services.presupuestacion.presupuestos.api import (
-    ROLES_IMPORT_PRESUPUESTOS_LEGACY,
     ImportPresupuestoLegacyRequest,
     ImportPresupuestoLegacyResultado,
     importar_presupuesto_legacy_para_endpoint,
 )
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 
 router = APIRouter()
 
@@ -31,7 +26,7 @@ router = APIRouter()
 @router.post("/pcp/imports/legacy", response_model=list[ImportPcpLegacyResultado])
 def importar_pcp_legacy_endpoint(
     body: ImportPcpLegacyRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> list[ImportPcpLegacyResultado]:
     return importar_pcp_legacy_para_endpoint(
         drogueria_id=usuario.drogueria_id, filas=body.filas, usuario_id=usuario.id
@@ -43,7 +38,7 @@ def importar_pcp_legacy_endpoint(
 )
 def importar_presupuesto_legacy_endpoint(
     body: ImportPresupuestoLegacyRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_IMPORT_PRESUPUESTOS_LEGACY)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.importar_legacy")),
 ) -> list[ImportPresupuestoLegacyResultado]:
     """Sibling de `/pcp/imports/legacy`: import de presupuestos, mandatorio
     ANTES del import de PCP (agreed design, odd/tasks/

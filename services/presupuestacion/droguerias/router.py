@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import NotFoundError
 from services.presupuestacion.droguerias.models import DrogueriaCreate, DrogueriaOut, DrogueriaUpdate
@@ -38,7 +38,7 @@ def obtener_drogueria_endpoint(
 
 @router.post("/droguerias", response_model=DrogueriaOut)
 def crear_drogueria_endpoint(
-    body: DrogueriaCreate, usuario: UsuarioPerfil = Depends(require_roles("superadmin"))
+    body: DrogueriaCreate, usuario: UsuarioPerfil = Depends(require_capacidad("droguerias.gestionar"))
 ) -> DrogueriaOut:
     return crear_drogueria_para_endpoint(body=body)
 
@@ -47,7 +47,7 @@ def crear_drogueria_endpoint(
 def actualizar_drogueria_endpoint(
     drogueria_id: str,
     body: DrogueriaUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles("superadmin")),
+    usuario: UsuarioPerfil = Depends(require_capacidad("droguerias.gestionar")),
 ) -> DrogueriaOut:
     return actualizar_drogueria_para_endpoint(drogueria_id=drogueria_id, body=body)
 
@@ -55,6 +55,6 @@ def actualizar_drogueria_endpoint(
 @router.delete("/droguerias/{drogueria_id}", status_code=204)
 def eliminar_drogueria_endpoint(
     drogueria_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles("superadmin")),
+    usuario: UsuarioPerfil = Depends(require_capacidad("droguerias.gestionar")),
 ) -> None:
     eliminar_drogueria_para_endpoint(drogueria_id=drogueria_id)

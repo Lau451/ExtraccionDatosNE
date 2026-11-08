@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { requireRole } from '@/features/auth/routeGuards'
+import { requireCapacidad } from '@/features/auth/routeGuards'
 import { OcMatchingDetalle } from '@/features/oc-matching/OcMatchingDetalle'
-import { OC_RESUMEN_ACCIONES_ROLES } from '@/features/oc-resumen/roles'
 
 interface Search {
   // Presupuesto elegido en esta sesión (design.md D8): sobrevive a un reload
@@ -12,7 +11,7 @@ interface Search {
 }
 
 export const Route = createFileRoute('/_authenticated/ordenes-compra/$ordenCompraId/matching')({
-  beforeLoad: requireRole(...OC_RESUMEN_ACCIONES_ROLES),
+  beforeLoad: requireCapacidad('oc_resumen.acciones'),
   validateSearch: (search: Record<string, unknown>): Search => ({
     presupuesto: typeof search.presupuesto === 'string' ? search.presupuesto : undefined,
   }),

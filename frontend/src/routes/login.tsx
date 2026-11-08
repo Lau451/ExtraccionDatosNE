@@ -10,8 +10,8 @@ export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
-// Hard navigation (no router.navigate()) a propósito: requireRole() en
-// routeGuards.ts decide en base a auth.perfil del context del router, que
+// Hard navigation (no router.navigate()) a propósito: requireCapacidad() en
+// routeGuards.ts decide en base a auth.perfil/capacidades del context del router, que
 // solo se actualiza cuando React vuelve a renderizar — setPerfil() (dentro de
 // signIn(), AuthContext.tsx) es asíncrono, así que navigate() puede correr
 // ANTES de ese re-render y el guard ve perfil=null. Reproducido en sesión de

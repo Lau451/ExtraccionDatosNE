@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 from services.presupuestacion.matching.models import (
@@ -21,8 +21,6 @@ from services.presupuestacion.matching.service import (
 )
 
 router = APIRouter()
-
-_ROLES_MATCHING = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
 
 
 def _validar_item_de_la_drogueria(
@@ -47,7 +45,7 @@ def _validar_item_de_la_drogueria(
 def confirmar_matching_endpoint(
     item_id: str,
     body: ConfirmarMatchingRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("matching.usar")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoMatchingItem:
     _validar_item_de_la_drogueria(user_client, usuario, item_id)
@@ -59,7 +57,7 @@ def confirmar_matching_endpoint(
 @router.post("/items/{item_id}/sin-match", response_model=ResultadoMatchingItem)
 def sin_match_endpoint(
     item_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("matching.usar")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoMatchingItem:
     _validar_item_de_la_drogueria(user_client, usuario, item_id)
@@ -68,7 +66,7 @@ def sin_match_endpoint(
 
 @router.get("/matching/pendientes", response_model=list[ItemMatchingPendiente])
 def listar_pendientes_endpoint(
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("matching.usar")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ItemMatchingPendiente]:
     resultado = user_client.table("v_matching_pendiente").select("*").execute()
@@ -77,7 +75,7 @@ def listar_pendientes_endpoint(
 
 @router.get("/matching/procesos", response_model=list[ProcesoConMatchingPendiente])
 def listar_procesos_pendientes_endpoint(
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("matching.usar")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ProcesoConMatchingPendiente]:
     return listar_procesos_con_matching_pendiente(user_client)
@@ -87,7 +85,7 @@ def listar_procesos_pendientes_endpoint(
 def obtener_matching_proceso_endpoint(
     # UUID: a malformed id is a 422 here instead of a PostgREST error (500).
     proceso_id: UUID,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_MATCHING)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("matching.usar")),
     user_client: Client = Depends(get_user_client),
 ) -> MatchingProceso:
     return obtener_matching_proceso(

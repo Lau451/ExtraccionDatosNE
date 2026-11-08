@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { cambiarPasswordPropia } from '@/lib/api/auth'
 import { ApiError } from '@/lib/api/presupuestacion'
 import { useAuth } from './AuthContext'
+import type { Capacidad } from './capacidades'
 
 const LARGO_MINIMO = 8
 
 /** Cambio de contraseña propio (spec S3): sirve tanto para el cambio forzado
  * del primer ingreso / después de un blanqueo como para el voluntario desde
  * Mi cuenta. Las reglas se validan acá y el backend las vuelve a validar. */
-export function CambiarPasswordForm({ onSuccess }: { onSuccess: () => void }) {
+export function CambiarPasswordForm({ onSuccess }: { onSuccess: (capacidades: Capacidad[]) => void }) {
   const { refrescarPerfil } = useAuth()
   const [actual, setActual] = useState('')
   const [nueva, setNueva] = useState('')
@@ -39,9 +40,9 @@ export function CambiarPasswordForm({ onSuccess }: { onSuccess: () => void }) {
     try {
       await cambiarPasswordPropia({ password_actual: actual, password_nueva: nueva })
       // Recargar el perfil para que `debe_cambiar_password` quede en false
-      // antes de salir de esta pantalla.
-      await refrescarPerfil()
-      onSuccess()
+      // antes de salir de esta pantalla, y con él las capacidades: con la
+      // contraseña temporal el backend las negaba (spec S7).
+      onSuccess(await refrescarPerfil())
     } catch (error) {
       console.error('Error al cambiar la contraseña', error)
       setError(error instanceof ApiError ? error.message : 'No pudimos cambiar la contraseña. Probá de nuevo.')

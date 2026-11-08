@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.oc_entregas.models import (
     PlanificacionEntregasOut,
@@ -11,14 +11,6 @@ from services.presupuestacion.oc_entregas.service import obtener_planificacion, 
 
 router = APIRouter()
 
-# Mismos roles que _ROLES_MATCHING (oc_presupuesto/router.py, D12): la
-# planificación de entregas es la continuación natural de la pantalla de
-# matching, no del registro de entregas físicas (compras/router.py::
-# _ROLES_ENTREGA, que además incluye "compras" -- ese rol entrega
-# físicamente, no planifica). Tupla local nueva, mismo criterio que el resto
-# de los routers del backend (declarada acá, no importada).
-_ROLES_ENTREGAS = ("admin", "gerencia", "lider_comercial", "comercial")
-
 
 @router.get(
     "/ordenes-compra/{orden_compra_id}/entregas/planificacion",
@@ -26,7 +18,7 @@ _ROLES_ENTREGAS = ("admin", "gerencia", "lider_comercial", "comercial")
 )
 def planificacion_entregas_endpoint(
     orden_compra_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ENTREGAS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("oc_entregas.planificar")),
 ) -> PlanificacionEntregasOut:
     # Corre con SERVICE client (ver el docstring de oc_entregas/repository.py):
     # la RLS de DELETE de entregas_oc/entregas_oc_items es solo-superadmin, así
@@ -45,7 +37,7 @@ def planificacion_entregas_endpoint(
 def planificar_entregas_endpoint(
     orden_compra_id: str,
     body: PlanificarEntregasRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ENTREGAS)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("oc_entregas.planificar")),
 ) -> PlanificarEntregasOut:
     return planificar_entregas(
         get_service_client(),

@@ -8,8 +8,7 @@ from services.pcp.gestion.service import (
     listar_pcp,
     obtener_pcp,
 )
-from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_LECTURA_PCP
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_user_client
 
 router = APIRouter()
@@ -22,7 +21,7 @@ def _es_superadmin(usuario: UsuarioPerfil) -> bool:
 @router.post("/pcp", response_model=PcpOut)
 def crear_pcp_endpoint(
     body: PcpCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> PcpOut:
     return crear_pcp_para_endpoint(drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id)
 
@@ -32,7 +31,7 @@ def listar_pcp_endpoint(
     estado: str | None = None,
     fecha_desde: str | None = None,
     fecha_hasta: str | None = None,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[PcpOut]:
     return listar_pcp(
@@ -48,7 +47,7 @@ def listar_pcp_endpoint(
 @router.get("/pcp/{pcp_id}", response_model=PcpOut)
 def obtener_pcp_endpoint(
     pcp_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_LECTURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> PcpOut:
     return obtener_pcp(
@@ -63,7 +62,7 @@ def obtener_pcp_endpoint(
 def cambiar_estado_endpoint(
     pcp_id: str,
     body: PcpTransicionEstado,
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_ESCRITURA_PCP)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("pcp.escribir")),
 ) -> PcpOut:
     return cambiar_estado_para_endpoint(
         pcp_id=pcp_id,

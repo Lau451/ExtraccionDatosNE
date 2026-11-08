@@ -8,20 +8,17 @@ from services.presupuestacion.comparativas.models import (
     RenglonGanado,
 )
 from services.presupuestacion.comparativas.service import asignar_proveedor_para_endpoint
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 
 router = APIRouter()
 
-_ROLES_ASIGNAR = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-
 
 @router.get("/procesos/{proceso_id}/renglones-ganados", response_model=list[RenglonGanado])
 def renglones_ganados_endpoint(
     proceso_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("comparativas.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[RenglonGanado]:
     return repo.listar_renglones_ganados(user_client, proceso_comercial_id=proceso_id)
@@ -29,7 +26,7 @@ def renglones_ganados_endpoint(
 
 @router.get("/proveedores/sin-matchear", response_model=list[OfertaSinMatchear])
 def ofertas_sin_matchear_endpoint(
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("comparativas.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[OfertaSinMatchear]:
     return repo.listar_ofertas_sin_matchear(user_client)
@@ -39,7 +36,7 @@ def ofertas_sin_matchear_endpoint(
 def asignar_proveedor_endpoint(
     oferta_id: str,
     body: AsignarProveedorRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ASIGNAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("comparativas.asignar")),
     user_client: Client = Depends(get_user_client),
 ) -> dict:
     resultado = (

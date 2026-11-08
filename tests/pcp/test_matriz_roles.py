@@ -50,9 +50,12 @@ from services.pcp.negociacion.models import RegistrarResultadoNegociacion
 from services.pcp.negociacion.service import registrar_resultado
 from services.pcp.renglones.models import PcpRenglonCreate
 from services.pcp.renglones.service import crear_renglon, seleccionar_proveedores
-from services.pcp.roles import ROLES_ESCRITURA_PCP, ROLES_LECTURA_PCP
 from services.presupuestacion.main import app
 from services.shared.config import get_settings
+from services.shared.permisos import roles_con
+
+ROLES_LECTURA_PCP = roles_con("pcp.leer")
+ROLES_ESCRITURA_PCP = roles_con("pcp.escribir")
 
 ROL_SIN_ACCESO = "comercial"  # fuera de ROLES_LECTURA_PCP y ROLES_ESCRITURA_PCP (D11)
 ROL_SIN_ACCESO_2 = "lider_comercial"  # idem -- segundo rol, para no depender de uno solo

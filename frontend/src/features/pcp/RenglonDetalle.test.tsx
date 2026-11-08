@@ -5,7 +5,10 @@ import { RenglonDetalle } from './RenglonDetalle'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
 
-vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return { useAuth: () => ({ perfil: perfilMock, ...authDeRol(perfilMock.rol) }) }
+})
 vi.mock('@/lib/api/pcp', () => ({
   obtenerDetalleRenglon: vi.fn(),
   seleccionarProveedores: vi.fn(),

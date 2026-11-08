@@ -7,11 +7,10 @@ import { CerrarPcpDialog } from './CerrarPcpDialog'
 import { CrearRenglonDialog } from './CrearRenglonDialog'
 import { EstadoPcpStepper } from './EstadoPcpStepper'
 import { pcpQueryKeys } from './queryKeys'
-import { PCP_WRITE_ROLES, puedeRol } from './roles'
 
 export function PcpDetalle({ pcpId }: { pcpId: string }) {
-  const { perfil } = useAuth()
-  const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+  const { puede } = useAuth()
+  const puedeEscribir = puede('pcp.escribir')
   const pcpQuery = useQuery({ queryKey: pcpQueryKeys.detalle(pcpId), queryFn: () => obtenerPcp(pcpId) })
   const renglonesQuery = useQuery({ queryKey: pcpQueryKeys.renglones(pcpId), queryFn: () => listarRenglones(pcpId) })
   const seleccionQuery = useQuery({ queryKey: pcpQueryKeys.seleccion(pcpId), queryFn: () => listarRenglonesSeleccionados(pcpId) })

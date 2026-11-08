@@ -13,8 +13,11 @@ from services.presupuestacion.core.auth import UsuarioPerfil, get_current_user
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.oc_resumen import router as router_module
 from services.presupuestacion.oc_resumen.models import OcResumenOut
-from services.presupuestacion.oc_resumen.router import _ROLES_LECTURA, router
+from services.presupuestacion.oc_resumen.router import router
 from services.shared.exceptions import register_exception_handlers
+from services.shared.permisos import roles_con
+
+_ROLES_LECTURA = roles_con("oc_resumen.leer")
 
 
 def _cliente_de_prueba() -> TestClient:

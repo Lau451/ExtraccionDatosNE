@@ -6,10 +6,9 @@ import { listarTerceros } from '@/lib/api/terceros'
 import { listarProveedoresProducto } from '@/lib/api/pcp'
 import { AgregarProveedorProductoDialog } from './AgregarProveedorProductoDialog'
 import { pcpQueryKeys } from './queryKeys'
-import { PCP_WRITE_ROLES, puedeRol } from './roles'
 
 export function GestionCatalogoProveedores() {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const [productoSeleccionado, setProductoSeleccionado] = useState('')
   // pageSize generoso a propósito: este selector necesita TODOS los productos
   // de la droguería (~7144 hoy en Nueva Era), no una página de búsqueda.
@@ -33,7 +32,7 @@ export function GestionCatalogoProveedores() {
     queryFn: () => listarProveedoresProducto(productoId),
     enabled: !!productoId,
   })
-  const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+  const puedeEscribir = puede('pcp.escribir')
   const nombreProveedor = (id: string) => proveedores.find((tercero) => tercero.id === id)?.razon_social ?? id
 
   return (

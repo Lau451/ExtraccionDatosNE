@@ -3,8 +3,8 @@
 - POST /integracion-progress/presupuestos: carga manual del archivo de presupuestos
   tal como lo exporta Progress (multipart). Corre el mismo pipeline que la recepción
   automática desde la carpeta. Solo admin, mismo rol-set que
-  POST /pcp/imports/presupuestos-legacy (ROLES_IMPORT_PRESUPUESTOS_LEGACY de
-  `comercial`, services.presupuestacion.presupuestos.api).
+  POST /pcp/imports/presupuestos-legacy (capacidad `presupuestos.importar_legacy`,
+  services/shared/permisos.py).
   Un archivo de más de `TAMANO_MAXIMO_BYTES` se rechaza con 413 sin procesarlo.
   Un duplicado cuyo original terminó en `error` trae en `errores` los del original,
   para que la pantalla no lo confunda con uno que sigue en curso.
@@ -25,15 +25,12 @@ from services.integracion_progress.registro.models import (
     RegistroArchivo,
     Sentido,
 )
-from services.presupuestacion.presupuestos.api import ROLES_IMPORT_PRESUPUESTOS_LEGACY
-from services.shared.auth import UsuarioPerfil, require_roles
+from services.shared.auth import UsuarioPerfil, require_capacidad
 from services.shared.database import get_service_client, get_user_client
 from services.shared.exceptions import ForbiddenError
 
 router = APIRouter()
 
-# Mismos roles que la política de lectura parch_sel de progress_archivos (0043, L7).
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "compras", "lider_comercial", "comercial")
 
 # Tope de la carga manual. Un export de presupuestos pesa unos pocos cientos de KB;
 # el tope evita leer a memoria un archivo arbitrariamente grande.
@@ -58,7 +55,7 @@ def _drogueria(usuario: UsuarioPerfil) -> str:
 @router.post("/integracion-progress/presupuestos", response_model=RecepcionPresupuestosOut)
 def recibir_presupuestos_endpoint(
     archivo: UploadFile = File(...),
-    usuario: UsuarioPerfil = Depends(require_roles(*ROLES_IMPORT_PRESUPUESTOS_LEGACY)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.importar_legacy")),
 ) -> RecepcionPresupuestosOut:
     drogueria_id = _drogueria(usuario)
     contenido = _leer_con_tope(archivo)
@@ -91,7 +88,7 @@ def listar_archivos_endpoint(
     estado: EstadoArchivo | None = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("integracion_progress.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[RegistroArchivo]:
     return registro.listar(

@@ -12,7 +12,10 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a>,
   useNavigate: () => navigateMock,
 }))
-vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return { useAuth: () => ({ perfil: perfilMock, ...authDeRol(perfilMock.rol) }) }
+})
 vi.mock('@/lib/api/pcp', () => ({
   listarPcp: vi.fn(),
   listarPresupuestosElegibles: vi.fn(),

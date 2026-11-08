@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/AuthContext'
 import { descargarPdfConsulta, enviarConsulta, obtenerConsulta } from '@/lib/api/pcp'
 import { pcpQueryKeys } from './queryKeys'
-import { PCP_WRITE_ROLES, puedeRol } from './roles'
 
 /** Dispara la descarga del blob ya resuelto sin exponer su contenido binario
  * en pantalla. Se protege ante entornos sin `URL.createObjectURL` (jsdom no
@@ -21,9 +20,9 @@ function iniciarDescarga(blob: Blob, nombreArchivo: string) {
 }
 
 export function ConsultaDetalle({ consultaId }: { consultaId: string }) {
-  const { perfil } = useAuth()
+  const { puede } = useAuth()
   const queryClient = useQueryClient()
-  const puedeEscribir = puedeRol(perfil?.rol, PCP_WRITE_ROLES)
+  const puedeEscribir = puede('pcp.escribir')
 
   const consultaQuery = useQuery({
     queryKey: pcpQueryKeys.consulta(consultaId),

@@ -1,12 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useAuth, type Rol } from '@/features/auth/AuthContext'
-import { CARGA_DOCUMENTOS_ROLES } from '@/features/carga-documentos/roles'
-import { COMPROMISOS_READ_ROLES } from '@/features/compromisos/roles'
-import { USUARIOS_ROLES } from '@/features/gestion-usuarios/roles'
-import { PCP_READ_ROLES, puedeRol } from '@/features/pcp/roles'
-import { PRESUPUESTOS_LEGACY_IMPORT_ROLES } from '@/features/presupuestos-import/roles'
-import { MATCHING_ROLES } from '@/features/proceso-matching/roles'
-import { VALIDAR_EXTRACCION_ROLES } from '@/features/validar-extraccion/roles'
+import { useAuth } from '@/features/auth/AuthContext'
 
 interface NavItem {
   label: string
@@ -17,11 +10,10 @@ interface NavItem {
 // Placeholder: los 6 items y sus rutas finales vienen del mockup Figma
 // (SEjXiBEMxprppdgmlNHKO8), todavía sin validar por screenshot en esta sesión.
 const NAV_ITEMS: NavItem[] = [
-  // Todos los roles de negocio tienen lectura de catálogo (ver
-  // features/productos/roles.ts), así que no hace falta gate por rol acá.
+  // Todos los roles de negocio tienen `productos.leer` (services/shared/
+  // permisos.py), así que no hace falta gate acá.
   { label: 'Productos', to: '/productos' },
-  // Idem — TERCEROS_READ_ROLES en features/terceros/roles.ts cubre los 6
-  // roles de negocio.
+  // Idem — `terceros.leer` cubre los 6 roles de negocio.
   { label: 'Terceros', to: '/terceros' },
   { label: 'Licitaciones', to: '/licitaciones', disabled: true },
   { label: 'Calendario', to: '/calendario', disabled: true },
@@ -30,12 +22,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Comparativas', to: '/comparativas', disabled: true },
 ]
 
-export function muestraNavegacionPcp(rol: Rol | undefined): boolean {
-  return puedeRol(rol, PCP_READ_ROLES)
-}
-
 export function Sidebar() {
-  const { perfil, signOut } = useAuth()
+  const { perfil, puede, signOut } = useAuth()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -45,25 +33,25 @@ export function Sidebar() {
 
   const navItems: NavItem[] = [
     // Carga y validación de extracciones: compras y superadmin no participan
-    // (specs S1/S2), mismos roles que los guards de "/" y /validar-extraccion.
-    ...(puedeRol(perfil?.rol, CARGA_DOCUMENTOS_ROLES) ? [{ label: 'Carga de documentos', to: '/' }] : []),
-    ...(puedeRol(perfil?.rol, VALIDAR_EXTRACCION_ROLES)
+    // (specs S1/S2), mismas capacidades que los guards de "/" y /validar-extraccion.
+    ...(puede('extraccion.extraer') ? [{ label: 'Carga de documentos', to: '/' }] : []),
+    ...(puede('extraccion.validar')
       ? [{ label: 'Validar extracción', to: '/validar-extraccion' }]
       : []),
     // presupuestador-v1 T3c: procesos with renglones still to match against
-    // the catalog; same roles as the matching endpoints.
-    ...(puedeRol(perfil?.rol, MATCHING_ROLES) ? [{ label: 'Matching de catálogo', to: '/matching' }] : []),
+    // the catalog; same capability as the matching endpoints.
+    ...(puede('matching.usar') ? [{ label: 'Matching de catálogo', to: '/matching' }] : []),
     ...NAV_ITEMS,
-    // Mismos roles que el endpoint de importación legacy (spec S6: solo admin).
-    ...(puedeRol(perfil?.rol, PRESUPUESTOS_LEGACY_IMPORT_ROLES)
+    // Misma capacidad que el endpoint de importación legacy (spec S6: solo admin).
+    ...(puede('presupuestos.importar_legacy')
       ? [{ label: 'Importar presupuestos', to: '/presupuestos/importar' }]
       : []),
-    ...(puedeRol(perfil?.rol, COMPROMISOS_READ_ROLES)
+    ...(puede('compromisos.ver_pantalla')
       ? [{ label: 'Compromisos de entrega', to: '/compromisos' }]
       : []),
-    ...(muestraNavegacionPcp(perfil?.rol) ? [{ label: 'PCP', to: '/pcp' }] : []),
-    ...(puedeRol(perfil?.rol, USUARIOS_ROLES) ? [{ label: 'Usuarios', to: '/admin/usuarios' }] : []),
-    ...(perfil?.rol === 'superadmin' ? [{ label: 'Empresas', to: '/superadmin/empresas' }] : []),
+    ...(puede('pcp.leer') ? [{ label: 'PCP', to: '/pcp' }] : []),
+    ...(puede('usuarios.gestionar') ? [{ label: 'Usuarios', to: '/admin/usuarios' }] : []),
+    ...(puede('droguerias.gestionar') ? [{ label: 'Empresas', to: '/superadmin/empresas' }] : []),
   ]
 
   return (

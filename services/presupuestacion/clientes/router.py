@@ -24,20 +24,17 @@ from services.presupuestacion.clientes.service import (
     obtener_cliente,
     upsert_formato_documento_para_endpoint,
 )
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.terceros import api
 
 router = APIRouter()
 
-_ROLES_ESCRITURA = ("admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial", "compras")
-
 
 @router.get("/clientes", response_model=list[ClienteOut])
 def listar_clientes_endpoint(
     activo: bool | None = None,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteOut]:
     return listar_clientes(user_client, drogueria_id=usuario.drogueria_id, activo=activo)
@@ -46,7 +43,7 @@ def listar_clientes_endpoint(
 @router.get("/clientes/{cliente_id}", response_model=ClienteOut)
 def obtener_cliente_endpoint(
     cliente_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteOut:
     return obtener_cliente(user_client, cliente_id=cliente_id, drogueria_id=usuario.drogueria_id)
@@ -56,7 +53,7 @@ def obtener_cliente_endpoint(
 def actualizar_cliente_endpoint(
     cliente_id: str,
     body: ClienteUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.escribir")),
 ) -> ClienteOut:
     return actualizar_cliente_para_endpoint(
         cliente_id=cliente_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
@@ -66,7 +63,7 @@ def actualizar_cliente_endpoint(
 @router.get("/clientes/{cliente_id}/contactos", response_model=list[ClienteContactoOut])
 def listar_contactos_endpoint(
     cliente_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteContactoOut]:
     drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -77,7 +74,7 @@ def listar_contactos_endpoint(
 def crear_contacto_endpoint(
     cliente_id: str,
     body: ClienteContactoCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.escribir")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteContactoOut:
     drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -89,7 +86,7 @@ def actualizar_contacto_endpoint(
     cliente_id: str,
     contacto_id: str,
     body: ClienteContactoUpdate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.escribir")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteContactoOut:
     drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -123,7 +120,7 @@ def _obtener_drogueria_id_del_cliente(
 )
 def listar_formato_documentos_endpoint(
     cliente_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteFormatoDocumentoOut]:
     _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -137,7 +134,7 @@ def listar_formato_documentos_endpoint(
 def upsert_formato_documento_endpoint(
     cliente_id: str,
     body: ClienteFormatoDocumentoUpsert,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.escribir")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteFormatoDocumentoOut:
     drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -152,7 +149,7 @@ def upsert_formato_documento_endpoint(
 )
 def listar_observaciones_endpoint(
     cliente_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ClienteObservacionOut]:
     _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)
@@ -166,7 +163,7 @@ def listar_observaciones_endpoint(
 def crear_observacion_endpoint(
     cliente_id: str,
     body: ClienteObservacionCreate,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_ESCRITURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("clientes.escribir")),
     user_client: Client = Depends(get_user_client),
 ) -> ClienteObservacionOut:
     drogueria_id = _obtener_drogueria_id_del_cliente(user_client, usuario, cliente_id)

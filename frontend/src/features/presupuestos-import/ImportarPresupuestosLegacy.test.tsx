@@ -1,13 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { capacidadesDeRol } from '@/test/capacidades'
 import { ImportarPresupuestosLegacy } from './ImportarPresupuestosLegacy'
 import { Route as ImportarRoute } from '@/routes/_authenticated.presupuestos.importar'
 import { fechaLegible } from '@/lib/fechas'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
 
-vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return { useAuth: () => ({ perfil: perfilMock, ...authDeRol(perfilMock.rol) }) }
+})
 vi.mock('@/lib/api/integracionProgress', () => ({ subirPresupuestosProgress: vi.fn() }))
 
 import { subirPresupuestosProgress } from '@/lib/api/integracionProgress'
@@ -40,7 +44,7 @@ function renderPantalla() {
 
 function navigationArgs(rol: 'superadmin' | 'admin' | 'gerencia' | 'compras') {
   return {
-    context: { auth: { isAuthenticated: true, perfil: { rol } } },
+    context: { auth: { isAuthenticated: true, perfil: { rol }, capacidades: capacidadesDeRol(rol) } },
     location: { href: '/presupuestos/importar' },
   }
 }

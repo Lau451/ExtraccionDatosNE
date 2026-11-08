@@ -110,7 +110,8 @@ que más riesgo tiene de romper datos sin que se note y deja al final lo que es 
 | 2 | Un solo dueño de `procesos_comerciales`: los demás módulos escriben a través de su fachada. | X-ARQ-003 | **[IMPLEMENTADO]** (`odd/tasks/procesos-comerciales-dueno.md`) |
 | 3 | Versionado de costos en un solo lugar: `imports` llama a la fachada de `productos`. | X-ARQ-004 | **[IMPLEMENTADO]** (`odd/tasks/costos-un-dueno.md`) |
 | 4 | `pcp` usa las fachadas de `notificaciones` y `pricing` en lugar de sus internos. | X-ARQ-002 | Pendiente |
-| 5 | Roles y permisos centralizados en la plataforma. | X-ARQ-005 | Pendiente |
+| 5 | Roles y permisos centralizados en la plataforma: los endpoints piden una capacidad (`require_capacidad`) de la matriz única `services/shared/permisos.py` y el frontend la recibe de `GET /auth/capacidades`. La matriz vive en código; pasarla a una tabla y alinear las políticas RLS quedan para después. | X-ARQ-005 | **[IMPLEMENTADO]** (`odd/tasks/roles-capacidades.md`) |
 | 6 | `presupuestacion/main.py` deja de montar 25 routers sueltos; se agrupan por módulo. | X-ARQ-006 | Pendiente |
 | 7 | Maestros de solo lectura: las altas de productos y terceros las hace Progress. Contrato por campo en [`maestros-progress.md`](./maestros-progress.md); se eliminaron los endpoints manuales de alta, edición de identidad, baja, costo y stock, junto con sus pantallas. | — | **[IMPLEMENTADO]** (`odd/tasks/maestros-solo-lectura.md`) |
 | Después | Eventos con outbox en Postgres ([`plataforma-comun.md`](./plataforma-comun.md)) y nuevos tipos de archivo con Progress a medida que se acuerden con el proveedor. | — | Pendiente |
+| Después | Matriz de capacidades como dato (tabla `rol_capacidades`, editable sin desplegar) y políticas RLS que la consulten en lugar de sus propias listas de roles. Solo si los permisos empiezan a cambiar seguido. | — | Pendiente |

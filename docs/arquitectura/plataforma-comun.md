@@ -14,14 +14,14 @@ usuario. Los principios (P1–P10) se definen en [`README.md`](./README.md).
 
 ## Permisos por capacidad (P7)
 
-**[RECOMENDACIÓN]**
+**[IMPLEMENTADO en la etapa 5, salvo el punto 2]** (`odd/tasks/roles-capacidades.md`). La matriz rol → capacidades vive en código, en `services/shared/permisos.py`: cambiar un permiso es un cambio revisable en un PR y todos los ambientes tienen la misma matriz. Como `services/shared` no importa otros módulos, la matriz declara las capacidades de todos los módulos en un solo lugar, en lugar de un manifiesto por módulo. Guardarla como dato (punto 2) queda como etapa posterior; solo cambia de dónde se lee la matriz. La dependencia se llama `require_capacidad` y el endpoint del frontend es `GET /auth/capacidades`.
 
 1. Cada módulo **declara sus capacidades** en un manifiesto: `pcp.leer`, `pcp.escribir`, `presupuestos.importar_legacy`, etc.
 2. Un rol es un **conjunto de capacidades guardado como dato** (tabla rol → capacidades), editable sin desplegar código.
 3. Los endpoints verifican capacidades con una dependencia de `plataforma` (`require_capability("pcp.escribir")`), no con tuplas de roles.
 4. El frontend recibe la lista de capacidades del usuario y la usa para el menú y para mostrar u ocultar acciones. El backend siempre vuelve a verificar.
 
-**Migración:** cada tupla actual (por ejemplo, `ROLES_ESCRITURA_PCP` en `services/pcp/roles.py:16`) se traduce a una capacidad con el mismo conjunto inicial de roles, así que no cambia el comportamiento. Se hace módulo por módulo.
+**Migración:** cada tupla anterior (por ejemplo, `ROLES_ESCRITURA_PCP` de `services/pcp/roles.py`) se tradujo a una capacidad con el mismo conjunto de roles, así que no cambió el comportamiento. Hay una capacidad por acción aunque hoy dos tengan los mismos roles.
 
 ## Cómo se comparte información entre módulos
 

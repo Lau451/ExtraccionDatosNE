@@ -8,11 +8,10 @@ import { RolClienteSection } from './RolClienteSection'
 import { RolProveedorSection } from './RolProveedorSection'
 import { DireccionesSection } from './DireccionesSection'
 import { ContactosSection } from './ContactosSection'
-import { TERCEROS_WRITE_ROLES, puedeRol } from './roles'
 
 export function TerceroDetalle({ terceroId }: { terceroId: string }) {
-  const { perfil } = useAuth()
-  const puedeEscribir = puedeRol(perfil?.rol, TERCEROS_WRITE_ROLES)
+  const { puede } = useAuth()
+  const puedeEscribir = puede('terceros.escribir')
 
   const { data: tercero, isPending } = useQuery({
     queryKey: ['terceros', terceroId],

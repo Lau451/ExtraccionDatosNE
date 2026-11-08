@@ -224,7 +224,7 @@ def listar_oc_items_por_presupuesto_item_ids(
 def actualizar_oc_item(client: Client, *, oc_item_id: str, campos: dict[str, Any]) -> dict[str, Any]:
     """El ÚNICO write de todo el módulo de vinculación (D4/D13): confirmar,
     deshacer y descartar son, cada uno, un solo UPDATE sobre esta fila. Corre
-    con el USER client -- oci_upd ya permite UPDATE a _ROLES_MATCHING (C3),
+    con el USER client -- oci_upd ya permite UPDATE a los roles de oc_presupuesto.matching (C3),
     sin necesidad de service client."""
     return client.table("oc_items").update(campos).eq("id", oc_item_id).execute().data[0]
 

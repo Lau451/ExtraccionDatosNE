@@ -1,0 +1,37 @@
+# Etapa 5 — roles y permisos centralizados (X-ARQ-005)
+
+Stage 5 of docs/arquitectura/README.md: endpoints and screens check named capabilities declared once in `services/shared`, not role tuples written in each module. Behavior does not change: each current tuple becomes one capability with the same roles.
+Branch `feat/roles-capacidades` from `dev` (`82a8fc7`). No migrations.
+
+## Specs
+
+- **S1** Matrix in code (L3 "vamos con la a"): new `services/shared/permisos.py` holds the only role → capability matrix (`MATRIZ: dict[str, frozenset[str]]`), plus `tiene_capacidad(rol, capacidad)` and `capacidades_de(rol)`. An unknown capability raises an error (never silently denies or allows). The DB-backed matrix (`rol_capacidades` table) is a later stage, recorded in the docs.
+- **S2** One capability per action (L2 Q4 "Una capacidad por acción"): every current backend tuple and inline `require_roles(...)` becomes its own capability with exactly the same roles, even when two tuples are identical today. Frontend-only lists that differ from their API tuple (e.g. compromisos screen without `superadmin`) get their own capability.
+- **S3** `require_capacidad("x.y")` dependency in `services/shared/auth.py`: 403 "No tenés permisos para esta acción" when the user's role lacks it — same message and status as `require_roles` today.
+- **S4** Endpoint for the frontend (L2 Q2 "Endpoint /me/capacidades"): `GET /auth/capacidades` (presupuestacion) returns the sorted capabilities of the caller's role. Blocked with a pending password change like any endpoint (L5); the frontend treats that as no capabilities and reloads them after the change. Every endpoint still re-checks.
+- **S5** Backend migration: no module outside `services/shared` calls `require_roles` or defines a role tuple used for authorization. `usuarios/service.py` uses `tiene_capacidad` for "who manages users". Out of scope, unchanged: tenancy checks `rol != "superadmin"` (cross-droguería access), the user-hierarchy rules of `usuarios/service.py` (`ROLES_GESTIONABLES_POR_GERENCIA`, who may assign which role), and notification recipients (`_ROLES_NOTIFICACION_REEMPLAZO`).
+- **S6** Architecture test in `tests/arquitectura/` fails if a file outside `services/shared` calls `require_roles` or defines a module-level `*ROLES*` tuple passed to an authorization check.
+- **S7** Frontend: `AuthContext` loads the capabilities with the profile and exposes `puede(capacidad)`; route guards use `requireCapacidad(...)`; the per-feature `roles.ts` lists are removed. Same visible behavior per role.
+- **S8** RLS out of scope (L2 Q3 "Fuera de esta etapa"): `docs/schema/rls_final.sql` keeps its own role lists. Docs: README stage 5 done, X-ARQ-005 resolved, `plataforma-comun.md` notes the matrix lives in code for now.
+
+## Tasks
+
+- **T1** S1-S3: `services/shared/permisos.py` + `require_capacidad`, unit tests — inline — commit: 2074ae7 [x]
+- **T2** S4: `GET /auth/capacidades` + test — inline — commit: 9024310 [x]
+- **T3** S2, S5: migrate pcp, terceros, productos, integracion_progress, extraccion — inline — commit: a121939 [x]
+- **T4** S2, S5: migrate presupuestacion routers and usuarios service — inline — commit: a121939 [x]
+- **T5** S6: architecture test — inline — commit: edc0d18 [x]
+- **T6** S7: frontend capabilities — worker — commit: 9f65d71 [x]
+- **T7** S8: docs — inline — commit: ac1a287 [x]
+
+## Log
+
+- **L1** (user, 2026-11-08): "vamos con la 5"
+- **L2** (user, 2026-11-08) answers: Q1 matrix location "decime ventajas y desventajas de cada uno"; Q2 "Endpoint /me/capacidades (Recomendado)"; Q3 RLS "Fuera de esta etapa (Recomendado)"; Q4 "Una capacidad por acción (Recomendado)".
+- **L3** (user, 2026-11-08): "vamos con la a" (matrix in code, `services/shared`).
+- **L4** (evidence): explore found 48 named tuples + 6 inline `require_roles` in 27 backend files, 10 frontend `roles.ts`; no `plataforma/` package — the platform layer is `services/shared/` (D-ARQ-003).
+- **L5** (decision, 2026-11-08): `GET /auth/capacidades` is not a new exit of the pending-password lock (S3 of login-usuario-alta-admin; `tests/auth/test_flag_sweep.py` pins the only exits). While pending, the frontend already sends the user to `/cambiar-password`.
+- **L6** (evidence, 2026-11-08): backend full suite 2138 passed (41m, includes Supabase integration); frontend `tsc -b` ok, vitest 703/703, oxlint 0 errors (warnings pre-existing). Architecture guard on `dev` tree finds 237 offenses, 0 on this branch. The worker found no role-set mismatch between the 18 old frontend lists and `MATRIZ`. Frontend change: `CambiarPasswordPage` computes the landing page from the capabilities reloaded after the change (they are empty while the password is pending, L5).
+- **L7** (verify, 2026-11-08): independent verifier, base vs HEAD differential over 173 route-methods x 8 roles: 0 differences; S1-S8 met. Advisories fixed with RED->GREEN: A1 the S6 guard missed `auth.require_roles(...)` (attribute access); A2 with an empty capability list (failed `/auth/capacidades`) `homeForRol` sent compras/superadmin to routes that redirect to themselves (loop) -> now each landing requires its route's capability, else `/mi-cuenta`. Added `tests/arquitectura/test_guards_por_ruta.py` (at most one guard per route; unguarded routes are the known 14).
+- **L8** (native review, 2026-11-08): reviewed in two committed slices (user choice "Backend y frontend por separado"). Backend `82a8fc7..a121939` (lineage review-c2cb1f3084606704, lenses risk+reliability): one BLOCKER, the backend commit also deleted the 10 frontend `roles.ts` (a staged `git rm`), leaving that commit unbuildable; corrected by rewriting local unpublished history (user approved): the deletion moved to the frontend commit, final tree identical (`71d540d`); backup branch `backup/roles-capacidades-pre-rewrite` at the old `2b6f1c2`. Approved and acknowledged. Frontend+fixes `a121939..e68a7ba` (lineage review-ef7b5ad71cf1f77b): approved first pass, acknowledged. Advisory follow-ups (non-blocking): a failed `/auth/capacidades` other than 403 also yields an empty list silently (`AuthContext.tsx:85-87`; landing no longer loops since L7); the S6 guard lives in a later commit than the backend migration. Fixed: role constants placed after imports in two router tests (`e68a7ba`).
+

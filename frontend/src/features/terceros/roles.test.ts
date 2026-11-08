@@ -1,30 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { Rol } from '@/features/auth/AuthContext'
-import {
-  CATALOGOS_COMERCIALES_WRITE_ROLES,
-  TERCEROS_READ_ROLES,
-  TERCEROS_WRITE_ROLES,
-  puedeRol,
-} from './roles'
+import { navegacionDeRol } from '@/test/capacidades'
+import { Route as TerceroDetalleRoute } from '@/routes/_authenticated.terceros.$terceroId'
+import { Route as TercerosRoute } from '@/routes/_authenticated.terceros'
 
-const TODOS: Rol[] = ['superadmin', 'admin', 'gerencia', 'lider_comercial', 'comercial', 'compras']
+describe('rutas de terceros (terceros.leer)', () => {
+  const guards = [TercerosRoute.options.beforeLoad, TerceroDetalleRoute.options.beforeLoad]
 
-describe('S4: escritura de terceros', () => {
-  it('solo admin, gerencia y lider_comercial escriben', () => {
-    expect(TODOS.filter((rol) => puedeRol(rol, TERCEROS_WRITE_ROLES))).toEqual(['admin', 'gerencia', 'lider_comercial'])
-  })
+  it.each<Rol>(['superadmin', 'admin', 'gerencia', 'lider_comercial', 'comercial', 'compras'])(
+    'la lectura sigue abierta a %s',
+    (rol) => {
+      guards.forEach((g) => expect(() => g?.(navegacionDeRol(rol, '/terceros'))).not.toThrow())
+    },
+  )
 
-  it('la lectura sigue abierta a los 6 roles', () => {
-    expect(TODOS.every((rol) => puedeRol(rol, TERCEROS_READ_ROLES))).toBe(true)
-  })
-})
-
-describe('S5: catálogos de apoyo', () => {
-  it('admin, gerencia y lider_comercial gestionan catálogos', () => {
-    expect(TODOS.filter((rol) => puedeRol(rol, CATALOGOS_COMERCIALES_WRITE_ROLES))).toEqual([
-      'admin',
-      'gerencia',
-      'lider_comercial',
-    ])
+  it('bloquea un rol sin capacidades (sistema)', () => {
+    guards.forEach((g) => expect(() => g?.(navegacionDeRol('sistema', '/terceros'))).toThrow())
   })
 })

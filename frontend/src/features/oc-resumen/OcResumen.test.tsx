@@ -23,9 +23,12 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }))
-vi.mock('@/features/auth/AuthContext', () => ({
-  useAuth: () => ({ perfil: { rol: rolActual.valor, nombre: 'Test' } }),
-}))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return {
+    useAuth: () => ({ perfil: { rol: rolActual.valor, nombre: 'Test' }, ...authDeRol(rolActual.valor) }),
+  }
+})
 vi.mock('@/lib/api/ocResumen', () => ({ obtenerOcResumen: vi.fn() }))
 
 import { obtenerOcResumen } from '@/lib/api/ocResumen'

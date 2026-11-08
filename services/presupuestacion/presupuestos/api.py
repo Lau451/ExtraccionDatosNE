@@ -11,7 +11,6 @@ import.
 """
 
 from services.presupuestacion.presupuestos.importacion_legacy import (
-    ROLES_IMPORT_PRESUPUESTOS_LEGACY,
     importar_presupuesto_legacy,
     importar_presupuesto_legacy_para_endpoint,
 )
@@ -30,5 +29,4 @@ __all__ = [
     "importar_presupuesto_legacy",
     "importar_presupuesto_legacy_para_endpoint",
     # import legado de presupuestos -- roles
-    "ROLES_IMPORT_PRESUPUESTOS_LEGACY",
 ]

@@ -2,7 +2,7 @@
 # real vive en services/shared/auth.py, compartida entre
 # services/presupuestacion/ y services/terceros/ — el blocker original de D5
 # solo mencionaba config/database/exceptions, pero services/terceros/*/router.py
-# necesita UsuarioPerfil/require_roles igual que los demás. Este módulo se
+# necesita UsuarioPerfil/require_capacidad igual que los demás. Este módulo se
 # conserva para no romper los ~20 imports existentes de
 # services.presupuestacion.core.auth.
 from services.shared.auth import (
@@ -10,7 +10,7 @@ from services.shared.auth import (
     UsuarioPerfil,
     get_current_claims,
     get_current_user,
-    require_roles,
+    require_capacidad,
 )
 
 __all__ = [
@@ -18,5 +18,5 @@ __all__ = [
     "UsuarioPerfil",
     "get_current_claims",
     "get_current_user",
-    "require_roles",
+    "require_capacidad",
 ]

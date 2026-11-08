@@ -34,11 +34,6 @@ from services.presupuestacion.procesos_comerciales.service import (
 
 logger = logging.getLogger(__name__)
 
-# Solo admin, más restrictivo que el import de PCP (odd/tasks/
-# roles-permisos-matriz.md S6). Lo usan POST /pcp/imports/presupuestos-legacy y
-# POST /integracion-progress/presupuestos.
-ROLES_IMPORT_PRESUPUESTOS_LEGACY = ("admin",)
-
 # "1" = cotización directa / "2" = licitación; ausente -> default `licitacion`
 # (decisión confirmada por el usuario, no `cotizacion`).
 _CLASE_POR_PROCESO_COMERCIAL: dict[str, str] = {"1": "cotizacion", "2": "licitacion"}

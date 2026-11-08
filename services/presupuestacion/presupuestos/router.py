@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from supabase import Client
 
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
+from services.shared.permisos import tiene_capacidad
 from services.presupuestacion.core.database import get_user_client
 from services.presupuestacion.core.exceptions import ForbiddenError, NotFoundError
 from services.presupuestacion.presupuestos import repository as repo
@@ -13,13 +14,6 @@ from services.presupuestacion.presupuestos.service import (
 )
 
 router = APIRouter()
-
-_ROLES_APROBAR = ("superadmin", "admin", "gerencia", "lider_comercial")
-_ROLES_AJUSTAR = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_PRESENTAR = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_LECTURA = ("superadmin", "admin", "gerencia", "lider_comercial", "comercial")
-_ROLES_VEN_COSTO = ("superadmin", "admin", "gerencia")
-
 
 def _validar_presupuesto_de_la_drogueria(
     user_client: Client, usuario: UsuarioPerfil, presupuesto_id: str
@@ -60,7 +54,7 @@ def _validar_item_de_la_drogueria(
 @router.get("/presupuestos/{presupuesto_id}")
 def obtener_presupuesto_endpoint(
     presupuesto_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_LECTURA)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.leer")),
     user_client: Client = Depends(get_user_client),
 ) -> list[dict]:
     """comercial/lider_comercial ven v_presupuesto_comercial (sin costo_usado ni
@@ -68,7 +62,7 @@ def obtener_presupuesto_endpoint(
     (incluye alerta_mantenimiento) -- matriz de visibilidad del spec."""
     filas = (
         repo.listar_presupuesto_revision(user_client, presupuesto_id=presupuesto_id)
-        if usuario.rol in _ROLES_VEN_COSTO
+        if tiene_capacidad(usuario.rol, "presupuestos.ver_costo")
         else repo.listar_presupuesto_comercial(user_client, presupuesto_id=presupuesto_id)
     )
     if not filas:
@@ -79,7 +73,7 @@ def obtener_presupuesto_endpoint(
 @router.post("/presupuestos/{presupuesto_id}/aprobar", response_model=ResultadoPresupuesto)
 def aprobar_endpoint(
     presupuesto_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_APROBAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.aprobar")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoPresupuesto:
     _validar_presupuesto_de_la_drogueria(user_client, usuario, presupuesto_id)
@@ -89,7 +83,7 @@ def aprobar_endpoint(
 @router.post("/presupuestos/{presupuesto_id}/presentar", response_model=ResultadoPresupuesto)
 def presentar_endpoint(
     presupuesto_id: str,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_PRESENTAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.presentar")),
     user_client: Client = Depends(get_user_client),
 ) -> ResultadoPresupuesto:
     _validar_presupuesto_de_la_drogueria(user_client, usuario, presupuesto_id)
@@ -100,7 +94,7 @@ def presentar_endpoint(
 def ajustar_item_endpoint(
     item_id: str,
     body: AjustarItemRequest,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES_AJUSTAR)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("presupuestos.ajustar")),
     user_client: Client = Depends(get_user_client),
 ) -> dict:
     _validar_item_de_la_drogueria(user_client, usuario, item_id)

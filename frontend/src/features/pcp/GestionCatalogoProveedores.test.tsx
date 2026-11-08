@@ -5,7 +5,10 @@ import { GestionCatalogoProveedores } from './GestionCatalogoProveedores'
 
 const { perfilMock } = vi.hoisted(() => ({ perfilMock: { rol: 'admin' as string } }))
 
-vi.mock('@/features/auth/AuthContext', () => ({ useAuth: () => ({ perfil: perfilMock }) }))
+vi.mock('@/features/auth/AuthContext', async () => {
+  const { authDeRol } = await import('@/test/capacidades')
+  return { useAuth: () => ({ perfil: perfilMock, ...authDeRol(perfilMock.rol) }) }
+})
 vi.mock('@/lib/api/productos', () => ({ listarProductos: vi.fn() }))
 vi.mock('@/lib/api/terceros', () => ({ listarTerceros: vi.fn() }))
 vi.mock('@/lib/api/pcp', () => ({ listarProveedoresProducto: vi.fn(), agregarProveedorProducto: vi.fn() }))

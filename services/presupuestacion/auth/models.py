@@ -24,3 +24,8 @@ class LoginOut(BaseModel):
 class CambiarPasswordIn(BaseModel):
     password_actual: str
     password_nueva: str
+
+
+class CapacidadesOut(BaseModel):
+    rol: str
+    capacidades: list[str]

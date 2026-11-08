@@ -13,18 +13,16 @@ from services.presupuestacion.automatizaciones.service import (
     listar_reglas,
     metricas,
 )
-from services.presupuestacion.core.auth import UsuarioPerfil, require_roles
+from services.presupuestacion.core.auth import UsuarioPerfil, require_capacidad
 from services.presupuestacion.core.database import get_user_client
 
 router = APIRouter()
-
-_ROLES = ("admin", "gerencia")
 
 
 @router.get("/automatizaciones/reglas", response_model=list[ReglaAutomatizacionOut])
 def listar_reglas_endpoint(
     activa: bool | None = None,
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("automatizaciones.gestionar")),
     user_client: Client = Depends(get_user_client),
 ) -> list[ReglaAutomatizacionOut]:
     return listar_reglas(user_client, drogueria_id=usuario.drogueria_id, activa=activa)
@@ -32,14 +30,14 @@ def listar_reglas_endpoint(
 
 @router.post("/automatizaciones/reglas", response_model=ReglaAutomatizacionOut)
 def crear_regla_endpoint(
-    body: ReglaAutomatizacionCreate, usuario: UsuarioPerfil = Depends(require_roles(*_ROLES))
+    body: ReglaAutomatizacionCreate, usuario: UsuarioPerfil = Depends(require_capacidad("automatizaciones.gestionar"))
 ) -> ReglaAutomatizacionOut:
     return crear_regla_para_endpoint(drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id)
 
 
 @router.patch("/automatizaciones/reglas/{regla_id}", response_model=ReglaAutomatizacionOut)
 def actualizar_regla_endpoint(
-    regla_id: str, body: ReglaAutomatizacionUpdate, usuario: UsuarioPerfil = Depends(require_roles(*_ROLES))
+    regla_id: str, body: ReglaAutomatizacionUpdate, usuario: UsuarioPerfil = Depends(require_capacidad("automatizaciones.gestionar"))
 ) -> ReglaAutomatizacionOut:
     return actualizar_regla_para_endpoint(
         regla_id=regla_id, drogueria_id=usuario.drogueria_id, body=body, usuario_id=usuario.id
@@ -48,7 +46,7 @@ def actualizar_regla_endpoint(
 
 @router.get("/automatizaciones/metricas", response_model=list[MetricaAutomatizacionOut])
 def metricas_endpoint(
-    usuario: UsuarioPerfil = Depends(require_roles(*_ROLES)),
+    usuario: UsuarioPerfil = Depends(require_capacidad("automatizaciones.gestionar")),
     user_client: Client = Depends(get_user_client),
 ) -> list[MetricaAutomatizacionOut]:
     return metricas(user_client, drogueria_id=usuario.drogueria_id)
