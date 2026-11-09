@@ -6,35 +6,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from services.presupuestacion.auditoria.router import router as auditoria_router
-from services.presupuestacion.auth.router import router as auth_router
-from services.presupuestacion.automatizaciones.router import router as automatizaciones_router
-from services.presupuestacion.clientes.router import router as clientes_router
-from services.presupuestacion.comparativas.router import router as comparativas_router
-from services.presupuestacion.compras.router import router as compras_router
-from services.presupuestacion.compromisos.router import router as compromisos_router
 from services.presupuestacion.core.config import get_settings
 from services.presupuestacion.core.exceptions import register_exception_handlers
-from services.presupuestacion.droguerias.router import router as droguerias_router
-from services.presupuestacion.eventos.router import router as eventos_router
-from services.presupuestacion.extraccion.router import router as extraccion_router
-from services.presupuestacion.imports.router import router as imports_router
-from services.presupuestacion.matching.router import router as matching_router
-from services.presupuestacion.notificaciones.router import router as notificaciones_router
-from services.presupuestacion.oc_entregas.router import router as oc_entregas_router
-from services.presupuestacion.oc_export.router import router as oc_export_router
-from services.presupuestacion.oc_presupuesto.router import router as oc_presupuesto_router
-from services.presupuestacion.oc_resumen.router import router as oc_resumen_router
-from services.presupuestacion.planes.router import router as planes_router
-from services.presupuestacion.presupuestos.router import router as presupuestos_router
-from services.presupuestacion.pricing.router import router as pricing_router
-from services.presupuestacion.procesos_comerciales.router import router as procesos_comerciales_router
-from services.presupuestacion.usuarios.router import router as usuarios_router
+from services.presupuestacion.modulos import MODULOS
 from services.integracion_progress import api as integracion_progress
-from services.integracion_progress.router import router as integracion_progress_router
-from services.pcp.router import router as pcp_router
-from services.productos.router import router as productos_router
-from services.terceros.router import router as terceros_router
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -72,29 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(pricing_router, tags=["pricing"])
-app.include_router(matching_router, tags=["matching"])
-app.include_router(presupuestos_router, tags=["presupuestos"])
-app.include_router(extraccion_router, tags=["extraccion"])
-app.include_router(comparativas_router, tags=["comparativas"])
-app.include_router(compras_router, tags=["compras"])
-app.include_router(clientes_router, tags=["clientes"])
-app.include_router(procesos_comerciales_router, tags=["procesos_comerciales"])
-app.include_router(imports_router, tags=["imports"])
-app.include_router(productos_router, tags=["productos"])
-app.include_router(auth_router, tags=["auth"])
-app.include_router(usuarios_router, tags=["usuarios"])
-app.include_router(droguerias_router, tags=["droguerias"])
-app.include_router(planes_router, tags=["planes"])
-app.include_router(eventos_router, tags=["eventos"])
-app.include_router(notificaciones_router, tags=["notificaciones"])
-app.include_router(automatizaciones_router, tags=["automatizaciones"])
-app.include_router(auditoria_router, tags=["auditoria"])
-app.include_router(terceros_router, tags=["terceros"])
-app.include_router(pcp_router, tags=["pcp"])
-app.include_router(oc_presupuesto_router, tags=["oc_presupuesto"])
-app.include_router(oc_entregas_router, tags=["oc_entregas"])
-app.include_router(oc_export_router, tags=["oc_export"])
-app.include_router(oc_resumen_router, tags=["oc_resumen"])
-app.include_router(compromisos_router, tags=["compromisos"])
-app.include_router(integracion_progress_router, tags=["integracion_progress"])
+# X-ARQ-006 (odd/tasks/routers-por-modulo.md): un router por módulo objetivo;
+# qué routers agrupa cada uno está en `modulos.py`.
+for modulo in MODULOS:
+    app.include_router(modulo.router)

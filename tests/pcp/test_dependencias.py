@@ -1,8 +1,8 @@
 """Guard D1 (openspec/changes/gestor-pcp/design.md): services/pcp/ es una
 fachada unidireccional restringida. services/pcp/** solo puede importar capas
 de servicio publicas de otros modulos -- nunca un repository ajeno -- y
-services/presupuestacion/** solo puede importar services.pcp desde main.py
-(el montaje del router).
+services/presupuestacion/** solo puede importar services.pcp desde modulos.py
+(el montaje del router, X-ARQ-006).
 
 Este test es intencionalmente RED hasta que la Fase 5 cree services/pcp/
 (tasks.md 1.12, 5.7): sin ese paquete el primer guard no tiene nada que
@@ -36,6 +36,9 @@ _PERMITIDOS_EXACTOS = {
 _PREFIJOS_VIGILADOS = ("services.presupuestacion", "services.terceros", "services.productos")
 
 _PREFIJO_PCP = "services.pcp"
+# X-ARQ-006 (odd/tasks/routers-por-modulo.md): el router de pcp se monta en el
+# módulo `compras` de services/presupuestacion/modulos.py.
+_MONTAJE_PRESUPUESTACION = PRESUPUESTACION_ROOT / "modulos.py"
 
 
 def _modulos_importados(archivo: Path) -> list[str]:
@@ -69,7 +72,7 @@ def _ofensores_import_desde_pcp() -> list[str]:
 def _ofensores_import_hacia_pcp() -> list[str]:
     ofensores = []
     for archivo in PRESUPUESTACION_ROOT.rglob("*.py"):
-        if archivo.name == "main.py":
+        if archivo == _MONTAJE_PRESUPUESTACION:
             continue
         for modulo in _modulos_importados(archivo):
             if modulo == _PREFIJO_PCP or modulo.startswith(_PREFIJO_PCP + "."):
@@ -127,7 +130,7 @@ def test_presupuestacion_solo_importa_pcp_desde_main():
     )
     ofensores = _ofensores_import_hacia_pcp()
     assert not ofensores, (
-        f"Import prohibido de services.pcp fuera de main.py: {ofensores} "
+        f"Import prohibido de services.pcp fuera de modulos.py: {ofensores} "
         "(D1: services/presupuestacion/** solo importa services.pcp en "
-        "main.py, para montar el router)."
+        "modulos.py, para montar el router -- X-ARQ-006)."
     )
