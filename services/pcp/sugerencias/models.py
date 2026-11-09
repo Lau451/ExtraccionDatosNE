@@ -27,7 +27,7 @@ class SugerenciaPrecioRecienteOut(BaseModel):
     """Spec "Recent-Price-Reuse Suggestion". Espejo directo de las columnas
     que ya expone `v_precios_especiales_vigentes` (0012_pcp_extras.sql M6,
     vigente desde PR2) -- D12 pide reusar ese filtrado (`activa=true` +
-    `mantenimiento_hasta >= CURRENT_DATE`), no reimplementarlo en Python."""
+    `mantenimiento_hasta >= hoy` en hora argentina, 0045), no reimplementarlo en Python."""
 
     precio_proveedor_id: str
     proveedor: str

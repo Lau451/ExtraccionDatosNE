@@ -467,7 +467,7 @@ CREATE TABLE precios_proveedor (
     cantidad_minima     NUMERIC(12, 2)  NULL,
     cantidad_maxima     NUMERIC(12, 2)  NULL,
     plazo_pago_dias     INTEGER         NULL,
-    fecha_oferta        DATE            NOT NULL DEFAULT CURRENT_DATE,
+    fecha_oferta        DATE            NOT NULL DEFAULT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date,
     mantenimiento_hasta DATE            NOT NULL,
     activa              BOOLEAN         NOT NULL DEFAULT TRUE,
     notas               TEXT            NULL,
@@ -500,7 +500,7 @@ CREATE TABLE procesos_comerciales (
     clase               TEXT            NOT NULL,
     nombre              TEXT            NOT NULL,
     categoria_id        UUID            NULL,
-    fecha               DATE            NOT NULL DEFAULT CURRENT_DATE,
+    fecha               DATE            NOT NULL DEFAULT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date,
     estado              TEXT            NOT NULL DEFAULT 'abierto',
     monto_estimado      NUMERIC(15, 2)  NULL,
     notas               TEXT            NULL,
@@ -1237,7 +1237,7 @@ CREATE TABLE compras_proveedor (
     cantidad                NUMERIC(12, 2)  NOT NULL,
     precio_unitario         NUMERIC(15, 2)  NOT NULL,
     monto_total             NUMERIC(15, 2)  GENERATED ALWAYS AS (precio_unitario * cantidad) STORED,
-    fecha_compra            DATE            NOT NULL DEFAULT CURRENT_DATE,
+    fecha_compra            DATE            NOT NULL DEFAULT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date,
     numero_documento        TEXT            NULL,
     plazo_pago_dias         INTEGER         NULL,
     notas                   TEXT            NULL,
@@ -2342,14 +2342,14 @@ SELECT
     COALESCE(t_prov.nombre_fantasia, t_prov.razon_social) AS proveedor,
     COALESCE((cp_pp.plazos_dias[1])::integer, pp.plazo_pago_dias, (cp_prov.plazos_dias[1])::integer) AS plazo_pago_dias,
     pp.mantenimiento_hasta,
-    pp.mantenimiento_hasta - CURRENT_DATE AS dias_restantes
+    pp.mantenimiento_hasta - (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS dias_restantes
 FROM precios_proveedor pp
 JOIN proveedores prov ON prov.id = pp.proveedor_id
 JOIN terceros t_prov  ON t_prov.id = prov.id AND t_prov.drogueria_id = prov.drogueria_id
 JOIN productos prod   ON prod.id = pp.producto_id
 LEFT JOIN condiciones_pago cp_prov ON cp_prov.id = prov.condicion_pago_id
 LEFT JOIN condiciones_pago cp_pp   ON cp_pp.id = pp.condicion_pago_id
-WHERE pp.activa = TRUE AND pp.mantenimiento_hasta >= CURRENT_DATE
+WHERE pp.activa = TRUE AND pp.mantenimiento_hasta >= (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
 ORDER BY pp.producto_id, pp.precio_unitario;
 
 -- Renglones ganados (oficial o estimado) para anticipar compras
@@ -2383,7 +2383,7 @@ SELECT
     e.numero_entrega,
     e.fecha_entrega_planificada,
     e.estado,
-    CURRENT_DATE - e.fecha_entrega_planificada AS dias_atraso
+    (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date - e.fecha_entrega_planificada AS dias_atraso
 FROM entregas_oc e
 JOIN ordenes_compra oc  ON oc.id = e.orden_compra_id
 LEFT JOIN clientes cl   ON cl.id = oc.cliente_id

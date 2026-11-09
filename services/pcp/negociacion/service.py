@@ -13,8 +13,8 @@ Ventana de vigencia (spec "Validity Window via mantenimiento_hasta", tasks.md
 escritura, `ck_pp_mant CHECK (mantenimiento_hasta >= fecha_oferta)`
 (docs/schema/extractor_final.sql) ya impide, a nivel de base, registrar un
 precio nacido vencido en el flujo normal: `fecha_oferta` no se expone en
-`RegistrarResultadoNegociacion` (usa el `DEFAULT CURRENT_DATE` de la
-columna), así que un `mantenimiento_hasta` en el pasado nunca pasa el CHECK
+`RegistrarResultadoNegociacion` (usa el default de la columna, "hoy" en
+hora argentina desde 0046), así que un `mantenimiento_hasta` en el pasado nunca pasa el CHECK
 al registrar hoy. No hace falta duplicar esa regla en Python.
 """
 

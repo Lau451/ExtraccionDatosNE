@@ -11,7 +11,7 @@ def listar_pcp_abiertos_por_vencer(client: Client, *, drogueria_id: str, dias: i
     la spec `pcp-sugerencias`. `fecha_entrega_solicitada` es nullable
     (0011_pcp_modelo.sql M1): un PCP sin fecha solicitada nunca entra en el
     rango, porque no hay ninguna "proximidad" que evaluar para él."""
-    hoy = date.today()
+    hoy = hoy_argentina()
     limite = (hoy + timedelta(days=dias)).isoformat()
     return (
         client.table("pcp")
