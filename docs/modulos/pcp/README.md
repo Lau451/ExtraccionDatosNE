@@ -42,8 +42,8 @@ organiza en **9 subdirectorios** bajo `services/pcp/`:
 `consultas`/`negociacion`); `historial/` tampoco tiene router propio (ver más
 abajo). Los 6 subdirectorios restantes sí lo tienen, agregados en
 `services/pcp/router.py` y montados una sola vez en
-`services/presupuestacion/main.py` (`app.include_router(pcp_router,
-tags=["pcp"])`).
+el módulo `compras` de `services/presupuestacion/modulos.py` (tag `pcp`,
+etapa 6, X-ARQ-006).
 
 ## Estado real de la implementación (PR1-PR12, completo)
 
@@ -156,7 +156,7 @@ sistema de referencia primario.
 
 - **No importa nada de otro `repository` de `services/pcp/**` desde
   `services/presupuestacion/`** — la única puerta es `services.pcp.router`
-  (montaje) o, para un consumidor futuro fuera de `main.py`,
+  (montaje, en `modulos.py`) o, para un consumidor futuro,
   `services.pcp.api` (D1, [`decisiones.md`](./decisiones.md)). Verificado por
   `tests/pcp/test_dependencias.py` (`ast`, mismo criterio que
   `tests/terceros/test_dependencias.py`).
@@ -192,7 +192,7 @@ sistema de referencia primario.
 
 ## Quién lo consume
 
-- `services/presupuestacion/main.py` monta `pcp_router` (`app.include_router(pcp_router, tags=["pcp"])`).
+- `services/presupuestacion/modulos.py` monta `pcp_router` en el módulo `compras` (tag `pcp`); `main.py` monta los módulos (etapa 6, X-ARQ-006).
 - `services/pcp/**` consume solo fachadas `api.py` (D1 + X-ARQ-002):
   `notificaciones`, `pricing`, `presupuestos`, `procesos_comerciales`,
   `productos` y `terceros` — nunca un `service`, `models` o `repository` ajeno.
