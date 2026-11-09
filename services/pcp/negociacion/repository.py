@@ -62,23 +62,6 @@ def obtener_email_usuario(client: Client, *, usuario_id: str) -> str | None:
     return respuesta.user.email if respuesta and respuesta.user else None
 
 
-def buscar_estado_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
-    """Lectura directa de `presupuestos.estado` -- mismo criterio que
-    `services/pcp/gestion/repository.py::buscar_presupuesto` (D1: el acceso a
-    la tabla en sí, fuera de un import Python de otro `repository`, no está
-    restringido por ese guard). Copia local intencional en vez de reusar
-    `gestion.repository` (D1 no lo prohíbe, pero cada submódulo de PCP ya
-    sigue este mismo patrón -- ver docstring de
-    `gestion/service.py::_UNIQUE_VIOLATION`)."""
-    resultado = (
-        client.table("presupuestos")
-        .select("id, estado")
-        .eq("id", presupuesto_id)
-        .limit(1)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
 
 def upsert_resultado(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     """Upsert por `uq_ppr_renglon_prov (pcp_renglon_id, proveedor_id)`

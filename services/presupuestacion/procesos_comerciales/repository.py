@@ -38,3 +38,27 @@ def borrar_proceso_comercial_recien_creado(client: Client, *, proceso_comercial_
         "proceso_comercial_id", proceso_comercial_id
     ).execute()
     client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()
+
+
+# -- items_proceso: lecturas para otros módulos (X-ARQ-002,
+# odd/tasks/pcp-fachadas.md S3). Las expone `procesos_comerciales/api.py`;
+# `services/pcp` las leía antes directo de la tabla. ---------------------------
+
+
+def buscar_item_proceso(client: Client, *, item_proceso_id: str) -> dict[str, Any] | None:
+    resultado = client.table("items_proceso").select("*").eq("id", item_proceso_id).limit(1).execute()
+    return resultado.data[0] if resultado.data else None
+
+
+def buscar_item_proceso_por_renglon(
+    client: Client, *, proceso_comercial_id: str, numero_renglon: int
+) -> dict[str, Any] | None:
+    resultado = (
+        client.table("items_proceso")
+        .select("*")
+        .eq("proceso_comercial_id", proceso_comercial_id)
+        .eq("numero_renglon", numero_renglon)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None

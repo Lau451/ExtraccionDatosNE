@@ -18,18 +18,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PCP_ROOT = REPO_ROOT / "services" / "pcp"
 PRESUPUESTACION_ROOT = REPO_ROOT / "services" / "presupuestacion"
 
-# D1: capas de servicio publicas que services/pcp/** puede importar. Nunca un
-# `repository` ajeno, y nunca ningun otro submodulo de presupuestacion/terceros.
-# `services.presupuestacion.presupuestos.api` es la fachada del import legado de
-# presupuestos que llama POST /pcp/imports/presupuestos-legacy
-# (odd/tasks/procesos-comerciales-dueno.md S1).
+# D1 + X-ARQ-002 (odd/tasks/pcp-fachadas.md S4): de otros modulos,
+# services/pcp/** solo importa fachadas `api.py` -- nunca un `service`,
+# `models` o `repository` ajeno.
 _PERMITIDOS_EXACTOS = {
-    "services.presupuestacion.pricing.service",
-    "services.presupuestacion.notificaciones.service",
+    "services.presupuestacion.notificaciones.api",
+    "services.presupuestacion.pricing.api",
     "services.presupuestacion.presupuestos.api",
+    "services.presupuestacion.procesos_comerciales.api",
+    "services.productos.api",
     "services.terceros.api",
 }
-_PERMITIDOS_PREFIJO = ("services.productos",)
 
 # Prefijos de otros modulos cuyo uso desde services/pcp/** esta vigilado.
 # Cualquier import fuera de estos tres arboles (stdlib, pydantic, fastapi,
@@ -55,13 +54,7 @@ def _es_prefijo_vigilado(modulo: str) -> bool:
 
 
 def _modulo_permitido_desde_pcp(modulo: str) -> bool:
-    if modulo in _PERMITIDOS_EXACTOS:
-        return True
-    if any(modulo == p or modulo.startswith(p + ".") for p in _PERMITIDOS_PREFIJO):
-        # "nunca un repository ajeno" aplica incluso dentro de un prefijo
-        # amplio como services.productos.
-        return ".repository" not in modulo
-    return False
+    return modulo in _PERMITIDOS_EXACTOS
 
 
 def _ofensores_import_desde_pcp() -> list[str]:
@@ -92,11 +85,7 @@ def test_pcp_solo_importa_capas_publicas_permitidas():
     ofensores = _ofensores_import_desde_pcp()
     assert not ofensores, (
         f"Import prohibido desde services/pcp/**: {ofensores} "
-        "(D1: services/pcp/** solo puede importar "
-        "services.presupuestacion.pricing.service, "
-        "services.presupuestacion.notificaciones.service, "
-        "services.presupuestacion.presupuestos.api, services.terceros.api "
-        "y services.productos -- nunca un repository ajeno)."
+        f"(X-ARQ-002: services/pcp/** solo importa las fachadas {sorted(_PERMITIDOS_EXACTOS)})."
     )
 
 
@@ -107,6 +96,26 @@ def test_de_presupuestos_solo_se_permite_la_fachada():
         "services.presupuestacion.presupuestos.importacion_legacy_repository",
         "services.presupuestacion.presupuestos.importacion_legacy_models",
         "services.presupuestacion.presupuestos.service",
+    ):
+        assert not _modulo_permitido_desde_pcp(interno), interno
+
+
+def test_de_notificaciones_pricing_y_productos_solo_se_permite_la_fachada():
+    for fachada in (
+        "services.presupuestacion.notificaciones.api",
+        "services.presupuestacion.pricing.api",
+        "services.presupuestacion.procesos_comerciales.api",
+        "services.productos.api",
+    ):
+        assert _modulo_permitido_desde_pcp(fachada), fachada
+    for interno in (
+        "services.presupuestacion.notificaciones.service",
+        "services.presupuestacion.pricing.service",
+        "services.presupuestacion.procesos_comerciales.service",
+        "services.productos.service",
+        "services.productos.models",
+        "services.productos.repository",
+        "services.productos",
     ):
         assert not _modulo_permitido_desde_pcp(interno), interno
 

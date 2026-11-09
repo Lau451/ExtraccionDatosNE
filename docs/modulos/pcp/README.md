@@ -61,6 +61,14 @@ submódulos de `services/pcp/`.
 > filas a `importar_presupuesto_legacy` vía `services/presupuestacion/presupuestos/api.py`. El endpoint
 > `POST /pcp/imports/presupuestos-legacy` sigue existiendo, pero la pantalla ya no lo usa.
 >
+> **Actualización (etapa 4, `odd/tasks/pcp-fachadas.md`):** `pcp` llega a otros módulos
+> solo por su fachada `api.py`: avisa con `notificaciones/api.py`, regenera el presupuesto con
+> `pricing/api.py`, lee productos con `productos/api.py` y lee `presupuestos`,
+> `presupuesto_legacy_map` e `items_proceso` con `presupuestos/api.py` y
+> `procesos_comerciales/api.py`. Ya no nombra ninguna tabla comercial; lo protegen
+> `tests/pcp/test_dependencias.py` y `tests/arquitectura/test_duenos_tablas.py`. `pcp` ignora
+> los presupuestos dados de baja (`deleted_at`): no crea, importa ni repricea PCP sobre ellos.
+>
 > **Actualización (etapa 2, `odd/tasks/procesos-comerciales-dueno.md`):** el import de
 > presupuestos (punto 1 abajo) ya no vive en `pcp`: su implementación está en
 > `services/presupuestacion/presupuestos/importacion_legacy.py` (módulo `comercial`), que
@@ -135,7 +143,7 @@ módulo lo resuelve en dos fases, ambas ya implementadas:
   `services/presupuestacion/notificaciones/`) y, si el `presupuesto` de
   origen todavía está `generado`/`en_revision` (nunca si ya está
   `aprobado`/`presentado`), se dispara automáticamente
-  `pricing.service.generar_presupuesto_para_endpoint` para recalcular el
+  `pricing.api.generar_presupuesto_para_endpoint` para recalcular el
   presupuesto con el precio mejorado. Ambas cosas quedan registradas como
   evento `notificacion_enviada` en `pcp_historial`.
 
@@ -185,10 +193,9 @@ sistema de referencia primario.
 ## Quién lo consume
 
 - `services/presupuestacion/main.py` monta `pcp_router` (`app.include_router(pcp_router, tags=["pcp"])`).
-- `services/pcp/**` consume, como dependencia de solo lectura permitida por
-  D1: `services.presupuestacion.pricing.service`,
-  `services.presupuestacion.notificaciones.service`, `services.terceros.api`
-  y `services.productos` — nunca el `repository` de otro módulo.
+- `services/pcp/**` consume solo fachadas `api.py` (D1 + X-ARQ-002):
+  `notificaciones`, `pricing`, `presupuestos`, `procesos_comerciales`,
+  `productos` y `terceros` — nunca un `service`, `models` o `repository` ajeno.
 - Ningún otro módulo consume `services.pcp.api` todavía; existe como punto de
   entrada preparado para un consumidor futuro (mismo criterio que
   `services/terceros/api.py`).

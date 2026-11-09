@@ -48,6 +48,8 @@ from supabase import Client
 from services.pcp.historial import service as historial_service
 from services.pcp.imports import repository as repo
 from services.pcp.imports.models import FilaImportPcpLegacy
+from services.presupuestacion.presupuestos.api import buscar_mapa_legacy_presupuesto, buscar_presupuesto
+from services.presupuestacion.procesos_comerciales.api import buscar_item_proceso_por_renglon
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError
 
@@ -61,12 +63,12 @@ def _resolver_presupuesto_para_pcp(
     importado todavía."""
     if not numero_presupuesto:
         raise NotFoundError("numero_presupuesto es requerido para importar un PCP")
-    mapa_presupuesto = repo.buscar_mapa_legacy_presupuesto(
+    mapa_presupuesto = buscar_mapa_legacy_presupuesto(
         client, drogueria_id=drogueria_id, codigo_legacy=numero_presupuesto
     )
     if mapa_presupuesto is None:
         raise NotFoundError(f"No existe el presupuesto {numero_presupuesto}: importalo primero")
-    presupuesto = repo.buscar_presupuesto(client, presupuesto_id=mapa_presupuesto["presupuesto_id"])
+    presupuesto = buscar_presupuesto(client, presupuesto_id=mapa_presupuesto["presupuesto_id"])
     if presupuesto is None:
         raise NotFoundError(f"El presupuesto mapeado para '{numero_presupuesto}' ya no existe")
     return presupuesto
@@ -113,7 +115,7 @@ def _importar_renglon(
     renglón creado por este camino queda `origen = 'import_legado'` (8.6,
     nunca `'manual'`/`'regla'`). `producto_id` viene del `items_proceso` ya
     resuelto por T1, nunca se vuelve a resolver acá."""
-    item = repo.buscar_item_proceso_por_renglon(
+    item = buscar_item_proceso_por_renglon(
         client, proceso_comercial_id=pcp["proceso_comercial_id"], numero_renglon=fila.renglon
     )
     if item is None:
@@ -175,7 +177,7 @@ def _prevalidar_lote_pcp(
             proceso_comercial_id = pcp_existente["proceso_comercial_id"]
 
         for fila in filas_pcp:
-            item = repo.buscar_item_proceso_por_renglon(
+            item = buscar_item_proceso_por_renglon(
                 client, proceso_comercial_id=proceso_comercial_id, numero_renglon=fila.renglon
             )
             if item is None:

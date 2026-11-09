@@ -327,6 +327,83 @@ def test_cerrar_pcp_con_flag_activo_y_presupuesto_ya_no_abierto_notifica_pero_no
 
 
 @pytest.mark.integration
+def test_cerrar_pcp_con_flag_activo_y_presupuesto_dado_de_baja_notifica_pero_no_repricea(
+    service_client,
+    seed_drogueria,
+    seed_usuario_sistema,
+    seed_solicitante_pcp,
+    seed_item_proceso,
+    seed_presupuesto_factory,
+    monkeypatch,
+):
+    """S6 (odd/tasks/pcp-fachadas.md): un presupuesto con `deleted_at` es
+    inexistente para `pcp` -- aunque siga `generado`, cerrar su PCP no lo
+    repricea (mismo camino que un presupuesto ya no abierto)."""
+    presupuesto = seed_presupuesto_factory(estado="generado")
+    pcp = _crear_pcp_esperando_respuesta(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        presupuesto_id=presupuesto["id"],
+        item_proceso_id=seed_item_proceso["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        solicitante_id=seed_solicitante_pcp["id"],
+    )
+    service_client.table("presupuestos").update(
+        {"deleted_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", presupuesto["id"]).execute()
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("PCP_REPRICING_AUTOMATICO", "true")
+    try:
+        cerrar_pcp(
+            service_client,
+            pcp_id=pcp["id"],
+            drogueria_id=seed_drogueria["id"],
+            usuario_id=seed_usuario_sistema["id"],
+            mensajeria=_MensajeriaFalsa(),
+        )
+
+        notificaciones = (
+            service_client.table("notificaciones")
+            .select("*")
+            .eq("destinatario_id", seed_solicitante_pcp["id"])
+            .eq("tipo", "pcp_cerrada")
+            .execute()
+            .data
+        )
+        assert len(notificaciones) == 1
+
+        presupuesto_en_bd = (
+            service_client.table("presupuestos").select("*").eq("id", presupuesto["id"]).execute().data[0]
+        )
+        assert presupuesto_en_bd["cantidad_items"] == 0
+        items = (
+            service_client.table("presupuesto_items")
+            .select("id")
+            .eq("presupuesto_id", presupuesto["id"])
+            .execute()
+            .data
+        )
+        assert items == []
+    finally:
+        monkeypatch.delenv("PCP_REPRICING_AUTOMATICO", raising=False)
+        get_settings.cache_clear()
+        service_client.table("pcp").delete().eq("id", pcp["id"]).execute()
+        service_client.table("notificaciones").delete().eq(
+            "destinatario_id", seed_solicitante_pcp["id"]
+        ).execute()
+        # Si el repricing corriera (RED), deja rastro que bloquea el teardown
+        # de seed_presupuesto_factory -- mismo limpieza que el test con
+        # presupuesto abierto.
+        service_client.table("historial_cambios").delete().eq(
+            "presupuesto_id", presupuesto["id"]
+        ).execute()
+        service_client.table("presupuesto_items").delete().eq(
+            "presupuesto_id", presupuesto["id"]
+        ).execute()
+
+
+@pytest.mark.integration
 def test_cerrar_pcp_con_flag_apagado_no_notifica_ni_repricea(
     service_client,
     seed_drogueria,

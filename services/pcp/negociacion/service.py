@@ -31,9 +31,10 @@ from services.pcp.mensajeria.port import MensajeAdjunto, MensajeriaPort
 from services.pcp.negociacion import repository as repo
 from services.pcp.negociacion.models import RegistrarResultadoNegociacion
 from services.pcp.renglones import service as renglones_service
-from services.presupuestacion.notificaciones.service import crear_notificacion
-from services.presupuestacion.pricing.service import generar_presupuesto_para_endpoint
-from services.productos import service as productos_service
+from services.presupuestacion.notificaciones.api import crear_notificacion
+from services.presupuestacion.presupuestos.api import buscar_presupuesto
+from services.presupuestacion.pricing.api import generar_presupuesto_para_endpoint
+from services.productos.api import obtener_producto
 from services.shared.config import get_settings
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError, ValidationError
@@ -357,7 +358,7 @@ def listar_resultados_renglon(
 # Fase B (`PCP_REPRICING_AUTOMATICO`, default apagado, D10 "later"): agrega
 # una notificación interna (`TipoNotificacion.pcp_cerrada`) y dispara
 # repricing automático vía el seam público
-# `pricing.service.generar_presupuesto_para_endpoint` -- solo si el
+# `pricing.api.generar_presupuesto_para_endpoint` -- solo si el
 # presupuesto de origen sigue `generado`/`en_revision`. Guardada dos veces
 # (config flag + esa precondición, D10) -- nunca después de
 # `aprobado`/`presentado`.
@@ -377,7 +378,7 @@ def _armar_datos_resultado_pdf(
     for renglon in renglones_pcp:
         producto = None
         if renglon.get("producto_id"):
-            producto = productos_service.obtener_producto(
+            producto = obtener_producto(
                 client, producto_id=renglon["producto_id"], drogueria_id=drogueria_id
             )
         resultados = renglones_service.listar_resultados_renglon(
@@ -404,7 +405,7 @@ def _notificar_y_repricing_si_corresponde(
             origen="sistema",
         )
 
-    presupuesto = repo.buscar_estado_presupuesto(client, presupuesto_id=pcp["presupuesto_id"])
+    presupuesto = buscar_presupuesto(client, presupuesto_id=pcp["presupuesto_id"])
     presupuesto_sigue_abierto = presupuesto is not None and presupuesto["estado"] in (
         "generado",
         "en_revision",

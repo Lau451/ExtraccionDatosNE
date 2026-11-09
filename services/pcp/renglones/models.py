@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from services.productos.models import ProductoOut
+from services.productos.api import ProductoOut
 
 # D2/D11 (openspec/changes/gestor-pcp/design.md) -- discriminadores del
 # renglón (0011_pcp_modelo.sql M2 ck_pcpr_origen/ck_pcpr_estado). No confundir

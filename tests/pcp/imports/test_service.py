@@ -14,6 +14,7 @@ después referencia el import de PCP.
 RED hasta que 8.2/8.8 creen `services/pcp/imports/{repository,service}.py`.
 """
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -623,3 +624,79 @@ def test_pcp_reusa_el_proceso_y_los_items_del_presupuesto_importado(
             presupuesto_id=presupuesto["presupuesto_id"],
             proceso_comercial_id=proceso_comercial_id,
         )
+
+
+# ---------------------------------------------------------------------------
+# S6 (odd/tasks/pcp-fachadas.md) -- el presupuesto mapeado fue dado de baja
+# (`deleted_at`): se rechaza como si ya no existiera, sin crear nada
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_pcp_con_presupuesto_mapeado_dado_de_baja_es_rechazado(
+    service_client, seed_drogueria, seed_usuario_sistema, seed_cliente_pcp_factory
+):
+    seed_cliente_pcp_factory(codigo_interno="CLI-7005")
+    presupuesto = _importar_presupuesto_previo(
+        service_client,
+        drogueria_id=seed_drogueria["id"],
+        usuario_id=seed_usuario_sistema["id"],
+        codigo_cliente="CLI-7005",
+        numero_presupuesto="PRE-7005",
+        renglones=(1,),
+    )
+    service_client.table("presupuestos").update(
+        {"deleted_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", presupuesto["presupuesto_id"]).execute()
+    fila = _fila(codigo_cliente="CLI-7005", numero_pcp="PCP-7005", numero_presupuesto="PRE-7005", renglon=1)
+
+    try:
+        with pytest.raises(NotFoundError) as excinfo:
+            importar_pcp_legacy(
+                service_client,
+                drogueria_id=seed_drogueria["id"],
+                filas=[fila],
+                usuario_id=seed_usuario_sistema["id"],
+            )
+        assert excinfo.value.message == "El presupuesto mapeado para 'PRE-7005' ya no existe"
+
+        mapa_tras_rechazo = (
+            service_client.table("pcp_legacy_map")
+            .select("pcp_id")
+            .eq("drogueria_id", seed_drogueria["id"])
+            .eq("codigo_legacy", "PCP-7005")
+            .execute()
+            .data
+        )
+        assert mapa_tras_rechazo == []
+        pcps = (
+            service_client.table("pcp")
+            .select("id")
+            .eq("presupuesto_id", presupuesto["presupuesto_id"])
+            .execute()
+            .data
+        )
+        assert pcps == []
+    finally:
+        mapa = (
+            service_client.table("pcp_legacy_map")
+            .select("pcp_id")
+            .eq("drogueria_id", seed_drogueria["id"])
+            .eq("codigo_legacy", "PCP-7005")
+            .execute()
+            .data
+        )
+        if mapa:
+            service_client.table("pcp").delete().eq("id", mapa[0]["pcp_id"]).execute()
+        proceso_comercial_id = (
+            service_client.table("presupuestos")
+            .select("proceso_comercial_id")
+            .eq("id", presupuesto["presupuesto_id"])
+            .execute()
+            .data[0]["proceso_comercial_id"]
+        )
+        service_client.table("presupuestos").delete().eq("id", presupuesto["presupuesto_id"]).execute()
+        service_client.table("historial_cambios").delete().eq(
+            "proceso_comercial_id", proceso_comercial_id
+        ).execute()
+        service_client.table("procesos_comerciales").delete().eq("id", proceso_comercial_id).execute()

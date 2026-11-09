@@ -85,11 +85,12 @@ function SignInProbe() {
 }
 
 function Probe() {
-  const { loading, perfilLoading, perfil, refrescarPerfil, capacidades, puede } = useAuth()
+  const { loading, perfilLoading, perfil, refrescarPerfil, capacidades, puede, errorCapacidades } = useAuth()
   const [refrescadas, setRefrescadas] = useState('')
   return (
     <div>
       <span data-testid="capacidades">{capacidades.join(',')}</span>
+      <span data-testid="errorCapacidades">{errorCapacidades ?? 'null'}</span>
       <span data-testid="puedeUsuarios">{String(puede('usuarios.gestionar'))}</span>
       <span data-testid="refrescadas">{refrescadas}</span>
       <span data-testid="loading">{String(loading)}</span>
@@ -312,6 +313,51 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('perfil').textContent).toBe('Ana')
     expect(screen.getByTestId('capacidades').textContent).toBe('')
     expect(screen.getByTestId('puedeUsuarios').textContent).toBe('false')
+    expect(screen.getByTestId('errorCapacidades').textContent).toBe('null')
+    expect(supabase.auth.signOut).not.toHaveBeenCalled()
+  })
+
+  it('un fallo de capacidades que no es 403 queda expuesto, no cierra la sesión y refrescarPerfil lo limpia', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
+    responder(perfilFalso('Ana'), new ApiError('Error interno', 500))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('perfilLoading').textContent).toBe('false'))
+    expect(screen.getByTestId('perfil').textContent).toBe('Ana')
+    expect(screen.getByTestId('capacidades').textContent).toBe('')
+    expect(screen.getByTestId('errorCapacidades').textContent).toBe(
+      'No se pudieron cargar los permisos de tu usuario (Error interno).',
+    )
+    expect(supabase.auth.signOut).not.toHaveBeenCalled()
+
+    responder(perfilFalso('Ana'))
+    await act(async () => {
+      screen.getByText('refrescar').click()
+    })
+
+    await waitFor(() => expect(screen.getByTestId('errorCapacidades').textContent).toBe('null'))
+    expect(screen.getByTestId('capacidades').textContent).toBe('extraccion.extraer,usuarios.gestionar')
+  })
+
+  it('un fallo de red al pedir capacidades también queda expuesto', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: sesionFalsa } } as never)
+    responder(perfilFalso('Ana'), new TypeError('Failed to fetch'))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('perfilLoading').textContent).toBe('false'))
+    expect(screen.getByTestId('errorCapacidades').textContent).toBe(
+      'No se pudieron cargar los permisos de tu usuario (Failed to fetch).',
+    )
     expect(supabase.auth.signOut).not.toHaveBeenCalled()
   })
 })

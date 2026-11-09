@@ -28,8 +28,7 @@ def crear_mapa_legacy(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
 
 
 # -- pcp (misma tabla que gestion/repository.py; copia local intencional,
-# D1 no prohíbe una copia -- mismo criterio ya documentado en
-# `negociacion/repository.py::buscar_estado_presupuesto`) -------------------
+# D1 no prohíbe una copia) ---------------------------------------------------
 
 
 def crear_pcp(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
@@ -38,25 +37,6 @@ def crear_pcp(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
 
 def buscar_pcp(client: Client, *, pcp_id: str) -> dict[str, Any] | None:
     resultado = client.table("pcp").select("*").eq("id", pcp_id).limit(1).execute()
-    return resultado.data[0] if resultado.data else None
-
-
-# -- items_proceso: lectura por (proceso_comercial_id, numero_renglon). Los
-# crea el import legado de presupuestos en `comercial`; el de PCP solo los
-# busca (T2) ----------------------------------------------------------------
-
-
-def buscar_item_proceso_por_renglon(
-    client: Client, *, proceso_comercial_id: str, numero_renglon: int
-) -> dict[str, Any] | None:
-    resultado = (
-        client.table("items_proceso")
-        .select("*")
-        .eq("proceso_comercial_id", proceso_comercial_id)
-        .eq("numero_renglon", numero_renglon)
-        .limit(1)
-        .execute()
-    )
     return resultado.data[0] if resultado.data else None
 
 
@@ -81,34 +61,3 @@ def buscar_renglon_por_item(
 
 def crear_renglon(client: Client, fila: dict[str, Any]) -> dict[str, Any]:
     return client.table("pcp_renglones").insert(fila).execute().data[0]
-
-
-# -- presupuesto_legacy_map (idempotencia del import legado de presupuestos,
-# migración 0015) -- solo lectura: lo escribe `comercial`
-# (services/presupuestacion/presupuestos/importacion_legacy_repository.py).
-# Mismo esqueleto que pcp_legacy_map, mismo SISTEMA_ORIGEN_LEGACY (ver
-# comentario de la migración: "mirror deliberado de pcp_legacy_map"). -------
-
-
-def buscar_mapa_legacy_presupuesto(
-    client: Client, *, drogueria_id: str, codigo_legacy: str
-) -> dict[str, Any] | None:
-    resultado = (
-        client.table("presupuesto_legacy_map")
-        .select("*")
-        .eq("drogueria_id", drogueria_id)
-        .eq("sistema_origen", SISTEMA_ORIGEN_LEGACY)
-        .eq("codigo_legacy", codigo_legacy)
-        .limit(1)
-        .execute()
-    )
-    return resultado.data[0] if resultado.data else None
-
-
-# -- presupuestos (solo lectura: el import de PCP busca el presupuesto ya
-# importado por `comercial`, odd/tasks/procesos-comerciales-dueno.md S1) -------
-
-
-def buscar_presupuesto(client: Client, *, presupuesto_id: str) -> dict[str, Any] | None:
-    resultado = client.table("presupuestos").select("*").eq("id", presupuesto_id).limit(1).execute()
-    return resultado.data[0] if resultado.data else None

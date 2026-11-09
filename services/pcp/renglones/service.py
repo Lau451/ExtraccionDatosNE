@@ -24,7 +24,8 @@ from services.pcp.catalogo import service as catalogo_service
 from services.pcp.gestion import service as gestion_service
 from services.pcp.renglones import repository as repo
 from services.pcp.renglones.models import PcpRenglonCreate
-from services.productos import service as productos_service
+from services.presupuestacion.procesos_comerciales.api import buscar_item_proceso
+from services.productos.api import obtener_producto
 from services.shared.database import get_service_client
 from services.shared.exceptions import NotFoundError, ValidationError
 
@@ -37,7 +38,7 @@ def crear_renglon(
     # submódulos internos de services/pcp/, fuera del alcance del guard D1).
     pcp = gestion_service.obtener_pcp(client, pcp_id=pcp_id, drogueria_id=drogueria_id)
 
-    item = repo.buscar_item_proceso(client, item_proceso_id=body.item_proceso_id)
+    item = buscar_item_proceso(client, item_proceso_id=body.item_proceso_id)
     if item is None or item["drogueria_id"] != drogueria_id:
         raise NotFoundError(f"No se encontró el ítem de proceso '{body.item_proceso_id}'")
 
@@ -120,7 +121,7 @@ def obtener_detalle_renglon(
     )
     producto = None
     if renglon.get("producto_id"):
-        producto = productos_service.obtener_producto(
+        producto = obtener_producto(
             client, producto_id=renglon["producto_id"], drogueria_id=drogueria_id
         )
     proveedores = listar_proveedores_disponibles_renglon(
