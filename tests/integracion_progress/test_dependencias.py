@@ -5,7 +5,7 @@
   públicas a las que entrega lotes (`_FACHADAS_DESTINO`).
 - Fuera de `services/integracion_progress/`, nadie importa sus internos: solo
   `services.integracion_progress.api`. La única excepción es el montaje del router
-  en `services/presupuestacion/main.py`.
+  en `services/presupuestacion/modulos.py` (X-ARQ-006, odd/tasks/routers-por-modulo.md).
 """
 
 import ast
@@ -20,7 +20,7 @@ _RAICES_CONSUMIDORAS = ("services", "tests", "scripts")
 _PREFIJO = "services.integracion_progress"
 _FACHADA = f"{_PREFIJO}.api"
 _ROUTER = f"{_PREFIJO}.router"
-_MAIN_PRESUPUESTACION = REPO_ROOT / "services" / "presupuestacion" / "main.py"
+_MONTAJE_PRESUPUESTACION = REPO_ROOT / "services" / "presupuestacion" / "modulos.py"
 
 # Fachadas públicas de los módulos dueños a los que integracion_progress entrega
 # lotes. `services.presupuestacion.presupuestos.api` (`comercial`) recibe el archivo
@@ -78,7 +78,7 @@ def _permitido_desde_adentro(modulo: str) -> bool:
 def _permitido_desde_afuera(archivo: Path, modulo: str) -> bool:
     if not _pertenece(modulo, _PREFIJO) or modulo == _FACHADA:
         return True
-    return archivo == _MAIN_PRESUPUESTACION and modulo == _ROUTER
+    return archivo == _MONTAJE_PRESUPUESTACION and modulo == _ROUTER
 
 
 def _archivos_de_afuera():
@@ -151,5 +151,5 @@ def test_afuera_solo_se_importa_la_fachada():
     ]
     assert not ofensores, (
         f"Fuera de services/integracion_progress/ solo se importa {_FACHADA} "
-        f"(y {_ROUTER} desde services/presupuestacion/main.py): {ofensores}"
+        f"(y {_ROUTER} desde services/presupuestacion/modulos.py): {ofensores}"
     )
