@@ -9,8 +9,9 @@ invariante de aislamiento (D2) y la ventana de vigencia de
 RED hasta que 7.7 cree services/pcp/negociacion/service.py.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError as PydanticValidationError
 import pytest
@@ -657,7 +658,7 @@ def test_precio_con_mantenimiento_hasta_vencido_no_es_considerado_valido(
 ):
     """El servicio nunca puede escribir un precio nacido vencido en el flujo
     normal (`ck_pp_mant CHECK (mantenimiento_hasta >= fecha_oferta)`, y
-    `fecha_oferta` toma `DEFAULT CURRENT_DATE` -- ver docstring de
+    `fecha_oferta` toma "hoy" en hora argentina por defecto -- ver docstring de
     negociacion/service.py). Este test simula, con un INSERT directo, una
     fila vieja cuya ventana ya venció (fecha_oferta = mantenimiento_hasta =
     hace 30 días, satisface el CHECK) -- exactamente el escenario de la spec
@@ -689,6 +690,36 @@ def test_precio_con_mantenimiento_hasta_vencido_no_es_considerado_valido(
         assert resultado is None
     finally:
         service_client.table("precios_proveedor").delete().eq("id", vencido["id"]).execute()
+
+
+@pytest.mark.integration
+def test_fecha_oferta_por_defecto_es_hoy_en_argentina(
+    service_client, seed_drogueria, seed_producto, seed_proveedor_pcp, seed_item_proceso
+):
+    """0046: con DEFAULT CURRENT_DATE (UTC), entre las 21 y la medianoche
+    fecha_oferta quedaba en mañana y un precio que vence hoy no pasaba
+    `ck_pp_mant`. El default ahora es la fecha de Argentina."""
+    hoy = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+    precio = (
+        service_client.table("precios_proveedor")
+        .insert(
+            {
+                "drogueria_id": seed_drogueria["id"],
+                "proveedor_id": seed_proveedor_pcp["id"],
+                "producto_id": seed_producto["id"],
+                "item_proceso_id": seed_item_proceso["id"],
+                "precio_unitario": "42.00",
+                "mantenimiento_hasta": hoy,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    try:
+        assert precio["fecha_oferta"] == hoy
+    finally:
+        service_client.table("precios_proveedor").delete().eq("id", precio["id"]).execute()
 
 
 # ---------------------------------------------------------------------------

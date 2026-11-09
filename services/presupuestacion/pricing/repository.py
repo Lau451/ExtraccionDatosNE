@@ -12,12 +12,13 @@ no es preciso es la premisa histórica de que ningún módulo del backend
 escribe `precios_proveedor` (ver `docs/modulos/pricing/pendientes.md` P1(4)).
 """
 
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from dateutil.relativedelta import relativedelta
 from supabase import Client
+
+from services.shared.fechas import hoy_argentina
 
 
 def _primero_en_rango(filas: list[dict[str, Any]], cantidad: Decimal) -> dict[str, Any] | None:
@@ -35,7 +36,7 @@ def _primero_en_rango(filas: list[dict[str, Any]], cantidad: Decimal) -> dict[st
 def buscar_precio_especial_puntual(
     client: Client, *, item_proceso_id: str, cantidad: Decimal
 ) -> dict[str, Any] | None:
-    hoy = date.today().isoformat()
+    hoy = hoy_argentina().isoformat()
     resultado = (
         client.table("precios_proveedor")
         .select("*")
@@ -51,7 +52,7 @@ def buscar_precio_especial_puntual(
 def buscar_precio_especial_general(
     client: Client, *, producto_id: str, drogueria_id: str, cantidad: Decimal
 ) -> dict[str, Any] | None:
-    hoy = date.today().isoformat()
+    hoy = hoy_argentina().isoformat()
     resultado = (
         client.table("precios_proveedor")
         .select("*")
@@ -110,7 +111,7 @@ def buscar_regla_aplicable(
 def buscar_precio_mercado(
     client: Client, *, producto_id: str, drogueria_id: str, meses_ventana: int
 ) -> dict[str, Any] | None:
-    desde = (date.today() - relativedelta(months=meses_ventana)).isoformat()
+    desde = (hoy_argentina() - relativedelta(months=meses_ventana)).isoformat()
     resultado = (
         client.table("v_precio_mercado_producto")
         .select("*")

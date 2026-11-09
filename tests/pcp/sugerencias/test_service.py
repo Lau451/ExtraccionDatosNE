@@ -14,8 +14,9 @@ en esta fase.
 RED hasta que 10.1 cree services/pcp/sugerencias/{repository,service}.py.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -236,10 +237,10 @@ def test_precio_reciente_vigente_se_sugiere_como_referencia(
         body=PcpRenglonCreate(item_proceso_id=item["id"]),
         usuario_id=seed_usuario_sistema["id"],
     )
-    # `dias_restantes` lo calcula la vista con el `CURRENT_DATE` de la base, que
-    # está en UTC: con `date.today()` (hora local, UTC-3) el test daba 29 entre
-    # las 21 y la medianoche.
-    vencimiento = datetime.now(UTC).date() + timedelta(days=30)
+    # `dias_restantes` lo calcula la vista con la fecha de Argentina (0045), no
+    # con la del servidor ni la UTC de la base.
+    hoy = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
+    vencimiento = hoy + timedelta(days=30)
     precio = (
         service_client.table("precios_proveedor")
         .insert(

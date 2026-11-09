@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 import secrets
 import uuid
 
@@ -18,6 +19,22 @@ def _bloquear_si_no_es_bd_de_test():
             "abortando para no correr tests de integración contra producción.",
             returncode=1,
         )
+
+
+class _RelojNocheArgentina(datetime):
+    """01:30 UTC del 9/11/2026: en Buenos Aires todavía son las 22:30 del 8/11."""
+
+    _AHORA_UTC = datetime(2026, 11, 9, 1, 30, tzinfo=UTC)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls._AHORA_UTC.astimezone(tz) if tz else cls._AHORA_UTC.replace(tzinfo=None)
+
+
+@pytest.fixture
+def reloj_noche_argentina(monkeypatch):
+    """Fija el reloj de `services.shared.fechas`: hoy en Argentina es 2026-11-08."""
+    monkeypatch.setattr("services.shared.fechas.datetime", _RelojNocheArgentina, raising=False)
 
 
 @pytest.fixture(scope="session")
