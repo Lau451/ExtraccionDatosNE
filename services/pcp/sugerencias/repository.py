@@ -1,7 +1,9 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
 from supabase import Client
+
+from services.shared.fechas import hoy_argentina
 
 
 def listar_pcp_abiertos_por_vencer(client: Client, *, drogueria_id: str, dias: int) -> list[dict[str, Any]]:
@@ -50,7 +52,7 @@ def listar_precios_especiales_vigentes_por_producto(
 ) -> list[dict[str, Any]]:
     """D12: reusa `v_precios_especiales_vigentes` (0012_pcp_extras.sql M6) --
     esa vista ya filtra `activa = true` y `mantenimiento_hasta >=
-    CURRENT_DATE`, y ya expone proveedor/banda de cantidad/`dias_restantes`.
+    hoy` en hora argentina (0045), y ya expone proveedor/banda de cantidad/`dias_restantes`.
     Ese filtrado no se reimplementa acá en Python (D12 lo pide
     explícitamente)."""
     return (

@@ -17,6 +17,7 @@ from services.presupuestacion.core import stock
 from services.presupuestacion.core.audit import registrar_cambio, registrar_evento_ciclo_vida
 from services.presupuestacion.core.database import get_service_client
 from services.presupuestacion.core.exceptions import ConflictError, NotFoundError, ValidationError
+from services.shared.fechas import hoy_argentina
 
 _DOS_DECIMALES = Decimal("0.01")
 _UNIQUE_VIOLATION = "23505"
@@ -244,7 +245,7 @@ def crear_entrega(
         "fecha_entrega_planificada": (
             fecha_entrega_planificada.isoformat() if fecha_entrega_planificada else None
         ),
-        "fecha_entrega_real": (fecha_entrega_real or date.today()).isoformat(),
+        "fecha_entrega_real": (fecha_entrega_real or hoy_argentina()).isoformat(),
         "cantidad_items": len(items),
         "estado": estado_entrega,
         "observaciones": observaciones,
