@@ -1,22 +1,16 @@
 import calendar
-from datetime import date, datetime
+from datetime import date
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from supabase import Client
 
 from services.presupuestacion.compromisos import repository as repo
 from services.presupuestacion.core.exceptions import ValidationError
+from services.shared.fechas import hoy_argentina
 
-_ZONA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 _MESES_POR_DEFECTO = 6
 _MESES_MAXIMOS = 24
 _ORDEN_SITUACION = {"vencida": 0, "futura": 1}
-
-
-def _hoy_buenos_aires() -> date:
-    # Misma referencia que la vista (0032): date.today() usaría la zona del servidor.
-    return datetime.now(_ZONA_ARGENTINA).date()
 
 
 def _sumar_meses(fecha: date, meses: int) -> date:
@@ -54,7 +48,7 @@ def listar_compromisos(
     Con `desde`: solo las filas dentro de [desde, hasta], con `hasta` por defecto desde + 6
     meses. El rango no puede superar 24 meses."""
     _exigir_drogueria(drogueria_id)
-    hoy = hoy or _hoy_buenos_aires()
+    hoy = hoy or hoy_argentina()
     base = desde or hoy
     if hasta is None:
         hasta = _sumar_meses(base, _MESES_POR_DEFECTO)

@@ -150,7 +150,7 @@ def test_ordena_vencidas_primero_y_luego_fecha_oc_entrega_renglon(listar):
 
 
 def test_hoy_por_defecto_es_la_fecha_de_buenos_aires(listar, monkeypatch):
-    monkeypatch.setattr(service, "_hoy_buenos_aires", lambda: date(2026, 1, 31))
+    monkeypatch.setattr(service, "hoy_argentina", lambda: date(2026, 1, 31))
 
     service.listar_compromisos(MagicMock(), drogueria_id=DROGUERIA)
 
